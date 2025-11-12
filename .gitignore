@@ -205,3 +205,28 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+
+# Ignore any CSV files anywhere, just in case
+*.csv
+
+
+# ===== Local SQLite databases =====
+*.db
+*.sqlite
+*.sqlite3
+
+# ===== Model and embedding artifacts =====
+models/
+embeddings/
+*.joblib
+*.pkl
+
+# ===== Python virtual environments =====
+venv/
+
+# ===== Jupyter and PyCharm =====
+**/.ipynb_checkpoints/
+.idea/
+__pycache__/
+*.pyc
