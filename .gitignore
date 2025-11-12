@@ -231,3 +231,19 @@ venv/
 .idea/
 __pycache__/
 *.pyc
+
+
+data_exploration/patient_feedback.db
+
+# 🧠 Embeddings or model checkpoints
+*.npy
+*.npz
+*.pt
+*.bin
+
+
+# 🔐 Any backups or exported results
+*.bak
+*.old
+*.zip# 🔐 Any backups or exported results
+*.zip
