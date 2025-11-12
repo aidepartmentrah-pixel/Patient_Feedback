@@ -209,6 +209,7 @@ __marimo__/
 
 # Ignore any CSV files anywhere, just in case
 *.csv
+*.xls
 
 
 # ===== Local SQLite databases =====
