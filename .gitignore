@@ -233,7 +233,11 @@ __pycache__/
 *.pyc
 
 
+# 📂 Data exploration artifacts
+data_exploration/schema_proposal.txt
+data_exploration/categories_report.txt
 data_exploration/patient_feedback.db
+
 
 # 🧠 Embeddings or model checkpoints
 *.npy
