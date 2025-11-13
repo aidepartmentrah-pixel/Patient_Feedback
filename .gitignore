@@ -234,8 +234,8 @@ __pycache__/
 
 
 # 📂 Data exploration artifacts
-data_exploration/schema_proposal.txt
-data_exploration/categories_report.txt
+data_exploration/Reports/schema_proposal.txt
+data_exploration/Reports/categories_report.txt
 data_exploration/patient_feedback.db
 
 
@@ -251,3 +251,5 @@ data_exploration/patient_feedback.db
 *.old
 *.zip# 🔐 Any backups or exported results
 *.zip
+
+model_training/patient_feedback.db
