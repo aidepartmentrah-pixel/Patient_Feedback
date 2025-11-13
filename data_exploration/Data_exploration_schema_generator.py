@@ -4,8 +4,8 @@ import random
 
 # === CONFIG ===
 EXCEL_FILE = os.path.join("original_data.xls")
-SCHEMA_OUTPUT = os.path.join("schema_proposal.txt")
-CATEGORIES_OUTPUT = os.path.join("categories_report.txt")
+SCHEMA_OUTPUT = os.path.join("Reports/schema_proposal.txt")
+CATEGORIES_OUTPUT = os.path.join("Reports/categories_report.txt")
 TOP_N_UNIQUES = 50
 SAMPLE_COUNT = 5
 

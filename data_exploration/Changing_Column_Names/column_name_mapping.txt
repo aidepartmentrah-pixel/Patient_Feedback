@@ -1,0 +1,44 @@
+تاريخ تلقي الملاحظة --> تاريخ_تلقي_الملاحظة
+الرقم --> الرقم
+P. Full Name --> P__Full_Name
+قسم الصادر --> قسم_الصادر
+قسم المعني --> قسم_المعني
+المصدر1 --> المصدر1
+النوع --> النوع
+Domain
+(CLINICAL,MANAGEMENT,RELATIONAL) --> Domain__CLINICAL_MANAGEMENT_RELATIONAL_
+Category (Safety,Quality,Environment..) --> Category__Safety_Quality_Environment_
+Sub-Category --> Sub_Category
+ New-Classifiaction in Arabic --> New_Classifiaction_in_Arabic
+ New-Classifiaction in English --> New_Classifiaction_in_English
+محتوى الشكوى (Raw Content) --> محتوى_الشكوى__Raw_Content_
+Immediate Action
+(خدمات المرضى+القسم) --> Immediate_Action__خدمات_المرضى_القسم_
+الإجراءات المتخذة (القسم/الدائرة/الإدارة) --> الإجراءات_المتخذة__القسم_الدائرة_الإدارة_
+Severity 
+ 1r High 
+2r Medium
+3r Low
+ --> Severity___1r_High__2r_Medium_3r_Low
+Stage 
+ 1r Admissions 
+2r Examination &Diagnosis
+3r Care on the Ward 41Operation/Procedure
+51Disharge/Transfer
+61Unspecified
+ --> Stage___1r_Admissions__2r_Examination__Diagnosis_3r_Care_on_the_Ward_41Operation
+Harm 
+ 1r No Harm 
+2r Minor
+3r Moderate
+4r Severe
+5r Death --> Harm___1r_No_Harm__2r_Minor_3r_Moderate_4r_Severe_5r_Death
+Status 
+ 1r Closed 
+2r In Progress
+3r Open
+ --> Status___1r_Closed__2r_In_Progress_3r_Open
+نوع "فرصة التحسين" 
+ 1r Ordinary Complaint
+2r Red Flag
+3r Never Event --> نوع_'فرصة_التحسين'___1r_Ordinary_Complaint_2r_Red_Flag_3r_Never_Event
