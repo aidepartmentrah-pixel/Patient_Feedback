@@ -1,0 +1,38 @@
+Harm Level classification results
+
+=== Model: LogisticRegression ===
+Accuracy: 0.450549
+F1 macro: 0.233702
+Classification report:
+              precision    recall  f1-score   support
+
+           2       0.00      0.00      0.00         2
+           3       0.00      0.00      0.00         2
+           4       0.67      0.41      0.51        34
+           5       0.32      0.62      0.42        24
+           6       0.55      0.41      0.47        29
+           7       0.00      0.00      0.00         0
+
+    accuracy                           0.45        91
+   macro avg       0.26      0.24      0.23        91
+weighted avg       0.51      0.45      0.45        91
+
+
+=== Model: RandomForest ===
+Accuracy: 0.384615
+F1 macro: 0.216111
+Classification report:
+              precision    recall  f1-score   support
+
+           2       0.00      0.00      0.00         2
+           3       0.00      0.00      0.00         2
+           4       0.50      0.21      0.29        34
+           5       0.33      0.92      0.49        24
+           6       0.55      0.21      0.30        29
+
+    accuracy                           0.38        91
+   macro avg       0.28      0.27      0.22        91
+weighted avg       0.45      0.38      0.33        91
+
+
+Note: harm_level labels are integer encoded.

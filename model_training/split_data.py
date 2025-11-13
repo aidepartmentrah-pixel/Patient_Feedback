@@ -4,7 +4,7 @@ from sklearn.model_selection import train_test_split
 
 # === 1. Database and table configuration ===
 DB_PATH = "patient_feedback_ml.db"   # path to your database
-SOURCE_TABLE = "table_feedback_encoded"
+SOURCE_TABLE = "patient_feedback_encoded"
 TRAIN_TABLE = "table_feedback_train"
 TEST_TABLE = "table_feedback_test"
 

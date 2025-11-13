@@ -1,0 +1,114 @@
+Stacked sequential model results (domain -> category -> sub_category -> classification_ar)
+================================================================================
+
+=== Stage: domain ===
+Stage features shapes -> X_train_stage: (371, 768), X_test_stage: (93, 768)
+Saved model: domain_stacked_logreg.pkl
+Accuracy: 0.817204
+F1 macro: 0.722431
+Classification report:
+              precision    recall  f1-score   support
+
+           1       0.65      0.61      0.63        18
+           2       0.92      0.92      0.92        61
+           3       0.60      0.64      0.62        14
+
+    accuracy                           0.82        93
+   macro avg       0.72      0.72      0.72        93
+weighted avg       0.82      0.82      0.82        93
+
+
+Confusion matrix saved: domain_stacked_confusion_matrix.png
+
+Produced probas shape: train (371, 3), test (93, 3)
+
+=== Stage: category ===
+Stage features shapes -> X_train_stage: (371, 771), X_test_stage: (93, 771)
+Saved model: category_stacked_logreg.pkl
+Accuracy: 0.634409
+F1 macro: 0.484831
+Classification report:
+              precision    recall  f1-score   support
+
+           1       0.00      0.00      0.00         6
+           2       0.76      0.73      0.74        22
+           3       0.73      0.77      0.75        39
+           4       0.50      0.33      0.40         3
+           5       0.44      0.50      0.47        14
+           6       0.38      0.60      0.46         5
+           7       0.67      0.50      0.57         4
+
+    accuracy                           0.63        93
+   macro avg       0.50      0.49      0.48        93
+weighted avg       0.62      0.63      0.62        93
+
+
+Confusion matrix saved: category_stacked_confusion_matrix.png
+
+Produced probas shape: train (371, 7), test (93, 7)
+
+=== Stage: sub_category ===
+Skipped sub_category (not present)
+
+=== Stage: classification_ar ===
+Stage features shapes -> X_train_stage: (369, 779), X_test_stage: (93, 779)
+Saved model: classification_ar_stacked_logreg.pkl
+Accuracy: 0.301075
+F1 macro: 0.123589
+Classification report:
+              precision    recall  f1-score   support
+
+           2       0.00      0.00      0.00         1
+           4       0.00      0.00      0.00         1
+           5       0.67      0.67      0.67         6
+           6       0.00      0.00      0.00         4
+          10       0.00      0.00      0.00         4
+          11       0.00      0.00      0.00         1
+          17       0.00      0.00      0.00         1
+          18       0.00      0.00      0.00         1
+          19       0.00      0.00      0.00         2
+          24       0.50      0.50      0.50         2
+          27       0.00      0.00      0.00         3
+          29       0.00      0.00      0.00         0
+          32       0.00      0.00      0.00         1
+          33       0.00      0.00      0.00         1
+          35       0.00      0.00      0.00         1
+          37       0.00      0.00      0.00         1
+          38       0.00      0.00      0.00         1
+          41       0.00      0.00      0.00         1
+          43       0.00      0.00      0.00         1
+          45       0.07      0.50      0.12         2
+          46       0.00      0.00      0.00         0
+          47       0.50      0.20      0.29         5
+          50       0.00      0.00      0.00         1
+          51       0.50      0.80      0.62         5
+          54       0.00      0.00      0.00         3
+          55       0.00      0.00      0.00         1
+          56       0.00      0.00      0.00         1
+          57       0.00      0.00      0.00         1
+          58       0.00      0.00      0.00         3
+          59       0.25      1.00      0.40         2
+          60       0.00      0.00      0.00         1
+          61       0.80      0.80      0.80         5
+          63       0.00      0.00      0.00         2
+          66       0.00      0.00      0.00         7
+          67       0.42      1.00      0.59         5
+          69       0.00      0.00      0.00         3
+          71       0.00      0.00      0.00         1
+          72       0.00      0.00      0.00         2
+          73       0.80      1.00      0.89         4
+          74       0.00      0.00      0.00         1
+          75       0.00      0.00      0.00         1
+          76       0.00      0.00      0.00         1
+          77       0.33      0.67      0.44         3
+
+    accuracy                           0.30        93
+   macro avg       0.11      0.17      0.12        93
+weighted avg       0.23      0.30      0.24        93
+
+
+Confusion matrix saved: classification_ar_stacked_confusion_matrix.png
+
+Produced probas shape: train (371, 74), test (93, 74)
+
+Stacked pipeline training completed.

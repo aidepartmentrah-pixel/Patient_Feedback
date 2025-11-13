@@ -1,0 +1,36 @@
+Stage classification results
+
+=== Model: LogisticRegression ===
+Accuracy: 0.522222
+F1 macro: 0.394374
+              precision    recall  f1-score   support
+
+           2       0.45      0.31      0.37        16
+           3       0.44      0.36      0.40        11
+           4       0.78      0.82      0.79        38
+           6       0.60      0.30      0.40        10
+           7       0.18      0.20      0.19        10
+           8       0.14      0.40      0.21         5
+
+    accuracy                           0.52        90
+   macro avg       0.43      0.40      0.39        90
+weighted avg       0.56      0.52      0.53        90
+
+
+=== Model: RandomForest ===
+Accuracy: 0.444444
+F1 macro: 0.188828
+              precision    recall  f1-score   support
+
+           2       0.00      0.00      0.00        16
+           3       0.33      0.09      0.14        11
+           4       0.48      0.95      0.64        38
+           6       0.00      0.00      0.00        10
+           7       0.43      0.30      0.35        10
+           8       0.00      0.00      0.00         5
+
+    accuracy                           0.44        90
+   macro avg       0.21      0.22      0.19        90
+weighted avg       0.29      0.44      0.33        90
+
+
