@@ -37,7 +37,7 @@ HERE = Path(__file__).resolve().parent
 DB_PATH = HERE.parent / "patient_feedback_ml.db"
 TRAIN_TABLE = "table_feedback_train"
 TEST_TABLE = "table_feedback_test"
-EMBED_COL = "embedding_text1"
+EMBED_COL = "embedding_text123"
 TARGET_COL = "severity_level"
 
 MODEL_LOGREG = HERE / "severity_level_logreg.pkl"

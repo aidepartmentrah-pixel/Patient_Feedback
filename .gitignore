@@ -253,3 +253,6 @@ data_exploration/patient_feedback.db
 *.zip
 
 model_training/patient_feedback.db
+model_training_2/patient_feedback.db
+model_training_2/model_storage/mpnet_embeddings/model.safetensors
+model_training_2/model_storage/mpnet_embeddings/model.safetensors

@@ -1,0 +1,7 @@
+In this part of the Project, I came to a conclusion
+    1. I can use better Embeddings from a Different Model (Full sentence focus/ Bigger array)
+    2. I have some new tricks/Algorithms (XG-Boost / Random Forrest / Logistic Regression)
+    3. We have different Family of Solutions (Stacked / Ordinal Logistic)
+
+
+That is why I will copy the database, and for each feature make a new folder to train these new features.

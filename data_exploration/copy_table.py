@@ -11,13 +11,13 @@ import pandas as pd
 
 # === CONFIG ===
 SOURCE_DB = os.path.join( "patient_feedback.db")
-DEST_DB = os.path.join("model_training", "patient_feedback_ml.db")
+DEST_DB = os.path.join("Hierarchical_Classification_Model", "patient_feedback_ml.db")
 TABLE_NAME = "patient_feedback_encoded"
 
 def main():
     if not os.path.exists(SOURCE_DB):
         raise FileNotFoundError(f"Source DB not found: {SOURCE_DB}")
-    os.makedirs("model_training", exist_ok=True)
+    os.makedirs("Hierarchical_Classification_Model", exist_ok=True)
 
     # Connect to source DB
     conn_src = sqlite3.connect(SOURCE_DB)

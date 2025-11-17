@@ -1,0 +1,17 @@
+[33m79e1087[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m HEAD@{0}: reset: moving to 79e1087
+[33m34e7ee1[m[33m ([m[1;32mlost_code_backup[m[33m)[m HEAD@{1}: reset: moving to HEAD
+[33m34e7ee1[m[33m ([m[1;32mlost_code_backup[m[33m)[m HEAD@{2}: commit: Training Models
+[33m62fa0e7[m HEAD@{3}: rebase (finish): returning to refs/heads/main
+[33m62fa0e7[m HEAD@{4}: rebase (continue): Finishing Data Exploraton
+[33m8c1692b[m HEAD@{5}: pull origin main --rebase (pick): Making sure everything is right
+[33m9e73b02[m HEAD@{6}: pull origin main --rebase (start): checkout 9e73b02c0658be893249fe431afa13301db723ea
+[33m0c34691[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m HEAD@{7}: commit: Finishing Data Exploraton
+[33m272bd88[m HEAD@{8}: commit: Making sure everything is right
+[33m79e1087[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m HEAD@{9}: commit: Making sure everything is right
+[33m230a1e5[m HEAD@{10}: commit: Making sure everything is right
+[33mf97286c[m HEAD@{11}: pull origin main --rebase (finish): returning to refs/heads/main
+[33mf97286c[m HEAD@{12}: pull origin main --rebase (pick): Your descriptive commit message
+[33me0e1f1b[m HEAD@{13}: pull origin main --rebase (start): checkout e0e1f1bcba765fc23d06c36fd55fd84369e65450
+[33m1bd2f9b[m HEAD@{14}: commit: Your descriptive commit message
+[33ma75779b[m HEAD@{15}: commit: Getting Started...
+[33m94f6833[m HEAD@{16}: clone: from https://github.com/aidepartmentrah-pixel/Patient_Feedback

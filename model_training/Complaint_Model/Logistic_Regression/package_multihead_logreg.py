@@ -21,7 +21,7 @@ BERT_NAME = "aubmindlab/bert-base-arabertv2"
 MODEL_PATHS = {
     "domain": HERE / "domain_logreg.pkl",
     "category": HERE / "category_logreg.pkl",
-    "sub_category": HERE / "sub_category_logreg.pkl",
+    "sub_category": HERE / "sub_category_stacked.pkl",
     "classification_ar": HERE / "classification_ar_logreg.pkl",
 }
 

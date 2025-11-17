@@ -4,7 +4,7 @@ train_subcategory_model.py
 Training script for "subcategory" using embedding_text1.
 
 Outputs:
-- subcategory_logreg.pkl
+- sub_category_stacked.pkl
 - subcategory_rf.pkl
 - subcategory_metrics.txt
 - subcategory_confusion_matrix_logreg.png
@@ -38,9 +38,9 @@ DB_PATH = HERE.parent / "patient_feedback_ml.db"
 TRAIN_TABLE = "table_feedback_train"
 TEST_TABLE = "table_feedback_test"
 EMBED_COL = "embedding_text1"
-TARGET_COL = "subcategory"
+TARGET_COL = "sub_category"
 
-MODEL_LOGREG = HERE / "subcategory_logreg.pkl"
+MODEL_LOGREG = HERE / "sub_category_stacked.pkl"
 MODEL_RF = HERE / "subcategory_rf.pkl"
 REPORT_PATH = HERE / "subcategory_metrics.txt"
 CM_LOGREG = HERE / "subcategory_confusion_matrix_logreg.png"

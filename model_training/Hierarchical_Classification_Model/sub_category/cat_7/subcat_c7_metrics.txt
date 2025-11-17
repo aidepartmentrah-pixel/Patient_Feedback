@@ -1,0 +1,32 @@
+---- LOGREG (local labels) ----
+              precision    recall  f1-score   support
+
+           2       1.00      1.00      1.00         3
+           3       0.00      0.00      0.00         1
+           5       0.00      0.00      0.00         0
+
+    accuracy                           0.75         4
+   macro avg       0.33      0.33      0.33         4
+weighted avg       0.75      0.75      0.75         4
+
+
+---- RF (local labels) ----
+              precision    recall  f1-score   support
+
+           2       0.75      1.00      0.86         3
+           3       0.00      0.00      0.00         1
+
+    accuracy                           0.75         4
+   macro avg       0.38      0.50      0.43         4
+weighted avg       0.56      0.75      0.64         4
+
+
+---- XGB (local labels) ----
+              precision    recall  f1-score   support
+
+           2       0.75      1.00      0.86         3
+           3       0.00      0.00      0.00         1
+
+    accuracy                           0.75         4
+   macro avg       0.38      0.50      0.43         4
+weighted avg       0.56      0.75      0.64         4
