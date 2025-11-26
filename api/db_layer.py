@@ -1,9 +1,6 @@
 import pyodbc
-from datetime import datetime
 
-# ==============================
-# DB CONNECTION
-# ==============================
+
 def get_connection():
     return pyodbc.connect(
         "Driver={ODBC Driver 18 for SQL Server};"
@@ -12,10 +9,6 @@ def get_connection():
         "Trusted_Connection=yes;"
         "TrustServerCertificate=yes;"
     )
-
-# ==============================
-# DB LAYER CLASSES
-# ==============================
 
 class IncidentRequestDB:
     @staticmethod
@@ -125,13 +118,38 @@ class IncidentRequestDB:
         conn.commit()
         conn.close()
 
+    @staticmethod
+    def get_records(filters: dict = None):
+        """
+        filters: dictionary with keys being DB column names and values being numeric values.
+        Example: {"SourceDepartmentID": 2, "Severity": 1}
+        """
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        query = "SELECT * FROM IncidentRequest WHERE 1=1"
+        params = []
+
+        if filters:
+            for key, value in filters.items():
+                if value is not None:
+                    query += f" AND {key} = ?"
+                    params.append(value)
+
+        cursor.execute(query, params)
+        columns = [column[0] for column in cursor.description]
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [dict(zip(columns, row)) for row in rows]
+
 class IncidentRequestCaseDB:
 
     @staticmethod
-    def add(case_obj):
+    def add(case_obj: dict):
         """
         Add a new IncidentRequestCase record.
-        case_obj: dict containing all needed fields for IncidentRequestCase
+        case_obj: dictionary with all fields already encoded as IDs / numbers.
         """
         conn = get_connection()
         cursor = conn.cursor()
@@ -146,11 +164,11 @@ class IncidentRequestCaseDB:
         conn.close()
 
     @staticmethod
-    def edit(case_id, update_obj):
+    def edit(case_id: int, update_obj: dict):
         """
         Edit an existing IncidentRequestCase record.
         case_id: UniqueID of the case to update
-        update_obj: dict containing fields to update
+        update_obj: dict containing numeric / ID fields to update
         """
         conn = get_connection()
         cursor = conn.cursor()
@@ -164,13 +182,38 @@ class IncidentRequestCaseDB:
         conn.commit()
         conn.close()
 
+    @staticmethod
+    def get_records(filters: dict = None):
+        """
+        Fetch IncidentRequestCase records with optional numeric / ID filters.
+        filters: dictionary with column_name -> value
+        """
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        query = "SELECT * FROM dbo.IncidentRequestCase WHERE 1=1"
+        params = []
+
+        if filters:
+            for key, value in filters.items():
+                if value is not None:
+                    query += f" AND {key} = ?"
+                    params.append(value)
+
+        cursor.execute(query, params)
+        columns = [column[0] for column in cursor.description]
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [dict(zip(columns, row)) for row in rows]
+
 class IncidentRequestCaseActionDB:
 
     @staticmethod
-    def add(action_obj):
+    def add(action_obj: dict):
         """
         Add a new IncidentRequestCaseAction record.
-        action_obj: dict containing all needed fields for IncidentRequestCaseAction
+        action_obj: dictionary with all fields already encoded as IDs / numbers.
         """
         conn = get_connection()
         cursor = conn.cursor()
@@ -185,11 +228,11 @@ class IncidentRequestCaseActionDB:
         conn.close()
 
     @staticmethod
-    def edit(action_id, update_obj):
+    def edit(action_id: int, update_obj: dict):
         """
         Edit an existing IncidentRequestCaseAction record.
         action_id: UniqueID of the action to update
-        update_obj: dict containing fields to update
+        update_obj: dict containing numeric / ID fields to update
         """
         conn = get_connection()
         cursor = conn.cursor()
@@ -202,3 +245,28 @@ class IncidentRequestCaseActionDB:
         cursor.execute(query, values)
         conn.commit()
         conn.close()
+
+    @staticmethod
+    def get_records(filters: dict = None):
+        """
+        Fetch IncidentRequestCaseAction records with optional numeric / ID filters.
+        filters: dictionary with column_name -> value
+        """
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        query = "SELECT * FROM dbo.IncidentRequestCaseAction WHERE 1=1"
+        params = []
+
+        if filters:
+            for key, value in filters.items():
+                if value is not None:
+                    query += f" AND {key} = ?"
+                    params.append(value)
+
+        cursor.execute(query, params)
+        columns = [column[0] for column in cursor.description]
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [dict(zip(columns, row)) for row in rows]
