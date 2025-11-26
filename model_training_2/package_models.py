@@ -5,6 +5,7 @@ from model_training_2.Harm_level.predict_harm import predict_harm_from_embedding
 from model_training_2.Stage.modular_functions import get_embedding
 import numpy as np
 import json
+import time
 
 
 DOMAIN_MAP = {
@@ -149,11 +150,16 @@ def classify_feedback(text_1, text_2, text_3, Print = False):
 
 
 if __name__ == "__main__":
+
+
     Patient_Feedback = """
     اعترض المريض "" حول موضوع تواصل موظف الأمن الغير لائق,أنه بتاريخ 21-3-2025 احضر ابنه (10 سنوات) لزيارة جده المريض في الرابع غربي لكن موظف الأمن لم يسمح له وأنه انتظر بجانب الإستعلامات حضور اخته فأخبره موظف الأمن بالإنتظار بالباحة الخارجية وحدث نقاش فيما بينهم فاعتبر الموظف انه يريد إدخال ابنه بالقوة:)كل العالم قاعدين جوا لأن كان الطقس صقعة صار بدو يضهرني لبرا, وأن اخاه احضر اولاده وهم اصغر سنا وسمح لهم( وأن الموظف (ذكر انه نفس الشاب الذي حصل معه المشكل سابقا) لم يقم بتفتيش الشباب الداخلين وقام بتفتيشه هو..
     """
     Hospital_Feedback = ""
     Hospital_Feedback_2 = ""
-    print(classify_feedback(Patient_Feedback, Hospital_Feedback, Hospital_Feedback_2))
-
+    start = time.time()  # Start timer
+    result = classify_feedback(Patient_Feedback, Hospital_Feedback, Hospital_Feedback_2)
+    end = time.time()
+    print(result)
+    print(f"\n⏱️ Time taken: {end - start:.4f} seconds")
 
