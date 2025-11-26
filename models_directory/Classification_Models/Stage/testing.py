@@ -1,5 +1,4 @@
-from models_directory.Classification_Models.package_models import classify_feedback
-
+from models_directory.Classification_Models.Stage.model_package import classify_stage_Score_Based
 
 if __name__ == "__main__":
     Patient_Feedback = """
@@ -7,6 +6,5 @@ if __name__ == "__main__":
     """
     Hospital_Feedback = ""
     Hospital_Feedback_2 = ""
-    print(classify_feedback(Patient_Feedback, Hospital_Feedback, Hospital_Feedback_2))
-
-
+    # classify_feedback(Patient_Feedback, Hospital_Feedback, Hospital_Feedback_2)
+    classify_stage_Score_Based(Patient_Feedback, True)

@@ -1,0 +1,211 @@
+
+"C:\Users\IT\Documents\GitHub Repository\Patient_Feedback\venv\Scripts\python.exe" "C:\Users\IT\Documents\GitHub Repository\Patient_Feedback\api\db_layer.py"
+=== Tables in the database ===
+dbo.AdminsrationUnit
+dbo.AdminsrationUnitHistory
+dbo.IncidentRequest
+dbo.IncidentRequestCase
+dbo.IncidentRequestCaseAction
+dbo.Instance
+dbo.Parameter
+dbo.Role
+dbo.Season
+dbo.UserRole
+dbo.Users
+
+=== Columns in each table ===
+
+Table: dbo.AdminsrationUnit
+  UniqueID | int | Nullable: NO | MaxLen: None
+  Name | nvarchar | Nullable: YES | MaxLen: 50
+  ParentID | int | Nullable: YES | MaxLen: None
+  Frozen | bit | Nullable: YES | MaxLen: None
+  Type | int | Nullable: YES | MaxLen: None
+  CreateDate | datetime | Nullable: YES | MaxLen: None
+  CreateID | int | Nullable: YES | MaxLen: None
+  UpdateDate | datetime | Nullable: YES | MaxLen: None
+  UpdateUser | int | Nullable: YES | MaxLen: None
+
+Table: dbo.AdminsrationUnitHistory
+  UniqueID | int | Nullable: NO | MaxLen: None
+  AdminID | int | Nullable: YES | MaxLen: None
+  Name | nvarchar | Nullable: YES | MaxLen: 50
+  ParentID | int | Nullable: YES | MaxLen: None
+  Frozen | bit | Nullable: YES | MaxLen: None
+  CreateDate | datetime | Nullable: YES | MaxLen: None
+  CreateID | int | Nullable: YES | MaxLen: None
+  UpdateDate | datetime | Nullable: YES | MaxLen: None
+  UpdateUser | int | Nullable: YES | MaxLen: None
+
+Table: dbo.IncidentRequest
+  UniqueID | int | Nullable: NO | MaxLen: None
+  YearCounter | int | Nullable: YES | MaxLen: None
+  IncidentRequesterTypeID | int | Nullable: YES | MaxLen: None
+  Code | nvarchar | Nullable: YES | MaxLen: 50
+  PatientTypeID | int | Nullable: YES | MaxLen: None
+  DoctorID | nvarchar | Nullable: YES | MaxLen: 8
+  EmployeeID | int | Nullable: YES | MaxLen: None
+  MRN | bigint | Nullable: YES | MaxLen: None
+  SourceBuilding | nvarchar | Nullable: YES | MaxLen: 3
+  PatientName | nvarchar | Nullable: YES | MaxLen: 200
+  PatientID | bigint | Nullable: YES | MaxLen: None
+  DateAndTimeRecieved | datetime | Nullable: NO | MaxLen: None
+  IncidentStatusID | int | Nullable: YES | MaxLen: None
+  IncidentSourceID | int | Nullable: YES | MaxLen: None
+  SourceSectionID | int | Nullable: YES | MaxLen: None
+  SourceDepartmentID | int | Nullable: YES | MaxLen: None
+  SourceDepartmentName | nvarchar | Nullable: YES | MaxLen: 100
+  SourceAdminID | int | Nullable: YES | MaxLen: None
+  SourceAdminName | nvarchar | Nullable: YES | MaxLen: 100
+  RequesterName | nvarchar | Nullable: YES | MaxLen: 150
+  Note | nvarchar | Nullable: YES | MaxLen: 1000
+  IsFeedbackRequested | bit | Nullable: YES | MaxLen: None
+  IsFeedbackGiven | bit | Nullable: YES | MaxLen: None
+  IsInPatient | bit | Nullable: YES | MaxLen: None
+  DateAndTimeFeedbackGiven | datetime | Nullable: YES | MaxLen: None
+  SatisfactoryID | int | Nullable: YES | MaxLen: None
+  DateAndTimeCreated | datetime | Nullable: YES | MaxLen: None
+  DateAndTimeUpdated | datetime | Nullable: YES | MaxLen: None
+  CreatedByApplicationUserID | int | Nullable: YES | MaxLen: None
+  UpdatedByApplicationUserID | int | Nullable: YES | MaxLen: None
+  Frozen | bit | Nullable: YES | MaxLen: None
+
+Table: dbo.IncidentRequestCase
+  UniqueID | int | Nullable: NO | MaxLen: None
+  IncidentRequestID | int | Nullable: NO | MaxLen: None
+  Description | nvarchar | Nullable: YES | MaxLen: 1000
+  IncidentCaseCategoryID | int | Nullable: YES | MaxLen: None
+  IncidentCaseSubCategoryID | int | Nullable: YES | MaxLen: None
+  IncidentRequestCaseStatusID | int | Nullable: YES | MaxLen: None
+  CaseBuilding | nvarchar | Nullable: YES | MaxLen: 3
+  Note | nvarchar | Nullable: YES | MaxLen: -1
+  DoctorID | int | Nullable: YES | MaxLen: None
+  DoctorSpecility | nvarchar | Nullable: YES | MaxLen: 200
+  SectionID | int | Nullable: YES | MaxLen: None
+  DepartmentID | int | Nullable: YES | MaxLen: None
+  DeprtmentName | nvarchar | Nullable: YES | MaxLen: 100
+  AdminID | int | Nullable: YES | MaxLen: None
+  AdminName | nvarchar | Nullable: YES | MaxLen: 100
+  DateAndTimeCreated | datetime | Nullable: YES | MaxLen: None
+  DateAndTimeUpdated | datetime | Nullable: YES | MaxLen: None
+  CreatedByApplicationUserID | int | Nullable: YES | MaxLen: None
+  UpdatedByApplicationUserID | int | Nullable: YES | MaxLen: None
+  DateAndTimeHappened | datetime | Nullable: YES | MaxLen: None
+  IncidentTypeID | int | Nullable: YES | MaxLen: None
+  Frozen | bit | Nullable: YES | MaxLen: None
+  oldsectionID | int | Nullable: YES | MaxLen: None
+
+Table: dbo.IncidentRequestCaseAction
+  UniqueID | int | Nullable: NO | MaxLen: None
+  IncidentRequestCaseID | int | Nullable: NO | MaxLen: None
+  Description | nvarchar | Nullable: YES | MaxLen: -1
+  IncidentRequestCaseActionMessageID | int | Nullable: YES | MaxLen: None
+  IncidentRequestCaseActionInstructionID | int | Nullable: YES | MaxLen: None
+  Note | nvarchar | Nullable: YES | MaxLen: -1
+  SectionNote | nvarchar | Nullable: YES | MaxLen: -1
+  DateAndTimeCreated | datetime | Nullable: YES | MaxLen: None
+  DateAndTimeUpdated | datetime | Nullable: YES | MaxLen: None
+  CreatedByApplicationUserID | int | Nullable: YES | MaxLen: None
+  UpdatedByApplicationUserID | int | Nullable: YES | MaxLen: None
+  IsAutoUpdated | bit | Nullable: YES | MaxLen: None
+  SelectionNoteID | int | Nullable: YES | MaxLen: None
+  SelectionNote | nvarchar | Nullable: YES | MaxLen: -1
+  JobDescriptionID | int | Nullable: YES | MaxLen: None
+  JobDescriptionDetailID | int | Nullable: YES | MaxLen: None
+  DateAndTimeSelectionNoteSaved | datetime | Nullable: YES | MaxLen: None
+  SavedSelectionNoteByEmployeeID | int | Nullable: YES | MaxLen: None
+  IsAutoSelectionNoteSaved | bit | Nullable: YES | MaxLen: None
+  DateAndTimeSectionNoteSaved | datetime | Nullable: YES | MaxLen: None
+  SavedSectionNoteByEmployeeID | int | Nullable: YES | MaxLen: None
+  IsAutoSectionNoteSaved | bit | Nullable: YES | MaxLen: None
+  DepartmentNote | nvarchar | Nullable: YES | MaxLen: -1
+  SavedDepartmentNoteByEmployeeID | int | Nullable: YES | MaxLen: None
+  DateAndTimeDepartmentNoteSaved | datetime | Nullable: YES | MaxLen: None
+  IsAutoDepartmentNoteSaved | bit | Nullable: YES | MaxLen: None
+  SubmitByEmployeeID | int | Nullable: YES | MaxLen: None
+  DateAndTimeSubmit | datetime | Nullable: YES | MaxLen: None
+  Locked | bit | Nullable: YES | MaxLen: None
+  ProblemReason | nvarchar | Nullable: YES | MaxLen: -1
+  ReasonNotResolvingID | int | Nullable: YES | MaxLen: None
+  GoverningPolicies | nvarchar | Nullable: YES | MaxLen: -1
+  IsImprovementForm | bit | Nullable: YES | MaxLen: None
+  Frozen | bit | Nullable: YES | MaxLen: None
+
+Table: dbo.Instance
+  UniqueID | int | Nullable: NO | MaxLen: None
+  EnglishName | nvarchar | Nullable: NO | MaxLen: 100
+  ParialEnglishName | nvarchar | Nullable: YES | MaxLen: 100
+  ArabicName | nvarchar | Nullable: NO | MaxLen: 100
+  ParialArabicName | nvarchar | Nullable: YES | MaxLen: 100
+  DownloadLocation | nvarchar | Nullable: NO | MaxLen: 1000
+  PublishLocation | nvarchar | Nullable: NO | MaxLen: 1000
+  DamanContractNumber | int | Nullable: YES | MaxLen: None
+  Address | nvarchar | Nullable: YES | MaxLen: 200
+  Logo | image | Nullable: YES | MaxLen: 2147483647
+  IsMain | bit | Nullable: YES | MaxLen: None
+  CobolServerLinK | nvarchar | Nullable: YES | MaxLen: 50
+  ArchiveFolderPath | nvarchar | Nullable: YES | MaxLen: 100
+
+Table: dbo.Parameter
+  UniqueID | int | Nullable: NO | MaxLen: None
+  Description | nvarchar | Nullable: YES | MaxLen: 200
+  ParentID | int | Nullable: YES | MaxLen: None
+  Frozen | bit | Nullable: YES | MaxLen: None
+  CreateDate | datetime | Nullable: YES | MaxLen: None
+  CreatedID | int | Nullable: YES | MaxLen: None
+  Severity | int | Nullable: YES | MaxLen: None
+
+Table: dbo.Role
+  UniqueID | nchar | Nullable: NO | MaxLen: 10
+  Name | nvarchar | Nullable: YES | MaxLen: 50
+  IsActive | bit | Nullable: YES | MaxLen: None
+
+Table: dbo.Season
+  UniqueID | int | Nullable: NO | MaxLen: None
+  SeasonName | nvarchar | Nullable: YES | MaxLen: 100
+  StartDate | date | Nullable: YES | MaxLen: None
+  EndDate | date | Nullable: YES | MaxLen: None
+  IsDone | bit | Nullable: YES | MaxLen: None
+  Frozen | bit | Nullable: YES | MaxLen: None
+  CreateDate | datetime | Nullable: YES | MaxLen: None
+  CreateID | int | Nullable: YES | MaxLen: None
+
+Table: dbo.UserRole
+  UniqueID | int | Nullable: NO | MaxLen: None
+  UserID | int | Nullable: YES | MaxLen: None
+  RoleID | int | Nullable: YES | MaxLen: None
+  Frozen | bit | Nullable: YES | MaxLen: None
+
+Table: dbo.Users
+  UniqueID | int | Nullable: NO | MaxLen: None
+  Name | nvarchar | Nullable: YES | MaxLen: 150
+  LoginName | nvarchar | Nullable: YES | MaxLen: 50
+  Password | nvarchar | Nullable: YES | MaxLen: 10
+  Frozen | bit | Nullable: YES | MaxLen: None
+  CreatedBYID | int | Nullable: YES | MaxLen: None
+  CreatedDate | datetime | Nullable: YES | MaxLen: None
+  IsAdmin | bit | Nullable: YES | MaxLen: None
+  IsIncidentUser | bit | Nullable: YES | MaxLen: None
+  IsViewer | bit | Nullable: YES | MaxLen: None
+  RoleID | int | Nullable: YES | MaxLen: None
+  UserID | int | Nullable: YES | MaxLen: None
+
+=== Table Relationships (Foreign Keys) ===
+FK_AdminsrationUnit_AdminsrationUnit: AdminsrationUnit.ParentID -> AdminsrationUnit.UniqueID
+FK_IncidentRequest_AdminsrationUnit: IncidentRequest.SourceSectionID -> AdminsrationUnit.UniqueID
+FK_IncidentRequest_Parameter: IncidentRequest.IncidentRequesterTypeID -> Parameter.UniqueID
+FK_IncidentRequest_Parameter1: IncidentRequest.IncidentStatusID -> Parameter.UniqueID
+FK_IncidentRequest_Parameter2: IncidentRequest.IncidentSourceID -> Parameter.UniqueID
+FK_IncidentRequest_Parameter3: IncidentRequest.SatisfactoryID -> Parameter.UniqueID
+FK_IncidentRequestCaseAction_IncidentRequestCase: IncidentRequestCaseAction.IncidentRequestCaseID -> IncidentRequestCase.UniqueID
+FK_IncidentRequestCaseAction_Parameter: IncidentRequestCaseAction.IncidentRequestCaseActionMessageID -> Parameter.UniqueID
+FK_IncidentRequestCaseAction_Parameter1: IncidentRequestCaseAction.IncidentRequestCaseActionInstructionID -> Parameter.UniqueID
+FK_IncidentRequestCaseAction_Parameter2: IncidentRequestCaseAction.ReasonNotResolvingID -> Parameter.UniqueID
+FK_IncidentRequestCaseAction_Parameter3: IncidentRequestCaseAction.JobDescriptionID -> Parameter.UniqueID
+FK_IncidentRequestCaseAction_Parameter4: IncidentRequestCaseAction.JobDescriptionDetailID -> Parameter.UniqueID
+FK_IncidentRequestCaseAction_Parameter5: IncidentRequestCaseAction.SelectionNoteID -> Parameter.UniqueID
+FK_Parameter_Parameter: Parameter.ParentID -> Parameter.UniqueID
+FK_UserRole_Parameter: UserRole.RoleID -> Parameter.UniqueID
+FK_UserRole_Users: UserRole.UserID -> Users.UniqueID
+
+Process finished with exit code 0
