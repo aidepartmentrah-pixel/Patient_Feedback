@@ -1,7 +1,7 @@
 """
-package_models.py
+hierarchical_predictor.py
 
-Loads domain-category-subcategory hierarchical models.
+Loads domain-category-subcategory hierarchical vocab_models.
 Provides:
     predict_text(text)
     predict_embedding(embedding)
@@ -99,9 +99,9 @@ def load_node_model(level: str, node_id: str, alg: str):
     """
     level: 'domain', 'category', 'sub_category'
     node_id:
-        domain      -> folder: models/domain/
-        domain_0    -> folder: models/category/domain_0/
-        cat_0       -> folder: models/sub_category/cat_0/
+        domain      -> folder: vocab_models/domain/
+        domain_0    -> folder: vocab_models/category/domain_0/
+        cat_0       -> folder: vocab_models/sub_category/cat_0/
 
     alg: 'logreg', 'rf', 'xgb', ...
     """
@@ -112,7 +112,7 @@ def load_node_model(level: str, node_id: str, alg: str):
 
     # Domain has no nested subfolder → fix:
     if level == "domain":
-        node_dir = level_dir  # use models/domain/
+        node_dir = level_dir  # use vocab_models/domain/
 
     # Determine correct file prefix
     if level == "domain":

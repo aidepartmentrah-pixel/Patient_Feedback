@@ -1,0 +1,11 @@
+Model: xgb
+Metric: arrival
+
+Accuracy:  1.0000
+Precision: 1.0000
+Recall:    1.0000
+F1-score:  1.0000
+
+Confusion Matrix:
+[[502   0]
+ [  0 489]]

@@ -218,7 +218,7 @@ __marimo__/
 *.sqlite3
 
 # ===== Model and embedding artifacts =====
-models/
+model_training_2/Hierarchical_Classification_Model/sub_category/category_7/vocab_models/
 embeddings/
 *.joblib
 *.pkl
@@ -254,5 +254,4 @@ data_exploration/patient_feedback.db
 
 model_training/patient_feedback.db
 model_training_2/patient_feedback.db
-model_training_2/model_storage/mpnet_embeddings/model.safetensors
 model_training_2/model_storage/mpnet_embeddings/model.safetensors

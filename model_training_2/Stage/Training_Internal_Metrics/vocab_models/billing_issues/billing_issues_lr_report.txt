@@ -1,0 +1,11 @@
+Model: lr
+Metric: billing_issues
+
+Accuracy:  0.9411
+Precision: 0.9411
+Recall:    0.9411
+F1 Score:  0.9411
+
+Confusion Matrix:
+[[447  28]
+ [ 28 447]]

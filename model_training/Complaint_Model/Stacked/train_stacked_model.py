@@ -1,7 +1,7 @@
 """
 train_stacked_model.py
 
-Sequential stacked models (classical ML) using BERT embeddings.
+Sequential stacked vocab_models (classical ML) using BERT embeddings.
 
 Hierarchy:
     domain -> category -> sub_category -> classification_ar
@@ -142,7 +142,7 @@ def main():
 
         print(f"Embeddings -> train: {X_train_all.shape}, test: {X_test_all.shape}")
 
-        # Containers for storing stage models and the predicted-proba features for train & test
+        # Containers for storing stage vocab_models and the predicted-proba features for train & test
         trained_models = {}
         # dictionary mapping stage name -> train_proba_full (n_train x n_classes_of_stage)
         train_probas_full = {}

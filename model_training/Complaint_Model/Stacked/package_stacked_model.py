@@ -1,7 +1,7 @@
 """
 package_stacked_model.py
 
-Loads the trained stacked Logistic Regression models for:
+Loads the trained stacked Logistic Regression vocab_models for:
 - domain
 - category
 - sub_category
@@ -33,7 +33,7 @@ bert_model.eval()
 print("✅ BERT model loaded successfully.\n")
 
 # =========================================================
-# 2. Load trained models
+# 2. Load trained vocab_models
 # =========================================================
 HERE = Path(__file__).resolve().parent
 
@@ -70,7 +70,7 @@ def get_embedding(text: str) -> np.ndarray:
 def predict_stacked(text: str):
     """
     Predict domain, category, sub_category, and classification_ar
-    using stacked logistic regression models.
+    using stacked logistic regression vocab_models.
     """
     if not text.strip():
         raise ValueError("Input text is empty.")

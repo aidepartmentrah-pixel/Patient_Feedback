@@ -1,0 +1,14 @@
+Model: rf
+Accuracy: 0.4777777777777778
+
+              precision    recall  f1-score   support
+
+           1       0.12      0.20      0.15        10
+           2       0.50      0.44      0.47        27
+           4       0.63      0.76      0.69        38
+           6       0.00      0.00      0.00        10
+           8       0.00      0.00      0.00         5
+
+    accuracy                           0.48        90
+   macro avg       0.25      0.28      0.26        90
+weighted avg       0.43      0.48      0.45        90

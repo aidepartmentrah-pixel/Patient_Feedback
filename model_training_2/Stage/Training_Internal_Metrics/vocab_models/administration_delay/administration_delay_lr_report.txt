@@ -1,0 +1,11 @@
+Model: lr
+Metric: administration_delay
+
+Accuracy:  0.9590
+Precision: 0.9500
+Recall:    0.9690
+F1 Score:  0.9594
+
+Confusion Matrix:
+[[521  28]
+ [ 17 532]]

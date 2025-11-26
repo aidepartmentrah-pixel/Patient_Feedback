@@ -1,0 +1,11 @@
+Model: lr
+Metric: cleanliness
+
+Accuracy:  0.9710
+Precision: 0.9816
+Recall:    0.9600
+F1 Score:  0.9707
+
+Confusion Matrix:
+[[491   9]
+ [ 20 480]]

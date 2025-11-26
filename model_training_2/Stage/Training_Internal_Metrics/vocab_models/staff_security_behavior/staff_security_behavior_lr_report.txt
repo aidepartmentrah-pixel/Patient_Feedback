@@ -1,0 +1,11 @@
+Model: lr
+Metric: staff_security_behavior
+
+Accuracy:  0.9726
+Precision: 0.9655
+Recall:    0.9803
+F1 Score:  0.9729
+
+Confusion Matrix:
+[[441  16]
+ [  9 448]]

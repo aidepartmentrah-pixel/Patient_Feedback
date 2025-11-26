@@ -1,0 +1,11 @@
+Model: lr
+Metric: disagreement_with_discharge
+
+Accuracy:  0.9330
+Precision: 0.9254
+Recall:    0.9420
+F1 Score:  0.9336
+
+Confusion Matrix:
+[[414  34]
+ [ 26 422]]

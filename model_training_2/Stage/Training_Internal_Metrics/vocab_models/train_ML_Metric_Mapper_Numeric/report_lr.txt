@@ -1,0 +1,14 @@
+Model: lr
+Accuracy: 0.45555555555555555
+
+              precision    recall  f1-score   support
+
+           1       0.18      0.30      0.22        10
+           2       0.43      0.37      0.40        27
+           4       0.57      0.74      0.64        38
+           6       0.00      0.00      0.00        10
+           8       0.00      0.00      0.00         5
+
+    accuracy                           0.46        90
+   macro avg       0.24      0.28      0.25        90
+weighted avg       0.39      0.46      0.42        90

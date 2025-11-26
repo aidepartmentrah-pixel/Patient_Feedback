@@ -1,0 +1,11 @@
+Model: lr
+Metric: arrival
+
+Accuracy:  0.9980
+Precision: 0.9959
+Recall:    1.0000
+F1-score:  0.9980
+
+Confusion Matrix:
+[[500   2]
+ [  0 489]]

@@ -1,0 +1,11 @@
+Model: lr
+Metric: conflicting_or_wrong_diagnosis
+
+Accuracy:  0.9602
+Precision: 0.9515
+Recall:    0.9699
+F1 Score:  0.9606
+
+Confusion Matrix:
+[[442  23]
+ [ 14 451]]

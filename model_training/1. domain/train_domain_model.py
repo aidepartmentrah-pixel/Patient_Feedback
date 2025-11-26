@@ -120,7 +120,7 @@ def main():
         print(f"Shapes -> X_train: {X_train.shape}, X_test: {X_test.shape}")
         print(f"Labels -> y_train: {y_train.shape}, y_test: {y_test.shape}")
 
-        # Train models
+        # Train vocab_models
         logreg = LogisticRegression(max_iter=2000, random_state=RANDOM_STATE)
         rf = RandomForestClassifier(n_estimators=200, random_state=RANDOM_STATE)
 
@@ -140,7 +140,7 @@ def main():
             results[name] = {"accuracy": acc, "f1_macro": f1_macro, "report": report_txt, "y_pred": y_pred}
             print(f"{name} -> acc: {acc:.4f} | f1_macro: {f1_macro:.4f}")
 
-        # Save models using joblib
+        # Save vocab_models using joblib
         joblib.dump(logreg, MODEL_LOGREG)
         joblib.dump(rf, MODEL_RF)
         print(f"✅ Saved models: {MODEL_LOGREG.name}, {MODEL_RF.name}")

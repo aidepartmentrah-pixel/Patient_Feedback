@@ -1,0 +1,53 @@
+=== CATEGORY MODEL (DOMAIN 1) ===
+
+
+---- Logistic Regression ----
+
+Classification Report:
+              precision    recall  f1-score   support
+
+           2       0.84      0.73      0.78        22
+           3       0.86      0.92      0.89        39
+
+    accuracy                           0.85        61
+   macro avg       0.85      0.83      0.83        61
+weighted avg       0.85      0.85      0.85        61
+
+Confusion Matrix:
+[[16  6]
+ [ 3 36]]
+
+
+---- Random Forest ----
+
+Classification Report:
+              precision    recall  f1-score   support
+
+           2       0.81      0.59      0.68        22
+           3       0.80      0.92      0.86        39
+
+    accuracy                           0.80        61
+   macro avg       0.81      0.76      0.77        61
+weighted avg       0.80      0.80      0.79        61
+
+Confusion Matrix:
+[[13  9]
+ [ 3 36]]
+
+
+---- XGBoost ----
+
+Classification Report:
+              precision    recall  f1-score   support
+
+           2       0.82      0.64      0.72        22
+           3       0.82      0.92      0.87        39
+
+    accuracy                           0.82        61
+   macro avg       0.82      0.78      0.79        61
+weighted avg       0.82      0.82      0.81        61
+
+Confusion Matrix:
+[[14  8]
+ [ 3 36]]
+

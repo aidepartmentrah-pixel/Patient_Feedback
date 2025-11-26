@@ -28,11 +28,9 @@ EMB123 = "embedding_text123"
 # ---------------------------------------------------
 # 2. LOAD OFFLINE MODEL
 # ---------------------------------------------------
-print("📦 Loading offline MPNet model...")
 tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
 model = AutoModel.from_pretrained(MODEL_PATH)
 model.eval()
-print("✅ Model loaded.")
 
 
 # ---------------------------------------------------

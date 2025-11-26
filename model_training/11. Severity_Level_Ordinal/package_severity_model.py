@@ -33,7 +33,7 @@ scaler = joblib.load(MODEL_DIR / meta["scaler"])
 ord_model_path = MODEL_DIR / meta["ordinal_model"]
 ordinal_model = joblib.load(ord_model_path)
 
-# Also load comparison models if needed
+# Also load comparison vocab_models if needed
 lr = joblib.load(MODEL_DIR / "severity_lr.pkl") if (MODEL_DIR / "severity_lr.pkl").exists() else None
 rf = joblib.load(MODEL_DIR / "severity_rf.pkl") if (MODEL_DIR / "severity_rf.pkl").exists() else None
 xgb = joblib.load(MODEL_DIR / "severity_xgb.pkl") if (MODEL_DIR / "severity_xgb.pkl").exists() else None

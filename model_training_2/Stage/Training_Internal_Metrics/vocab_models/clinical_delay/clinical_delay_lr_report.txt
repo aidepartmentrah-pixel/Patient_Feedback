@@ -1,0 +1,11 @@
+Model: lr
+Metric: clinical_delay
+
+Accuracy:  0.9590
+Precision: 0.9442
+Recall:    0.9756
+F1 Score:  0.9597
+
+Confusion Matrix:
+[[425  26]
+ [ 11 440]]

@@ -1,0 +1,11 @@
+Model: lr
+Metric: medical_clinical_errors
+
+Accuracy:  0.9455
+Precision: 0.9377
+Recall:    0.9545
+F1 Score:  0.9460
+
+Confusion Matrix:
+[[473  32]
+ [ 23 482]]

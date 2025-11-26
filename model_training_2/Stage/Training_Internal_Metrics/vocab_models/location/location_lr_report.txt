@@ -1,0 +1,11 @@
+Model: lr
+Metric: location
+
+Accuracy:  0.9990
+Precision: 0.9981
+Recall:    1.0000
+F1 Score:  0.9990
+
+Confusion Matrix:
+[[514   1]
+ [  0 515]]

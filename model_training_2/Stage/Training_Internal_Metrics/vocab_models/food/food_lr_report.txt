@@ -1,0 +1,11 @@
+Model: lr
+Metric: food
+
+Accuracy:  0.9754
+Precision: 0.9940
+Recall:    0.9565
+F1 Score:  0.9749
+
+Confusion Matrix:
+[[343   2]
+ [ 15 330]]

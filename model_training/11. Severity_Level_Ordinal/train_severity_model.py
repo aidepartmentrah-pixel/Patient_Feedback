@@ -111,7 +111,7 @@ def main():
     preds_ord = train_ordinal(X_train, y_train, X_test, y_test)
     save_conf_matrix(y_test, preds_ord, "conf_matrix_ordinal.png")
 
-    print("\n✔ DONE: All severity models trained.")
+    print("\n✔ DONE: All severity vocab_models trained.")
     print("Reports saved:")
     print("  severity_eval_logistic.txt")
     print("  severity_eval_ordinal.txt")

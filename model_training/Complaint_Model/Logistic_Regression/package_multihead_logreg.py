@@ -1,7 +1,7 @@
 """
 package_multihead_logreg.py
 
-Utility for inference using trained multi-head Logistic Regression models
+Utility for inference using trained multi-head Logistic Regression vocab_models
 for: domain, category, sub_category, classification_ar
 
 Usage:
@@ -31,7 +31,7 @@ embedding_model = AutoModel.from_pretrained(BERT_NAME)
 embedding_model.eval()
 
 # Load all Logistic Regression heads
-print("Loading trained models...")
+print("Loading trained vocab_models...")
 models = {}
 for name, path in MODEL_PATHS.items():
     if path.exists():

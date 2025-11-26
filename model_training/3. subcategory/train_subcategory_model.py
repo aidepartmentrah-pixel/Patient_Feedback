@@ -137,7 +137,7 @@ def main():
             results[name] = {"accuracy": acc, "f1_macro": f1_macro, "report": report_txt, "y_pred": y_pred}
             print(f"{name} -> acc: {acc:.4f} | f1_macro: {f1_macro:.4f}")
 
-        # Save models
+        # Save vocab_models
         joblib.dump(logreg, MODEL_LOGREG)
         joblib.dump(rf, MODEL_RF)
         print(f"Saved models: {MODEL_LOGREG.name}, {MODEL_RF.name}")

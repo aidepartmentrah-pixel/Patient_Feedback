@@ -180,7 +180,7 @@ def train_three_models(X_train, y_train, X_test, y_test, out_dir: Path, label_na
     kept_mask_test[kept_positions] = True
 
     # ---------------- If we got here, we have training and test data ----------------
-    # Fit models on X_train_filtered / y_train_local, predict on X_test_final
+    # Fit vocab_models on X_train_filtered / y_train_local, predict on X_test_final
     try:
         # ---------------- LogReg ----------------
         lr = LogisticRegression(max_iter=3000, random_state=RANDOM_STATE)
@@ -507,7 +507,7 @@ def main():
 
         write_final_report("domain", final_truths["domain"], final_preds["domain"])
 
-        # -------------- CATEGORY (3 per-domain models → 1 global vector per algo) --------------
+        # -------------- CATEGORY (3 per-domain vocab_models → 1 global vector per algo) --------------
         for model_name in ["lr", "rf", "xgb"]:
             vec = np.full(n_test, np.nan)
 

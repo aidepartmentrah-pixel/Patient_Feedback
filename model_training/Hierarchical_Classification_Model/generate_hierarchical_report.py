@@ -76,7 +76,7 @@ def load_pred(prefix: str):
     def majority_vote(x):
         x = x[x >= 0]  # remove invalid predictions (-1)
         if len(x) == 0:
-            return -1  # if all models failed
+            return -1  # if all vocab_models failed
         return np.bincount(x).argmax()
 
     final_pred = np.apply_along_axis(majority_vote, axis=0, arr=stacked)
@@ -103,7 +103,7 @@ def generate_final_reports():
     write_report("domain", report)
 
     # --------------------------------------------------------
-    # 2) CATEGORY (merged from the 3 original domain models)
+    # 2) CATEGORY (merged from the 3 original domain vocab_models)
     # --------------------------------------------------------
     print("→ Loading CATEGORY predictions")
     y_true = np.load(YTRUE_CATEGORY)
@@ -113,7 +113,7 @@ def generate_final_reports():
     write_report("category", report)
 
     # --------------------------------------------------------
-    # 3) SUB-CATEGORY (merged from the 7 original category models)
+    # 3) SUB-CATEGORY (merged from the 7 original category vocab_models)
     # --------------------------------------------------------
     print("→ Loading SUB-CATEGORY predictions")
     y_true = np.load(YTRUE_SUBCAT)

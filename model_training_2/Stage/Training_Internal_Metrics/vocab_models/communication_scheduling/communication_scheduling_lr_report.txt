@@ -1,0 +1,11 @@
+Model: lr
+Metric: communication_scheduling
+
+Accuracy:  0.9626
+Precision: 0.9454
+Recall:    0.9820
+F1 Score:  0.9633
+
+Confusion Matrix:
+[[366  22]
+ [  7 381]]

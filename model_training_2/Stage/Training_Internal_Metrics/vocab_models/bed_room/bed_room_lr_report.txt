@@ -1,0 +1,11 @@
+Model: lr
+Metric: bed_room
+
+Accuracy:  0.9534
+Precision: 0.9454
+Recall:    0.9623
+F1 Score:  0.9538
+
+Confusion Matrix:
+[[476  28]
+ [ 19 485]]
