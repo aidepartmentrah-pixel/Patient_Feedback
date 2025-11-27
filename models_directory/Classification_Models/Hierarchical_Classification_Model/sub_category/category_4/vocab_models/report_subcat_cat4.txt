@@ -1,4 +1,4 @@
-=== SUBCATEGORY MODEL (CATEGORY = 4) ===
+=== SUBCATEGORY MODEL (CATEGORY = 1) ===
 
 
 ---- Logistic Regression ----
@@ -7,15 +7,15 @@ Classification Report:
               precision    recall  f1-score   support
 
           11       0.00      0.00      0.00         1
-          23       0.67      1.00      0.80         2
+          23       0.50      0.50      0.50         2
 
-    accuracy                           0.67         3
-   macro avg       0.33      0.50      0.40         3
-weighted avg       0.44      0.67      0.53         3
+    accuracy                           0.33         3
+   macro avg       0.25      0.25      0.25         3
+weighted avg       0.33      0.33      0.33         3
 
 Confusion Matrix:
 [[0 1]
- [0 2]]
+ [1 1]]
 
 
 ---- Random Forest ----
@@ -41,13 +41,13 @@ Classification Report:
               precision    recall  f1-score   support
 
           11       0.00      0.00      0.00         1
-          23       0.50      0.50      0.50         2
+          23       0.67      1.00      0.80         2
 
-    accuracy                           0.33         3
-   macro avg       0.25      0.25      0.25         3
-weighted avg       0.33      0.33      0.33         3
+    accuracy                           0.67         3
+   macro avg       0.33      0.50      0.40         3
+weighted avg       0.44      0.67      0.53         3
 
 Confusion Matrix:
 [[0 1]
- [1 1]]
+ [0 2]]
 

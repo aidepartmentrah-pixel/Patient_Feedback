@@ -1,4 +1,4 @@
-=== SUBCATEGORY MODEL (CATEGORY = 6) ===
+=== SUBCATEGORY MODEL (CATEGORY = 1) ===
 
 
 ---- Logistic Regression ----

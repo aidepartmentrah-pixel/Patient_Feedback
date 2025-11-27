@@ -1,13 +1,12 @@
 from datetime import datetime
 from api_layer import add_incident, edit_incident, fetch_incident_records, get_incident, delete_incident
-from api.universal_object import UniversalIncidentRecord
 
 # ------------------ 1. Add sample incidents ------------------
 incident1_id = add_incident(
     feedback_received_date=datetime.now(),
-    record_id="R001",
+    record_id="973429",
     patient_full_name="John Doe",
-    issuing_department="Cardiology",
+    issuing_department=1,
     target_department=101,
     source_1=1,
     feedback_type=1,
@@ -17,8 +16,6 @@ incident1_id = add_incident(
     classification_ar="تأخير",
     classification_en="Delay",
     complaint_text="Patient experienced delay in service.",
-    immediate_action="Apologized",
-    taken_action="Reviewed workflow",
     severity_level=2,
     stage="Admission",
     harm_level="Low",
@@ -30,7 +27,7 @@ incident2_id = add_incident(
     feedback_received_date=datetime.now(),
     record_id="R002",
     patient_full_name="Jane Smith",
-    issuing_department="Radiology",
+    issuing_department=2,
     target_department=102,
     source_1=2,
     feedback_type=2,
@@ -40,8 +37,6 @@ incident2_id = add_incident(
     classification_ar="نظافة",
     classification_en="Cleanliness",
     complaint_text="Patient complained about hygiene in waiting area.",
-    immediate_action="Cleaned area",
-    taken_action="Scheduled regular cleaning",
     severity_level=3,
     stage="Care",
     harm_level="Medium",
@@ -55,7 +50,7 @@ print(f"Added incident IDs: {incident1_id}, {incident2_id}")
 all_incidents = fetch_incident_records()
 print(f"\nAll incidents ({len(all_incidents)}):")
 for inc in all_incidents:
-    print(inc["record_id"], inc["patient_full_name"])
+    print(f"ID: {inc.unique_id}, Record: {inc.record_id}, Patient: {inc.patient_full_name}")
 
 # ------------------ 3. Edit the first incident ------------------
 edited_incident = edit_incident(
@@ -65,12 +60,14 @@ edited_incident = edit_incident(
     status=2
 )
 print(f"\nEdited incident ID {incident1_id}:")
-print(edited_incident)
+print(f"Updated complaint text: {edited_incident.Note if hasattr(edited_incident, 'Note') else edited_incident.note}")
 
 # ------------------ 4. Fetch a single incident by record_id ------------------
 single_incident = get_incident(record_id="R002")
 print(f"\nFetched single incident by record_id 'R002':")
-print(single_incident)
+print(f"Record ID: {single_incident.record_id}, Patient: {single_incident.patient_full_name}")
+for case in single_incident.cases:
+    print(f"  Case: {case.category}, Actions: {[a.immediate_action for a in case.actions]}")
 
 # ------------------ 5. Delete the first incident ------------------
 delete_success = delete_incident(incident1_id)
@@ -80,4 +77,4 @@ print(f"\nDelete incident ID {incident1_id} success: {delete_success}")
 post_delete_incidents = fetch_incident_records()
 print(f"\nIncidents after deletion ({len(post_delete_incidents)}):")
 for inc in post_delete_incidents:
-    print(inc["record_id"], inc["patient_full_name"])
+    print(f"ID: {inc.unique_id}, Record: {inc.record_id}, Patient: {inc.patient_full_name}")

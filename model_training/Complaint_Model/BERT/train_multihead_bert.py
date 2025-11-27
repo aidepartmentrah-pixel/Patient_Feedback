@@ -79,7 +79,7 @@ criterion = nn.CrossEntropyLoss()
 # ✅ TRAIN LOOP
 # ======================================
 def train_one_epoch(model, loader):
-    model.train()
+    model.train_category_domain2()
     total_loss = 0
     for batch in tqdm(loader, desc="Training", leave=False):
         optimizer.zero_grad()

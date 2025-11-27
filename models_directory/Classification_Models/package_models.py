@@ -7,6 +7,7 @@ import numpy as np
 import time
 
 
+
 DOMAIN_MAP = {
     1: "CLINICAL",
     2: "MANAGEMENT",
@@ -107,7 +108,7 @@ def classify_feedback(text_1, text_2, text_3, Print = False):
 
 
     severity_level_id = predict_severity_from_embedding(Patient_Embedding)
-    stage_id = classify_stage_Score_Based(Patient_Text)
+    stage_id = classify_stage_Score_Based(Patient_Text, Print)
 
     harm_result = predict_harm_from_embedding(Combined_Embedding)
     harm_level_id = harm_result["harm_level"]
@@ -142,14 +143,12 @@ def classify_feedback(text_1, text_2, text_3, Print = False):
         print(f"DOMAIN      : {result['domain']} ({result['domain_id']})")
         print(f"CATEGORY    : {result['category']} ({result['category_id']})")
         print(f"SUBCATEGORY : {result['sub_category']} ({result['sub_category_id']})")
-        print(f"SEVERITY    : {result['severity']} ({result['severity_id']})")
+        print(f"SEVERITY    : {result['severity_level']} ({result['severity_id']})")
         print(f"STAGE       : {result['stage']} ({result['stage_id']})")
         print(f"HARM LEVEL  : {result['harm_level']} ({result['harm_level_id']})")
         print("\n========================================================\n")
     return result
 
-import time
-import numpy as np
 
 def classify_feedback_timed(text_1, text_2, text_3, Print=False):
     timings = {}
@@ -251,6 +250,70 @@ def classify_feedback_timed(text_1, text_2, text_3, Print=False):
 
     return result
 
+def classify_feedback_encoded(text_1, text_2, text_3, Print = False):
+
+    #Text Identification
+    Patient_Text = text_1
+    Hospital_Text = text_2 + " "+  text_3
+    Combined_Text = Patient_Text + " " + Hospital_Text
+
+
+    #Text Embedding
+    Patient_Embedding_RAW = get_embedding(Patient_Text)
+    Patient_Embedding = np.frombuffer(Patient_Embedding_RAW, dtype=np.float32)
+
+    Hospital_Embedding_RAW = get_embedding(Hospital_Text)
+    Hospital_Embedding = np.frombuffer(Hospital_Embedding_RAW, dtype=np.float32)
+
+    Combined_Embedding_RAW = get_embedding(Combined_Text)
+    Combined_Embedding = np.frombuffer(Combined_Embedding_RAW, dtype=np.float32)
+
+
+
+    result_embedding = hierarchical_predict_embeddings(Patient_Embedding)
+    domain_id = result_embedding["domain"]
+    category_id = result_embedding["category"]
+    sub_category_id = result_embedding["subcategory"]
+
+
+    severity_level_id = predict_severity_from_embedding(Patient_Embedding)
+    stage_id = classify_stage_Score_Based(Patient_Text, Print)
+
+    harm_result = predict_harm_from_embedding(Combined_Embedding)
+    harm_level_id = harm_result["harm_level"]
+
+    result = {
+        "domain_id": domain_id,
+        "domain": DOMAIN_MAP.get(domain_id, f"UNKNOWN ({domain_id})"),
+
+        "category_id": category_id,
+        "category": CATEGORY_MAP.get(category_id, f"UNKNOWN ({category_id})"),
+
+        "sub_category_id": sub_category_id,
+        "sub_category": SUBCATEGORY_MAP.get(sub_category_id, f"UNKNOWN ({sub_category_id})"),
+
+        "severity_id": severity_level_id,
+        "severity_level": SEVERITY_MAP.get(severity_level_id, f"UNKNOWN ({severity_level_id})"),
+
+        "stage_id": stage_id,
+        "stage": STAGE_MAP.get(stage_id, f"UNKNOWN ({stage_id})"),
+
+        "harm_level_id": harm_level_id,
+        "harm_level": HARM_MAP.get(harm_level_id, f"UNKNOWN ({harm_level_id})"),
+    }
+
+    # ---------------------------------------------------------
+    # READABLE DESCRIPTION
+    # ---------------------------------------------------------
+    return {
+        "domain_id": domain_id,
+        "category_id": category_id,
+        "sub_category_id": sub_category_id,
+        "severity_id": severity_level_id,
+        "stage_id": stage_id,
+        "harm_level_id": harm_level_id
+    }
+
 
 
 if __name__ == "__main__":
@@ -261,6 +324,6 @@ if __name__ == "__main__":
     """
     Hospital_Feedback = ""
     Hospital_Feedback_2 = ""
-    result = classify_feedback_timed(Patient_Feedback, Hospital_Feedback, Hospital_Feedback_2, True)
+    result = classify_feedback(Patient_Feedback, Hospital_Feedback, Hospital_Feedback_2, True)
     print(result)
 

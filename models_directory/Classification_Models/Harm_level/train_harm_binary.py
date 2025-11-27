@@ -22,10 +22,9 @@ from sklearn.metrics import (
 import matplotlib.pyplot as plt
 import os
 
-
-# ---------------- CONFIG ----------------
-HERE = Path(__file__).resolve().parent
-DB_PATH = HERE.parent / "patient_feedback_ml.db"
+SCRIPT_DIR = Path(__file__).resolve().parent
+DB_PATH = (SCRIPT_DIR / ".." / ".." / "patient_feedback_ml.db").resolve()
+DB_PATH = os.path.abspath(DB_PATH)
 
 TRAIN_TABLE = "table_feedback_train"
 TEST_TABLE = "table_feedback_test"
@@ -33,9 +32,9 @@ TEST_TABLE = "table_feedback_test"
 EMBED_COL = "embedding_text123"
 TARGET_COL = "harm_level"
 
-MODEL_PATH = HERE / "Harm_BinaryModel.pkl"
-REPORT_PATH = HERE / "harm_binary_metrics.txt"
-CM_PATH = HERE / "harm_binary_confusion.png"
+MODEL_PATH = SCRIPT_DIR / "Harm_BinaryModel.pkl"
+REPORT_PATH = SCRIPT_DIR / "harm_binary_metrics.txt"
+CM_PATH = SCRIPT_DIR / "harm_binary_confusion.png"
 
 
 # ------------ Helpers ------------
@@ -79,8 +78,12 @@ def save_confusion_matrix(cm, labels, file):
     plt.close()
 
 
-# ------------ MAIN ------------
-def main():
+# ------------ TRAIN FUNCTION ------------
+def train_harm_binary():
+    """
+    Train binary harm level Logistic Regression model.
+    Returns: trained model and metrics dict
+    """
     try:
         df_train = load_table(DB_PATH, TRAIN_TABLE)
         df_test = load_table(DB_PATH, TEST_TABLE)
@@ -95,27 +98,40 @@ def main():
         y_train = df_train["harm_bin"].to_numpy()
         y_test = df_test["harm_bin"].to_numpy()
 
+        # Train model
         model = LogisticRegression(max_iter=2000)
         model.fit(X_train, y_train)
         y_pred = model.predict(X_test)
 
+        # Compute metrics
         acc = accuracy_score(y_test, y_pred)
         f1 = f1_score(y_test, y_pred, average="binary")
+        metrics = {"accuracy": acc, "f1": f1}
 
+        # Save report
         with open(REPORT_PATH, "w") as f:
             f.write(f"Accuracy: {acc}\n")
             f.write(f"F1: {f1}\n")
             f.write(classification_report(y_test, y_pred))
 
+        # Save confusion matrix
         cm = confusion_matrix(y_test, y_pred)
         save_confusion_matrix(cm, ["low", "high"], CM_PATH)
 
+        # Save model
         joblib.dump(model, MODEL_PATH)
-        print("Binary harm model trained.")
+        print("✔ Binary harm model trained.")
+
+        return model, metrics
 
     except Exception:
         traceback.print_exc()
+        return None, None
 
 
+# ------------ STANDALONE RUN ------------
 if __name__ == "__main__":
-    main()
+    model, metrics = train_harm_binary()
+    if metrics:
+        print("\nMetrics:")
+        print(json.dumps(metrics, indent=4))

@@ -1,61 +1,61 @@
 ======== DOMAIN CLASSIFICATION REPORT ========
 
 
-===== LogisticRegression =====
+===== lr =====
+
+Accuracy: 0.6022
+
+F1 Macro: 0.5161
+
+Classification Report:
+
+              precision    recall  f1-score   support
+
+           0       0.42      0.56      0.48        18
+           1       0.87      0.66      0.75        61
+           2       0.26      0.43      0.32        14
+
+    accuracy                           0.60        93
+   macro avg       0.52      0.55      0.52        93
+weighted avg       0.69      0.60      0.63        93
+
+
+
+===== rf =====
+
+Accuracy: 0.6989
+
+F1 Macro: 0.4291
+
+Classification Report:
+
+              precision    recall  f1-score   support
+
+           0       0.80      0.22      0.35        18
+           1       0.71      0.98      0.82        61
+           2       0.33      0.07      0.12        14
+
+    accuracy                           0.70        93
+   macro avg       0.61      0.43      0.43        93
+weighted avg       0.67      0.70      0.62        93
+
+
+
+===== xgb =====
 
 Accuracy: 0.7527
 
-F1 Macro: 0.6894
+F1 Macro: 0.6124
 
 Classification Report:
 
               precision    recall  f1-score   support
 
-           0       0.59      0.72      0.65        18
-           1       0.94      0.77      0.85        61
-           2       0.48      0.71      0.57        14
+           0       0.70      0.39      0.50        18
+           1       0.79      0.93      0.86        61
+           2       0.55      0.43      0.48        14
 
     accuracy                           0.75        93
-   macro avg       0.67      0.74      0.69        93
-weighted avg       0.80      0.75      0.77        93
-
-
-
-===== RandomForest =====
-
-Accuracy: 0.7742
-
-F1 Macro: 0.6163
-
-Classification Report:
-
-              precision    recall  f1-score   support
-
-           0       0.78      0.39      0.52        18
-           1       0.79      0.98      0.88        61
-           2       0.62      0.36      0.45        14
-
-    accuracy                           0.77        93
-   macro avg       0.73      0.58      0.62        93
-weighted avg       0.76      0.77      0.74        93
-
-
-
-===== XGBoost =====
-
-Accuracy: 0.7849
-
-F1 Macro: 0.6741
-
-Classification Report:
-
-              precision    recall  f1-score   support
-
-           0       0.83      0.56      0.67        18
-           1       0.86      0.92      0.89        61
-           2       0.44      0.50      0.47        14
-
-    accuracy                           0.78        93
-   macro avg       0.71      0.66      0.67        93
-weighted avg       0.79      0.78      0.78        93
+   macro avg       0.68      0.58      0.61        93
+weighted avg       0.74      0.75      0.73        93
 

@@ -1,7 +1,7 @@
 from api.universal_object import UniversalIncidentRecord, IncidentCase, CaseAction
 from db_layer import IncidentRequestDB, IncidentRequestCaseDB, IncidentRequestCaseActionDB  # adjust import
 from datetime import datetime
-
+from encoding_mapper import map_feedback_to_ids
 
 
 
@@ -24,108 +24,165 @@ def fetch_incident_records(
 ):
     """
     Fetch incidents with optional filters, including related cases and actions if requested.
-    Returns a list of incidents, each with optional 'cases' and 'actions' keys.
+    Returns a list of UniversalIncidentRecord objects.
     """
-    # ------------------ 1. Fetch incidents ------------------
-    incidents = IncidentRequestDB.get_records(
-        search_name=search_name,
-        issuing=issuing,
-        target=target,
-        feedback_category=feedback_category,
-        severity=severity,
-        stage=stage,
-        harm=harm,
-        domain=domain,
-        category=category,
-        subcategory=subcategory,
-        status=status,
-        start_date=start_date,
-        end_date=end_date
-    )
+    # ------------------ 1. Fetch incidents from DB ------------------
+    filters = {
+        "PatientName": search_name,
+        "SourceSectionID": issuing,
+        "SourceDepartmentID": target,
+        "IncidentRequesterTypeID": feedback_category,
+        "Severity": severity,
+        "Stage": stage,
+        "Harm": harm,
+        "Domain": domain,
+        "Category": category,
+        "SubCategory": subcategory,
+        "IncidentStatusID": status,
+        "DateAndTimeRecieved__start": start_date,
+        "DateAndTimeRecieved__end": end_date
+    }
+    incident_list = IncidentRequestDB.get_records(filters=filters)
 
-    # ------------------ 2. Attach cases ------------------
-    if include_cases:
-        for incident in incidents:
-            incident_id = incident.get("UniqueID")
-            cases = IncidentRequestCaseDB.get_records(incident_request_id=incident_id)
-            incident["cases"] = cases
+    universal_incidents = []
 
-            # ------------------ 3. Attach actions ------------------
-            if include_actions:
-                for case in incident["cases"]:
-                    case_id = case.get("UniqueID")
-                    actions = IncidentRequestCaseActionDB.get_records(case_id=case_id)
-                    case["actions"] = actions
+    # ------------------ 2. Convert each incident ------------------
+    for incident in incident_list:
+        u_incident = UniversalIncidentRecord(
+            unique_id=getattr(incident, "UniqueID", None),
+            feedback_received_date=getattr(incident, "DateAndTimeRecieved", None),
+            record_id=getattr(incident, "Code", None) or str(getattr(incident, "UniqueID", "")),
+            patient_full_name=getattr(incident, "PatientName", None),
+            issuing_department=getattr(incident, "SourceSectionID", None),
+            source_1=getattr(incident, "IncidentSourceID", None),
+            feedback_type=getattr(incident, "IncidentRequesterTypeID", None),
+            cases=[]
+        )
 
-    return incidents
+        if include_cases and u_incident.unique_id is not None:
+            # Fetch related cases
+            case_list = IncidentRequestCaseDB.get_records(filters={"IncidentRequestID": u_incident.unique_id})
+            for case in case_list:
+                incident_case = IncidentCase(
+                    domain=case.domain,
+                    category=case.category,
+                    sub_category=case.sub_category,
+                    classification_ar=case.classification_ar,
+                    classification_en=case.classification_en,
+                    complaint_text=case.complaint_text,
+                    severity_level=case.severity_level,
+                    stage=case.stage,
+                    harm_level=case.harm_level,
+                    status=case.status,
+                    target_department=case.target_department,
+                    actions=[]
+                )
+
+                if include_actions:
+                    # Fetch related actions
+                    actions_list = IncidentRequestCaseActionDB.get_records(
+                        filters={"IncidentRequestCaseID": getattr(case, "UniqueID", None)}
+                    )
+                    for action in actions_list:
+                        case_action = CaseAction(
+                            immediate_action=action.immediate_action,
+                            taken_action=action.taken_action,
+                            improvement_opportunity_type=action.improvement_opportunity_type
+                        )
+                        incident_case.actions.append(case_action)
+
+                # Append case to the incident
+                u_incident.cases.append(incident_case)
+
+        universal_incidents.append(u_incident)
+
+    return universal_incidents
 
 def add_incident(
     feedback_received_date=None,
     record_id=None,
     patient_full_name=None,
-    issuing_department=None,   # must be INT (SourceSectionID)
-    target_department=None,    # must be INT (SourceDepartmentID)
-    source_1=None,             # must be INT (IncidentSourceID)
-    feedback_type=None,        # must be INT (IncidentRequesterTypeID)
+    issuing_department=None,
+    target_department=None,
+    source_1=None,
+    feedback_type=None,
     domain=None,
     category=None,
     sub_category=None,
     classification_ar=None,
     classification_en=None,
     complaint_text=None,
-    immediate_action=None,
-    taken_action=None,
-    severity_level=None,       # must be INT
+    immediate_action =None,
+    taken_action = None,
+    severity_level=None,
     stage=None,
     harm_level=None,
-    status=None,               # must be INT
-    improvement_opportunity_type=None,
-    **extra_fields
+    status=None,
+    improvement_opportunity_type=None
 ):
     """
-    Add a new incident record safely with proper type handling for INT and string fields.
-
-    Returns:
-        int: UniqueID of the newly created incident.
+    Add a new incident record from raw UI data (strings/numbers).
+    Converts string values to DB IDs using map_feedback_to_ids.
+    Handles main incident, cases, and actions if provided in extra_fields['cases'].
+    Returns the new incident ID.
     """
-    incident_data = type("IncidentData", (), {})()  # empty object
 
-    # Required numeric fields with safe defaults
+    # ------------------ 1. Map UI strings to IDs ------------------
+    feedback_dict = {
+        "issuing_department": issuing_department,
+        "target_department": target_department,
+        "source_1": source_1,
+        "feedback_type": feedback_type,
+        "domain": domain,
+        "category": category,
+        "subcategory": sub_category,
+        "classification_ar": classification_ar,
+        "classification_en": classification_en,
+        "severity": severity_level,
+        "stage": stage,
+        "harm": harm_level,
+        "status": status,
+        "improvement_opportunity_type": improvement_opportunity_type,
+        "immediate_action" : immediate_action,
+        "taken_action":taken_action
+    }
+
+    ids_map = map_feedback_to_ids(feedback_dict)
+    # ------------------ 2. Build main incident object ------------------
+    incident_data = type("IncidentData", (), {})()
     incident_data.YearCounter = datetime.now().year
     incident_data.PatientTypeID = 0
     incident_data.DoctorID = 0
     incident_data.EmployeeID = 0
     incident_data.MRN = None
-
-    # Map API fields to DB-layer fields
     incident_data.DateAndTimeRecieved = feedback_received_date or datetime.now()
     incident_data.Code = record_id or f"REC-{datetime.now().timestamp()}"
     incident_data.PatientName = patient_full_name or "Unknown"
-    incident_data.SourceSectionID = int(issuing_department) if issuing_department else 0
-    incident_data.SourceDepartmentID = int(target_department) if target_department else 0
-    incident_data.Source = int(source_1) if source_1 else 0
-    incident_data.IncidentRequesterTypeID = int(feedback_type) if feedback_type else 1
-    incident_data.Domain = domain or "General"
-    incident_data.Category = category or "General"
-    incident_data.SubCategory = sub_category or "General"
+
+    # Use mapped IDs and fallback to None (safe for FK)
+    incident_data.SourceSectionID = ids_map.get("issuing_id") or None
+    incident_data.SourceDepartmentID = None  # will set per case if needed
+    incident_data.SourceAdminID = ids_map.get("admin_id") or None
+    incident_data.Source = ids_map.get("source_id") or None
+    incident_data.IncidentRequesterTypeID = ids_map.get("feedback_type_id") or None
+
+    # Default values
+    incident_data.Domain = "General"
+    incident_data.Category = "General"
+    incident_data.SubCategory = "General"
+    incident_data.Note = complaint_text or ""
     incident_data.ClassificationAR = classification_ar or ""
     incident_data.ClassificationEN = classification_en or ""
-    incident_data.Note = complaint_text or ""
-    incident_data.ImmediateAction = immediate_action or ""
-    incident_data.TakenAction = taken_action or ""
-    incident_data.Severity = int(severity_level) if severity_level else 1
+    incident_data.Severity = ids_map.get("severity_id") or 1
     incident_data.Stage = stage or ""
     incident_data.Harm = harm_level or ""
-    incident_data.Status = int(status) if status else 1
+    incident_data.Status = ids_map.get("status_id") or 1
     incident_data.ImprovementOpportunityType = bool(improvement_opportunity_type) if improvement_opportunity_type is not None else False
 
-    # Extra fields from DB-layer if needed
-    for key, value in extra_fields.items():
-        setattr(incident_data, key, value)
+    # ------------------ 3. Add main incident ------------------
+    new_incident_id = IncidentRequestDB.add(incident_data)
 
-    # Add the record via DB-layer
-    new_id = IncidentRequestDB.add(incident_data)
-    return new_id
+    return new_incident_id
 
 def edit_incident(
     unique_id,
@@ -258,27 +315,31 @@ def edit_incident(
 
 def delete_incident(unique_id: int) -> bool:
     """
-    Delete an incident record by its UniqueID.
+    Soft-delete an incident record by its UniqueID, including related cases and actions.
     Returns True if deletion was successful, False otherwise.
     """
     try:
-        # Delete related actions first
-        cases = IncidentRequestCaseDB.get_records(incident_request_id=unique_id)
+        # ------------------ 1. Fetch all cases for this incident ------------------
+        cases = IncidentRequestCaseDB.get_records(filters={"IncidentRequestID": unique_id})
+
+        # ------------------ 2. Delete related actions ------------------
         for case in cases:
             case_id = case.get("UniqueID")
-            IncidentRequestCaseActionDB.edit(case_id, {"Status": "Deleted"})  # Optional soft-delete
-            # Or to hard delete, you can add a DB-layer delete function
+            actions = IncidentRequestCaseActionDB.get_records(filters={"IncidentRequestCaseID": case_id})
+            for action in actions:
+                action_id = action.get("UniqueID")
+                IncidentRequestCaseActionDB.edit(action_id, {"Status": "Deleted"})  # soft-delete
 
-        # Delete related cases
+        # ------------------ 3. Delete related cases ------------------
         for case in cases:
             case_id = case.get("UniqueID")
-            # Implement hard delete if needed; for now, we could soft delete:
-            IncidentRequestCaseDB.edit(case_id, {"Status": "Deleted"})
+            IncidentRequestCaseDB.edit(case_id, {"Status": "Deleted"})  # soft-delete
 
-        # Delete main incident (soft delete example)
+        # ------------------ 4. Delete main incident ------------------
         IncidentRequestDB.edit(type("IncidentData", (), {"UniqueID": unique_id, "Status": "Deleted"})())
 
         return True
+
     except Exception as e:
         print(f"Error deleting incident: {e}")
         return False
@@ -292,30 +353,31 @@ def get_incident(unique_id: int = None, record_id: str = None) -> UniversalIncid
     if unique_id is None and record_id is None:
         raise ValueError("Either unique_id or record_id must be provided")
 
-    # Fetch record
+    # ------------------ 1. Fetch the incident ------------------
+    filters = {}
     if unique_id:
-        records = IncidentRequestDB.get_records()
-        incident_dict_list = [i for i in records if i.get("UniqueID") == unique_id]
-    else:
-        incident_dict_list = IncidentRequestDB.get_records(search_name=record_id)
+        filters["UniqueID"] = unique_id
+    elif record_id:
+        filters["Code"] = record_id
 
-    if not incident_dict_list:
+    incident_list = IncidentRequestDB.get_records(filters=filters)
+    if not incident_list:
         return None
 
-    incident_dict = incident_dict_list[0]
+    incident_dict = incident_list[0]
 
-    # Build UniversalIncidentRecord
+    # ------------------ 2. Build UniversalIncidentRecord ------------------
     universal_incident = UniversalIncidentRecord(
         feedback_received_date=incident_dict.get("DateAndTimeRecieved"),
         record_id=incident_dict.get("Code"),
         patient_full_name=incident_dict.get("PatientName"),
-        issuing_department=incident_dict.get("SourceDepartmentName"),
-        source_1=incident_dict.get("Source"),
+        issuing_department=incident_dict.get("SourceSectionID"),
+        source_1=incident_dict.get("IncidentSourceID"),
         feedback_type=incident_dict.get("IncidentRequesterTypeID"),
     )
 
-    # Attach cases and actions
-    cases = IncidentRequestCaseDB.get_records(incident_request_id=incident_dict.get("UniqueID"))
+    # ------------------ 3. Attach cases ------------------
+    cases = IncidentRequestCaseDB.get_records(filters={"IncidentRequestID": incident_dict.get("UniqueID")})
     for case_dict in cases:
         incident_case = IncidentCase(
             domain=case_dict.get("IncidentCaseCategoryID"),
@@ -331,12 +393,12 @@ def get_incident(unique_id: int = None, record_id: str = None) -> UniversalIncid
             target_department=case_dict.get("SectionID"),
         )
 
-        # Attach actions for this case
-        actions = IncidentRequestCaseActionDB.get_records(case_id=case_dict.get("UniqueID"))
+        # ------------------ 4. Attach actions for this case ------------------
+        actions = IncidentRequestCaseActionDB.get_records(filters={"IncidentRequestCaseID": case_dict.get("UniqueID")})
         for action_dict in actions:
             case_action = CaseAction(
                 immediate_action=action_dict.get("Description"),
-                taken_action=action_dict.get("SectionNote"),
+                taken_action=action_dict.get("SectionNote") or action_dict.get("DepartmentNote"),
                 improvement_opportunity_type=action_dict.get("IsImprovementForm")
             )
             incident_case.actions.append(case_action)

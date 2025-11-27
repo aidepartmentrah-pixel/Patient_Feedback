@@ -1,19 +1,16 @@
-
-import os
-import json
+from models_directory.Classification_Models.Stage.modular_functions import get_embedding
 import numpy as np
 import joblib
-import torch
-from transformers import AutoTokenizer, AutoModel
-from models_directory.Classification_Models.Stage.modular_functions import get_embedding
+import os
 
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, "Severity_OrdinalModel.pkl")
-severity_model = joblib.load(MODEL_PATH)
+
 
 
 def predict_severity_from_embedding(emb: np.ndarray) -> int:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    MODEL_PATH = os.path.join(BASE_DIR, "Severity_OrdinalModel.pkl")
+    severity_model = joblib.load(MODEL_PATH)
     """
     emb (768D vector) → model → severity level (1–4)
     """
@@ -34,6 +31,8 @@ if __name__ == "__main__":
     print(example_text)
     emb = get_embedding(example_text)
     emb = np.frombuffer(emb, dtype=np.float32)
+
+
     severity_embedding = predict_severity_from_embedding(emb)
     severity_text = predict_severity(example_text)
 

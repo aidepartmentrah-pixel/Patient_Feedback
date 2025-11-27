@@ -7,7 +7,7 @@ import os
 
 
 
-
+#This is not Used
 def classify_stage_Numerical(sentence: str) -> str:
     # Path to the trained model folder
     MODEL_DIR = r"/models_directory/Stage/Training_Internal_Metrics/vocab_models/train_ML_Metric_Mapper_Numeric"
@@ -47,6 +47,8 @@ def classify_stage_Numerical(sentence: str) -> str:
     # Map numeric → label text
     return label_map.get(str(int(pred)), None)
 
+
+#The method Used
 def classify_stage_Score_Based(sentence: str, Troubleshoot = False):
     STAGE_GROUPS = {
         "admission": [

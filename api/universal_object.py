@@ -25,6 +25,7 @@ class IncidentCase:
 
 @dataclass
 class UniversalIncidentRecord:
+    unique_id: Optional[int] = None  # DB primary key
     feedback_received_date: Optional[datetime] = None    # IncidentRequest.DateAndTimeRecieved
     record_id: Optional[str] = None                      # IncidentRequest.Code or UniqueID
     patient_full_name: Optional[str] = None              # IncidentRequest.PatientName

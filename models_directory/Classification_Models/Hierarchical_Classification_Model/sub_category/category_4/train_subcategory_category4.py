@@ -1,123 +1,99 @@
 import os
 import json
-import sqlite3
 import numpy as np
-import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import  classification_report,confusion_matrix
 import joblib
 
-# ============================
-# PATHS
-# ============================
+from models_directory.Classification_Models.Hierarchical_Classification_Model.Helper_Functions import load_table,parse_embedding,parse_embedding_series,compute_metrics
 
-DB_PATH = r"/models_directory\patient_feedback_ml.db"
 
-TABLE_TRAIN = "table_feedback_train"
-TABLE_TEST = "table_feedback_test"
-
-EMBED_COL = "embedding_text1"
-DOMAIN_COL = "domain"
-CATEGORY_COL = "category"
-SUBCAT_COL = "sub_category"
-
-TARGET_CATEGORY = 4     # CATEGORY 4
-
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_DIR = os.path.join(SCRIPT_DIR, "vocab_models")
-os.makedirs(MODEL_DIR, exist_ok=True)
 
 # ============================
-# HELPERS
+# TRAIN FUNCTION
 # ============================
 
-def load_table(db_path, table):
-    conn = sqlite3.connect(db_path)
-    df = pd.read_sql_query(f"SELECT * FROM {table}", conn)
-    conn.close()
-    return df
+def train_subcategory_cat4():
+    """
+    Train Logistic Regression, Random Forest, and XGBoost for subcategories of CATEGORY=1.
+    Returns trained models and metrics dictionary.
+    """
 
-def parse_embedding(v):
-    if isinstance(v, list):
-        return np.asarray(v, dtype=float)
-    if isinstance(v, str):
-        s = v.strip()
-        if s.startswith("[") and s.endswith("]"):
-            return np.asarray(json.loads(s), dtype=float)
-        return np.asarray([float(x) for x in s.split(",")], dtype=float)
-    if isinstance(v, (bytes, bytearray)):
-        arr = np.frombuffer(v, dtype=np.float32)
-        return arr.astype(float)
-    raise ValueError(f"Unexpected embedding type: {type(v)}")
+    # ---------- Paths ----------
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-def parse_embedding_series(series):
-    return np.vstack([parse_embedding(v) for v in series])
+    DB_PATH = os.path.join(SCRIPT_DIR, "..", "..", "..", "..",  "patient_feedback_ml.db")
+    DB_PATH = os.path.abspath(DB_PATH)
 
-# ============================
-# MAIN
-# ============================
+    MODEL_DIR = os.path.join(SCRIPT_DIR, "vocab_models")
+    os.makedirs(MODEL_DIR, exist_ok=True)
 
-def main():
+    TABLE_TRAIN = "table_feedback_train"
+    TABLE_TEST = "table_feedback_test"
+    EMBED_COL = "embedding_text1"
+    CATEGORY_COL = "category"
+    SUBCAT_COL = "sub_category"
+    TARGET_CATEGORY = 4
 
-    print("\n===== SUBCATEGORY MODEL (CATEGORY = 4) =====")
+    REPORT_FILE = os.path.join(MODEL_DIR, "report_subcat_cat4.txt")
 
+    # ---------- Load Data ----------
+    print("Loading train/test tables...")
     df_train = load_table(DB_PATH, TABLE_TRAIN)
     df_test = load_table(DB_PATH, TABLE_TEST)
 
-    # Filter to category=4
+    # Filter by category
     df_train = df_train[df_train[CATEGORY_COL] == TARGET_CATEGORY]
     df_test = df_test[df_test[CATEGORY_COL] == TARGET_CATEGORY]
 
-    # ----------------------------------------------
-    # KEEP ONLY VALID SUBCATEGORIES
-    # ----------------------------------------------
-    VALID_LABELS = {11, 23}
-    df_train = df_train[df_train[SUBCAT_COL].isin(VALID_LABELS)]
-    df_test = df_test[df_test[SUBCAT_COL].isin(VALID_LABELS)]
-    # ----------------------------------------------
+    print(f"Train rows: {len(df_train)}, Test rows: {len(df_test)}")
 
-    print(f"Train rows after filtering → {len(df_train)}")
-    print(f"Test rows after filtering → {len(df_test)}")
-
-    # Parse embeddings
     X_train = parse_embedding_series(df_train[EMBED_COL])
     X_test = parse_embedding_series(df_test[EMBED_COL])
-
-    # Use real labels directly
     y_train = df_train[SUBCAT_COL].astype(int).values
     y_test = df_test[SUBCAT_COL].astype(int).values
 
     unique_labels = sorted(np.unique(y_train).tolist())
-    print(f"Subcategory labels used in TRAIN: {unique_labels}")
+    mask = np.isin(y_test, unique_labels)
+    X_test = X_test[mask]
+    y_test = y_test[mask]
 
-    # ============================
-    # TRAIN MODELS
-    # ============================
+    unique_labels = sorted(np.unique(y_train).tolist())
+    print(f"Subcategory labels used: {unique_labels}")
 
-    print("Training LR...")
+    trained_models = {}
+    results = {}
+
+    # ---------- Logistic Regression ----------
+    print("Training Logistic Regression...")
     lr = LogisticRegression(max_iter=5000, class_weight="balanced")
     lr.fit(X_train, y_train)
     joblib.dump(lr, os.path.join(MODEL_DIR, "lr_subcat_cat4.pkl"))
+    lr_pred = lr.predict(X_test)
+    results["LogisticRegression"] = compute_metrics(y_test, lr_pred, all_labels=unique_labels)
 
-    print("Training RF...")
-    rf = RandomForestClassifier(
-        n_estimators=400,
-        class_weight="balanced",
-        random_state=42
-    )
+    trained_models["lr"] = lr
+
+    # ---------- Random Forest ----------
+    print("Training Random Forest...")
+    rf = RandomForestClassifier(n_estimators=400, class_weight="balanced", random_state=42)
     rf.fit(X_train, y_train)
     joblib.dump(rf, os.path.join(MODEL_DIR, "rf_subcat_cat4.pkl"))
+    rf_pred = rf.predict(X_test)
+    results["RandomForest"] = compute_metrics(y_test, rf_pred, all_labels=unique_labels)
 
-    # XGBoost temporary label mapping
+    trained_models["rf"] = rf
+
+    # ---------- XGBoost ----------
+    print("Training XGBoost...")
     label_to_temp = {v: i for i, v in enumerate(unique_labels)}
     temp_to_label = {i: v for v, i in label_to_temp.items()}
 
     y_train_temp = np.array([label_to_temp[v] for v in y_train])
     y_test_temp = np.array([label_to_temp[v] for v in y_test])
 
-    print("Training XGB...")
     xgb = XGBClassifier(
         objective="multi:softprob",
         num_class=len(unique_labels),
@@ -133,38 +109,27 @@ def main():
     xgb.fit(X_train, y_train_temp)
     xgb.save_model(os.path.join(MODEL_DIR, "xgb_subcat_cat4.json"))
 
-    # ============================
-    # EVALUATION
-    # ============================
+    preds_temp = xgb.predict(X_test)
+    if preds_temp.ndim == 2:
+        preds_temp = np.argmax(preds_temp, axis=1)
+    preds_xgb = np.array([temp_to_label[int(v)] for v in preds_temp])
+    results["XGBoost"] = compute_metrics(y_test, preds_xgb, all_labels=unique_labels)
+    trained_models["xgb"] = xgb
 
-    report_path = os.path.join(MODEL_DIR, "report_subcat_cat4.txt")
-    with open(report_path, "w", encoding="utf-8") as f:
-
-        f.write("=== SUBCATEGORY MODEL (CATEGORY = 4) ===\n\n")
-
-        for name, model in [
-            ("Logistic Regression", lr),
-            ("Random Forest", rf),
-            ("XGBoost", xgb)
-        ]:
+    # ---------- Generate Report ----------
+    with open(REPORT_FILE, "w", encoding="utf-8") as f:
+        f.write("=== SUBCATEGORY MODEL (CATEGORY = 1) ===\n\n")
+        for name, model in [("Logistic Regression", lr), ("Random Forest", rf), ("XGBoost", xgb)]:
             f.write(f"\n---- {name} ----\n")
-
             if name == "XGBoost":
-                preds_raw = model.predict(X_test)
-
-                if preds_raw.ndim == 2:
-                    preds_temp = np.argmax(preds_raw, axis=1)
-                else:
-                    preds_temp = preds_raw.astype(int)
-
-                preds = np.array([temp_to_label[int(v)] for v in preds_temp])
-
+                preds = preds_xgb
+            elif name == "Random Forest":
+                preds = rf_pred
             else:
-                preds = model.predict(X_test)
+                preds = lr_pred
 
             f.write("\nClassification Report:\n")
-            f.write(classification_report(y_test, preds))
-
+            f.write(classification_report(y_test, preds, zero_division=0))
             cm = confusion_matrix(y_test, preds)
             f.write("\nConfusion Matrix:\n")
             f.write(str(cm))
@@ -173,9 +138,16 @@ def main():
     print("==========================================")
     print("✔ SUBCATEGORY MODEL (CATEGORY=4) TRAINED")
     print("✔ MODELS SAVED IN:", MODEL_DIR)
-    print("✔ REPORT SAVED:", report_path)
+    print("✔ REPORT SAVED:", REPORT_FILE)
     print("==========================================\n")
 
+    return trained_models, results
+
+# ============================
+# STANDALONE RUN
+# ============================
 
 if __name__ == "__main__":
-    main()
+    models, metrics = train_subcategory_cat4()
+    print("\nMetrics per model:")
+    print(json.dumps(metrics, indent=4))

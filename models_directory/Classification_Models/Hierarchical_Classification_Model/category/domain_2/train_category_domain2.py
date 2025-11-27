@@ -1,135 +1,93 @@
 import os
 import json
-import sqlite3
 import numpy as np
-import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import  classification_report,confusion_matrix
 import joblib
 
-
-
-# ============================
-# PATHS
-# ============================
-
-DB_PATH = r"/models_directory\patient_feedback_ml.db"
-
-TABLE_TRAIN = "table_feedback_train"
-TABLE_TEST = "table_feedback_test"
-
-EMBED_COL = "embedding_text1"
-DOMAIN_COL = "domain"
-CATEGORY_COL = "category"   # <-- labels here are 2 and 3
-
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_DIR = os.path.join(SCRIPT_DIR, "vocab_models")
-os.makedirs(MODEL_DIR, exist_ok=True)
-
+from models_directory.Classification_Models.Hierarchical_Classification_Model.Helper_Functions import load_table,parse_embedding,parse_embedding_series,compute_metrics
 
 # ============================
-# HELPERS
+# MAIN TRAIN FUNCTION
 # ============================
 
-def load_table(db_path, table):
-    conn = sqlite3.connect(db_path)
-    df = pd.read_sql_query(f"SELECT * FROM {table}", conn)
-    conn.close()
-    return df
+def train_category_domain2():
+    table_train="table_feedback_train"
+    table_test="table_feedback_test"
+    domain=2
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+    # Database folder: 4 levels up, then 'models_directory'
+    db_path = os.path.join(SCRIPT_DIR, "..", "..", "..", "..", "patient_feedback_ml.db")
+    db_path = os.path.abspath(db_path)
+    model_dir = os.path.join(SCRIPT_DIR, "vocab_models")
 
+    """Train LR, RF, XGB for a given domain and return trained models + metrics"""
 
-def parse_embedding(v):
-    """Accept: list, JSON string, comma-separated string, bytes."""
-    if isinstance(v, list):
-        return np.asarray(v, dtype=float)
+    # ---------- Paths ----------
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    if db_path is None:
+        db_path = os.path.join(BASE_DIR, "models_directory", "patient_feedback_ml.db")
+    if model_dir is None:
+        model_dir = os.path.join(BASE_DIR, "vocab_models")
+    os.makedirs(model_dir, exist_ok=True)
 
-    if isinstance(v, str):
-        s = v.strip()
-        if s.startswith("[") and s.endswith("]"):
-            return np.asarray(json.loads(s), dtype=float)
-        return np.asarray([float(x) for x in s.split(",")], dtype=float)
+    # ---------- Load Data ----------
+    df_train = load_table(db_path, table_train)
+    df_test = load_table(db_path, table_test)
 
-    if isinstance(v, (bytes, bytearray)):
-        try:
-            arr = np.frombuffer(v, dtype=np.float32)
-            return arr.astype(float)
-        except:
-            raise ValueError("Failed to decode BLOB embedding")
+    df_train = df_train[df_train["domain"] == domain]
+    df_test = df_test[df_test["domain"] == domain]
 
-    raise ValueError(f"Unexpected embedding type: {type(v)}")
+    print(f"Train rows: {len(df_train)}, Test rows: {len(df_test)}")
 
+    X_train = parse_embedding_series(df_train["embedding_text1"])
+    X_test = parse_embedding_series(df_test["embedding_text1"])
+    y_train = df_train["category"].astype(int).values
+    y_test = df_test["category"].astype(int).values
 
-def parse_embedding_series(series):
-    return np.vstack([parse_embedding(v) for v in series])
+    print(f"Labels: {np.unique(y_train).tolist()}")
 
+    results = {}
+    trained_models = {}
 
-# ============================
-# MAIN
-# ============================
-
-def main():
-
-
-    print("\n===== CATEGORY MODEL (DOMAIN = 1) =====")
-
-    df_train = load_table(DB_PATH, TABLE_TRAIN)
-    df_test = load_table(DB_PATH, TABLE_TEST)
-
-    # Filter to domain=1
-    df_train = df_train[df_train[DOMAIN_COL] == 2]
-    df_test = df_test[df_test[DOMAIN_COL] == 2]
-
-    print(f"Train rows after filtering domain=1 → {len(df_train)}")
-    print(f"Test rows after filtering domain=1 → {len(df_test)}")
-
-    # Parse embeddings
-    X_train = parse_embedding_series(df_train[EMBED_COL])
-    X_test = parse_embedding_series(df_test[EMBED_COL])
-
-    # IMPORTANT: keep labels 5 and 7 exactly as they are
-    y_train = df_train[CATEGORY_COL].astype(int).values
-    y_test = df_test[CATEGORY_COL].astype(int).values
-
-    print(f"Labels used: {np.unique(y_train).tolist()} (should be [2 , 3])")
-
-    # ============================
-    # TRAIN MODELS
-    # ============================
-
-    # Logistic Regression
-    print("Training LR...")
+    # ---------- Logistic Regression ----------
+    print("Training Logistic Regression...")
     lr = LogisticRegression(max_iter=5000, class_weight="balanced")
     lr.fit(X_train, y_train)
-    joblib.dump(lr, os.path.join(MODEL_DIR, "lr_category_domain2.pkl"))
+    joblib.dump(lr, os.path.join(model_dir, f"lr_category_domain{domain}.pkl"))
 
-    # Random Forest
-    print("Training RF...")
+    lr_pred = lr.predict(X_test)
+    results["LogisticRegression"] = compute_metrics(y_test, lr_pred)
+    trained_models["lr"] = lr
+
+    # ---------- Random Forest ----------
+    print("Training Random Forest...")
     rf = RandomForestClassifier(
         n_estimators=400,
         class_weight="balanced",
         random_state=42
     )
     rf.fit(X_train, y_train)
-    joblib.dump(rf, os.path.join(MODEL_DIR, "rf_category_domain2.pkl"))
+    joblib.dump(rf, os.path.join(model_dir, f"rf_category_domain{domain}.pkl"))
 
-    # ------------------------------------------
-    # XGBoost requires labels 0..n
-    # ------------------------------------------
+    rf_pred = rf.predict(X_test)
+    results["RandomForest"] = compute_metrics(y_test, rf_pred)
+    trained_models["rf"] = rf
 
-    # Map original labels -> temp 0/1
-    label_to_temp = {2: 0, 3: 1}
-    temp_to_label = {0: 2, 1: 3}
+    # ---------- XGBoost ----------
+    print("Training XGBoost...")
+    # Map labels to 0..n
+    label_to_temp = {v: i for i, v in enumerate(np.unique(y_train))}
+    temp_to_label = {i: v for v, i in label_to_temp.items()}
 
     y_train_temp = np.array([label_to_temp[v] for v in y_train])
     y_test_temp = np.array([label_to_temp[v] for v in y_test])
 
-    print("Training XGB... (internally using 0 and 1)")
-
     xgb = XGBClassifier(
         objective="multi:softprob",
-        num_class=2,
+        num_class=len(label_to_temp),
         eval_metric="mlogloss",
         learning_rate=0.1,
         max_depth=6,
@@ -140,46 +98,23 @@ def main():
         random_state=42
     )
     xgb.fit(X_train, y_train_temp)
-    xgb.save_model(os.path.join(MODEL_DIR, "xgb_category_domain2.json"))
+    xgb.save_model(os.path.join(model_dir, f"xgb_category_domain{domain}.json"))
 
-    # ============================
-    # EVALUATION
-    # ============================
+    preds_temp = xgb.predict(X_test)
+    if preds_temp.ndim == 2:  # probabilities
+        preds_temp = np.argmax(preds_temp, axis=1)
+    preds_xgb = np.array([temp_to_label[int(v)] for v in preds_temp])
+    results["XGBoost"] = compute_metrics(y_test, preds_xgb)
+    trained_models["xgb"] = xgb
 
-    report_path = os.path.join(MODEL_DIR, "report_category_domain1.txt")
-    with open(report_path, "w", encoding="utf-8") as f:
+    print("Training complete for domain", domain)
+    return trained_models, results
 
-        f.write("=== CATEGORY MODEL (DOMAIN 1) ===\n\n")
-
-        for name, model in [
-            ("Logistic Regression", lr),
-            ("Random Forest", rf),
-            ("XGBoost", xgb)
-        ]:
-            f.write(f"\n---- {name} ----\n")
-
-            # XGBoost → probability matrix → convert to 5/7
-            if name == "XGBoost":
-                preds_temp = model.predict(X_test)  # shape (N,2)
-                preds_temp = np.argmax(preds_temp, axis=1)  # 0/1
-                preds = np.array([temp_to_label[int(v)] for v in preds_temp])
-            else:
-                preds = model.predict(X_test)  # already 5/7
-
-            f.write("\nClassification Report:\n")
-            f.write(classification_report(y_test, preds))
-
-            cm = confusion_matrix(y_test, preds)
-            f.write("\nConfusion Matrix:\n")
-            f.write(str(cm))
-            f.write("\n\n")
-
-    print("==========================================")
-    print("✔ CATEGORY MODEL FOR DOMAIN=1 TRAINED")
-    print("✔ MODELS SAVED IN:", MODEL_DIR)
-    print("✔ REPORT SAVED:", report_path)
-    print("==========================================\n")
-
+# ============================
+# STANDALONE RUN
+# ============================
 
 if __name__ == "__main__":
-    main()
+    models, metrics = train_category_domain2()
+    print("\nMetrics per model:")
+    print(json.dumps(metrics, indent=4))

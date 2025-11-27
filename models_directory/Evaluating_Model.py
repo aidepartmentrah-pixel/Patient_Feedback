@@ -3,7 +3,7 @@ from tqdm import tqdm
 from sklearn.metrics import classification_report, accuracy_score
 from datetime import datetime
 
-from models_directory.Classification_Models.package_models import classify_feedback
+from models_directory.Classification_Models.package_models import classify_feedback_encoded
 
 DB_PATH = "patient_feedback_ml.db"
 TABLE_NAME = "table_feedback_test"
@@ -64,7 +64,7 @@ def evaluate_model():
         t_stage = row[5]
         t_harm = row[6]
 
-        result = classify_feedback(
+        result = classify_feedback_encoded(
             complaint,
             "",
             "",

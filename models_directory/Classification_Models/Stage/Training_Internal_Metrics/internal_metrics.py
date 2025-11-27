@@ -115,7 +115,7 @@ def predict_sentence_metrics(text, top_k=13, Troubleshoot = False):
 
     return results[:top_k]
 
-def predict_metrics_from_embedding(normalized_vec):
+def predict_metrics_from_embedding(normalized_vec,Troubleshoot):
     METRICS = [
         "administration_delay",
         "arrival",
@@ -132,7 +132,6 @@ def predict_metrics_from_embedding(normalized_vec):
         "staff_security_behavior"
     ]
 
-    # Fix: resolve absolute path like in predict_sentence_metrics
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     MODEL_ROOT = os.path.join(BASE_DIR, "vocab_models")
 
@@ -161,6 +160,15 @@ def predict_metrics_from_embedding(normalized_vec):
 
         score = sum(preds) / len(preds)
         results.append((metric, score))
+
+    if Troubleshoot:
+        print("\n==============================")
+        print("==============================")
+        for metric, score in results:
+            print(f"{metric:<35} → {score:.4f}")
+
+
+    return results
 
     results.sort(key=lambda x: x[1], reverse=True)
     return results
@@ -211,7 +219,7 @@ def split_max_score(paragraph: str, Troubleshoot=False) -> Tuple[List[Tuple[str,
         try:
             emb = np.frombuffer(emb_bytes, dtype=np.float32)
             vector = l2_normalize(emb)
-            raw_scores = predict_metrics_from_embedding(vector)  # returns list of (metric, score)
+            raw_scores = predict_metrics_from_embedding(vector,Troubleshoot)  # returns list of (metric, score)
             seg_scores = {m: s for m, s in raw_scores}
         except Exception:
             seg_scores = {k: 0.0 for k in _METRIC_EMB.keys()}
@@ -225,9 +233,6 @@ def split_max_score(paragraph: str, Troubleshoot=False) -> Tuple[List[Tuple[str,
 
     sorted_metrics = sorted(metric_max.items(), key=lambda kv: kv[1], reverse=True)
     return sorted_metrics, per_segment_scores
-
-
-
 
 
 

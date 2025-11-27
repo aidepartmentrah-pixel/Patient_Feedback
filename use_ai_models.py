@@ -1,4 +1,4 @@
-from models_directory.Classification_Models.package_models import classify_feedback
+from models_directory.Classification_Models.package_models import classify_feedback_encoded
 
 
 if __name__ == "__main__":
@@ -7,6 +7,6 @@ if __name__ == "__main__":
     """
     Hospital_Feedback = ""
     Hospital_Feedback_2 = ""
-    print(classify_feedback(Patient_Feedback, Hospital_Feedback, Hospital_Feedback_2))
+    print(classify_feedback_encoded(Patient_Feedback, Hospital_Feedback, Hospital_Feedback_2))
 
 
