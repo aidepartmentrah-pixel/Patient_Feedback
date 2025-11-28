@@ -117,7 +117,6 @@ issuing_departments = [
     "وحدة عيادات القلب- تمريض",
     "وحدة ما قبل الدخول"
 ]
-
 target_departments = [
     "Call Center",
     "cardiac 1",
@@ -188,16 +187,14 @@ target_departments = [
     "وحدة عيادات القلب- تمريض",
     "وحدة ما قبل الدخول"
 ]
-feedback_categories = [
-    "جولات",
-    "حضور",
-    "خط ساخن",
-    "صندوق",
-    "مشرف",
-    "موظف",
-    "واتساب مكتب",
-    "وسائل التواصل",
-    "فرصة تحسين"
+category = [
+    "Communication",
+    "Environement",
+    "Institutional Processes",
+    "Listening",
+    "Quality of Care",
+    "Respect & Patient Rights",
+    "Safety"
 ]
 sub_categories = [
     "Neglect -General",
@@ -259,7 +256,7 @@ status = [
 
 issuing_departments_all = ["All"] + issuing_departments
 target_departments_all = ["All"] + target_departments
-feedback_categories_all = ["All"] + feedback_categories
+feedback_categories_all = ["All"] + category
 sub_categories_all = ["All"] + sub_categories
 severity_all = ["All"] + severity
 stage_all = ["All"] + stage
@@ -286,7 +283,7 @@ if page == "Table View":
         selected_target = st.selectbox("Filter by Target Department", ["All"] + target_departments)
 
     with row1_c4:
-        selected_feedback_category = st.selectbox("Filter by Source", ["All"] + feedback_categories)
+        selected_feedback_category = st.selectbox("Filter by Source", ["All"] + category)
 
     st.markdown("")  # spacing
 

@@ -1,3 +1,6 @@
+import datetime
+import json
+import os
 
 from models_directory.Classification_Models.Hierarchical_Classification_Model.domain.train_domain_model import train_domain_models
 from models_directory.Classification_Models.Hierarchical_Classification_Model.category.domain_1.train_category_domain1 import train_category_domain1
@@ -16,51 +19,87 @@ from models_directory.Classification_Models.Harm_level.train_harm_ordinal_low im
 from models_directory.Classification_Models.Severity_level.train_severity_model import train_severity_model
 
 
+def save_training_report(all_metrics: dict, save_path: str):
+    """Save all training metrics to a TXT report."""
 
-import json
+    today = datetime.datetime.now().strftime("%d_%m_%Y")
+    filename = f"classification_training_report_{today}.txt"
+    full_path = os.path.join(save_path, filename)
 
-from models_directory.Classification_Models.Stage.train_stage import train_stage
+    with open(full_path, "w", encoding="utf-8") as f:
+        f.write("=== CLASSIFICATION TRAINING PERFORMANCE REPORT ===\n")
+        f.write(f"Generated on: {today}\n")
+        f.write("=================================================\n\n")
 
-#What does this script needs to do
+        for model_name, metrics in all_metrics.items():
 
-#Fetch from the database (For now not existing) the new data
+            num_records = metrics.get("num_records", "N/A")
+
+            f.write(f"--- {model_name} ---\n")
+            f.write(f"Training Records: {num_records}\n")
+
+            f.write(f"Accuracy : {metrics.get('accuracy', 0):.4f}\n")
+            f.write(f"Precision: {metrics.get('precision', 0):.4f}\n")
+            f.write(f"Recall   : {metrics.get('recall', 0):.4f}\n")
+            f.write(f"F1-score : {metrics.get('f1', 0):.4f}\n")
+            f.write(f"mAP      : {metrics.get('mAP', 0):.4f}\n")
+
+            f.write("\n---------------------------------------------\n\n")
+
+    print(f"\n📄 Training report saved: {full_path}\n")
+
+
+
+def train_all():
+    """Runs ALL training steps and generates a unified training report."""
+
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+    all_metrics = {}
+    all_models = {}
+
+    def run_training(model_name, func):
+        model, metrics = func()
+        print(json.dumps(metrics, indent=4))
+
+        all_models[model_name] = model
+        all_metrics[model_name] = metrics
+
+    # CATEGORY (Inside each domain)
+    run_training("Category_Domain1", train_category_domain1)
+    run_training("Category_Domain2", train_category_domain2)
+    run_training("Category_Domain3", train_category_domain3)
+
+    # DOMAIN MODEL
+    run_training("Domain_Model", train_domain_models)
+
+    # SUBCATEGORIES
+    run_training("Subcategory_Cat1", train_subcategory_cat1)
+    run_training("Subcategory_Cat2", train_subcategory_cat2)
+    run_training("Subcategory_Cat3", train_subcategory_cat3)
+    run_training("Subcategory_Cat4", train_subcategory_cat4)
+    run_training("Subcategory_Cat5", train_subcategory_cat5)
+    run_training("Subcategory_Cat6", train_subcategory_cat6)
+    run_training("Subcategory_Cat7", train_subcategory_cat7)
+
+    # HARM LEVEL MODELS
+    run_training("Harm_Binary", train_harm_binary)
+    run_training("Harm_Ordinal_High", train_harm_ordinal_high)
+    run_training("Harm_Ordinal_Low", train_harm_ordinal_low)
+
+    # SEVERITY
+    run_training("Severity_Model", train_severity_model)
+
+    # OPTIONAL STAGE
+    # run_training("Stage_Model", train_stage)
+
+    # SAVE REPORT
+    save_training_report(all_metrics, SCRIPT_DIR)
+
+    return all_models, all_metrics
+
 
 
 
 if __name__ == "__main__":
-    models_1, metrics_1 = train_category_domain1()
-    print(json.dumps(metrics_1, indent=4))
-    models_2, metrics_2 = train_category_domain2()
-    print(json.dumps(metrics_2, indent=4))
-    models_3, metrics_3 = train_category_domain3()
-    print(json.dumps(metrics_3, indent=4))
-    models_4, metrics_4 = train_domain_models()
-    print(json.dumps(metrics_4, indent=4))
-    models_5 , metrics_5 = train_subcategory_cat1()
-    print(json.dumps(metrics_5, indent=4))
-    models_6, metrics_6 = train_subcategory_cat2()
-    print(json.dumps(metrics_6, indent=4))
-    models_7, metrics_7 = train_subcategory_cat3()
-    print(json.dumps(metrics_7, indent=4))
-    model_8, metrics_8 = train_subcategory_cat4()
-    print(json.dumps(metrics_8, indent=4))
-    model_9, metrics_9 = train_subcategory_cat5()
-    print(json.dumps(metrics_9, indent=4))
-    model_10 ,metrics_10 = train_subcategory_cat6()
-    print(json.dumps(metrics_10, indent=4))
-    model_11, metrics_11 = train_subcategory_cat7()
-    print(json.dumps(metrics_11, indent=4))
-    model_12 , metrics_12 = train_harm_binary()
-    print(json.dumps(metrics_12, indent=4))
-    model_13, metrics_13 = train_harm_ordinal_high()
-    print(json.dumps(metrics_13, indent=4))
-    model_14, metrics_14 = train_harm_ordinal_low()
-    print(json.dumps(metrics_14, indent=4))
-    model_15, metrics_15 = train_severity_model()
-    print(json.dumps(metrics_15, indent=4))
-
-    # train_stage()
-
-
-
-
+    train_all()
