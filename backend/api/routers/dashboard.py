@@ -1,10 +1,5 @@
-"""
-AUTO-GENERATED API CONTRACT
-
-Source: Obsidian – Dashboard Page
-Iteration: 1
-Status: API skeleton only – no implementation
-"""
+from fastapi import APIRouter
+from backend.api.services.admin_hierarchy_service import get_dashboard_hierarchy
 
 from datetime import date, datetime
 from enum import Enum
@@ -15,6 +10,13 @@ from pydantic import BaseModel
 
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
+
+@router.get("/hierarchy")
+def dashboard_hierarchy():
+    """
+    Provides hierarchy for Dashboard selectors
+    """
+    return get_dashboard_hierarchy()
 
 
 # -----------------------------
