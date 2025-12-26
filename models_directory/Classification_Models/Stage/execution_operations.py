@@ -17,7 +17,7 @@ def add_metric_list_embeddings(list_metrics):
         load_metric_embedding(metric)
 
 """
-This function tests a sentence-splitting function by applying it to several
+This function backend_tests a sentence-splitting function by applying it to several
 sample Arabic paragraphs and printing the resulting sentences.
 """
 def sentence_splitter_tester(function):

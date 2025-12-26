@@ -1,4 +1,14 @@
-from backend.core.database import get_connection
+import pyodbc
+
+def get_connection():
+    conn = pyodbc.connect(
+        "DRIVER={ODBC Driver 17 for SQL Server};"
+        "SERVER=SOCIALMEDIA;"
+        "DATABASE=IncidentManager;"
+        "Trusted_Connection=yes;"
+        "TrustServerCertificate=yes;"
+    )
+    return conn
 
 
 def get_admin_unit_by_id(admin_unit_id: int):
