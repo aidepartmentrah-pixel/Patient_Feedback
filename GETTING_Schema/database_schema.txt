@@ -374,6 +374,27 @@ FOREIGN KEYS:
 
 
 ============================================================
+TABLE: APP_LOOKUP_SEVERITY
+============================================================
+COLUMNS:
+  - SeverityID: int (NOT NULL)
+  - SeverityCode: nvarchar(20) (NOT NULL)
+  - SeverityName: nvarchar(50) (NOT NULL)
+  - SeverityOrder: int (NOT NULL)
+  - IsActive: bit (NOT NULL) (Default=((1)))
+  - CreatedAt: datetime (NOT NULL) (Default=(getdate()))
+  - CreatedBy: int
+  - UpdatedAt: datetime
+  - UpdatedBy: int
+
+PRIMARY KEY:
+  - SeverityID
+
+FOREIGN KEYS:
+  None
+
+
+============================================================
 TABLE: APP_LOOKUP_SUBCATEGORY
 ============================================================
 COLUMNS:
