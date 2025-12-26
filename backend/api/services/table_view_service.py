@@ -722,33 +722,45 @@ def export_complaints_excel(
     if where_conditions:
         where_clause = "WHERE " + " AND ".join(where_conditions)
     
-    # Query to fetch all matching records
+    # Query to fetch all matching records with all required fields
+    # Note: Some lookup tables may not exist yet, using COALESCE for optional fields
     query = f"""
         SELECT 
-            c.IncidentRequestCaseID as complaint_number,
             c.FeedbackRecievedDate as received_date,
+            c.IncidentRequestCaseID as complaint_number,
             c.PatientName as patient_name,
-            c.DoctorName as doctor_name,
-            org_unit.Name as issuing_org_unit_name,
+            issuing_org.Name as issuing_org_unit_name,
+            concerned_org.Name as concerned_org_unit_name,
+            N'' as source_name,
+            CASE 
+                WHEN c.FeedbackIntentTypeID = 1 THEN N'شكوى'
+                WHEN c.FeedbackIntentTypeID = 2 THEN N'ملاحظة'
+                WHEN c.FeedbackIntentTypeID = 3 THEN N'اقتراح'
+                WHEN c.FeedbackIntentTypeID = 4 THEN N'استفسار'
+                ELSE N'غير محدد'
+            END as feedback_type,
             domain.DomainName as domain_name,
             category.CategoryName as category_name,
+            CAST(c.SubCategoryID AS NVARCHAR(50)) as subcategory_name,
+            CAST(c.ClassificationID AS NVARCHAR(50)) as classification_name,
+            c.ComplaintText as complaint_text,
+            c.ImmediateAction as immediate_action,
+            c.TakenAction as taken_action,
             severity.SeverityName as severity_name,
             stage.StageName as stage_name,
             harm.HarmLevel as harm_level,
             status.Name as status_name,
-            LEFT(c.ComplaintText, 500) as complaint_summary,
-            c.ImmediateAction as immediate_action,
-            c.TakenAction as taken_action,
-            c.InOut as in_out,
-            c.CreatedAt as created_at
+            risk_type.Name as feedback_risk_type
         FROM dbo.APP_IncidentCase c
-        LEFT JOIN AdminsrationUnit org_unit ON c.IssuingOrgUnitID = org_unit.UniqueID
+        LEFT JOIN AdminsrationUnit issuing_org ON c.IssuingOrgUnitID = issuing_org.UniqueID
+        LEFT JOIN AdminsrationUnit concerned_org ON c.BuildingID = concerned_org.UniqueID
         LEFT JOIN APP_LOOKUP_DOMAIN domain ON c.DomainID = domain.DomainID
         LEFT JOIN APP_LOOKUP_CATEGORY category ON c.CategoryID = category.CategoryID
         LEFT JOIN APP_LOOKUP_SEVERITY severity ON c.SeverityID = severity.SeverityID
         LEFT JOIN APP_LOOKUP_CASE_STAGE stage ON c.StageID = stage.StageID
         LEFT JOIN APP_LOOKUP_HARM_LEVEL harm ON c.HarmLevelID = harm.HarmID
         LEFT JOIN APP_LOOKUP_CASE_STATUS status ON c.CaseStatusID = status.CaseStatusID
+        LEFT JOIN APP_LOOKUP_CLINICAL_RISK_TYPE risk_type ON c.ClinicalRiskTypeID = risk_type.ClinicalRiskTypeID
         {where_clause}
         ORDER BY c.FeedbackRecievedDate DESC
     """
@@ -766,29 +778,35 @@ def export_complaints_excel(
         ws = wb.active
         ws.title = "Complaints Export"
         
+        # Set worksheet to Right-to-Left for Arabic text
+        ws.sheet_view.rightToLeft = True
+        
         # Define header style
         header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
         header_font = Font(bold=True, color="FFFFFF", size=12)
         header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         
-        # Write headers (Arabic translations)
+        # Write headers (Arabic translations) - Exact order as specified
         headers_arabic = {
-            'complaint_number': 'رقم الشكوى',
-            'received_date': 'تاريخ الاستلام',
+            'received_date': 'تاريخ تلقي الملاحظة',
+            'complaint_number': 'الرقم',
             'patient_name': 'اسم المريض',
-            'doctor_name': 'اسم الطبيب',
-            'issuing_org_unit_name': 'الوحدة التنظيمية',
-            'domain_name': 'المجال',
-            'category_name': 'التصنيف',
-            'severity_name': 'مستوى الخطورة',
-            'stage_name': 'المرحلة',
-            'harm_level': 'مستوى الضرر',
-            'status_name': 'الحالة',
-            'complaint_summary': 'ملخص الشكوى',
-            'immediate_action': 'الإجراء الفوري',
-            'taken_action': 'الإجراء المتخذ',
-            'in_out': 'داخلي/خارجي',
-            'created_at': 'تاريخ الإنشاء'
+            'issuing_org_unit_name': 'قسم الصادر',
+            'concerned_org_unit_name': 'قسم المعني',
+            'source_name': 'المصدر 1',
+            'feedback_type': 'النوع (Feedback Type)',
+            'domain_name': 'Domain',
+            'category_name': 'Category',
+            'subcategory_name': 'SubCategory',
+            'classification_name': 'New-Classification in Arabic',
+            'complaint_text': 'محتوى الشكوى (Raw Content)',
+            'immediate_action': 'Immediate Action',
+            'taken_action': 'الإجراءات المتخذة',
+            'severity_name': 'Severity',
+            'stage_name': 'Stage',
+            'harm_level': 'Harm',
+            'status_name': 'Status',
+            'feedback_risk_type': 'FeedbackRiskType'
         }
         
         for col_idx, col_name in enumerate(columns, start=1):
@@ -809,16 +827,18 @@ def export_complaints_excel(
                 else:
                     cell.value = value
                 
-                # Center align for better readability
-                cell.alignment = Alignment(horizontal="right", vertical="top", wrap_text=True)
+                # Center align both horizontally and vertically for better readability
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         
         # Auto-adjust column widths
         for col_idx, col_name in enumerate(columns, start=1):
             column_letter = ws.cell(row=1, column=col_idx).column_letter
-            if col_name in ['complaint_summary', 'immediate_action', 'taken_action']:
+            if col_name in ['complaint_text', 'immediate_action', 'taken_action']:
                 ws.column_dimensions[column_letter].width = 50
-            elif col_name in ['patient_name', 'doctor_name', 'issuing_org_unit_name']:
+            elif col_name in ['patient_name', 'issuing_org_unit_name', 'concerned_org_unit_name', 'classification_name']:
                 ws.column_dimensions[column_letter].width = 25
+            elif col_name in ['domain_name', 'category_name', 'subcategory_name']:
+                ws.column_dimensions[column_letter].width = 20
             else:
                 ws.column_dimensions[column_letter].width = 18
         

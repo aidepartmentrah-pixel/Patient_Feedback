@@ -197,47 +197,6 @@ async def get_filtered_count(
         })
 
 
-@router.get("/{complaint_id}")
-async def get_single_complaint(complaint_id: int):
-    """
-    Fetch full details of a single complaint record.
-    
-    Returns UNMASKED patient data (full MRN, full name).
-    Used when navigating to EditRecord or viewing full details modal.
-    
-    **Example Request:**
-    ```
-    GET /api/complaints/1234
-    ```
-    
-    **Returns:**
-    - Full complaint record with all fields
-    - Patient identifiers are NOT masked
-    
-    **Errors:**
-    - 404: Complaint not found
-    """
-    try:
-        result = get_complaint_by_id(complaint_id)
-        
-        if result is None:
-            raise HTTPException(status_code=404, detail={
-                "error": "complaint_not_found",
-                "message": f"Complaint with ID {complaint_id} not found",
-                "message_ar": f"لم يتم العثور على الشكوى ذات المعرف {complaint_id}"
-            })
-        
-        return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail={
-            "error": "internal_server_error",
-            "message": f"An error occurred while fetching complaint: {str(e)}",
-            "message_ar": f"حدث خطأ أثناء جلب الشكوى: {str(e)}"
-        })
-
-
 @router.get("/export")
 async def export_complaints_to_excel(
     search: Optional[str] = Query(None),
@@ -307,6 +266,47 @@ async def export_complaints_to_excel(
             "error": "export_failed",
             "message": f"An error occurred while generating export: {str(e)}",
             "message_ar": f"حدث خطأ أثناء إنشاء التصدير: {str(e)}"
+        })
+
+
+@router.get("/{complaint_id}")
+async def get_single_complaint(complaint_id: int):
+    """
+    Fetch full details of a single complaint record.
+    
+    Returns UNMASKED patient data (full MRN, full name).
+    Used when navigating to EditRecord or viewing full details modal.
+    
+    **Example Request:**
+    ```
+    GET /api/complaints/1234
+    ```
+    
+    **Returns:**
+    - Full complaint record with all fields
+    - Patient identifiers are NOT masked
+    
+    **Errors:**
+    - 404: Complaint not found
+    """
+    try:
+        result = get_complaint_by_id(complaint_id)
+        
+        if result is None:
+            raise HTTPException(status_code=404, detail={
+                "error": "complaint_not_found",
+                "message": f"Complaint with ID {complaint_id} not found",
+                "message_ar": f"لم يتم العثور على الشكوى ذات المعرف {complaint_id}"
+            })
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={
+            "error": "internal_server_error",
+            "message": f"An error occurred while fetching complaint: {str(e)}",
+            "message_ar": f"حدث خطأ أثناء جلب الشكوى: {str(e)}"
         })
 
 
