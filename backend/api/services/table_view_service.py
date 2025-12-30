@@ -156,8 +156,6 @@ def get_complaints_paginated(
             c.FeedbackRecievedDate as received_date,
             c.CreatedAt as created_at,
             c.PatientName as patient_name,
-            c.DoctorName as doctor_name,
-            c.DoctorID as doctor_id,
             
             -- Issuing organizational unit
             c.IssuingOrgUnitID as issuing_org_unit_id,
@@ -196,7 +194,8 @@ def get_complaints_paginated(
             -- Other fields
             c.ImmediateAction as immediate_action,
             c.TakenAction as taken_action,
-            c.InOut as in_out,
+            c.isINPatient as is_inpatient,
+            c.SourceID as source_id,
             c.CreatedByUserID as created_by_user_id
             
         FROM dbo.APP_IncidentCase c

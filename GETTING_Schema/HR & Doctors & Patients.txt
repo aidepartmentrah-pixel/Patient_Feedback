@@ -1,0 +1,156 @@
+============================================================
+TABLE: APP_VIEWTABLE_HR_EMPLOYEES
+============================================================
+COLUMNS:
+  - EmployeeID: int (NOT NULL)
+  - FullName: nvarchar(250)
+  - JobTitle: nvarchar(200)
+  - JobID: int
+  - DepartmentID: int
+  - SectionID: int
+  - AdministrationID: int
+  - IsManager: bit
+  - IsActive: bit
+
+PRIMARY KEY:
+  - EmployeeID
+
+FOREIGN KEYS:
+  None
+
+
+
+============================================================
+TABLE: APP_VIEWTABLE_PATIENT_ADMISSION
+============================================================
+COLUMNS:
+  - PatientAdmissionID: int (NOT NULL)
+  - CaseID: int
+  - AdmissionDate: datetime
+  - AdmissionTime: datetime
+  - DischargeDate: datetime
+  - FullName: nvarchar(250)
+  - FirstName: nvarchar(150)
+  - MiddleName: nvarchar(150)
+  - LastName: nvarchar(150)
+  - Spouse: nvarchar(150)
+  - MotherName: nvarchar(150)
+  - AddressLine1: nvarchar(300)
+  - AddressLine2: nvarchar(300)
+  - PhoneNumber1: nvarchar(50)
+  - PhoneNumber2: nvarchar(50)
+  - SEX: nvarchar(10)
+  - BirthDate: date
+  - DocumentNumber: nvarchar(100)
+  - DischargeNumber: nvarchar(100)
+  - Reference: nvarchar(200)
+  - Diagnoses: nvarchar(-1)
+  - DoctorID: int
+  - AssistantDoctorID: int
+  - MedicalServiceID: int
+  - MedicalServiceClassID: int
+  - RoomNumber: nvarchar(50)
+  - BED: nvarchar(50)
+  - Stay: int
+  - SerialNumber: nvarchar(100)
+  - SerialSequence: nvarchar(100)
+  - MedicalFileNumber: nvarchar(100)
+  - MaritalStatusID: int
+  - EmployeeID: int
+  - NationalityID: int
+  - LocationTypeID: int
+  - RoomBedID: int
+  - CareCenterID: int
+  - GuarantorCode: nvarchar(100)
+  - GuarantorDocumentNumber: nvarchar(100)
+  - GuarantorClassNumber: nvarchar(100)
+  - SecondGuarantorCode: nvarchar(100)
+  - SecondGuarantorDocumentNumber: nvarchar(100)
+  - SecondGuarantorClassNumber: nvarchar(100)
+  - ThirdGuarantorCode: nvarchar(100)
+  - ThirdGuarantorDocumentNumber: nvarchar(100)
+  - ThirdGuarantorClassNumber: nvarchar(100)
+  - GuarantorAmount: decimal
+  - SecondGuarantorAmount: decimal
+  - ThirdGuarantorAmount: decimal
+  - GuarantorGroupID: int
+  - GuarantorGroupName: nvarchar(150)
+  - GuarantorSkippedAmount: decimal
+  - GovernmentRecordNumber: nvarchar(100)
+  - Section: nvarchar(150)
+  - Building: nvarchar(150)
+  - FILE: nvarchar(255)
+  - T-Moh: nvarchar(100)
+  - CostSample: decimal
+  - BedTypeID: int
+  - SystemTime: datetime
+
+PRIMARY KEY:
+  - PatientAdmissionID
+
+FOREIGN KEYS:
+  None
+
+
+
+
+============================================================
+TABLE: APP_VIEWTABLE_VW_DOCTORS
+============================================================
+COLUMNS:
+  - DoctorID: int (NOT NULL)
+  - Name: nvarchar(150)
+  - SpecialityID: int
+  - SpecialityName: nvarchar(150)
+  - IsActive: bit
+  - IsAdmitted: bit
+  - IsClinic: bit
+
+PRIMARY KEY:
+  - DoctorID
+
+FOREIGN KEYS:
+  None
+
+
+============================================================
+TABLE: APP_IncidentCaseDoctor
+============================================================
+COLUMNS:
+  - IncidentCaseDoctorID: int (NOT NULL)
+  - IncidentRequestCaseID: int (NOT NULL)
+  - DoctorID: int (NOT NULL)
+  - IsPrimary: bit (NOT NULL) (Default=((0)))
+  - AssignedAt: datetime (NOT NULL) (Default=(getdate()))
+  - AssignedByUserID: int (NOT NULL)
+  - DoctorName: nvarchar(200)
+
+PRIMARY KEY:
+  - IncidentCaseDoctorID
+
+FOREIGN KEYS:
+  - DoctorID -> APP_LOOKUP_DOCTOR.DoctorID
+  - IncidentRequestCaseID -> APP_IncidentCase.IncidentRequestCaseID
+
+============================================================
+TABLE: APP_IncidentCaseEmployee
+============================================================
+COLUMNS:
+  - EmployeeID: int (NOT NULL)
+  - FullName: nvarchar(250) (NOT NULL)
+  - JobTitle: nvarchar(200)
+  - JobID: int
+  - DepartmentID: int
+  - SectionID: int
+  - AdministrationID: int
+  - IsManager: bit (NOT NULL) (Default=((0)))
+  - IsActive: bit (NOT NULL) (Default=((1)))
+
+PRIMARY KEY:
+  - EmployeeID
+
+FOREIGN KEYS:
+  None
+
+
+

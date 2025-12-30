@@ -44,11 +44,12 @@ def classify_text(text: str, explain: bool = True) -> dict:
     
     try:
         # Run classification model
+        # classify_feedback expects: text_1, text_2, text_3, Print
         classification_result = classify_feedback(
-            Patient_Feedback=text,
-            Hospital_Feedback="",
-            Hospital_Feedback_2="",
-            explain=explain,
+            text_1=text,
+            text_2="",
+            text_3="",
+            Print=False
         )
         
         return {

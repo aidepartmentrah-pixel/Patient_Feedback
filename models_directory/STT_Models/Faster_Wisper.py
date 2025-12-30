@@ -1,7 +1,7 @@
 from faster_whisper import WhisperModel
 
-MODEL_SIZE = "medium"  # or "small"
-DEVICE = "cpu"         # change to "cuda" if GPU exists
+MODEL_SIZE = "medium"
+DEVICE = "cpu"
 
 model = WhisperModel(
     MODEL_SIZE,
@@ -16,8 +16,4 @@ def transcribe_arabic(audio_path: str) -> str:
         beam_size=5
     )
 
-    text = ""
-    for segment in segments:
-        text += segment.text + " "
-
-    return text.strip()
+    return " ".join(segment.text for segment in segments)

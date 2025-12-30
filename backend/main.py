@@ -8,15 +8,17 @@ from api.routers.ner_router import router as ner_router
 from api.routers.stt_router import router as stt_router
 from api.routers.red_flags_router import router as red_flags_router
 from api.routers.never_events_router import router as never_events_router
+from api.routers.insert_router import router as insert_router
+from api.routers.reference_router import router as reference_router
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Incident Manager API")
 
-# Add CORS middleware
+# Add CORS middleware - Allow all origins for testing
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
-    allow_credentials=True,
+    allow_origins=["*"],  # Allow all origins including file:// for local HTML testing
+    allow_credentials=False,  # Must be False when allow_origins is "*"
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -31,6 +33,8 @@ app.include_router(ner_router)
 app.include_router(stt_router)
 app.include_router(red_flags_router)
 app.include_router(never_events_router)
+app.include_router(insert_router)
+app.include_router(reference_router)
 
 @app.get("/")
 def health_check():

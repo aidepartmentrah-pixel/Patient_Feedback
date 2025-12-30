@@ -18,6 +18,7 @@ def add_doctor_to_case(
     incident_id: int,
     doctor_id: int,
     assigned_by_user_id: int,
+    doctor_name: str = None,
     is_primary: bool = False,
 ) -> int:
     """
@@ -43,14 +44,16 @@ def add_doctor_to_case(
         INSERT INTO dbo.APP_IncidentCaseDoctor (
             IncidentRequestCaseID,
             DoctorID,
+            DoctorName,
             IsPrimary,
             AssignedByUserID
         )
         OUTPUT INSERTED.IncidentCaseDoctorID
-        VALUES (?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?)
         """,
         incident_id,
         doctor_id,
+        doctor_name,
         int(is_primary),
         assigned_by_user_id,
     )

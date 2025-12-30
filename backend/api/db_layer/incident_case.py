@@ -20,7 +20,7 @@ UPDATABLE_FIELDS = {
     "TakenAction",
     "FeedbackRecievedDate",
     "PatientName",
-    "InOut",
+    "isINPatient",
     "ClinicalRiskTypeID",
     "FeedbackIntentTypeID",
     "BuildingID",
@@ -32,6 +32,7 @@ UPDATABLE_FIELDS = {
     "StageID",
     "HarmLevelID",
     "CaseStatusID",
+    "SourceID",
 }
 
 
@@ -53,7 +54,7 @@ def create_incident_case(data: dict) -> int:
             PatientName,
             IssuingOrgUnitID,
             CreatedByUserID,
-            InOut,
+            isINPatient,
             ClinicalRiskTypeID,
             FeedbackIntentTypeID,
             BuildingID,
@@ -64,10 +65,11 @@ def create_incident_case(data: dict) -> int:
             SeverityID,
             StageID,
             HarmLevelID,
-            CaseStatusID
+            CaseStatusID,
+            SourceID
         )
         OUTPUT INSERTED.IncidentRequestCaseID
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         data.get("ComplaintText"),
         data.get("ImmediateAction"),
@@ -76,7 +78,7 @@ def create_incident_case(data: dict) -> int:
         data.get("PatientName"),
         data.get("IssuingOrgUnitID"),
         data.get("CreatedByUserID"),
-        data.get("InOut"),
+        data.get("isINPatient", 1),
         data.get("ClinicalRiskTypeID"),
         data.get("FeedbackIntentTypeID"),
         data.get("BuildingID"),
@@ -88,6 +90,7 @@ def create_incident_case(data: dict) -> int:
         data.get("StageID"),
         data.get("HarmLevelID"),
         data.get("CaseStatusID"),
+        data.get("SourceID"),
     )
 
     incident_id = cursor.fetchone()[0]
