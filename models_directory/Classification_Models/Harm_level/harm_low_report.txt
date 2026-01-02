@@ -1,6 +1,6 @@
 LOW Harm Ordinal Model Results
 Accuracy: 0.0
-F1 Macro: 0.0
+F1: 0.0
 
               precision    recall  f1-score   support
 

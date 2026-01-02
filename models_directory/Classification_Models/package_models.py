@@ -3,6 +3,13 @@ from models_directory.Classification_Models.Severity_level.predict_severity impo
 from models_directory.Classification_Models.Stage.model_package import classify_stage_Score_Based
 from models_directory.Classification_Models.Harm_level.predict_harm import predict_harm_from_embedding
 from models_directory.Classification_Models.Stage.modular_functions import get_embedding
+
+
+#Not Implemented
+from models_directory.Classification_Models.improvement_opportunity_type.predict_improvement import predict_improvement_from_embedding
+from models_directory.Classification_Models.feedback_type.predict_feedback_type import predict_feedback_type_from_embedding
+
+
 import numpy as np
 import time
 
@@ -79,25 +86,30 @@ HARM_MAP = {
     6: "No Harm",
 }
 
+FEEDBACK_TYPE_MAP = {
+    1: "Complaint",
+    2: "Compliment",
+    3: "Suggestion",
+    4: "Other",
+}
+
+IMPROVEMENT_OPPORTUNITY_MAP = {
+    1: "Process Improvement",
+    2: "Training Needed",
+    3: "Resource Allocation",
+}
 
 
-def classify_feedback(text_1, text_2, text_3, Print = False):
+
+def classify_feedback(patient_text, text_2, text_3, Print = False):
 
     #Text Identification
-    Patient_Text = text_1
-    Hospital_Text = text_2 + " "+  text_3
-    Combined_Text = Patient_Text + " " + Hospital_Text
-
+    Patient_Text = patient_text
 
     #Text Embedding
     Patient_Embedding_RAW = get_embedding(Patient_Text)
     Patient_Embedding = np.frombuffer(Patient_Embedding_RAW, dtype=np.float32)
 
-    Hospital_Embedding_RAW = get_embedding(Hospital_Text)
-    Hospital_Embedding = np.frombuffer(Hospital_Embedding_RAW, dtype=np.float32)
-
-    Combined_Embedding_RAW = get_embedding(Combined_Text)
-    Combined_Embedding = np.frombuffer(Combined_Embedding_RAW, dtype=np.float32)
 
 
 
@@ -110,8 +122,11 @@ def classify_feedback(text_1, text_2, text_3, Print = False):
     severity_level_id = predict_severity_from_embedding(Patient_Embedding)
     stage_id = classify_stage_Score_Based(Patient_Text, Print)
 
-    harm_result = predict_harm_from_embedding(Combined_Embedding)
+    harm_result = predict_harm_from_embedding(Patient_Embedding)
     harm_level_id = harm_result["harm_level"]
+
+    feedback_type_id = predict_feedback_type_from_embedding(Patient_Embedding)
+    improvement_opportunity_id = predict_improvement_from_embedding(Patient_Embedding)
 
     result = {
         "domain_id": domain_id,
@@ -131,6 +146,12 @@ def classify_feedback(text_1, text_2, text_3, Print = False):
 
         "harm_level_id": harm_level_id,
         "harm_level": HARM_MAP.get(harm_level_id, f"UNKNOWN ({harm_level_id})"),
+
+        "feedback_type_id": feedback_type_id,
+        "feedback_type": FEEDBACK_TYPE_MAP.get(feedback_type_id, f"UNKNOWN ({feedback_type_id})"),
+
+        "improvement_opportunity_type_id": improvement_opportunity_id,
+        "improvement_opportunity_type": IMPROVEMENT_OPPORTUNITY_MAP.get(improvement_opportunity_id, f"UNKNOWN ({improvement_opportunity_id})"),
     }
 
     # ---------------------------------------------------------
@@ -146,6 +167,8 @@ def classify_feedback(text_1, text_2, text_3, Print = False):
         print(f"SEVERITY    : {result['severity_level']} ({result['severity_id']})")
         print(f"STAGE       : {result['stage']} ({result['stage_id']})")
         print(f"HARM LEVEL  : {result['harm_level']} ({result['harm_level_id']})")
+        print(f"FEEDBACK TYPE: {result['feedback_type']} ({result['feedback_type_id']})")
+        print(f"IMPROVEMENT : {result['improvement_opportunity_type']} ({result['improvement_opportunity_type_id']})")
         print("\n========================================================\n")
     return result
 
@@ -209,6 +232,20 @@ def classify_feedback_timed(text_1, text_2, text_3, Print=False):
     timings["harm_prediction"] = time.time() - start
 
     # -------------------------------
+    # Feedback Type Prediction
+    # -------------------------------
+    start = time.time()
+    feedback_type_id = predict_feedback_type_from_embedding(Patient_Embedding)
+    timings["feedback_type_prediction"] = time.time() - start
+
+    # -------------------------------
+    # Improvement Opportunity Prediction
+    # -------------------------------
+    start = time.time()
+    improvement_opportunity_id = predict_improvement_from_embedding(Patient_Embedding)
+    timings["improvement_opportunity_prediction"] = time.time() - start
+
+    # -------------------------------
     # Aggregate Results
     # -------------------------------
     result = {
@@ -229,6 +266,12 @@ def classify_feedback_timed(text_1, text_2, text_3, Print=False):
 
         "harm_level_id": harm_level_id,
         "harm_level": HARM_MAP.get(harm_level_id, f"UNKNOWN ({harm_level_id})"),
+
+        "feedback_type_id": feedback_type_id,
+        "feedback_type": FEEDBACK_TYPE_MAP.get(feedback_type_id, f"UNKNOWN ({feedback_type_id})"),
+
+        "improvement_opportunity_type_id": improvement_opportunity_id,
+        "improvement_opportunity_type": IMPROVEMENT_OPPORTUNITY_MAP.get(improvement_opportunity_id, f"UNKNOWN ({improvement_opportunity_id})"),
         "timings": timings
     }
 
@@ -282,25 +325,8 @@ def classify_feedback_encoded(text_1, text_2, text_3, Print = False):
     harm_result = predict_harm_from_embedding(Combined_Embedding)
     harm_level_id = harm_result["harm_level"]
 
-    result = {
-        "domain_id": domain_id,
-        "domain": DOMAIN_MAP.get(domain_id, f"UNKNOWN ({domain_id})"),
-
-        "category_id": category_id,
-        "category": CATEGORY_MAP.get(category_id, f"UNKNOWN ({category_id})"),
-
-        "sub_category_id": sub_category_id,
-        "sub_category": SUBCATEGORY_MAP.get(sub_category_id, f"UNKNOWN ({sub_category_id})"),
-
-        "severity_id": severity_level_id,
-        "severity_level": SEVERITY_MAP.get(severity_level_id, f"UNKNOWN ({severity_level_id})"),
-
-        "stage_id": stage_id,
-        "stage": STAGE_MAP.get(stage_id, f"UNKNOWN ({stage_id})"),
-
-        "harm_level_id": harm_level_id,
-        "harm_level": HARM_MAP.get(harm_level_id, f"UNKNOWN ({harm_level_id})"),
-    }
+    feedback_type_id = predict_feedback_type_from_embedding(Patient_Embedding)
+    improvement_opportunity_id = predict_improvement_from_embedding(Patient_Embedding)
 
     # ---------------------------------------------------------
     # READABLE DESCRIPTION
@@ -311,7 +337,9 @@ def classify_feedback_encoded(text_1, text_2, text_3, Print = False):
         "sub_category_id": sub_category_id,
         "severity_id": severity_level_id,
         "stage_id": stage_id,
-        "harm_level_id": harm_level_id
+        "harm_level_id": harm_level_id,
+        "feedback_type_id": feedback_type_id,
+        "improvement_opportunity_type_id": improvement_opportunity_id
     }
 
 

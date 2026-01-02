@@ -3,7 +3,14 @@ import sqlite3
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, average_precision_score
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    average_precision_score,
+    confusion_matrix,
+)
 
 
 def load_table(db_path, table):
@@ -49,3 +56,35 @@ def compute_metrics(y_true, y_pred, all_labels=None):
         "mAP": average_precision_score(y_true_df, y_pred_df, average="macro")
     }
     return metrics
+
+
+def compute_standardized_metrics(
+    model_name: str,
+    y_train,
+    y_test,
+    y_pred,
+    label_names,
+) -> dict:
+    """
+    Compute standardized metrics dictionary matching the exact schema required by train_all.py.
+    
+    Returns:
+        dict with keys: model_name, num_records, accuracy, precision, recall, f1, mAP, labels, confusion_matrix
+    """
+    accuracy = float(accuracy_score(y_test, y_pred))
+    precision = float(precision_score(y_test, y_pred, average="weighted", zero_division=0))
+    recall = float(recall_score(y_test, y_pred, average="weighted", zero_division=0))
+    f1 = float(f1_score(y_test, y_pred, average="weighted", zero_division=0))
+    cm = confusion_matrix(y_test, y_pred)
+    
+    return {
+        "model_name": model_name,
+        "num_records": len(y_train),
+        "accuracy": accuracy,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "mAP": None,
+        "labels": label_names if isinstance(label_names, list) else label_names.tolist(),
+        "confusion_matrix": cm.tolist(),
+    }

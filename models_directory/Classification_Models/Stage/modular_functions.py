@@ -255,6 +255,12 @@ def split_arabic_text_into_sentences(text, max_sentences=6):
 
     return sentences
 
+text = "هذا نص تجريبي. يحتوي على عدة جمل، وبعضها طويل جدًا بحيث يحتاج إلى تقسيم إضافي، مثل هذه الجملة التي تستمر لفترة طويلة جدًا بدون توقف، مما يجعل من الصعب قراءتها وفهمها بشكل صحيح. لذلك، نحتاج إلى التأكد من أن عملية التقسيم تعمل بشكل جيد!"
+sentences = split_arabic_text_into_sentences(text)
+for s in sentences:
+    print(s)
+
+
 def split_arabic_text_into_sentences_ml(text, max_sentences=6):
     """
     ML-based Arabic sentence splitter.
@@ -436,6 +442,7 @@ def split_arabic_text_into_sentences_rules(text):
     # 5) CLEAN + RETURN
     # ==========================================================
     return [x.strip() for x in final if len(x.strip()) > 0]
+
 
 
 def get_model_path(Troubleshoot=False):

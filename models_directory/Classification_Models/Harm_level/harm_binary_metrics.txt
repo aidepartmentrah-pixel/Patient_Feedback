@@ -1,6 +1,6 @@
 === Harm Binary Classification ===
 Accuracy: 0.9355
-F1 Score: 0.9667
+F1 Score: 0.9043
 
               precision    recall  f1-score   support
 

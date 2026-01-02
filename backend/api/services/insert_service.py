@@ -227,6 +227,17 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
 
         new_id = create_incident_case(payload)
 
+        # -------------------------------------------
+        # ML INSERT HOOK (SAFE / NON-BLOCKING)
+        # With Embedding Generation via Wrapper
+        # -------------------------------------------
+        try:
+            from backend.ml_mapping import add_corrected_record_to_ml
+            add_corrected_record_to_ml(data)
+        except Exception as e:
+            # Log only — never interrupt main flow
+            print(f"[ML INSERT WARNING] {str(e)}")
+
         # -----------------------------
         # Related tables
         # -----------------------------
@@ -240,7 +251,7 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
                 )
 
         if data.get('doctors'):
-            primary_assigned = False
+            primary_assigned = False    
             for doc in data['doctors']:
                 doc_id = doc.get('doctor_id')
                 if not doc_id:
@@ -285,3 +296,118 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
             cursor.close()
         if conn:
             conn.close()
+
+
+def Database_ML_Mapping():
+    #What do I want in this function
+    #I have an important problem. The ML is enocoded in a different encoding than the database. 
+    #So the models (And model's database) speaks a language and the database (One fill of tables and stuff)
+    #When I add data to the Main database through creating an complient, I want to add it to the ML database
+    #The Interface speaks the encoding of the database. Not the ML one
+    #The ML database is small table that only has the features and the embeddings of them
+    #The only problem the encoding is different.  
+
+    """
+    {
+  "version": "2025-12-31",
+
+  "idMap": {
+    "domain": {
+      "1": 1,
+      "2": 2,
+      "3": 3
+    },
+
+    "category": {
+      "1": 1,
+      "2": 4,
+      "3": 5    ,
+      "4": 2,
+      "5": 6,
+      "6": 3,
+      "7": 7
+    },
+
+    "subcategory": {
+      "1": 20,
+      "2": 1,
+      "3": 9,
+      "4": 13,
+      "5": 22,
+      "6": 14,
+      "8": 15,
+      "9": 16,
+      "10": 2,
+      "11": 6,
+      "12": 7,
+      "13": 18,
+      "14": 11,
+      "15": 23,
+      "16": 24,
+      "18": 25,
+      "19": 19,
+      "21": 4,
+      "22": 27,
+      "23": 5,
+      "24": 3,
+      "26": 21,
+      "27": 8,
+      "28": 12,
+      "29": 26,
+      "30": 17,
+      "31": 10
+    },
+
+    "severity_level": {
+      "1": 3,
+      "2": 1,
+      "3": 2
+    },
+
+    "stage": {
+      "1": 1,
+      "2": 2,
+      "4": 3,
+      "6": 5,
+      "8": 4,
+      "9": 6
+    },
+
+    "harm_level": {
+      "1": 4,
+      "2": 5,
+      "3": 4,
+      "4": 2,
+      "5": 3,
+      "6": 1
+    }
+  },
+
+  "hierarchy": {
+    "category_domain": {},
+    "subcategory_category": {},
+    "classification_subcategory": {}
+  },
+
+  "defaults": {},
+
+  "meta": {
+    "source": "manual_mapping",
+    "notes": "Keys represent legacy IDs. Replace nulls with actual database IDs. Do not remove keys.",
+    "ranges": {
+      "domain": "1-3",
+      "category": "1-7",
+      "subcategory": "1-31 (sparse)",
+      "severity_level": "1-3",
+      "stage": "1-9",
+      "harm_level": "1-6"
+    }
+  }
+}
+
+    Docstring for Database_ML_Mapping
+    """
+
+
+
+    pass

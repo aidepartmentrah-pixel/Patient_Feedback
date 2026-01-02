@@ -7,7 +7,13 @@ from xgboost import XGBClassifier
 from sklearn.metrics import  classification_report,confusion_matrix
 import joblib
 
-from models_directory.Classification_Models.Hierarchical_Classification_Model.Helper_Functions import load_table,parse_embedding,parse_embedding_series,compute_metrics
+from models_directory.Classification_Models.Hierarchical_Classification_Model.Helper_Functions import (
+    load_table,
+    parse_embedding,
+    parse_embedding_series,
+    compute_metrics,
+    compute_standardized_metrics,
+)
 from project_paths import get_db_path
 
 
@@ -63,6 +69,7 @@ def train_subcategory_cat2(base_path=None):
 
     trained_models = {}
     results = {}
+    all_preds = {}
 
     # ---------- Logistic Regression ----------
     print("Training Logistic Regression...")
@@ -70,8 +77,9 @@ def train_subcategory_cat2(base_path=None):
     lr.fit(X_train, y_train)
     joblib.dump(lr, os.path.join(MODEL_DIR, "lr_subcat_cat2.pkl"))
     lr_pred = lr.predict(X_test)
-    results["LogisticRegression"] = compute_metrics(y_test, lr_pred)
+    results["lr"] = compute_metrics(y_test, lr_pred)
     trained_models["lr"] = lr
+    all_preds["lr"] = lr_pred
 
     # ---------- Random Forest ----------
     print("Training Random Forest...")
@@ -79,8 +87,9 @@ def train_subcategory_cat2(base_path=None):
     rf.fit(X_train, y_train)
     joblib.dump(rf, os.path.join(MODEL_DIR, "rf_subcat_cat2.pkl"))
     rf_pred = rf.predict(X_test)
-    results["RandomForest"] = compute_metrics(y_test, rf_pred)
+    results["rf"] = compute_metrics(y_test, rf_pred)
     trained_models["rf"] = rf
+    all_preds["rf"] = rf_pred
 
     # ---------- XGBoost ----------
     print("Training XGBoost...")
@@ -103,41 +112,33 @@ def train_subcategory_cat2(base_path=None):
         random_state=42
     )
     xgb.fit(X_train, y_train_temp)
-    xgb.save_model(os.path.join(MODEL_DIR, "xgb_subcat_cat1.json"))
+    xgb.save_model(os.path.join(MODEL_DIR, "xgb_subcat_cat2.json"))
 
     preds_temp = xgb.predict(X_test)
     if preds_temp.ndim == 2:
         preds_temp = np.argmax(preds_temp, axis=1)
     preds_xgb = np.array([temp_to_label[int(v)] for v in preds_temp])
-    results["XGBoost"] = compute_metrics(y_test, preds_xgb)
+    results["xgb"] = compute_metrics(y_test, preds_xgb)
     trained_models["xgb"] = xgb
+    all_preds["xgb"] = preds_xgb
 
-    # ---------- Generate Report ----------
-    with open(REPORT_FILE, "w", encoding="utf-8") as f:
-        f.write("=== SUBCATEGORY MODEL (CATEGORY = 1) ===\n\n")
-        for name, model in [("Logistic Regression", lr), ("Random Forest", rf), ("XGBoost", xgb)]:
-            f.write(f"\n---- {name} ----\n")
-            if name == "XGBoost":
-                preds = preds_xgb
-            elif name == "Random Forest":
-                preds = rf_pred
-            else:
-                preds = lr_pred
+    # ---------- Select Best Model by F1 ----------
+    best_model_name = max(results.keys(), key=lambda k: results[k]["f1"])
+    best_model = trained_models[best_model_name]
+    best_pred = all_preds[best_model_name]
+    
+    print(f"\n✔ Best model: {best_model_name} (F1={results[best_model_name]['f1']:.4f})")
 
-            f.write("\nClassification Report:\n")
-            f.write(classification_report(y_test, preds, zero_division=0))
-            cm = confusion_matrix(y_test, preds)
-            f.write("\nConfusion Matrix:\n")
-            f.write(str(cm))
-            f.write("\n\n")
+    # ---------- Compute Standardized Metrics ----------
+    standardized_metrics = compute_standardized_metrics(
+        model_name=f"Subcategory_Category2_{best_model_name}",
+        y_train=y_train,
+        y_test=y_test,
+        y_pred=best_pred,
+        label_names=unique_labels,
+    )
 
-    print("==========================================")
-    print("✔ SUBCATEGORY MODEL (CATEGORY=2) TRAINED")
-    print("✔ MODELS SAVED IN:", MODEL_DIR)
-    print("✔ REPORT SAVED:", REPORT_FILE)
-    print("==========================================\n")
-
-    return trained_models, results
+    return best_model, standardized_metrics
 
 # ============================
 # STANDALONE RUN

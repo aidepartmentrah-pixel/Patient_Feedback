@@ -11,13 +11,14 @@ import numpy as np
 import pandas as pd
 import joblib
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix
+from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix, precision_score, recall_score
 import matplotlib.pyplot as plt
 
 from project_paths import get_db_path
 from models_directory.Classification_Models.Hierarchical_Classification_Model.Helper_Functions import (
     load_table,
     parse_embedding_series,
+    compute_standardized_metrics,
 )
 
 # ============================
@@ -69,7 +70,7 @@ def train_harm_binary(base_path: str | None = None):
     Train binary harm-level classifier.
 
     Returns:
-        model, metrics
+        model, standardized_metrics
     """
 
     try:
@@ -97,20 +98,21 @@ def train_harm_binary(base_path: str | None = None):
 
         y_pred = model.predict(X_test)
 
-        acc = accuracy_score(y_test, y_pred)
-        f1 = f1_score(y_test, y_pred)
-
-        metrics = {
-            "accuracy": acc,
-            "f1": f1,
-            "num_records": len(df_train),
-        }
+        # Compute standardized metrics
+        unique_labels = sorted(np.unique(y_train).tolist())
+        standardized_metrics = compute_standardized_metrics(
+            model_name="Harm_Binary",
+            y_train=y_train,
+            y_test=y_test,
+            y_pred=y_pred,
+            label_names=unique_labels,
+        )
 
         # Save report
         with open(REPORT_PATH, "w", encoding="utf-8") as f:
             f.write("=== Harm Binary Classification ===\n")
-            f.write(f"Accuracy: {acc:.4f}\n")
-            f.write(f"F1 Score: {f1:.4f}\n\n")
+            f.write(f"Accuracy: {standardized_metrics['accuracy']:.4f}\n")
+            f.write(f"F1 Score: {standardized_metrics['f1']:.4f}\n\n")
             f.write(classification_report(y_test, y_pred))
 
         # Save confusion matrix
@@ -122,7 +124,7 @@ def train_harm_binary(base_path: str | None = None):
 
         print("✅ Harm binary model trained successfully")
 
-        return model, metrics
+        return model, standardized_metrics
 
     except Exception as e:
         traceback.print_exc()

@@ -58,6 +58,12 @@ class CreateRecordRequest(BaseModel):
     stage_id: Optional[int] = Field(None, gt=0, description="Care stage ID")
     harm_id: Optional[int] = Field(None, gt=0, description="Harm level ID")
     improvement_type: Optional[int] = Field(0, ge=0, le=1, description="Improvement opportunity (0=No, 1=Yes)")
+    
+    # ML Training Fields (NEW - for embedding generation)
+    feedback_type: Optional[int] = Field(None, ge=1, le=4, description="Feedback type (1=improvement Opportunity, 2=notice, 3=Critique Suggestion, 4=Other)")
+    improvement_opportunity_type: Optional[int] = Field(None, ge=1, le=3, description="Improvement type (1=Ordinary, 2=RedFlag, 3=NeverEvent)")
+    classification_ar: Optional[float] = Field(None, ge=0, le=10, description="Arabic classification confidence score")
+    classification_en: Optional[int] = Field(None, ge=0, description="English classification code")
 
 
 # ==================== ENDPOINTS ====================
@@ -95,7 +101,12 @@ async def add_record(request: CreateRecordRequest = Body(...)):
       "category_id": 12,
       "severity_id": 2,
       "immediate_action": "تم توفير الرعاية الفورية",
-      "patient_name": "أحمد محمد"
+      "taken_action": "تم اتخاذ إجراءات تصحيحية",
+      "patient_name": "أحمد محمد",
+      "feedback_type": 1,
+      "improvement_opportunity_type": 2,
+      "classification_ar": 8.5,
+      "classification_en": 5
     }
     ```
     

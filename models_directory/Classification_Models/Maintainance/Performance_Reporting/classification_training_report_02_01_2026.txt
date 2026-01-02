@@ -1,0 +1,181 @@
+======================================================================
+  CLASSIFICATION TRAINING PERFORMANCE REPORT
+======================================================================
+Generated: 02_01_2026
+======================================================================
+
+Model: Domain_Model
+  Training Records: 371
+  Classes: [1, 2, 3]
+  Metrics:
+    Accuracy:  0.752688
+    Precision: 0.736861
+    Recall:    0.752688
+    F1-Score:  0.731244
+----------------------------------------------------------------------
+
+Model: Category_Domain1
+  Training Records: 70
+  Classes: [5, 7]
+  Metrics:
+    Accuracy:  0.722222
+    Precision: 0.696296
+    Recall:    0.722222
+    F1-Score:  0.707170
+----------------------------------------------------------------------
+
+Model: Category_Domain2
+  Training Records: 214
+  Classes: [2, 3]
+  Metrics:
+    Accuracy:  0.819672
+    Precision: 0.818228
+    Recall:    0.819672
+    F1-Score:  0.818717
+----------------------------------------------------------------------
+
+Model: Category_Domain3
+  Training Records: 87
+  Classes: [1, 4, 6]
+  Metrics:
+    Accuracy:  0.642857
+    Precision: 0.682143
+    Recall:    0.642857
+    F1-Score:  0.658627
+----------------------------------------------------------------------
+
+Model: Subcategory_Cat1
+  Training Records: 0
+  Classes: []
+  Metrics:
+    Accuracy:  0.000000
+    Precision: 0.000000
+    Recall:    0.000000
+    F1-Score:  0.000000
+----------------------------------------------------------------------
+
+Model: Subcategory_Cat2
+  Training Records: 77
+  Classes: [3, 14, 31]
+  Metrics:
+    Accuracy:  1.000000
+    Precision: 1.000000
+    Recall:    1.000000
+    F1-Score:  1.000000
+----------------------------------------------------------------------
+
+Model: Subcategory_Cat3
+  Training Records: 137
+  Classes: [4, 6, 8, 9, 13, 30]
+  Metrics:
+    Accuracy:  0.589744
+    Precision: 0.524476
+    Recall:    0.589744
+    F1-Score:  0.554446
+----------------------------------------------------------------------
+
+Model: Subcategory_Cat4
+  Training Records: 16
+  Classes: [11, 23]
+  Metrics:
+    Accuracy:  0.666667
+    Precision: 0.444444
+    Recall:    0.666667
+    F1-Score:  0.533333
+----------------------------------------------------------------------
+
+Model: Subcategory_Cat5
+  Training Records: 44
+  Classes: [1, 19, 26]
+  Metrics:
+    Accuracy:  0.785714
+    Precision: 0.730159
+    Recall:    0.785714
+    F1-Score:  0.756303
+----------------------------------------------------------------------
+
+Model: Subcategory_Cat6
+  Training Records: 42
+  Classes: [12, 27]
+  Metrics:
+    Accuracy:  0.600000
+    Precision: 0.360000
+    Recall:    0.600000
+    F1-Score:  0.450000
+----------------------------------------------------------------------
+
+Model: Subcategory_Cat7
+  Training Records: 26
+  Classes: [5, 15, 16, 18, 22, 29]
+  Metrics:
+    Accuracy:  0.750000
+    Precision: 0.562500
+    Recall:    0.750000
+    F1-Score:  0.642857
+----------------------------------------------------------------------
+
+Model: Harm_Binary
+  Training Records: 371
+  Classes: [0, 1]
+  Metrics:
+    Accuracy:  0.935484
+    Precision: 0.875130
+    Recall:    0.935484
+    F1-Score:  0.904301
+----------------------------------------------------------------------
+
+Model: Harm_Ordinal_High
+  Training Records: 341
+  Classes: [4, 5, 6]
+  Metrics:
+    Accuracy:  0.275862
+    Precision: 0.076100
+    Recall:    0.275862
+    F1-Score:  0.119292
+----------------------------------------------------------------------
+
+Model: Harm_Ordinal_Low
+  Training Records: 28
+  Classes: [1, 2, 3]
+  Metrics:
+    Accuracy:  0.000000
+    Precision: 0.000000
+    Recall:    0.000000
+    F1-Score:  0.000000
+----------------------------------------------------------------------
+
+Model: Severity_Model
+  Training Records: 365
+  Classes: [1, 2, 3, 4]
+  Metrics:
+    Accuracy:  0.806452
+    Precision: 0.650364
+    Recall:    0.806452
+    F1-Score:  0.720046
+----------------------------------------------------------------------
+
+Model: Feedback_Type
+  Training Records: 371
+  Classes: [1, 2, 3, 4]
+  Metrics:
+    Accuracy:  1.000000
+    Precision: 1.000000
+    Recall:    1.000000
+    F1-Score:  1.000000
+----------------------------------------------------------------------
+
+Model: Improvement_Opportunity_Type
+  Training Records: 473
+  Classes: [1, 2, 3]
+  Metrics:
+    Accuracy:  0.989011
+    Precision: 0.978143
+    Recall:    0.989011
+    F1-Score:  0.983547
+----------------------------------------------------------------------
+
+======================================================================
+Summary Statistics
+======================================================================
+Total Models Trained: 17
+Average F1-Score: 0.622346

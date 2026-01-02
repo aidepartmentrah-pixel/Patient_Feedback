@@ -16,7 +16,12 @@ import pandas as pd
 import joblib
 import traceback
 import mord
-from sklearn.metrics import accuracy_score, f1_score, classification_report
+from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix, precision_score, recall_score
+
+from project_paths import get_db_path
+from models_directory.Classification_Models.Hierarchical_Classification_Model.Helper_Functions import (
+    compute_standardized_metrics,
+)
 
 
 # ---------------- PATH CONFIG ----------------
@@ -89,16 +94,18 @@ def train_harm_ordinal_low():
         model.fit(X_train, y_train)
         y_pred = model.predict(X_test)
 
-        # --- Metrics ---
-        acc = accuracy_score(y_test, y_pred)
-        f1  = f1_score(y_test, y_pred, average="macro")
-        report = classification_report(y_test, y_pred, zero_division=0)
-
-        metrics = {
-            "accuracy": acc,
-            "f1_macro": f1,
-            "report": report,
-        }
+        # Compute standardized metrics using original (non-remapped) labels
+        y_test_orig = df_test[TARGET_COL].astype(int).to_numpy()
+        y_pred_orig = y_pred + 1  # Remap back to 1-3 range
+        unique_labels = sorted([1, 2, 3])
+        
+        standardized_metrics = compute_standardized_metrics(
+            model_name="Harm_Ordinal_Low",
+            y_train=df_train[TARGET_COL].astype(int).to_numpy(),
+            y_test=y_test_orig,
+            y_pred=y_pred_orig,
+            label_names=unique_labels,
+        )
 
         # Save model
         joblib.dump(model, MODEL_PATH)
@@ -106,13 +113,13 @@ def train_harm_ordinal_low():
         # Save report file
         with open(REPORT_PATH, "w") as f:
             f.write("LOW Harm Ordinal Model Results\n")
-            f.write(f"Accuracy: {acc}\n")
-            f.write(f"F1 Macro: {f1}\n\n")
-            f.write(report)
+            f.write(f"Accuracy: {standardized_metrics['accuracy']}\n")
+            f.write(f"F1: {standardized_metrics['f1']}\n\n")
+            f.write(classification_report(y_test, y_pred, zero_division=0))
 
         print("Low harm ordinal model training done.")
 
-        return model, metrics
+        return model, standardized_metrics
 
     except Exception:
         traceback.print_exc()

@@ -23,9 +23,18 @@ from sklearn.metrics import (
     f1_score,
     classification_report,
     confusion_matrix,
+    precision_score,
+    recall_score,
 )
 import matplotlib.pyplot as plt
 import os
+
+# Import standardized metrics helper
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
+from models_directory.Classification_Models.Hierarchical_Classification_Model.Helper_Functions import (
+    compute_standardized_metrics,
+)
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -112,7 +121,7 @@ def save_confusion_matrix(cm, labels, out_path, title):
 def train_severity_model():
     """
     Trains the severity model and returns:
-        model, metrics_dict
+        model, standardized_metrics_dict
     """
 
     try:
@@ -134,16 +143,18 @@ def train_severity_model():
         model.fit(X_train, y_train)
         y_pred = model.predict(X_test)
 
-        # Metrics
-        acc = accuracy_score(y_test, y_pred)
-        f1_macro = f1_score(y_test, y_pred, average="macro", zero_division=0)
-        report = classification_report(y_test, y_pred, zero_division=0)
-
-        metrics = {
-            "accuracy": acc,
-            "f1_macro": f1_macro,
-            "report": report,
-        }
+        # Compute standardized metrics using original (non-remapped) labels
+        y_test_orig = df_test[TARGET_COL].astype(int).to_numpy()
+        y_pred_orig = y_pred + 1  # Remap back to 1-4 range
+        unique_labels = sorted([1, 2, 3, 4])
+        
+        standardized_metrics = compute_standardized_metrics(
+            model_name="Severity_Model",
+            y_train=df_train[TARGET_COL].astype(int).to_numpy(),
+            y_test=y_test_orig,
+            y_pred=y_pred_orig,
+            label_names=unique_labels,
+        )
 
         # Save model
         joblib.dump(model, MODEL_PATH)
@@ -151,16 +162,16 @@ def train_severity_model():
         # Save report
         with open(REPORT_PATH, "w", encoding="utf-8") as f:
             f.write("Severity Level – Ordinal Model Metrics\n\n")
-            f.write(f"Accuracy: {acc}\n")
-            f.write(f"F1 Macro: {f1_macro}\n\n")
-            f.write(report)
+            f.write(f"Accuracy: {standardized_metrics['accuracy']}\n")
+            f.write(f"F1: {standardized_metrics['f1']}\n\n")
+            f.write(classification_report(y_test, y_pred, zero_division=0))
 
         # Confusion matrix
         cm = confusion_matrix(y_test, y_pred)
         label_list = sorted(list(set(y_train) | set(y_test)))
         save_confusion_matrix(cm, label_list, CM_PATH, "Severity Confusion Matrix")
 
-        return model, metrics
+        return model, standardized_metrics
 
     except Exception:
         traceback.print_exc()

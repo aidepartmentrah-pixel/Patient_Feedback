@@ -63,6 +63,46 @@ FOREIGN KEYS:
 
 
 ============================================================
+TABLE: APP_CUSTOM_VIEWS
+============================================================
+COLUMNS:
+  - ViewID: int (NOT NULL)
+  - ViewName: nvarchar(150) (NOT NULL)
+  - ShowIncidentRequestCaseID: bit (NOT NULL) (Default=((1)))
+  - ShowComplaintText: bit (NOT NULL) (Default=((1)))
+  - ShowImmediateAction: bit (NOT NULL) (Default=((0)))
+  - ShowTakenAction: bit (NOT NULL) (Default=((0)))
+  - ShowFeedbackRecievedDate: bit (NOT NULL) (Default=((1)))
+  - ShowPatientName: bit (NOT NULL) (Default=((1)))
+  - ShowIssuingOrgUnitID: bit (NOT NULL) (Default=((0)))
+  - ShowCreatedAt: bit (NOT NULL) (Default=((1)))
+  - ShowCreatedByUserID: bit (NOT NULL) (Default=((0)))
+  - ShowIsInPatient: bit (NOT NULL) (Default=((0)))
+  - ShowClinicalRiskTypeID: bit (NOT NULL) (Default=((0)))
+  - ShowFeedbackIntentTypeID: bit (NOT NULL) (Default=((0)))
+  - ShowBuildingID: bit (NOT NULL) (Default=((0)))
+  - ShowDomainID: bit (NOT NULL) (Default=((1)))
+  - ShowCategoryID: bit (NOT NULL) (Default=((1)))
+  - ShowSubCategoryID: bit (NOT NULL) (Default=((1)))
+  - ShowClassificationID: bit (NOT NULL) (Default=((1)))
+  - ShowSeverityID: bit (NOT NULL) (Default=((1)))
+  - ShowStageID: bit (NOT NULL) (Default=((1)))
+  - ShowHarmLevelID: bit (NOT NULL) (Default=((0)))
+  - ShowCaseStatusID: bit (NOT NULL) (Default=((1)))
+  - ShowSourceID: bit (NOT NULL) (Default=((0)))
+  - ShowExplanationStatusID: bit (NOT NULL) (Default=((0)))
+  - CreatedAt: datetime (NOT NULL) (Default=(getdate()))
+  - CreatedByUserID: int
+  - IsActive: bit (NOT NULL) (Default=((1)))
+
+PRIMARY KEY:
+  - ViewID
+
+FOREIGN KEYS:
+  None
+
+
+============================================================
 TABLE: APP_DepartmentEvaluationRule
 ============================================================
 COLUMNS:
@@ -98,12 +138,10 @@ COLUMNS:
   - TakenAction: nvarchar(-1)
   - FeedbackRecievedDate: date
   - PatientName: nvarchar(200)
-  - DoctorName: nvarchar(200)
-  - DoctorID: int
   - IssuingOrgUnitID: int (NOT NULL)
   - CreatedAt: datetime (NOT NULL) (Default=(getdate()))
   - CreatedByUserID: int (NOT NULL)
-  - InOut: nvarchar(50)
+  - isINPatient: bit
   - ClinicalRiskTypeID: int (NOT NULL)
   - FeedbackIntentTypeID: int (NOT NULL)
   - BuildingID: int
@@ -116,6 +154,7 @@ COLUMNS:
   - HarmLevelID: int (NOT NULL)
   - CaseStatusID: int (NOT NULL)
   - SourceID: int
+  - ExplanationStatusID: int
 
 PRIMARY KEY:
   - IncidentRequestCaseID
@@ -228,6 +267,21 @@ PRIMARY KEY:
 
 FOREIGN KEYS:
   - IncidentRequestCaseID -> APP_IncidentCase.IncidentRequestCaseID
+
+
+============================================================
+TABLE: APP_LOOKUP_BUILDING
+============================================================
+COLUMNS:
+  - BuildingID: int (NOT NULL)
+  - BuildingCode: nvarchar(20) (NOT NULL)
+  - BuildingName: nvarchar(100) (NOT NULL)
+
+PRIMARY KEY:
+  - BuildingID
+
+FOREIGN KEYS:
+  None
 
 
 ============================================================

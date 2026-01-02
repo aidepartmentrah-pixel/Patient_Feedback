@@ -9,7 +9,13 @@ from sklearn.metrics import classification_report, confusion_matrix, accuracy_sc
 import joblib
 
 from model_training.Complaint_Model.Stacked.train_stacked_model import save_confusion_matrix
-from models_directory.Classification_Models.Hierarchical_Classification_Model.Helper_Functions import load_table,parse_embedding,parse_embedding_series,compute_metrics
+from models_directory.Classification_Models.Hierarchical_Classification_Model.Helper_Functions import (
+    load_table,
+    parse_embedding,
+    parse_embedding_series,
+    compute_metrics,
+    compute_standardized_metrics,
+)
 from project_paths import get_db_path
 
 
@@ -80,6 +86,7 @@ def train_domain_models(base_path=None):
     # ---------- Train Models ----------
     trained_models = {}
     results = {}
+    all_preds = {}
 
     # Logistic Regression
     print("Training Logistic Regression...")
@@ -87,8 +94,9 @@ def train_domain_models(base_path=None):
     lr.fit(X_train, y_train)
     joblib.dump(lr, os.path.join(MODEL_DIR, "lr_domain.pkl"))
     lr_pred = lr.predict(X_test)
-    results["LogisticRegression"] = compute_metrics(y_test, lr_pred)
+    results["lr"] = compute_metrics(y_test, lr_pred)
     trained_models["lr"] = lr
+    all_preds["lr"] = lr_pred
 
     # Random Forest
     print("Training Random Forest...")
@@ -96,8 +104,9 @@ def train_domain_models(base_path=None):
     rf.fit(X_train, y_train)
     joblib.dump(rf, os.path.join(MODEL_DIR, "rf_domain.pkl"))
     rf_pred = rf.predict(X_test)
-    results["RandomForest"] = compute_metrics(y_test, rf_pred)
+    results["rf"] = compute_metrics(y_test, rf_pred)
     trained_models["rf"] = rf
+    all_preds["rf"] = rf_pred
 
     # XGBoost
     print("Training XGBoost...")
@@ -116,12 +125,29 @@ def train_domain_models(base_path=None):
     xgb.fit(X_train, y_train)
     xgb.save_model(os.path.join(MODEL_DIR, "xgb_domain.json"))
     xgb_pred = xgb.predict(X_test)
-    results["XGBoost"] = compute_metrics(y_test, xgb_pred)
+    results["xgb"] = compute_metrics(y_test, xgb_pred)
     trained_models["xgb"] = xgb
+    all_preds["xgb"] = xgb_pred
+
+    # ---------- Select Best Model by F1 ----------
+    best_model_name = max(results.keys(), key=lambda k: results[k]["f1"])
+    best_model = trained_models[best_model_name]
+    best_pred = all_preds[best_model_name]
+    
+    print(f"\n✔ Best model: {best_model_name} (F1={results[best_model_name]['f1']:.4f})")
+
+    # ---------- Compute Standardized Metrics ----------
+    standardized_metrics = compute_standardized_metrics(
+        model_name=f"Domain_{best_model_name}",
+        y_train=y_train,
+        y_test=y_test,
+        y_pred=best_pred,
+        label_names=label_names.tolist(),
+    )
 
     # ---------- Generate Report ----------
     report_lines = ["======== DOMAIN CLASSIFICATION REPORT ========\n"]
-    for name, model in trained_models.items():
+    for name in ["lr", "rf", "xgb"]:
         if name == "lr":
             y_pred = lr_pred
         elif name == "rf":
@@ -152,7 +178,7 @@ def train_domain_models(base_path=None):
     print(f"Saved models in : {MODEL_DIR}")
     print(f"Saved report   : {REPORT_FILE}")
 
-    return trained_models, results
+    return best_model, standardized_metrics
 
 # ============================
 # STANDALONE RUN
