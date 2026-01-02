@@ -18,11 +18,12 @@ import traceback
 import mord
 from sklearn.metrics import accuracy_score, f1_score, classification_report
 
+from project_paths import get_db_path
+
 # ---------------- PATH CONFIG ----------------
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 # Database path: 4 levels up (matches your other scripts)
-DB_PATH = (SCRIPT_DIR / ".." / ".." / "patient_feedback_ml.db").resolve()
 
 TRAIN_TABLE = "table_feedback_train"
 TEST_TABLE  = "table_feedback_test"
@@ -60,7 +61,7 @@ def parse_embedding_series(series):
 
 
 # ------------ TRAIN FUNCTION ----------------
-def train_harm_ordinal_high():
+def train_harm_ordinal_high(base_path: str | None = None):
     """
     Train ordinal logistic regression for harm levels 4–6.
     Returns:
@@ -68,6 +69,8 @@ def train_harm_ordinal_high():
         metrics: dict with keys 'accuracy', 'f1_macro', 'report' or None on failure
     """
     try:
+        DB_PATH = base_path or get_db_path()
+
         # Load data
         df_train = load_table(DB_PATH, TRAIN_TABLE)
         df_test  = load_table(DB_PATH, TEST_TABLE)

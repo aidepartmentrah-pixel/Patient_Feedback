@@ -2,6 +2,7 @@ import datetime
 import json
 import os
 
+#Statistically Acceptable - Needs Refactoring
 from models_directory.Classification_Models.Hierarchical_Classification_Model.domain.train_domain_model import train_domain_models
 from models_directory.Classification_Models.Hierarchical_Classification_Model.category.domain_1.train_category_domain1 import train_category_domain1
 from models_directory.Classification_Models.Hierarchical_Classification_Model.category.domain_2.train_category_domain2 import train_category_domain2
@@ -14,8 +15,13 @@ from models_directory.Classification_Models.Hierarchical_Classification_Model.su
 from models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_6.train_subcategory_category6 import train_subcategory_cat6
 from models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_7.train_subcategory_category7 import train_subcategory_cat7
 from models_directory.Classification_Models.Harm_level.train_harm_binary import train_harm_binary
+
+
+
+#Not Acceptable - Needs Adjustments
 from models_directory.Classification_Models.Harm_level.train_harm_ordinal_high import train_harm_ordinal_high
 from models_directory.Classification_Models.Harm_level.train_harm_ordinal_low import train_harm_ordinal_low
+
 from models_directory.Classification_Models.Severity_level.train_severity_model import train_severity_model
 
 
@@ -97,7 +103,6 @@ def train_all():
     save_training_report(all_metrics, SCRIPT_DIR)
 
     return all_models, all_metrics
-
 
 
 

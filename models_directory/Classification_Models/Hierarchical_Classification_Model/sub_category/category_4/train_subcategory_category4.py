@@ -8,14 +8,14 @@ from sklearn.metrics import  classification_report,confusion_matrix
 import joblib
 
 from models_directory.Classification_Models.Hierarchical_Classification_Model.Helper_Functions import load_table,parse_embedding,parse_embedding_series,compute_metrics
-
+from project_paths import get_db_path
 
 
 # ============================
 # TRAIN FUNCTION
 # ============================
 
-def train_subcategory_cat4():
+def train_subcategory_cat4(base_path=None):
     """
     Train Logistic Regression, Random Forest, and XGBoost for subcategories of CATEGORY=1.
     Returns trained models and metrics dictionary.
@@ -23,9 +23,7 @@ def train_subcategory_cat4():
 
     # ---------- Paths ----------
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-
-    DB_PATH = os.path.join(SCRIPT_DIR, "..", "..", "..", "..",  "patient_feedback_ml.db")
-    DB_PATH = os.path.abspath(DB_PATH)
+    DB_PATH = get_db_path() if base_path is None else base_path
 
     MODEL_DIR = os.path.join(SCRIPT_DIR, "vocab_models")
     os.makedirs(MODEL_DIR, exist_ok=True)

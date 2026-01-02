@@ -8,19 +8,20 @@ from sklearn.metrics import  classification_report,confusion_matrix
 import joblib
 
 from models_directory.Classification_Models.Hierarchical_Classification_Model.Helper_Functions import load_table,parse_embedding,parse_embedding_series,compute_metrics
+from project_paths import get_db_path
+
 
 # ============================
 # MAIN TRAIN FUNCTION
 # ============================
 
-def train_category_domain1():
+def train_category_domain1(base_path=None):
     table_train="table_feedback_train"
     table_test="table_feedback_test"
     domain = 1
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
     # Database folder: 4 levels up, then 'models_directory'
-    db_path = os.path.join(SCRIPT_DIR, "..", "..", "..", "..", "patient_feedback_ml.db")
-    db_path = os.path.abspath(db_path)
+    db_path = get_db_path() if base_path is None else base_path
     model_dir = os.path.join(SCRIPT_DIR, "vocab_models")
 
     """Train LR, RF, XGB for a given domain and return trained models + metrics"""

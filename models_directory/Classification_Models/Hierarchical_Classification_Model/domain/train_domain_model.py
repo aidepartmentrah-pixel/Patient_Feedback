@@ -10,21 +10,21 @@ import joblib
 
 from model_training.Complaint_Model.Stacked.train_stacked_model import save_confusion_matrix
 from models_directory.Classification_Models.Hierarchical_Classification_Model.Helper_Functions import load_table,parse_embedding,parse_embedding_series,compute_metrics
+from project_paths import get_db_path
+
 
 # ============================
 # TRAIN FUNCTION
 # ============================
 
-def train_domain_models():
+def train_domain_models(base_path=None):
     """
     Train Logistic Regression, Random Forest, XGBoost for domain classification.
     Returns trained models and metrics dictionary.
     """
-    # ---------- Paths ----------
-    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-    DB_PATH = os.path.join(SCRIPT_DIR, "..", "..", "..", "patient_feedback_ml.db")
-    DB_PATH = os.path.abspath(DB_PATH)
+    DB_PATH = get_db_path() if base_path is None else base_path
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
     MODEL_DIR = os.path.join(SCRIPT_DIR, "vocab_models")
     os.makedirs(MODEL_DIR, exist_ok=True)
@@ -162,3 +162,10 @@ if __name__ == "__main__":
     models, metrics = train_domain_models()
     print("\nMetrics per model:")
     print(json.dumps(metrics, indent=4))
+
+# Patient_Feedback\models_directory\patient_feedback_ml (The database link from the Top level of the project)
+# Patient_Feedback\models_directory\Classification_Models\Hierarchical_Classification_Model\domain (directory of this file)
+# Patient_Feedback\models_directory\Classification_Models\Maintainance (Directory of train all)
+# What is a programming solution, to refactor the function, telling it where it is being called.
+# Or we can at any point go from the Main folder ""Patient_Feedback" in a relative path an reach the database
+# How to refactor the function to make it done
