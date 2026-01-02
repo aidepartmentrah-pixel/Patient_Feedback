@@ -189,3 +189,4 @@ if __name__ == "__main__":
     """
 
     print(extract_names_gliner_arabic(text))
+    

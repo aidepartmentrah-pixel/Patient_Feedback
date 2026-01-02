@@ -85,7 +85,6 @@ def get_action_item_by_id(action_item_id: int) -> dict | None:
     conn.close()
     return dict(zip(columns, row)) if row else None
 
-
 def list_action_items_for_incident(incident_case_id: int) -> list[dict]:
     conn = get_connection()
     cursor = conn.cursor()
@@ -106,7 +105,6 @@ def list_action_items_for_incident(incident_case_id: int) -> list[dict]:
     conn.close()
     return [dict(zip(columns, row)) for row in rows]
 
-
 def list_action_items_for_season(season_case_id: int) -> list[dict]:
     conn = get_connection()
     cursor = conn.cursor()
@@ -126,8 +124,6 @@ def list_action_items_for_season(season_case_id: int) -> list[dict]:
 
     conn.close()
     return [dict(zip(columns, row)) for row in rows]
-
-
 
 def update_action_item(
     action_item_id: int,
@@ -172,8 +168,6 @@ def update_action_item(
 
     conn.commit()
     conn.close()
-
-
 
 def mark_action_item_done(action_item_id: int) -> None:
     """

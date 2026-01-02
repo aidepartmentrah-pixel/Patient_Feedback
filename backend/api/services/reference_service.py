@@ -372,6 +372,84 @@ def get_harm_levels() -> Dict[str, Any]:
             conn.close()
 
 
+def get_buildings() -> Dict[str, Any]:
+    """Get all buildings (RAH/BCI etc.)."""
+    conn = None
+    cursor = None
+    
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            """
+            SELECT BuildingID, BuildingCode, BuildingName
+            FROM APP_LOOKUP_BUILDING
+            ORDER BY BuildingCode
+            """
+        )
+        
+        buildings = []
+        for row in cursor.fetchall():
+            buildings.append({
+                "id": row.BuildingID,
+                "code": row.BuildingCode,
+                "name_en": row.BuildingName,
+                "name_ar": row.BuildingName
+            })
+        
+        return {"buildings": buildings}
+        
+    except Exception as e:
+        return {
+            "buildings": [],
+            "error": f"Failed to fetch buildings: {str(e)}"
+        }
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_explanation_statuses() -> Dict[str, Any]:
+    """Get all explanation statuses for Insert Page."""
+    conn = None
+    cursor = None
+
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT StatusID, StatusName
+            FROM APP_LOOKUP_EXPLANATION_STATUS
+            ORDER BY StatusName
+            """
+        )
+
+        statuses = []
+        for row in cursor.fetchall():
+            statuses.append({
+                "id": row.StatusID,
+                "name": row.StatusName,
+                "name_ar": row.StatusName
+            })
+
+        return {"explanation_statuses": statuses}
+
+    except Exception as e:
+        return {
+            "explanation_statuses": [],
+            "error": f"Failed to fetch explanation statuses: {str(e)}"
+        }
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
 def get_clinical_risk_types() -> Dict[str, Any]:
     """Get all clinical risk types."""
     conn = None
@@ -463,6 +541,8 @@ def get_all_reference_data() -> Dict[str, Any]:
         **get_severity_levels(),
         **get_stages(),
         **get_harm_levels(),
+        **get_explanation_statuses(),
         **get_clinical_risk_types(),
-        **get_feedback_intent_types()
+        **get_feedback_intent_types(),
+        **get_buildings()
     }

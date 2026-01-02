@@ -180,6 +180,21 @@ def get_explanation_statuses() -> list[dict]:
     )
 
 
+# -----------------------------
+# BUILDINGS LOOKUP
+# -----------------------------
+
+def get_buildings() -> list[dict]:
+    """Return list of buildings (BuildingID, BuildingCode, BuildingName)."""
+    return _fetch_all(
+        """
+        SELECT BuildingID, BuildingCode, BuildingName
+        FROM dbo.APP_LOOKUP_BUILDING
+        ORDER BY BuildingCode
+        """
+    )
+
+
 def get_doctors(active_only: bool = True) -> list[dict]:
     query = """
         SELECT DoctorID, DoctorName, Specialty, IsActive

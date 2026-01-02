@@ -66,10 +66,11 @@ def create_incident_case(data: dict) -> int:
             StageID,
             HarmLevelID,
             CaseStatusID,
-            SourceID
+            SourceID,
+            ExplanationStatusID
         )
         OUTPUT INSERTED.IncidentRequestCaseID
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         data.get("ComplaintText"),
         data.get("ImmediateAction"),
@@ -91,6 +92,7 @@ def create_incident_case(data: dict) -> int:
         data.get("HarmLevelID"),
         data.get("CaseStatusID"),
         data.get("SourceID"),
+        data.get("ExplanationStatusID"),
     )
 
     incident_id = cursor.fetchone()[0]

@@ -40,13 +40,15 @@ class CreateRecordRequest(BaseModel):
     
     # Optional metadata
     issuing_department_id: Optional[int] = Field(None, gt=0, description="Issuing department ID")
-    target_department_id: Optional[int] = Field(None, gt=0, description="Target department ID")
+    target_department_ids: Optional[list[int]] = Field(None, description="List of target department IDs")
     source_id: Optional[int] = Field(None, gt=0, description="Feedback source ID")
     is_inpatient: Optional[bool] = Field(True, description="Is inpatient (True) or outpatient (False). Default: True")
     worker_type: Optional[str] = Field(None, description="Worker type involved")
     
     # Optional entity data
     patient_name: Optional[str] = Field(None, description="Patient name")
+    doctors: Optional[list[dict]] = Field(None, description="List of doctors (doctor_id, doctor_name)")
+    employees: Optional[list[dict]] = Field(None, description="List of employees (employee_id, employee_name)")
     
     # Optional classification hierarchy
     subcategory_id: Optional[int] = Field(None, gt=0, description="Subcategory ID")

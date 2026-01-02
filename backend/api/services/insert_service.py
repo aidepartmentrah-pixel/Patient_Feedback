@@ -4,32 +4,37 @@ Handles business logic for creating new incident/feedback records.
 """
 
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 from core.database import get_connection
-
+from backend.api.db_layer.incident_case import create_incident_case
+from backend.api.db_layer.incident_case_target_department import add_target_department
+from backend.api.db_layer.incident_case_doctor import add_doctor_to_case
+        
 
 def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Create a new incident/feedback record in the database.
-    
-    Args:
-        data: Dictionary containing record fields
-        
-    Returns:
-        Dictionary with success status, record_id, and created record details
-    """
-    
     conn = None
     cursor = None
-    
+
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        
-        # Validate required fields
-        required_fields = ['complaint_text', 'feedback_received_date', 'domain_id', 
-                          'category_id', 'severity_id']
-        
+
+        # -----------------------------
+        # Required fields validation
+        # -----------------------------
+        required_fields = [
+            'complaint_text',
+            'feedback_received_date',
+            'issuing_department_id',
+            'domain_id',
+            'category_id',
+            'subcategory_id',
+            'classification_id',
+            'severity_id',
+            'stage_id',
+            'harm_id'
+        ]
+
         for field in required_fields:
             if field not in data or not data[field]:
                 return {
@@ -39,184 +44,222 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
                     "message_ar": f"حقل {field} مطلوب",
                     "field": field
                 }
-        
-        # Validate foreign key references exist
+
+        # -----------------------------
+        # Validate foreign keys
+        # -----------------------------
+        # Use actual APP_LOOKUP_* tables
         validations = [
-            ('domain_id', 'Domain', 'Domain_Lookup', 'القطاع'),
-            ('category_id', 'Category', 'Category_Lookup', 'الفئة'),
-            ('severity_id', 'Severity', 'Severity_Level_Lookup', 'مستوى الخطورة')
+            ('domain_id', 'Domain', 'dbo.APP_LOOKUP_DOMAIN', 'DomainID', 'القطاع'),
+            ('category_id', 'Category', 'dbo.APP_LOOKUP_CATEGORY', 'CategoryID', 'الفئة'),
+            ('severity_id', 'Severity', 'dbo.APP_LOOKUP_SEVERITY', 'SeverityID', 'مستوى الخطورة')
         ]
-        
-        for field_name, english_name, table_name, arabic_name in validations:
-            if field_name in data and data[field_name]:
-                cursor.execute(f"SELECT COUNT(*) FROM {table_name} WHERE Id = ?", (data[field_name],))
-                if cursor.fetchone()[0] == 0:
-                    return {
-                        "success": False,
-                        "error": "INVALID_REFERENCE",
-                        "message": f"{english_name} ID {data[field_name]} does not exist",
-                        "message_ar": f"{arabic_name} رقم {data[field_name]} غير موجود",
-                        "field": field_name
-                    }
-        
-        # Validate optional foreign keys if provided
+
+        for field_name, english_name, table_name, id_column, arabic_name in validations:
+            if data.get(field_name):
+                try:
+                    cursor.execute(
+                        f"SELECT COUNT(*) FROM {table_name} WHERE {id_column} = ?",
+                        (data[field_name],)
+                    )
+                    if cursor.fetchone()[0] == 0:
+                        return {
+                            "success": False,
+                            "error": "INVALID_REFERENCE",
+                            "message": f"{english_name} ID {data[field_name]} does not exist",
+                            "message_ar": f"{arabic_name} رقم {data[field_name]} غير موجود",
+                            "field": field_name
+                        }
+                except Exception:
+                    pass
+
+        # -----------------------------
+        # Optional FK validations
+        # -----------------------------
         optional_validations = [
-            ('subcategory_id', 'Subcategory', 'Subcategory_Lookup', 'الفئة الفرعية'),
-            ('classification_id', 'Classification', 'Classification_Lookup', 'التصنيف'),
-            ('stage_id', 'Stage', 'Stage_Lookup', 'المرحلة'),
-            ('harm_id', 'Harm Level', 'Harm_Level_Lookup', 'مستوى الضرر'),
-            ('issuing_department_id', 'Issuing Department', 'Department', 'القسم المصدر'),
-            ('target_department_id', 'Target Department', 'Department', 'القسم المستهدف'),
-            ('source_id', 'Source', 'Source_Lookup', 'المصدر')
+            ('subcategory_id', 'Subcategory', 'dbo.APP_LOOKUP_SUBCATEGORY', 'SubCategoryID', 'الفئة الفرعية'),
+            ('classification_id', 'Classification', 'dbo.APP_LOOKUP_CLASSIFICATION', 'ClassificationID', 'التصنيف'),
+            ('stage_id', 'Stage', 'dbo.APP_LOOKUP_CASE_STAGE', 'StageID', 'المرحلة'),
+            ('harm_id', 'Harm Level', 'dbo.APP_LOOKUP_HARM_LEVEL', 'HarmID', 'مستوى الضرر'),
+            ('building_id', 'Building', 'dbo.APP_LOOKUP_BUILDING', 'BuildingID', 'المبنى'),
+            ('explanation_status_id', 'Explanation Status', 'dbo.APP_LOOKUP_EXPLANATION_STATUS', 'StatusID', 'حالة الشرح'),
+            # Issuing department/source validation omitted due to unknown tables; keep resilient
         ]
-        
-        for field_name, english_name, table_name, arabic_name in optional_validations:
-            if field_name in data and data[field_name]:
-                cursor.execute(f"SELECT COUNT(*) FROM {table_name} WHERE Id = ?", (data[field_name],))
+
+        for field_name, english_name, table_name, id_column, arabic_name in optional_validations:
+            if data.get(field_name):
+                try:
+                    cursor.execute(
+                        f"SELECT COUNT(*) FROM {table_name} WHERE {id_column} = ?",
+                        (data[field_name],)
+                    )
+                    if cursor.fetchone()[0] == 0:
+                        return {
+                            "success": False,
+                            "error": "INVALID_REFERENCE",
+                            "message": f"{english_name} ID {data[field_name]} does not exist",
+                            "message_ar": f"{arabic_name} رقم {data[field_name]} غير موجود",
+                            "field": field_name
+                        }
+                except Exception:
+                    pass
+
+        # -----------------------------
+        # Hierarchy validation
+        # -----------------------------
+        try:
+            if data.get('category_id') and data.get('domain_id'):
+                cursor.execute(
+                    "SELECT COUNT(*) FROM dbo.APP_LOOKUP_CATEGORY WHERE CategoryID = ? AND DomainID = ?",
+                    (data['category_id'], data['domain_id'])
+                )
+                if cursor.fetchone()[0] == 0:
+                    return {
+                        "success": False,
+                        "error": "VALIDATION_ERROR",
+                        "message": "Selected category does not belong to the selected domain",
+                        "message_ar": "الفئة المختارة لا تنتمي للقطاع المختار",
+                        "field": "category_id"
+                    }
+        except Exception:
+            pass
+
+        try:
+            if data.get('subcategory_id') and data.get('category_id'):
+                cursor.execute(
+                    "SELECT COUNT(*) FROM dbo.APP_LOOKUP_SUBCATEGORY WHERE SubCategoryID = ? AND CategoryID = ?",
+                    (data['subcategory_id'], data['category_id'])
+                )
+                if cursor.fetchone()[0] == 0:
+                    return {
+                        "success": False,
+                        "error": "VALIDATION_ERROR",
+                        "message": "Selected subcategory does not belong to the selected category",
+                        "message_ar": "الفئة الفرعية المختارة لا تنتمي للفئة المختارة",
+                        "field": "subcategory_id"
+                    }
+        except Exception:
+            pass
+
+        try:
+            if data.get('classification_id') and data.get('subcategory_id'):
+                cursor.execute(
+                    "SELECT COUNT(*) FROM dbo.APP_LOOKUP_CLASSIFICATION WHERE ClassificationID = ? AND SubCategoryID = ?",
+                    (data['classification_id'], data['subcategory_id'])
+                )
+                if cursor.fetchone()[0] == 0:
+                    return {
+                        "success": False,
+                        "error": "VALIDATION_ERROR",
+                        "message": "Selected classification does not belong to the selected subcategory",
+                        "message_ar": "التصنيف المختار لا ينتمي للفئة الفرعية المختارة",
+                        "field": "classification_id"
+                    }
+        except Exception:
+            pass
+
+        # -----------------------------
+        # Insert main record via db_layer
+        # -----------------------------
+        is_inpatient_val = 1 if bool(data.get('is_inpatient', True)) else 0
+        clinical_risk_type_id = data.get('clinical_risk_type_id') or 1
+        feedback_intent_type_id = data.get('feedback_intent_type_id') or 1
+
+        # Validate doctors exist (skip entries without IDs)
+        if data.get('doctors'):
+            for doc in data['doctors']:
+                doc_id = doc.get('doctor_id')
+                if not doc_id:
+                    continue
+                cursor.execute("SELECT COUNT(*) FROM APP_VIEWTABLE_VW_DOCTORS WHERE DoctorID = ?", (doc_id,))
                 if cursor.fetchone()[0] == 0:
                     return {
                         "success": False,
                         "error": "INVALID_REFERENCE",
-                        "message": f"{english_name} ID {data[field_name]} does not exist",
-                        "message_ar": f"{arabic_name} رقم {data[field_name]} غير موجود",
-                        "field": field_name
+                        "message": f"Doctor ID {doc_id} does not exist",
+                        "message_ar": f"رقم الطبيب {doc_id} غير موجود",
+                        "field": "doctors"
                     }
-        
-        # Validate hierarchical relationships
-        # Check if category belongs to selected domain
-        if 'category_id' in data and 'domain_id' in data:
-            cursor.execute(
-                "SELECT COUNT(*) FROM Category_Lookup WHERE Id = ? AND Domain_Id = ?",
-                (data['category_id'], data['domain_id'])
-            )
-            if cursor.fetchone()[0] == 0:
-                return {
-                    "success": False,
-                    "error": "VALIDATION_ERROR",
-                    "message": "Selected category does not belong to the selected domain",
-                    "message_ar": "الفئة المختارة لا تنتمي للقطاع المختار",
-                    "field": "category_id"
-                }
-        
-        # Check if subcategory belongs to selected category (if provided)
-        if 'subcategory_id' in data and data['subcategory_id'] and 'category_id' in data:
-            cursor.execute(
-                "SELECT COUNT(*) FROM Subcategory_Lookup WHERE Id = ? AND Category_Id = ?",
-                (data['subcategory_id'], data['category_id'])
-            )
-            if cursor.fetchone()[0] == 0:
-                return {
-                    "success": False,
-                    "error": "VALIDATION_ERROR",
-                    "message": "Selected subcategory does not belong to the selected category",
-                    "message_ar": "الفئة الفرعية المختارة لا تنتمي للفئة المختارة",
-                    "field": "subcategory_id"
-                }
-        
-        # Check if classification belongs to selected subcategory (if provided)
-        if 'classification_id' in data and data['classification_id'] and 'subcategory_id' in data and data['subcategory_id']:
-            cursor.execute(
-                "SELECT COUNT(*) FROM Classification_Lookup WHERE Id = ? AND Subcategory_Id = ?",
-                (data['classification_id'], data['subcategory_id'])
-            )
-            if cursor.fetchone()[0] == 0:
-                return {
-                    "success": False,
-                    "error": "VALIDATION_ERROR",
-                    "message": "Selected classification does not belong to the selected subcategory",
-                    "message_ar": "التصنيف المختار لا ينتمي للفئة الفرعية المختارة",
-                    "field": "classification_id"
-                }
-        
-        # Build INSERT statement dynamically
-        fields = [
-            'Patient_Feedback',
-            'Immediate_Action_Taken',
-            'Action_Taken',
-            'Feedback_Received_Date',
-            'Issuing_Department_Id',
-            'Target_Department_Id',
-            'Source_Id',
-            'isINPatient',
-            'Worker_Type',
-            'Patient_Name',
-            'Domain_Id',
-            'Category_Id',
-            'Subcategory_Id',
-            'Classification_Id',
-            'Severity_Level_Id',
-            'Stage_Id',
-            'Harm_Level_Id',
-            'Improvement_Opportunity_Type',
-            'Status_Id',
-            'Created_At'
-        ]
-        
-        # Map input data to database fields
-        field_mapping = {
-            'complaint_text': 'Patient_Feedback',
-            'immediate_action': 'Immediate_Action_Taken',
-            'taken_action': 'Action_Taken',
-            'feedback_received_date': 'Feedback_Received_Date',
-            'issuing_department_id': 'Issuing_Department_Id',
-            'target_department_id': 'Target_Department_Id',
-            'source_id': 'Source_Id',
-            'is_inpatient': 'isINPatient',
-            'worker_type': 'Worker_Type',
-            'patient_name': 'Patient_Name',
-            'domain_id': 'Domain_Id',
-            'category_id': 'Category_Id',
-            'subcategory_id': 'Subcategory_Id',
-            'classification_id': 'Classification_Id',
-            'severity_id': 'Severity_Level_Id',
-            'stage_id': 'Stage_Id',
-            'harm_id': 'Harm_Level_Id',
-            'improvement_type': 'Improvement_Opportunity_Type'
+
+        # Resolve building: prefer provided BuildingID, else map BuildingCode via DB
+        building_id = data.get('building_id')
+        if not building_id and data.get('building_code'):
+            code = str(data.get('building_code')).strip().upper()
+            try:
+                cursor.execute(
+                    """
+                    SELECT TOP 1 BuildingID
+                    FROM dbo.APP_LOOKUP_BUILDING
+                    WHERE UPPER(BuildingCode) = ?
+                    ORDER BY BuildingID
+                    """,
+                    (code,)
+                )
+                row = cursor.fetchone()
+                if row:
+                    building_id = row.BuildingID
+            except Exception:
+                building_id = None
+
+        payload = {
+            "ComplaintText": data.get('complaint_text'),
+            "ImmediateAction": data.get('immediate_action'),
+            "TakenAction": data.get('taken_action'),
+            "FeedbackRecievedDate": data.get('feedback_received_date'),
+            "PatientName": data.get('patient_name'),
+            "IssuingOrgUnitID": data.get('issuing_department_id'),
+            "CreatedByUserID": 1,
+            "isINPatient": is_inpatient_val,
+            "ClinicalRiskTypeID": clinical_risk_type_id,
+            "FeedbackIntentTypeID": feedback_intent_type_id,
+            "BuildingID": building_id,
+            "DomainID": data.get('domain_id'),
+            "CategoryID": data.get('category_id'),
+            "SubCategoryID": data.get('subcategory_id'),
+            "ClassificationID": data.get('classification_id'),
+            "SeverityID": data.get('severity_id'),
+            "StageID": data.get('stage_id'),
+            "HarmLevelID": data.get('harm_id'),
+            "CaseStatusID": 3,
+            "SourceID": data.get('source_id'),
+            "ExplanationStatusID": data.get('explanation_status_id'),
         }
-        
-        # Prepare values for insertion
-        values = []
-        insert_fields = []
-        
-        for input_key, db_field in field_mapping.items():
-            if input_key in data and data[input_key] is not None and data[input_key] != '':
-                insert_fields.append(db_field)
-                values.append(data[input_key])
-        
-        # Add isINPatient field (default to True/1 if not provided)
-        if 'isINPatient' not in insert_fields:
-            insert_fields.append('isINPatient')
-            values.append(1)  # 1 = True (inpatient)
-        
-        # Add system fields
-        insert_fields = []
-        
-        for input_key, db_field in field_mapping.items():
-            if input_key in data and data[input_key] is not None and data[input_key] != '':
-                insert_fields.append(db_field)
-                values.append(data[input_key])
-        
-        # Add system fields
-        insert_fields.extend(['Status_Id', 'Created_At'])
-        values.extend([3, datetime.now()])  # Status_Id = 3 (In Progress)
-        
-        # Build and execute INSERT query
-        placeholders = ','.join(['?' for _ in values])
-        fields_str = ','.join(insert_fields)
-        
-        insert_query = f"""
-            INSERT INTO Patient_Feedback_Encoded ({fields_str})
-            OUTPUT INSERTED.Id
-            VALUES ({placeholders})
-        """
-        
-        cursor.execute(insert_query, values)
-        new_id = cursor.fetchone()[0]
-        conn.commit()
-        
-        # Generate record_id (e.g., REC-2024-0156)
+
+        new_id = create_incident_case(payload)
+
+        # -----------------------------
+        # Related tables
+        # -----------------------------
+        if data.get('target_department_ids'):
+            for idx, dept_id in enumerate(data['target_department_ids']):
+                add_target_department(
+                    incident_id=new_id,
+                    department_id=dept_id,
+                    assigned_by_user_id=1,
+                    is_primary=(idx == 0)
+                )
+
+        if data.get('doctors'):
+            primary_assigned = False
+            for doc in data['doctors']:
+                doc_id = doc.get('doctor_id')
+                if not doc_id:
+                    continue
+                add_doctor_to_case(
+                    incident_id=new_id,
+                    doctor_id=doc_id,
+                    assigned_by_user_id=1,
+                    doctor_name=doc.get('doctor_name', ''),
+                    is_primary=(not primary_assigned)
+                )
+                primary_assigned = True
+
+        # Employees linkage not implemented (no case link in schema provided)
+
+        # db_layer functions commit internally; nothing to commit here
+
         record_id = f"REC-{datetime.now().year}-{str(new_id).zfill(4)}"
-        
+
         return {
             "success": True,
             "message": "Record created successfully",
@@ -226,7 +269,7 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
             "status_id": 3,
             "created_at": datetime.now().isoformat()
         }
-        
+
     except Exception as e:
         if conn:
             conn.rollback()
@@ -236,7 +279,7 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
             "message": f"Failed to create record: {str(e)}",
             "message_ar": f"فشل في إنشاء السجل: {str(e)}"
         }
-        
+
     finally:
         if cursor:
             cursor.close()

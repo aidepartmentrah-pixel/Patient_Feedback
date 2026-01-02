@@ -57,8 +57,8 @@ SUBCATEGORY_MAP = {
 SEVERITY_MAP = {
     1: "HIGH",
     2: "LOW",
-    3: "MEDIUM",
-    6: "Moderate",
+    3: "MEDIUM"
+    # 6: "Moderate",
 }
 
 STAGE_MAP = {

@@ -16,8 +16,10 @@ from ..services.reference_service import (
     get_severity_levels,
     get_stages,
     get_harm_levels,
+  get_explanation_statuses,
     get_clinical_risk_types,
     get_feedback_intent_types,
+    get_buildings,
     get_all_reference_data
 )
 
@@ -221,6 +223,22 @@ async def get_harm_levels_endpoint():
     return get_harm_levels()
 
 
+@router.get("/buildings")
+async def get_buildings_endpoint():
+    """
+    Get all buildings (e.g., RAH=1, BCI=2).
+    """
+    return get_buildings()
+
+
+@router.get("/explanation-statuses")
+async def get_explanation_statuses_endpoint():
+    """
+    Get all explanation statuses (for Insert Page dropdown).
+    """
+    return get_explanation_statuses()
+
+
 @router.get("/clinical-risk-types")
 async def get_clinical_risk_types_endpoint():
     """
@@ -301,8 +319,10 @@ async def test_reference_endpoint():
             "/api/reference/severity-levels",
             "/api/reference/stages",
             "/api/reference/harm-levels",
+            "/api/reference/explanation-statuses",
             "/api/reference/clinical-risk-types",
             "/api/reference/feedback-intent-types",
+            "/api/reference/buildings",
             "/api/reference/all"
         ]
     }
