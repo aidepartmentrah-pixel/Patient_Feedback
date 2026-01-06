@@ -121,13 +121,14 @@ def get_admin_unit_leaves():
 def get_active_admin_units():
     """
     Return administration units that are not frozen.
+    Returns list of dicts with UniqueID and Name.
     """
     conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute(
         """
-        SELECT *
+        SELECT UniqueID, Name
         FROM AdminsrationUnit
         WHERE Frozen = 0
         """
@@ -135,4 +136,12 @@ def get_active_admin_units():
 
     rows = cursor.fetchall()
     conn.close()
-    return rows
+    
+    # Convert pyodbc.Row objects to dicts
+    result = []
+    for row in rows:
+        result.append({
+            "UniqueID": row[0],
+            "Name": row[1]
+        })
+    return result

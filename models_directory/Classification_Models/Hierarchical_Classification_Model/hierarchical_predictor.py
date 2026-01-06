@@ -52,19 +52,19 @@ from models_directory.Classification_Models.Hierarchical_Classification_Model.su
 
 # Domains → list of categories
 DOMAIN_TO_CATEGORIES = {
-    1: [5, 7],
-    2: [2, 3],
-    3: [1, 4, 6]
+    1: [6, 7],
+    2: [4, 5],
+    3: [1, 2, 3]
 }
 
 # Categories → list of subcategories
 CATEGORY_TO_SUBCATEGORIES = {
-    1: [2, 10, 21, 24],
-    2: [3, 14, 28, 31],
-    3: [4, 6, 8, 9, 13, 30],
-    4: [11, 23],
-    5: [1, 19, 26],
-    6: [12, 27],
+    1: [1, 2, 4, 3],
+    2: [6, 5],
+    3: [7, 8],
+    4: [9, 11, 12, 10],
+    5: [13, 14, 15, 16, 18, 17],
+    6: [20, 19, 21],
     7: [5, 15, 16, 18, 22, 29]
 }
 

@@ -3,6 +3,7 @@ from models_directory.Classification_Models.Severity_level.predict_severity impo
 from models_directory.Classification_Models.Stage.model_package import classify_stage_Score_Based
 from models_directory.Classification_Models.Harm_level.predict_harm import predict_harm_from_embedding
 from models_directory.Classification_Models.Stage.modular_functions import get_embedding
+from models_directory.Classification_Models.Classification_En.predict_classification_en import predict_classification_en_from_embedding
 
 
 #Not Implemented
@@ -99,6 +100,79 @@ IMPROVEMENT_OPPORTUNITY_MAP = {
     3: "Resource Allocation",
 }
 
+CLASSIFICATION_EN_MAP = {
+    78: "Classification 6",
+    79: "Classification 27",
+    80: "Classification 51",
+    81: "Classification 44",
+    82: "Classification 45",
+    83: "Classification 49",
+    84: "Classification 31",
+    85: "Classification 35",
+    86: "Classification 67",
+    88: "Classification 8",
+    89: "Classification 7",
+    90: "Classification 10",
+    91: "Classification 47",
+    93: "Classification 57",
+    94: "Classification 58",
+    95: "Classification 59",
+    96: "Classification 60",
+    98: "Classification 62",
+    99: "Classification 63",
+    100: "Classification 22",
+    102: "Classification 48",
+    103: "Classification 37",
+    104: "Classification 52",
+    105: "Classification 68",
+    106: "Classification 13",
+    107: "Classification 15",
+    108: "Classification 16",
+    109: "Classification 33",
+    110: "Classification 55",
+    111: "Classification 32",
+    112: "Classification 64",
+    113: "Classification 66",
+    114: "Classification 3",
+    115: "Classification 12",
+    116: "Classification 19",
+    117: "Classification 20",
+    118: "Classification 21",
+    120: "Classification 2",
+    121: "Classification 18",
+    122: "Classification 26",
+    123: "Classification 34",
+    125: "Classification 24",
+    126: "Classification 28",
+    127: "Classification 29",
+    128: "Classification 30",
+    129: "Classification 4",
+    130: "Classification 73",
+    131: "Classification 36",
+    132: "Classification 17",
+    133: "Classification 23",
+    134: "Classification 40",
+    135: "Classification 43",
+    136: "Classification 42",
+    137: "Classification 70",
+    138: "Classification 61",
+    139: "Classification 65",
+    140: "Classification 50",
+    141: "Classification 1",
+    142: "Classification 53",
+    143: "Classification 5",
+    144: "Classification 38",
+    145: "Classification 11",
+    146: "Classification 14",
+    148: "Classification 41",
+    149: "Classification 56",
+    150: "Classification 71",
+    151: "Classification 72",
+    152: "Classification 39",
+    153: "Classification 69",
+    154: "Classification 46",
+}
+
 
 
 def classify_feedback(patient_text, text_2, text_3, Print = False):
@@ -127,6 +201,7 @@ def classify_feedback(patient_text, text_2, text_3, Print = False):
 
     feedback_type_id = predict_feedback_type_from_embedding(Patient_Embedding)
     improvement_opportunity_id = predict_improvement_from_embedding(Patient_Embedding)
+    classification_en_id = predict_classification_en_from_embedding(Patient_Embedding)
 
     result = {
         "domain_id": domain_id,
@@ -152,6 +227,9 @@ def classify_feedback(patient_text, text_2, text_3, Print = False):
 
         "improvement_opportunity_type_id": improvement_opportunity_id,
         "improvement_opportunity_type": IMPROVEMENT_OPPORTUNITY_MAP.get(improvement_opportunity_id, f"UNKNOWN ({improvement_opportunity_id})"),
+
+        "classification_en_id": classification_en_id,
+        "classification_en": CLASSIFICATION_EN_MAP.get(classification_en_id, f"UNKNOWN ({classification_en_id})"),
     }
 
     # ---------------------------------------------------------
@@ -169,6 +247,7 @@ def classify_feedback(patient_text, text_2, text_3, Print = False):
         print(f"HARM LEVEL  : {result['harm_level']} ({result['harm_level_id']})")
         print(f"FEEDBACK TYPE: {result['feedback_type']} ({result['feedback_type_id']})")
         print(f"IMPROVEMENT : {result['improvement_opportunity_type']} ({result['improvement_opportunity_type_id']})")
+        print(f"CLASSIFICATION EN: {result['classification_en']} ({result['classification_en_id']})")
         print("\n========================================================\n")
     return result
 

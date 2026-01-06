@@ -1,0 +1,116 @@
+======================================================================
+TABLE: patient_feedback_encoded
+======================================================================
+COLUMNS:
+  - id: INTEGER
+  - feedback_received_date: TEXT
+  - feedback_type: INTEGER
+  - domain: INTEGER
+  - category: INTEGER
+  - sub_category: INTEGER
+  - classification_ar: REAL
+  - classification_en: INTEGER
+  - complaint_text: TEXT
+  - immediate_action: TEXT
+  - taken_action: TEXT
+  - severity_level: INTEGER
+  - stage: REAL
+  - harm_level: REAL
+  - improvement_opportunity_type: REAL
+  - embedding_text1: TEXT
+  - embedding_text2: TEXT
+  - embedding_text3: TEXT
+  - embedding_text123: TEXT
+  - embedding_text23: TEXT
+  - sentence_1_embedding: BLOB
+  - sentence_2_embedding: BLOB
+  - sentence_3_embedding: BLOB
+  - sentence_4_embedding: BLOB
+  - sentence_5_embedding: BLOB
+  - sentence_6_embedding: BLOB
+
+FOREIGN KEYS:
+  None
+
+
+======================================================================
+TABLE: table_feedback_test
+======================================================================
+COLUMNS:
+  - id: INTEGER
+  - feedback_received_date: TEXT
+  - record_id: INTEGER
+  - patient_full_name: TEXT
+  - issuing_department: INTEGER
+  - target_department: REAL
+  - source_1: INTEGER
+  - feedback_type: INTEGER
+  - domain: INTEGER
+  - category: INTEGER
+  - sub_category: INTEGER
+  - classification_ar: REAL
+  - classification_en: INTEGER
+  - complaint_text: TEXT
+  - immediate_action: TEXT
+  - taken_action: TEXT
+  - severity_level: INTEGER
+  - stage: REAL
+  - harm_level: REAL
+  - status: REAL
+  - improvement_opportunity_type: REAL
+  - embedding_text1: TEXT
+  - embedding_text2: TEXT
+  - embedding_text3: TEXT
+  - embedding_text123: TEXT
+  - embedding_text23: TEXT
+  - sentence_1_embedding: TEXT
+  - sentence_2_embedding: TEXT
+  - sentence_3_embedding: TEXT
+  - sentence_4_embedding: TEXT
+  - sentence_5_embedding: TEXT
+  - sentence_6_embedding: TEXT
+
+FOREIGN KEYS:
+  None
+
+
+======================================================================
+TABLE: table_feedback_train
+======================================================================
+COLUMNS:
+  - id: INTEGER
+  - feedback_received_date: TEXT
+  - record_id: INTEGER
+  - patient_full_name: TEXT
+  - issuing_department: INTEGER
+  - target_department: REAL
+  - source_1: INTEGER
+  - feedback_type: INTEGER
+  - domain: INTEGER
+  - category: INTEGER
+  - sub_category: INTEGER
+  - classification_ar: REAL
+  - classification_en: INTEGER
+  - complaint_text: TEXT
+  - immediate_action: TEXT
+  - taken_action: TEXT
+  - severity_level: INTEGER
+  - stage: REAL
+  - harm_level: REAL
+  - status: REAL
+  - improvement_opportunity_type: REAL
+  - embedding_text1: TEXT
+  - embedding_text2: TEXT
+  - embedding_text3: TEXT
+  - embedding_text123: TEXT
+  - embedding_text23: TEXT
+  - sentence_1_embedding: TEXT
+  - sentence_2_embedding: TEXT
+  - sentence_3_embedding: TEXT
+  - sentence_4_embedding: TEXT
+  - sentence_5_embedding: TEXT
+  - sentence_6_embedding: TEXT
+
+FOREIGN KEYS:
+  None
+

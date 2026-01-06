@@ -20,6 +20,9 @@ def dashboard_stats(
     section_id: int | None = Query(None),
     start_date: date | None = Query(None),
     end_date: date | None = Query(None),
+    classification_chart_type: str = Query("bar", description="bar | pie | donut | line"),
+    stage_chart_type: str = Query("bar", description="bar | pie | donut | line"),
+    department_chart_type: str = Query("bar", description="bar | pie | donut | line"),
 ):
     # Log all incoming parameters
     print("=" * 80)
@@ -71,6 +74,9 @@ def dashboard_stats(
             section_id=section_id,
             start_date=start_date,
             end_date=end_date,
+            classification_chart_type=classification_chart_type,
+            stage_chart_type=stage_chart_type,
+            department_chart_type=department_chart_type,
         )
     except Exception as e:
         print(f"Dashboard error - scope: {scope}, admin: {administration_id}, dept: {department_id}, section: {section_id}")
@@ -88,3 +94,54 @@ def dashboard_stats(
 @router.get("/hierarchy")
 def dashboard_hierarchy():
     return get_dashboard_hierarchy()
+
+# =========================================================
+# DEBUG ENDPOINT: Check classifications mapping
+# =========================================================
+
+@router.get("/debug/classifications")
+def debug_classifications():
+    from ..db_layer import lookups
+    
+    classifications = lookups.get_classifications()
+    return {
+        "total_count": len(classifications),
+        "classifications": classifications
+    }
+
+
+# =========================================================
+# DEBUG ENDPOINT: Check stage histogram data
+# =========================================================
+
+@router.get("/debug/stage-histogram")
+def debug_stage_histogram(
+    scope: str = Query("hospital"),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+):
+    from datetime import timedelta
+    from ..services.dashboard_service import _resolve_scope, _fetch_incidents_in_scope, _histogram_with_names
+    from ..db_layer import lookups
+    from collections import Counter
+    
+    if end_date is None:
+        end_date = date.today()
+    if start_date is None:
+        start_date = end_date - timedelta(days=30)
+    
+    scope_unit_ids, _ = _resolve_scope(scope, None, None, None)
+    incidents = _fetch_incidents_in_scope(scope_unit_ids, start_date, end_date)
+    
+    stages = lookups.get_case_stages()
+    stage_map = {s["StageID"]: s["StageName"] for s in stages}
+    
+    counter = Counter(i["StageID"] for i in incidents if i.get("StageID"))
+    
+    return {
+        "total_incidents": len(incidents),
+        "raw_stage_counts": dict(counter),
+        "stage_lookup_map": stage_map,
+        "final_histogram": _histogram_with_names(incidents, "StageID", stage_map),
+        "sample_incident_stages": [i.get("StageID") for i in incidents[:10]]
+    }

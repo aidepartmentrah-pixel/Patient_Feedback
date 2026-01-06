@@ -65,6 +65,61 @@ TREND_THRESHOLD = 0.10  # 10% threshold for stable vs increasing/decreasing
 # PUBLIC SERVICE FUNCTIONS
 # =========================================================
 
+def get_trends_analysis(
+    *,
+    scope: str,
+    administration_id: int | None = None,
+    department_id: int | None = None,
+    section_id: int | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    include_zero_months: bool = True,
+) -> dict:
+    """
+    Get unified trends analysis for domain, category, and classification
+    with scope filtering (hospital, administration, department, section).
+    
+    Returns all three trend views with table and chart data.
+    """
+    from .dashboard_service import _resolve_scope, _fetch_incidents_in_scope
+    
+    # Date range defaults
+    if end_date is None:
+        end_date = date.today()
+    
+    if start_date is None:
+        start_date = end_date - relativedelta(months=12)
+    
+    # Normalize to first and last day of month for filtering
+    start_date_normalized = date(start_date.year, start_date.month, 1)
+    end_date_normalized = date(end_date.year, end_date.month, 1) + relativedelta(months=1) - timedelta(days=1)
+    
+    # Get scope unit IDs
+    try:
+        scope_unit_ids, _ = _resolve_scope(scope, administration_id, department_id, section_id)
+    except ValueError as e:
+        raise ValueError(f"Invalid scope: {str(e)}")
+    
+    # Fetch incidents in scope
+    incidents = _fetch_incidents_in_scope(scope_unit_ids, start_date_normalized, end_date_normalized)
+    
+    # Build trends for each view (use normalized dates for grouping)
+    domain_data = _build_domain_trends(incidents, start_date_normalized, end_date_normalized, include_zero_months)
+    category_data = _build_category_trends(incidents, start_date_normalized, end_date_normalized, include_zero_months)
+    classification_data = _build_classification_trends(incidents, start_date_normalized, end_date_normalized, include_zero_months)
+    
+    return {
+        "scope": scope,
+        "time_range": {
+            "start": start_date_normalized.isoformat(),
+            "end": end_date_normalized.isoformat(),
+        },
+        "domain": domain_data,
+        "category": category_data,
+        "classification": classification_data,
+    }
+
+
 def get_domain_trends(
     *,
     start_date: date | None = None,
@@ -798,3 +853,221 @@ def _generate_category_color(category_id: int) -> str:
     ]
     
     return color_palette[category_id % len(color_palette)]
+
+
+def _generate_color_from_id(item_id):
+    """
+    Generate a consistent color for an item based on its ID.
+    Uses a predefined color palette.
+    """
+    color_palette = [
+        "#2196f3", "#4caf50", "#ff9800", "#9c27b0", "#f44336",
+        "#00bcd4", "#ffeb3b", "#795548", "#607d8b", "#e91e63",
+        "#3f51b5", "#009688", "#ff5722", "#673ab7", "#cddc39",
+        "#ffc107", "#8bc34a", "#03a9f4", "#ff6f00", "#1976d2",
+    ]
+    return color_palette[item_id % len(color_palette)]
+
+
+def _generate_months(start_date, end_date, include_zero_months):
+    """Generate list of months between start and end dates"""
+    months = []
+    current = start_date
+    while current <= end_date:
+        months.append(current)
+        current += relativedelta(months=1)
+    return months
+
+# =========================================================
+# HELPER FUNCTIONS FOR UNIFIED TRENDS ANALYSIS
+# =========================================================
+
+def _build_domain_trends(incidents, start_date, end_date, include_zero_months):
+    """Build domain trends for scoped incidents"""
+    domain_names = {1: "Clinical", 2: "Management", 3: "Relational"}
+    
+    # Generate months in range
+    months = _generate_months(start_date, end_date, include_zero_months)
+    
+    # Group incidents by domain and month
+    domain_monthly = defaultdict(lambda: defaultdict(int))
+    for incident in incidents:
+        if incident.get("DomainID"):
+            incident_month = incident["CreatedAt"].date()
+            incident_month = date(incident_month.year, incident_month.month, 1)
+            domain_id = incident["DomainID"]
+            domain_monthly[domain_id][incident_month] += 1
+    
+    # Build table data
+    table_data = []
+    for domain_id in [1, 2, 3]:
+        domain_name = domain_names.get(domain_id, f"Unknown ({domain_id})")
+        monthly_counts = [domain_monthly[domain_id].get(m, 0) for m in months]
+        total = sum(monthly_counts)
+        
+        if total > 0 or True:  # Include all domains
+            trend_direction, trend_pct = _calculate_trend(monthly_counts)
+            table_data.append({
+                "id": domain_id,
+                "name": domain_name,
+                "total": total,
+                "color": DOMAIN_COLORS.get(domain_id, "#999999"),
+                "trend_direction": trend_direction,
+                "trend_percentage": trend_pct,
+                "monthly": [
+                    {
+                        "month": m.strftime("%Y-%m"),
+                        "month_ar": f"{ARABIC_MONTHS[m.month]} {m.year}",
+                        "count": domain_monthly[domain_id].get(m, 0)
+                    }
+                    for m in months
+                ]
+            })
+    
+    return {
+        "table": table_data,
+        "chart_data": [
+            {
+                "name": item["name"],
+                "data": [m["count"] for m in item["monthly"]],
+                "color": item["color"]
+            }
+            for item in table_data
+        ],
+        "chart_labels": [m.strftime("%b %Y") for m in months]
+    }
+
+
+def _build_category_trends(incidents, start_date, end_date, include_zero_months):
+    """Build category trends for scoped incidents"""
+    # Get all categories (no domain filter)
+    try:
+        categories = lookups.get_categories()  # No domain_id = get all
+    except TypeError:
+        # If get_categories requires domain_id, get them all manually
+        categories = []
+        for domain_id in [1, 2, 3]:
+            try:
+                cats = lookups.get_categories(domain_id=domain_id)
+                categories.extend(cats)
+            except:
+                pass
+    
+    if not categories:
+        categories = []
+    
+    category_map = {c["CategoryID"]: c.get("Category_AR", c.get("Category_EN", f"Category {c['CategoryID']}")) 
+                   for c in categories if c.get("CategoryID")}
+    
+    # Generate months
+    months = _generate_months(start_date, end_date, include_zero_months)
+    
+    # Group incidents by category and month
+    category_monthly = defaultdict(lambda: defaultdict(int))
+    for incident in incidents:
+        if incident.get("CategoryID"):
+            incident_month = incident["CreatedAt"].date()
+            incident_month = date(incident_month.year, incident_month.month, 1)
+            category_id = incident["CategoryID"]
+            category_monthly[category_id][incident_month] += 1
+    
+    # Build table data
+    table_data = []
+    for category_id, monthly_data in category_monthly.items():
+        category_name = category_map.get(category_id, f"Unknown ({category_id})")
+        monthly_counts = [category_monthly[category_id].get(m, 0) for m in months]
+        total = sum(monthly_counts)
+        
+        trend_direction, trend_pct = _calculate_trend(monthly_counts)
+        table_data.append({
+            "id": category_id,
+            "name": category_name,
+            "total": total,
+            "color": _generate_color_from_id(category_id),
+            "trend_direction": trend_direction,
+            "trend_percentage": trend_pct,
+            "monthly": [
+                {
+                    "month": m.strftime("%Y-%m"),
+                    "month_ar": f"{ARABIC_MONTHS[m.month]} {m.year}",
+                    "count": category_monthly[category_id].get(m, 0)
+                }
+                for m in months
+            ]
+        })
+    
+    # Sort by total descending
+    table_data.sort(key=lambda x: x["total"], reverse=True)
+    
+    return {
+        "table": table_data,
+        "chart_data": [
+            {
+                "name": item["name"],
+                "data": [m["count"] for m in item["monthly"]],
+                "color": item["color"]
+            }
+            for item in table_data
+        ],
+        "chart_labels": [m.strftime("%b %Y") for m in months]
+    }
+
+
+def _build_classification_trends(incidents, start_date, end_date, include_zero_months):
+    """Build classification trends for scoped incidents"""
+    classifications = lookups.get_classifications() or []
+    classification_map = {c["ClassificationID"]: c.get("Classification_AR", c.get("Classification_EN", f"Classification {c['ClassificationID']}")) 
+                         for c in classifications if c.get("ClassificationID")}
+    
+    # Generate months
+    months = _generate_months(start_date, end_date, include_zero_months)
+    
+    # Group incidents by classification and month
+    classification_monthly = defaultdict(lambda: defaultdict(int))
+    for incident in incidents:
+        if incident.get("ClassificationID"):
+            incident_month = incident["CreatedAt"].date()
+            incident_month = date(incident_month.year, incident_month.month, 1)
+            classification_id = incident["ClassificationID"]
+            classification_monthly[classification_id][incident_month] += 1
+    
+    # Build table data
+    table_data = []
+    for classification_id, monthly_data in classification_monthly.items():
+        classification_name = classification_map.get(classification_id, f"Unknown ({classification_id})")
+        monthly_counts = [classification_monthly[classification_id].get(m, 0) for m in months]
+        total = sum(monthly_counts)
+        
+        trend_direction, trend_pct = _calculate_trend(monthly_counts)
+        table_data.append({
+            "id": classification_id,
+            "name": classification_name,
+            "total": total,
+            "color": _generate_color_from_id(classification_id),
+            "trend_direction": trend_direction,
+            "trend_percentage": trend_pct,
+            "monthly": [
+                {
+                    "month": m.strftime("%Y-%m"),
+                    "month_ar": f"{ARABIC_MONTHS[m.month]} {m.year}",
+                    "count": classification_monthly[classification_id].get(m, 0)
+                }
+                for m in months
+            ]
+        })
+    
+    # Sort by total descending
+    table_data.sort(key=lambda x: x["total"], reverse=True)
+    
+    return {
+        "table": table_data,
+        "chart_data": [
+            {
+                "name": item["name"],
+                "data": [m["count"] for m in item["monthly"]],
+                "color": item["color"]
+            }
+            for item in table_data
+        ],
+        "chart_labels": [m.strftime("%b %Y") for m in months]
+    }

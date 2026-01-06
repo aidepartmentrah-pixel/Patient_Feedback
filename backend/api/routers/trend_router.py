@@ -392,3 +392,90 @@ def fetch_time_periods(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
         )
+
+# =========================================================
+# UNIFIED TRENDS ENDPOINT (with scope selection)
+# =========================================================
+
+@router.get("/analysis")
+def fetch_trends_analysis(
+    scope: str = Query("hospital", description="hospital | administration | department | section"),
+    administration_id: int | None = Query(None),
+    department_id: int | None = Query(None),
+    section_id: int | None = Query(None),
+    start_date: str | None = Query(None, description="Start month in YYYY-MM format"),
+    end_date: str | None = Query(None, description="End month in YYYY-MM format"),
+    include_zero_months: bool = Query(True),
+):
+    """
+    Unified trends endpoint with scope selection.
+    Returns domain, category, and classification trends for selected scope.
+    
+    **Scope options:**
+    - hospital: All incidents across the hospital
+    - administration: Filtered by administration unit
+    - department: Filtered by department unit
+    - section: Filtered by section unit
+    
+    **Response includes:**
+    - Domain trends (clinical, management, relational)
+    - Category trends
+    - Classification trends
+    - Each with: table data, trend direction, monthly breakdown
+    """
+    
+    print("=" * 80)
+    print("TRENDS ANALYSIS REQUEST RECEIVED:")
+    print(f"  scope: {scope}")
+    print(f"  administration_id: {administration_id}")
+    print(f"  department_id: {department_id}")
+    print(f"  section_id: {section_id}")
+    print(f"  start_date: {start_date}")
+    print(f"  end_date: {end_date}")
+    print("=" * 80)
+    
+    # Validate scope
+    if scope not in {"hospital", "administration", "department", "section"}:
+        raise HTTPException(status_code=400, detail="Invalid scope")
+    
+    if scope == "administration" and administration_id is None:
+        raise HTTPException(status_code=400, detail="administration_id required for administration scope")
+    
+    if scope == "department" and department_id is None:
+        raise HTTPException(status_code=400, detail="department_id required for department scope")
+    
+    if scope == "section" and section_id is None:
+        raise HTTPException(status_code=400, detail="section_id required for section scope")
+    
+    # Parse dates
+    try:
+        start_date_obj = None
+        end_date_obj = None
+        
+        if start_date:
+            year, month = map(int, start_date.split("-"))
+            start_date_obj = date(year, month, 1)
+        
+        if end_date:
+            year, month = map(int, end_date.split("-"))
+            end_date_obj = date(year, month, 1)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Date must be in YYYY-MM format")
+    
+    try:
+        from ..services.trend_service import get_trends_analysis
+        
+        return get_trends_analysis(
+            scope=scope,
+            administration_id=administration_id,
+            department_id=department_id,
+            section_id=section_id,
+            start_date=start_date_obj,
+            end_date=end_date_obj,
+            include_zero_months=include_zero_months,
+        )
+    
+    except Exception as e:
+        print(f"Trends analysis error: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

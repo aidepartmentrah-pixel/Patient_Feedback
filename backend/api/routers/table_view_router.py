@@ -3,7 +3,8 @@ Table View Router
 FastAPI endpoints for the TableView page (main operational data table).
 """
 
-from fastapi import APIRouter, Query, HTTPException, Body
+from datetime import datetime
+from fastapi import APIRouter, Query, HTTPException, Body, Path
 from fastapi.responses import StreamingResponse
 from typing import Optional, List, Dict, Any, Literal
 from pydantic import BaseModel
@@ -17,6 +18,7 @@ from ..services.table_view_service import (
     export_complaints_excel,
     get_table_views
 )
+from ..db_layer.incident_case import soft_delete_incident_case, hard_delete_incident_case
 
 
 router = APIRouter(prefix="/api/complaints", tags=["Table View"])
@@ -408,4 +410,107 @@ async def get_available_views():
             "error": "internal_server_error",
             "message": f"An error occurred while fetching views: {str(e)}",
             "message_ar": f"حدث خطأ أثناء جلب طرق العرض: {str(e)}"
+        })
+
+
+@router.delete("/{complaint_id}")
+async def delete_complaint(
+    complaint_id: int = Path(..., gt=0, description="Incident/complaint record ID to delete")
+):
+    """
+    Soft delete (close) a complaint record - MAIN DELETE METHOD.
+    
+    Marks a complaint as closed (CaseStatusID = 3) without permanently deleting data.
+    Data remains in the database for archival purposes and can be filtered out in views.
+    
+    **Example Request:**
+    ```
+    DELETE /api/complaints/156
+    ```
+    
+    **Returns:**
+    ```json
+    {
+        "success": true,
+        "message": "Record marked as closed",
+        "message_ar": "تم وضع علامة على السجل كمغلق",
+        "complaint_id": 156,
+        "case_status_id": 3,
+        "closed_at": "2026-01-06T10:30:45.123456"
+    }
+    ```
+    """
+    try:
+        closed_status_id = 3
+        soft_delete_incident_case(
+            incident_id=complaint_id,
+            closed_status_id=closed_status_id
+        )
+        
+        return {
+            "success": True,
+            "message": "Record marked as closed",
+            "message_ar": "تم وضع علامة على السجل كمغلق",
+            "complaint_id": complaint_id,
+            "case_status_id": closed_status_id,
+            "closed_at": datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={
+            "error": "deletion_failed",
+            "message": f"Failed to delete record: {str(e)}",
+            "message_ar": f"فشل حذف السجل: {str(e)}"
+        })
+
+
+@router.delete("/{complaint_id}/hard-delete")
+async def hard_delete_complaint(
+    complaint_id: int = Path(..., gt=0, description="Incident/complaint record ID to permanently delete")
+):
+    """
+    Permanently delete a complaint record and all related data - IRREVERSIBLE.
+    
+    **IMPORTANT:** This is a HARD DELETE. Completely removes the record and all related data.
+    Data CANNOT be recovered. Use soft delete instead for normal operations.
+    
+    Permanently removes:
+    - Linked doctors
+    - Target departments
+    - Feedback records
+    - Action items
+    - Main case record
+    
+    **Example Request:**
+    ```
+    DELETE /api/complaints/156/hard-delete
+    ```
+    
+    **Returns:**
+    ```json
+    {
+        "success": true,
+        "message": "Record permanently deleted",
+        "message_ar": "تم حذف السجل نهائياً",
+        "complaint_id": 156,
+        "deleted_permanently": true,
+        "deleted_at": "2026-01-06T10:30:45.123456"
+    }
+    ```
+    """
+    try:
+        hard_delete_incident_case(complaint_id)
+        
+        return {
+            "success": True,
+            "message": "Record permanently deleted",
+            "message_ar": "تم حذف السجل نهائياً",
+            "complaint_id": complaint_id,
+            "deleted_permanently": True,
+            "deleted_at": datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={
+            "error": "permanent_deletion_failed",
+            "message": f"Failed to permanently delete record: {str(e)}",
+            "message_ar": f"فشل الحذف النهائي للسجل: {str(e)}"
         })

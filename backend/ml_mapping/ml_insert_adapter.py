@@ -141,6 +141,10 @@ def _get_direct_values(data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Extract direct pass-through field values from input data.
     
+    Special handling for classification_en:
+    - If classification_en not in data but classification_id is, use the ID as EN value
+    - Otherwise pass through as-is
+    
     Args:
         data: Input data dictionary
     
@@ -150,6 +154,15 @@ def _get_direct_values(data: Dict[str, Any]) -> Dict[str, Any]:
     direct_values = {}
     
     for input_key, ml_column in DIRECT_FIELDS.items():
+        # Special handling for classification_en
+        if ml_column == "classification_en":
+            if "classification_en" in data and data["classification_en"] is not None:
+                direct_values[ml_column] = data["classification_en"]
+            elif "classification_id" in data and data["classification_id"] is not None:
+                # Use classification_id as fallback for EN value
+                direct_values[ml_column] = data["classification_id"]
+            continue
+        
         if input_key in data and data[input_key] is not None:
             direct_values[ml_column] = data[input_key]
     
@@ -235,15 +248,19 @@ def _insert_row(db_cursor: sqlite3.Cursor, row_data: Dict[str, Any]) -> bool:
 
 def _compute_text_embeddings(data: Dict[str, Any]) -> Dict[str, Optional[Any]]:
     """
-    Generate embeddings for complaint_text, immediate_action, taken_action, and combinations.
+    Generate embeddings for complaint_text and sentence-level embeddings.
     
-    Extracts text fields, generates embeddings, and returns enrichment dict.
+    This function:
+    1. Generates embedding_text1/2/3/123/23 from complaint_text and action fields
+    2. Splits complaint_text into sentences and generates sentence_1_embedding through sentence_6_embedding
+    3. If sentence splitting yields < 2 sentences, uses word-based chunking (max 50 words per chunk)
+    4. Returns empty dict if embedding functions unavailable (graceful degradation)
     
     Args:
-        data: Input data dict (must contain text fields)
+        data: Input data dict with complaint_text, immediate_action, taken_action
     
     Returns:
-        Dict with embedding fields → embedding bytes (or None if generation fails)
+        Dict with embedding column names → embedding values (only if generated successfully)
     """
     if not _EMBEDDING_FUNCTIONS_AVAILABLE:
         return {}
@@ -251,100 +268,94 @@ def _compute_text_embeddings(data: Dict[str, Any]) -> Dict[str, Optional[Any]]:
     embeddings = {}
     
     try:
-        # Extract text fields (safe defaults to empty string)
-        complaint_text = data.get('complaint_text') or ""
-        immediate_action = data.get('immediate_action') or ""
-        taken_action = data.get('taken_action') or ""
+        complaint_text = data.get("complaint_text", "")
+        immediate_action = data.get("immediate_action", "")
+        taken_action = data.get("taken_action", "")
         
-        # ====================================================
-        # 1. Individual field embeddings
-        # ====================================================
-        try:
-            if complaint_text.strip():
-                embeddings['embedding_text1'] = get_embedding(complaint_text)
-            else:
-                embeddings['embedding_text1'] = None
-        except Exception as e:
-            print(f"[Embedding Warning] complaint_text embedding failed: {str(e)}")
-            embeddings['embedding_text1'] = None
+        if not complaint_text:
+            return {}
         
+        # =====================================================
+        # 1. Generate text embeddings (text1, text2, text3, text123, text23)
+        # =====================================================
         try:
-            if immediate_action.strip():
-                embeddings['embedding_text2'] = get_embedding(immediate_action)
-            else:
-                embeddings['embedding_text2'] = None
+            # embedding_text1: complaint_text only
+            if complaint_text:
+                embeddings["embedding_text1"] = get_embedding(complaint_text)
+            
+            # embedding_text2: immediate_action only
+            if immediate_action:
+                embeddings["embedding_text2"] = get_embedding(immediate_action)
+            
+            # embedding_text3: taken_action only
+            if taken_action:
+                embeddings["embedding_text3"] = get_embedding(taken_action)
+            
+            # embedding_text123: all three combined
+            combined_123 = f"{complaint_text} {immediate_action} {taken_action}".strip()
+            if combined_123:
+                embeddings["embedding_text123"] = get_embedding(combined_123)
+            
+            # embedding_text23: action fields combined
+            combined_23 = f"{immediate_action} {taken_action}".strip()
+            if combined_23:
+                embeddings["embedding_text23"] = get_embedding(combined_23)
         except Exception as e:
-            print(f"[Embedding Warning] immediate_action embedding failed: {str(e)}")
-            embeddings['embedding_text2'] = None
+            print(f"[ML EMBEDDING WARNING] Failed to generate text embeddings: {str(e)}")
         
+        # =====================================================
+        # 2. Generate sentence-level embeddings
+        # =====================================================
         try:
-            if taken_action.strip():
-                embeddings['embedding_text3'] = get_embedding(taken_action)
-            else:
-                embeddings['embedding_text3'] = None
+            sentences = split_arabic_text_into_sentences(complaint_text)
+            
+            # If sentence splitting produces too few sentences, use word-based chunking
+            if len(sentences) < 2:
+                sentences = _chunk_text_by_words(complaint_text, chunk_size=50, max_chunks=6)
+            
+            # Generate embeddings for up to 6 sentences/chunks
+            for i, sentence in enumerate(sentences[:6]):
+                if sentence and sentence.strip():
+                    column_name = f"sentence_{i+1}_embedding"
+                    embeddings[column_name] = get_embedding(sentence)
         except Exception as e:
-            print(f"[Embedding Warning] taken_action embedding failed: {str(e)}")
-            embeddings['embedding_text3'] = None
+            print(f"[ML EMBEDDING WARNING] Failed to generate sentence embeddings: {str(e)}")
         
-        # ====================================================
-        # 2. Combination embeddings
-        # ====================================================
-        try:
-            text123 = f"{complaint_text} {immediate_action} {taken_action}".strip()
-            if text123:
-                embeddings['embedding_text123'] = get_embedding(text123)
-            else:
-                embeddings['embedding_text123'] = None
-        except Exception as e:
-            print(f"[Embedding Warning] text123 embedding failed: {str(e)}")
-            embeddings['embedding_text123'] = None
-        
-        try:
-            text23 = f"{immediate_action} {taken_action}".strip()
-            if text23:
-                embeddings['embedding_text23'] = get_embedding(text23)
-            else:
-                embeddings['embedding_text23'] = None
-        except Exception as e:
-            print(f"[Embedding Warning] text23 embedding failed: {str(e)}")
-            embeddings['embedding_text23'] = None
-        
-        # ====================================================
-        # 3. Sentence embeddings (split complaint_text into 6 sentences)
-        # ====================================================
-        try:
-            if complaint_text.strip():
-                sentences = split_arabic_text_into_sentences(complaint_text, max_sentences=6)
-                
-                # Get embeddings for all sentences in batch
-                if sentences:
-                    sentence_embeddings = get_embedding_list(sentences)
-                    
-                    # Assign to sentence_X_embedding fields
-                    for i in range(6):
-                        if i < len(sentence_embeddings):
-                            embeddings[f'sentence_{i+1}_embedding'] = sentence_embeddings[i]
-                        else:
-                            embeddings[f'sentence_{i+1}_embedding'] = None
-                else:
-                    # No sentences extracted
-                    for i in range(6):
-                        embeddings[f'sentence_{i+1}_embedding'] = None
-            else:
-                # Empty complaint_text
-                for i in range(6):
-                    embeddings[f'sentence_{i+1}_embedding'] = None
-        except Exception as e:
-            print(f"[Embedding Warning] sentence embeddings failed: {str(e)}")
-            for i in range(6):
-                embeddings[f'sentence_{i+1}_embedding'] = None
+        return embeddings
     
     except Exception as e:
-        print(f"[Embedding Warning] Unexpected error in embedding computation: {str(e)}")
-        # Return empty dict - will skip embeddings for this record
+        print(f"[ML EMBEDDING ERROR] Unexpected error in _compute_text_embeddings: {str(e)}")
         return {}
+
+
+def _chunk_text_by_words(text: str, chunk_size: int = 50, max_chunks: int = 6) -> List[str]:
+    """
+    Split text into chunks based on word count.
     
-    return embeddings
+    Useful for texts that don't have natural sentence boundaries.
+    
+    Args:
+        text: Text to chunk
+        chunk_size: Approximate number of words per chunk
+        max_chunks: Maximum number of chunks to return
+    
+    Returns:
+        List of text chunks
+    """
+    if not text:
+        return []
+    
+    words = text.split()
+    chunks = []
+    
+    for i in range(0, len(words), chunk_size):
+        chunk = " ".join(words[i:i+chunk_size])
+        if chunk.strip():
+            chunks.append(chunk.strip())
+            if len(chunks) >= max_chunks:
+                break
+    
+    return chunks
 
 
 def add_corrected_record_to_ml(data: dict) -> None:
@@ -391,7 +402,9 @@ def add_corrected_record_to_ml(data: dict) -> None:
         add_to_ml_database(enriched_data)
     
     except Exception as e:
-        print(f"[ML INSERT WARNING] Unexpected error in add_corrected_record_to_ml: {str(e)}")
+        print(f"[ML INSERT ERROR] Unexpected error in add_corrected_record_to_ml: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
 
 def add_to_ml_database(data: dict) -> None:
@@ -440,12 +453,15 @@ def add_to_ml_database(data: dict) -> None:
         try:
             # Insert each combination
             inserted_count = 0
-            for combo in combinations:
+            for idx, combo in enumerate(combinations):
                 # Merge mapped and direct values
                 row_data = {**direct_values, **combo}
+                print(f"[ML DEBUG] Row {idx+1} has {len(row_data)} fields")
                 
                 if _insert_row(cursor, row_data):
                     inserted_count += 1
+                else:
+                    print(f"[ML DEBUG] Row {idx+1} insert failed")
             
             # Commit all inserts
             if inserted_count > 0:

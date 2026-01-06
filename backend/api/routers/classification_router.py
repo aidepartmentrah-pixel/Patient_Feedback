@@ -43,6 +43,7 @@ async def classify_feedback_text(request: ClassificationRequest = Body(...)):
     6. Stage (المرحلة)
     7. Harm Level (مستوى الضرر)
     8. Improvement Opportunity Type (نوع فرصة التحسين)
+    9. Classification EN (التصنيف الإنجليزي)
     
     **Example Request:**
     ```json
@@ -53,7 +54,7 @@ async def classify_feedback_text(request: ClassificationRequest = Body(...)):
     ```
     
     **Returns:**
-    - Classification results for all 8 categories
+    - Classification results for all 9 categories (including Classification EN)
     - Confidence scores
     - Optional explanations
     """

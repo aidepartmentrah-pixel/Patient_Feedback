@@ -410,6 +410,30 @@ def get_filter_options(include_counts: bool = False) -> Dict[str, List[Dict[str,
         cursor.execute(status_query)
         result['statuses'] = [dict(zip([col[0] for col in cursor.description], row)) for row in cursor.fetchall()]
         
+        # Classifications EN
+        classification_en_query = """
+            SELECT 
+                c.ClassificationID as id,
+                c.ClassificationName as name
+                """ + (", COUNT(ic.IncidentRequestCaseID) as count" if include_counts else "") + """
+            FROM APP_LOOKUP_CLASSIFICATION c
+            """ + ("LEFT JOIN APP_IncidentCase ic ON c.ClassificationID = ic.ClassificationID" if include_counts else "") + """
+            """ + ("GROUP BY c.ClassificationID, c.ClassificationName" if include_counts else "") + """
+            ORDER BY c.ClassificationName
+        """
+        cursor.execute(classification_en_query)
+        result['classifications_en'] = [dict(zip([col[0] for col in cursor.description], row)) for row in cursor.fetchall()]
+        
+        # Years
+        years_query = """
+            SELECT DISTINCT YEAR(FeedbackRecievedDate) as year
+            FROM APP_IncidentCase
+            WHERE FeedbackRecievedDate IS NOT NULL
+            ORDER BY year DESC
+        """
+        cursor.execute(years_query)
+        result['years'] = [row[0] for row in cursor.fetchall()]
+        
         return result
         
     finally:
@@ -435,11 +459,9 @@ def get_complaint_by_id(complaint_id: int) -> Optional[Dict[str, Any]]:
             c.TakenAction as taken_action,
             c.FeedbackRecievedDate as received_date,
             c.PatientName as patient_name,
-            c.DoctorName as doctor_name,
-            c.DoctorID as doctor_id,
             c.CreatedAt as created_at,
             c.CreatedByUserID as created_by_user_id,
-            c.InOut as in_out,
+            c.isINPatient as is_inpatient,
             
             -- Issuing organizational unit
             c.IssuingOrgUnitID as issuing_org_unit_id,
@@ -480,8 +502,10 @@ def get_complaint_by_id(complaint_id: int) -> Optional[Dict[str, Any]]:
             
             -- Risk and Intent Types
             c.ClinicalRiskTypeID as clinical_risk_type_id,
-            c.FeedbackIntentTypeID as feedback_intent_type_id
+            c.FeedbackIntentTypeID as feedback_intent_type_id,
             
+            -- Source
+            c.SourceID as source_id
         FROM dbo.APP_IncidentCase c
         LEFT JOIN AdminsrationUnit org_unit ON c.IssuingOrgUnitID = org_unit.UniqueID
         LEFT JOIN APP_LOOKUP_DOMAIN domain ON c.DomainID = domain.DomainID

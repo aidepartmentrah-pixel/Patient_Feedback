@@ -11,7 +11,6 @@ from pathlib import Path
 workspace_root = Path(__file__).resolve().parent.parent.parent.parent
 if str(workspace_root) not in sys.path:
     sys.path.insert(0, str(workspace_root))
-from backend.core.id_mapping import remap_classification_output
 
 def _get_classifier():
     """Lazy import classifier to avoid heavy startup downloads on reload."""
@@ -49,16 +48,14 @@ def classify_text(text: str, explain: bool = True) -> dict:
     
     try:
         # Run classification model
-        # classify_feedback expects: text_1, text_2, text_3, Print
+        # classify_feedback expects: patient_text, text_2, text_3, Print
         classifier = _get_classifier()
         classification_result = classifier(
-            text_1=text,
+            patient_text=text,
             text_2="",
             text_3="",
             Print=False
         )
-        # Apply ID remapping according to backend/config/classification_id_mapping.json
-        classification_result = remap_classification_output(classification_result)
         
         return {
             "success": True,

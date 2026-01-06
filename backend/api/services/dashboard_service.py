@@ -29,6 +29,9 @@ def get_dashboard_stats(
     section_id: int | None,
     start_date: date,
     end_date: date,
+    classification_chart_type: str = "bar",
+    stage_chart_type: str = "bar",
+    department_chart_type: str = "bar",
 ) -> dict:
     """
     Core dashboard service.
@@ -45,7 +48,13 @@ def get_dashboard_stats(
     incidents = _fetch_incidents_in_scope(scope_unit_ids, start_date, end_date)
 
     metrics = _compute_metrics(incidents)
-    charts = _build_charts(incidents, include_issuing_dept)
+    charts = _build_charts(
+        incidents, 
+        include_issuing_dept,
+        classification_chart_type=classification_chart_type,
+        stage_chart_type=stage_chart_type,
+        department_chart_type=department_chart_type,
+    )
     recent_activity = _build_recent_activity(incidents)
 
     previous_start = start_date - (end_date - start_date)
@@ -228,16 +237,18 @@ def _compute_metrics(incidents):
 
     for i in incidents:
         # -------------------------
-        # Case status
+        # Case status & Explanation Status
         # -------------------------
         status_id = i.get("CaseStatusID")
+        explanation_status_id = i.get("ExplanationStatusID")
 
-        if status_id in (1,):  # example OPEN
+        # Check for Forcibly Closed (ExplanationStatusID == 3)
+        if explanation_status_id == 3:
+            metrics["openClosed"]["forciblyClosed"] += 1
+        elif status_id in (1,):  # example OPEN
             metrics["openClosed"]["open"] += 1
         elif status_id in (2,):  # example CLOSED
             metrics["openClosed"]["closed"] += 1
-        elif status_id in (3,):  # example FORCIBLY CLOSED
-            metrics["openClosed"]["forciblyClosed"] += 1
 
         # -------------------------
         # Severity
@@ -264,23 +275,54 @@ def _compute_metrics(incidents):
             metrics["domainBreakdown"]["relational"] += 1
 
         # -------------------------
-        # Red flags (example rule)
+        # Red flags
         # -------------------------
-        if severity_id == 3:
+        clinical_risk_type_id = i.get("ClinicalRiskTypeID")
+        if clinical_risk_type_id == 2:
             metrics["redFlags"] += 1
 
     return metrics
 
 
 
-def _build_charts(incidents, include_issuing_dept):
-    charts = {
-        "top5Classification": _top5(incidents, "ClassificationID"),
-        "stageHistogram": _histogram(incidents, "StageID"),
-    }
-
+def _build_charts(incidents, include_issuing_dept, classification_chart_type="bar", stage_chart_type="bar", department_chart_type="bar"):
+    # Build lookup maps (ID -> Name)
+    stages = lookups.get_case_stages()
+    stage_map = {s["StageID"]: s["StageName"] for s in stages}
+    
+    classifications = lookups.get_classifications()
+    classification_map = {c["ClassificationID"]: c["Classification_AR"] for c in classifications}
+    
+    org_units = admin_units.get_active_admin_units()
+    dept_map = {u["UniqueID"]: u["Name"] for u in org_units}
+    
+    # Build classification chart
+    classification_data = _top5_with_names(incidents, "ClassificationID", classification_map)
+    
+    # Build stage chart
+    stage_data = _histogram_with_names(incidents, "StageID", stage_map)
+    
+    # Build department chart
+    department_data = None
     if include_issuing_dept:
-        charts["issuingDept"] = _histogram(incidents, "IssuingOrgUnitID")
+        department_data = _histogram_with_names(incidents, "IssuingOrgUnitID", dept_map)
+    
+    charts = {
+        "classification": {
+            "type": classification_chart_type,
+            "data": classification_data
+        },
+        "stage": {
+            "type": stage_chart_type,
+            "data": stage_data
+        },
+    }
+    
+    if department_data:
+        charts["department"] = {
+            "type": department_chart_type,
+            "data": department_data
+        }
 
     return charts
 
@@ -328,6 +370,32 @@ def _top5(items, key):
 def _histogram(items, key):
     counter = Counter(i[key] for i in items)
     return [{"stage": k, "count": v} for k, v in counter.items()]
+
+
+def _top5_with_names(items, key, id_name_map):
+    """
+    Get top 5 items by count, with names instead of IDs.
+    id_name_map: dict mapping ID to name
+    """
+    counter = Counter(i[key] for i in items if i.get(key))
+    result = []
+    for id_val, count in counter.most_common(5):
+        name = id_name_map.get(id_val, f"Unknown ({id_val})")
+        result.append({"name": name, "count": count})
+    return result
+
+
+def _histogram_with_names(items, key, id_name_map):
+    """
+    Get histogram with names instead of IDs.
+    id_name_map: dict mapping ID to name
+    """
+    counter = Counter(i[key] for i in items if i.get(key))
+    result = []
+    for id_val, count in counter.items():
+        name = id_name_map.get(id_val, f"Unknown ({id_val})")
+        result.append({"name": name, "count": count})
+    return result
 
 
 def _unit_payload(u):

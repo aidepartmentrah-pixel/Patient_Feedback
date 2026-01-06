@@ -196,3 +196,77 @@ def soft_delete_incident_case(
 
     conn.commit()
     conn.close()
+
+from core.database import get_connection
+
+
+def hard_delete_incident_case(incident_id: int) -> None:
+    """
+    Completely and permanently deletes an incident case and ALL its related records.
+
+    This will remove:
+    - APP_IncidentCaseDoctor
+    - APP_IncidentCaseTargetDepartment
+    - APP_IncidentCaseFeedback
+    - APP_ActionItem
+    - APP_IncidentCase (parent)
+
+    Uses a transaction for safety.
+    """
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        # -----------------------------
+        # Start transaction
+        # -----------------------------
+        conn.autocommit = False
+
+        # -----------------------------
+        # Delete children FIRST
+        # -----------------------------
+
+        # Doctors linked to case
+        cursor.execute(
+            "DELETE FROM dbo.APP_IncidentCaseDoctor WHERE IncidentRequestCaseID = ?",
+            incident_id,
+        )
+
+        # Target departments
+        cursor.execute(
+            "DELETE FROM dbo.APP_IncidentCaseTargetDepartment WHERE IncidentRequestCaseID = ?",
+            incident_id,
+        )
+
+        # Feedback (1-to-1)
+        cursor.execute(
+            "DELETE FROM dbo.APP_IncidentCaseFeedback WHERE IncidentRequestCaseID = ?",
+            incident_id,
+        )
+
+        # Action items
+        cursor.execute(
+            "DELETE FROM dbo.APP_ActionItem WHERE IncidentRequestCaseID = ?",
+            incident_id,
+        )
+
+        # -----------------------------
+        # Now delete the parent
+        # -----------------------------
+        cursor.execute(
+            "DELETE FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID = ?",
+            incident_id,
+        )
+
+        # -----------------------------
+        # Commit transaction
+        # -----------------------------
+        conn.commit()
+
+    except Exception as e:
+        conn.rollback()
+        raise e
+
+    finally:
+        conn.close()

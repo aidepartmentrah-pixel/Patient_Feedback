@@ -19,6 +19,7 @@ from models_directory.Classification_Models.Harm_level.train_harm_binary import 
 #Not Added Yet
 from models_directory.Classification_Models.feedback_type.train_feedback_type_model import train_feedback_type_model
 from models_directory.Classification_Models.improvement_opportunity_type.train_improvement_model import train_improvement_model
+from models_directory.Classification_Models.Classification_En.train_classification_En_model import train_classification_en_model
 
 #Not Acceptable - Needs Adjustments
 from models_directory.Classification_Models.Harm_level.train_harm_ordinal_high import train_harm_ordinal_high
@@ -145,6 +146,7 @@ def train_all():
     print("="*70)
     run_training("Feedback_Type", train_feedback_type_model)
     run_training("Improvement_Opportunity_Type", train_improvement_model)
+    run_training("Classification_En", train_classification_en_model)
 
     # SAVE REPORT
     print("\n" + "="*70)
