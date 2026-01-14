@@ -171,9 +171,11 @@ def get_complaints_paginated(
             
             -- SubCategory
             c.SubCategoryID as subcategory_id,
+            subcategory.SubCategoryName as subcategory_name,
             
             -- Classification
             c.ClassificationID as classification_id,
+            classification.Classification_AR as classification_name,
             
             -- Severity
             c.SeverityID as severity_id,
@@ -191,21 +193,45 @@ def get_complaints_paginated(
             c.CaseStatusID as case_status_id,
             status.Name as status_name,
             
+            -- Building
+            c.BuildingID as building_id,
+            building.BuildingName as building_name,
+            
+            -- Risk and Intent Types
+            c.ClinicalRiskTypeID as clinical_risk_type_id,
+            clinical_risk.Name as clinical_risk_type_name,
+            c.FeedbackIntentTypeID as feedback_intent_type_id,
+            feedback_intent.NameEn as feedback_intent_type_name,
+            
+            -- Source
+            c.SourceID as source_id,
+            source.SourceName as source_name,
+            
+            -- Explanation Status
+            c.ExplanationStatusID as explanation_status_id,
+            explanation_status.StatusName as explanation_status_name,
+            
             -- Other fields
             c.ImmediateAction as immediate_action,
             c.TakenAction as taken_action,
             c.isINPatient as is_inpatient,
-            c.SourceID as source_id,
             c.CreatedByUserID as created_by_user_id
             
         FROM dbo.APP_IncidentCase c
         LEFT JOIN AdminsrationUnit org_unit ON c.IssuingOrgUnitID = org_unit.UniqueID
         LEFT JOIN APP_LOOKUP_DOMAIN domain ON c.DomainID = domain.DomainID
         LEFT JOIN APP_LOOKUP_CATEGORY category ON c.CategoryID = category.CategoryID
+        LEFT JOIN APP_LOOKUP_SUBCATEGORY subcategory ON c.SubCategoryID = subcategory.SubCategoryID
+        LEFT JOIN APP_LOOKUP_CLASSIFICATION classification ON c.ClassificationID = classification.ClassificationID
         LEFT JOIN APP_LOOKUP_SEVERITY severity ON c.SeverityID = severity.SeverityID
         LEFT JOIN APP_LOOKUP_CASE_STAGE stage ON c.StageID = stage.StageID
         LEFT JOIN APP_LOOKUP_HARM_LEVEL harm ON c.HarmLevelID = harm.HarmID
         LEFT JOIN APP_LOOKUP_CASE_STATUS status ON c.CaseStatusID = status.CaseStatusID
+        LEFT JOIN APP_LOOKUP_BUILDING building ON c.BuildingID = building.BuildingID
+        LEFT JOIN APP_LOOKUP_CLINICAL_RISK_TYPE clinical_risk ON c.ClinicalRiskTypeID = clinical_risk.ClinicalRiskTypeID
+        LEFT JOIN APP_LOOKUP_FEEDBACK_INTENT_TYPE feedback_intent ON c.FeedbackIntentTypeID = feedback_intent.FeedbackIntentTypeID
+        LEFT JOIN APP_LOOKUP_SOURCE source ON c.SourceID = source.SourceID
+        LEFT JOIN APP_LOOKUP_EXPLANATION_STATUS explanation_status ON c.ExplanationStatusID = explanation_status.StatusID
         {where_clause}
         {order_by_clause}
         OFFSET ? ROWS
@@ -414,12 +440,12 @@ def get_filter_options(include_counts: bool = False) -> Dict[str, List[Dict[str,
         classification_en_query = """
             SELECT 
                 c.ClassificationID as id,
-                c.ClassificationName as name
+                c.Classification_AR as name
                 """ + (", COUNT(ic.IncidentRequestCaseID) as count" if include_counts else "") + """
             FROM APP_LOOKUP_CLASSIFICATION c
             """ + ("LEFT JOIN APP_IncidentCase ic ON c.ClassificationID = ic.ClassificationID" if include_counts else "") + """
-            """ + ("GROUP BY c.ClassificationID, c.ClassificationName" if include_counts else "") + """
-            ORDER BY c.ClassificationName
+            """ + ("GROUP BY c.ClassificationID, c.Classification_AR" if include_counts else "") + """
+            ORDER BY c.Classification_AR
         """
         cursor.execute(classification_en_query)
         result['classifications_en'] = [dict(zip([col[0] for col in cursor.description], row)) for row in cursor.fetchall()]
@@ -477,9 +503,11 @@ def get_complaint_by_id(complaint_id: int) -> Optional[Dict[str, Any]]:
             
             -- SubCategory
             c.SubCategoryID as subcategory_id,
+            subcategory.SubCategoryName as subcategory_name,
             
             -- Classification
             c.ClassificationID as classification_id,
+            classification.Classification_AR as classification_name,
             
             -- Severity
             c.SeverityID as severity_id,
@@ -499,21 +527,36 @@ def get_complaint_by_id(complaint_id: int) -> Optional[Dict[str, Any]]:
             
             -- Building
             c.BuildingID as building_id,
+            building.BuildingName as building_name,
             
             -- Risk and Intent Types
             c.ClinicalRiskTypeID as clinical_risk_type_id,
+            clinical_risk.Name as clinical_risk_type_name,
             c.FeedbackIntentTypeID as feedback_intent_type_id,
+            feedback_intent.NameEn as feedback_intent_type_name,
             
             -- Source
-            c.SourceID as source_id
+            c.SourceID as source_id,
+            source.SourceName as source_name,
+            
+            -- Explanation Status
+            c.ExplanationStatusID as explanation_status_id,
+            explanation_status.StatusName as explanation_status_name
         FROM dbo.APP_IncidentCase c
         LEFT JOIN AdminsrationUnit org_unit ON c.IssuingOrgUnitID = org_unit.UniqueID
         LEFT JOIN APP_LOOKUP_DOMAIN domain ON c.DomainID = domain.DomainID
         LEFT JOIN APP_LOOKUP_CATEGORY category ON c.CategoryID = category.CategoryID
+        LEFT JOIN APP_LOOKUP_SUBCATEGORY subcategory ON c.SubCategoryID = subcategory.SubCategoryID
+        LEFT JOIN APP_LOOKUP_CLASSIFICATION classification ON c.ClassificationID = classification.ClassificationID
         LEFT JOIN APP_LOOKUP_SEVERITY severity ON c.SeverityID = severity.SeverityID
         LEFT JOIN APP_LOOKUP_CASE_STAGE stage ON c.StageID = stage.StageID
         LEFT JOIN APP_LOOKUP_HARM_LEVEL harm ON c.HarmLevelID = harm.HarmID
         LEFT JOIN APP_LOOKUP_CASE_STATUS status ON c.CaseStatusID = status.CaseStatusID
+        LEFT JOIN APP_LOOKUP_BUILDING building ON c.BuildingID = building.BuildingID
+        LEFT JOIN APP_LOOKUP_CLINICAL_RISK_TYPE clinical_risk ON c.ClinicalRiskTypeID = clinical_risk.ClinicalRiskTypeID
+        LEFT JOIN APP_LOOKUP_FEEDBACK_INTENT_TYPE feedback_intent ON c.FeedbackIntentTypeID = feedback_intent.FeedbackIntentTypeID
+        LEFT JOIN APP_LOOKUP_SOURCE source ON c.SourceID = source.SourceID
+        LEFT JOIN APP_LOOKUP_EXPLANATION_STATUS explanation_status ON c.ExplanationStatusID = explanation_status.StatusID
         WHERE c.IncidentRequestCaseID = ?
     """
     
@@ -535,6 +578,30 @@ def get_complaint_by_id(complaint_id: int) -> Optional[Dict[str, Any]]:
             complaint['received_date'] = complaint['received_date'].strftime('%Y-%m-%d')
         if complaint.get('created_at'):
             complaint['created_at'] = complaint['created_at'].isoformat()
+        
+        # Fetch target departments
+        target_dept_query = """
+            SELECT 
+                td.DepartmentID as department_id,
+                org.Name as department_name,
+                td.IsPrimary as is_primary
+            FROM dbo.APP_IncidentCaseTargetDepartment td
+            LEFT JOIN AdminsrationUnit org ON td.DepartmentID = org.UniqueID
+            WHERE td.IncidentRequestCaseID = ?
+            ORDER BY td.IsPrimary DESC, td.DepartmentID
+        """
+        cursor.execute(target_dept_query, (complaint_id,))
+        target_dept_rows = cursor.fetchall()
+        
+        target_departments = []
+        for dept_row in target_dept_rows:
+            target_departments.append({
+                'department_id': dept_row.department_id,
+                'department_name': dept_row.department_name,
+                'is_primary': bool(dept_row.is_primary)
+            })
+        
+        complaint['target_departments'] = target_departments
         
         return complaint
         
@@ -973,3 +1040,354 @@ def get_table_views() -> Dict[str, Any]:
         'views': views,
         'default_view': 'complete'
     }
+
+
+def bulk_import_records_from_excel(file_content: bytes) -> Dict[str, Any]:
+    """
+    Import historical records from Excel file.
+    
+    SPECIAL RULES:
+    - All imported records are inserted as: CaseStatusID=3 (Closed), ExplanationStatusID=4 (No Explanation Needed)
+    - Bypasses FSM workflow
+    - Uses same Excel template as export_complaints_excel()
+    
+    Args:
+        file_content: Raw bytes of the uploaded Excel file
+        
+    Returns:
+        Dictionary with import statistics: total_rows, inserted_count, failed_count, errors
+    """
+    from openpyxl import load_workbook
+    from io import BytesIO
+    
+    # Statistics tracking
+    inserted_count = 0
+    failed_count = 0
+    errors = []
+    
+    try:
+        # Load Excel workbook
+        wb = load_workbook(BytesIO(file_content), data_only=True)
+        ws = wb.active
+        
+        # Expected column headers (Arabic from export template)
+        expected_headers = {
+            'تاريخ تلقي الملاحظة': 'received_date',
+            'الرقم': 'complaint_number',
+            'اسم المريض': 'patient_name',
+            'قسم الصادر': 'issuing_org_unit_name',
+            'قسم المعني': 'concerned_org_unit_name',
+            'المصدر 1': 'source_name',
+            'النوع (Feedback Type)': 'feedback_type',
+            'Domain': 'domain_name',
+            'Category': 'category_name',
+            'SubCategory': 'subcategory_name',
+            'New-Classification in Arabic': 'classification_name',
+            'محتوى الشكوى (Raw Content)': 'complaint_text',
+            'Immediate Action': 'immediate_action',
+            'الإجراءات المتخذة': 'taken_action',
+            'Severity': 'severity_name',
+            'Stage': 'stage_name',
+            'Harm': 'harm_level',
+            'Status': 'status_name',
+            'FeedbackRiskType': 'feedback_risk_type'
+        }
+        
+        # Read header row (row 1)
+        header_row = ws[1]
+        header_map = {}
+        for col_idx, cell in enumerate(header_row, start=1):
+            if cell.value and cell.value in expected_headers:
+                header_map[col_idx] = expected_headers[cell.value]
+        
+        # Validate headers
+        if len(header_map) < 10:  # At least 10 essential columns
+            return {
+                'success': False,
+                'error': 'INVALID_TEMPLATE',
+                'message': 'Excel template does not match expected format. Please use the export template.',
+                'inserted_count': 0,
+                'failed_count': 0,
+                'errors': []
+            }
+        
+        # Get database connection for lookups
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Build lookup caches to avoid repeated DB queries
+        lookup_caches = _build_lookup_caches(cursor)
+        
+        # Process each data row (starting from row 2)
+        total_rows = ws.max_row - 1  # Exclude header
+        
+        for row_idx in range(2, ws.max_row + 1):
+            row = ws[row_idx]
+            
+            try:
+                # Extract row data
+                row_data = {}
+                for col_idx, field_name in header_map.items():
+                    cell_value = row[col_idx - 1].value
+                    row_data[field_name] = cell_value
+                
+                # Map Excel row to database payload
+                payload = _map_excel_row_to_payload(row_data, lookup_caches, cursor)
+                
+                if payload.get('error'):
+                    failed_count += 1
+                    errors.append({
+                        'row': row_idx,
+                        'error': payload['error'],
+                        'complaint_text': row_data.get('complaint_text', '')[:50]
+                    })
+                    continue
+                
+                # FORCE CLOSED STATE (bypass FSM)
+                payload['case_status_id'] = 3  # Closed
+                payload['explanation_status_id'] = 4  # No Explanation Needed
+                
+                # Insert record directly into database (bypass FSM)
+                result = _insert_historical_record(payload, cursor, conn)
+                
+                if result.get('success'):
+                    inserted_count += 1
+                else:
+                    failed_count += 1
+                    errors.append({
+                        'row': row_idx,
+                        'error': result.get('error', 'Unknown error'),
+                        'complaint_text': row_data.get('complaint_text', '')[:50]
+                    })
+            
+            except Exception as row_error:
+                failed_count += 1
+                errors.append({
+                    'row': row_idx,
+                    'error': str(row_error),
+                    'complaint_text': row_data.get('complaint_text', '')[:50] if 'row_data' in locals() else ''
+                })
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            'success': True,
+            'total_rows': total_rows,
+            'inserted_count': inserted_count,
+            'failed_count': failed_count,
+            'errors': errors[:50]  # Limit to first 50 errors
+        }
+    
+    except Exception as e:
+        return {
+            'success': False,
+            'error': 'FILE_PROCESSING_ERROR',
+            'message': f'Failed to process Excel file: {str(e)}',
+            'inserted_count': 0,
+            'failed_count': 0,
+            'errors': []
+        }
+
+
+def _build_lookup_caches(cursor) -> Dict[str, Dict]:
+    """Build lookup caches for faster row processing."""
+    caches = {}
+    
+    # Cache organizational units
+    cursor.execute("SELECT UniqueID, Name FROM AdminsrationUnit WHERE Frozen = 0")
+    caches['org_units'] = {row.Name.strip().upper(): row.UniqueID for row in cursor.fetchall()}
+    
+    # Cache domains
+    cursor.execute("SELECT DomainID, DomainName FROM APP_LOOKUP_DOMAIN")
+    caches['domains'] = {row.DomainName.strip().upper(): row.DomainID for row in cursor.fetchall()}
+    
+    # Cache categories
+    cursor.execute("SELECT CategoryID, CategoryName FROM APP_LOOKUP_CATEGORY")
+    caches['categories'] = {row.CategoryName.strip().upper(): row.CategoryID for row in cursor.fetchall()}
+    
+    # Cache severities
+    cursor.execute("SELECT SeverityID, SeverityName FROM APP_LOOKUP_SEVERITY WHERE IsActive = 1")
+    caches['severities'] = {row.SeverityName.strip().upper(): row.SeverityID for row in cursor.fetchall()}
+    
+    # Cache stages
+    cursor.execute("SELECT StageID, StageName FROM APP_LOOKUP_CASE_STAGE")
+    caches['stages'] = {row.StageName.strip().upper(): row.StageID for row in cursor.fetchall()}
+    
+    # Cache harm levels
+    cursor.execute("SELECT HarmID, HarmLevel FROM APP_LOOKUP_HARM_LEVEL")
+    caches['harm_levels'] = {row.HarmLevel.strip().upper(): row.HarmID for row in cursor.fetchall()}
+    
+    return caches
+
+
+def _map_excel_row_to_payload(row_data: Dict, caches: Dict, cursor) -> Dict[str, Any]:
+    """Map Excel row data to database insert payload."""
+    try:
+        payload = {}
+        
+        # Required text fields
+        payload['complaint_text'] = row_data.get('complaint_text', '').strip() if row_data.get('complaint_text') else None
+        if not payload['complaint_text']:
+            return {'error': 'Missing complaint text'}
+        
+        payload['immediate_action'] = row_data.get('immediate_action', '').strip() if row_data.get('immediate_action') else None
+        payload['taken_action'] = row_data.get('taken_action', '').strip() if row_data.get('taken_action') else None
+        payload['patient_name'] = row_data.get('patient_name', '').strip() if row_data.get('patient_name') else None
+        
+        # Date
+        received_date = row_data.get('received_date')
+        if received_date:
+            if isinstance(received_date, datetime):
+                payload['feedback_received_date'] = received_date.strftime('%Y-%m-%d')
+            elif isinstance(received_date, str):
+                payload['feedback_received_date'] = received_date
+            else:
+                payload['feedback_received_date'] = str(received_date)
+        else:
+            payload['feedback_received_date'] = datetime.now().strftime('%Y-%m-%d')
+        
+        # Lookup organizational unit
+        org_name = row_data.get('issuing_org_unit_name', '').strip().upper()
+        if org_name and org_name in caches['org_units']:
+            payload['issuing_department_id'] = caches['org_units'][org_name]
+        else:
+            payload['issuing_department_id'] = 1  # Default
+        
+        # Lookup domain
+        domain_name = row_data.get('domain_name', '').strip().upper()
+        if domain_name and domain_name in caches['domains']:
+            payload['domain_id'] = caches['domains'][domain_name]
+        else:
+            return {'error': f'Domain not found: {row_data.get("domain_name")}'}
+        
+        # Lookup category
+        category_name = row_data.get('category_name', '').strip().upper()
+        if category_name and category_name in caches['categories']:
+            payload['category_id'] = caches['categories'][category_name]
+        else:
+            return {'error': f'Category not found: {row_data.get("category_name")}'}
+        
+        # Subcategory and classification (use numeric IDs from Excel)
+        payload['subcategory_id'] = int(row_data.get('subcategory_name', 1)) if row_data.get('subcategory_name') else 1
+        payload['classification_id'] = int(row_data.get('classification_name', 1)) if row_data.get('classification_name') else 1
+        
+        # Lookup severity
+        severity_name = row_data.get('severity_name', '').strip().upper()
+        if severity_name and severity_name in caches['severities']:
+            payload['severity_id'] = caches['severities'][severity_name]
+        else:
+            payload['severity_id'] = 1  # Default
+        
+        # Lookup stage
+        stage_name = row_data.get('stage_name', '').strip().upper()
+        if stage_name and stage_name in caches['stages']:
+            payload['stage_id'] = caches['stages'][stage_name]
+        else:
+            payload['stage_id'] = 1  # Default
+        
+        # Lookup harm level
+        harm_name = row_data.get('harm_level', '').strip().upper()
+        if harm_name and harm_name in caches['harm_levels']:
+            payload['harm_id'] = caches['harm_levels'][harm_name]
+        else:
+            payload['harm_id'] = 1  # Default
+        
+        # Clinical risk type (from feedback_risk_type column)
+        risk_type = row_data.get('feedback_risk_type', '').strip()
+        if 'Red' in risk_type or 'راية' in risk_type:
+            payload['clinical_risk_type_id'] = 2  # Red Flag
+        elif 'Never' in risk_type or 'حدث' in risk_type:
+            payload['clinical_risk_type_id'] = 3  # Never Event
+        else:
+            payload['clinical_risk_type_id'] = 1  # General
+        
+        # Feedback intent type (from feedback_type column)
+        feedback_type = row_data.get('feedback_type', '').strip()
+        if 'شكوى' in feedback_type or 'Complaint' in feedback_type:
+            payload['feedback_intent_type_id'] = 1
+        elif 'ملاحظة' in feedback_type or 'Observation' in feedback_type:
+            payload['feedback_intent_type_id'] = 2
+        elif 'اقتراح' in feedback_type or 'Suggestion' in feedback_type:
+            payload['feedback_intent_type_id'] = 3
+        elif 'استفسار' in feedback_type or 'Inquiry' in feedback_type:
+            payload['feedback_intent_type_id'] = 4
+        else:
+            payload['feedback_intent_type_id'] = 1  # Default to complaint
+        
+        # Source (default)
+        payload['source_id'] = 1
+        
+        return payload
+    
+    except Exception as e:
+        return {'error': f'Mapping error: {str(e)}'}
+
+
+def _insert_historical_record(payload: Dict[str, Any], cursor, conn) -> Dict[str, Any]:
+    """
+    Insert a historical record directly into database (bypass FSM).
+    
+    CRITICAL: All historical records are inserted as CLOSED with NO EXPLANATION NEEDED.
+    """
+    try:
+        # Insert into APP_IncidentCase
+        insert_query = """
+            INSERT INTO dbo.APP_IncidentCase (
+                ComplaintText,
+                ImmediateAction,
+                TakenAction,
+                FeedbackRecievedDate,
+                PatientName,
+                IssuingOrgUnitID,
+                isINPatient,
+                ClinicalRiskTypeID,
+                FeedbackIntentTypeID,
+                BuildingID,
+                DomainID,
+                CategoryID,
+                SubCategoryID,
+                ClassificationID,
+                SeverityID,
+                StageID,
+                HarmLevelID,
+                SourceID,
+                CaseStatusID,
+                ExplanationStatusID,
+                CreatedByUserID,
+                CreatedAt
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE())
+        """
+        
+        cursor.execute(insert_query, (
+            payload.get('complaint_text'),
+            payload.get('immediate_action'),
+            payload.get('taken_action'),
+            payload.get('feedback_received_date'),
+            payload.get('patient_name'),
+            payload.get('issuing_department_id'),
+            0,  # isINPatient default to outpatient
+            payload.get('clinical_risk_type_id', 1),
+            payload.get('feedback_intent_type_id', 1),
+            None,  # BuildingID
+            payload.get('domain_id'),
+            payload.get('category_id'),
+            payload.get('subcategory_id'),
+            payload.get('classification_id'),
+            payload.get('severity_id'),
+            payload.get('stage_id'),
+            payload.get('harm_id'),
+            payload.get('source_id', 1),
+            3,  # CaseStatusID = Closed
+            4,  # ExplanationStatusID = No Explanation Needed
+            1   # CreatedByUserID (system import)
+        ))
+        
+        conn.commit()
+        
+        return {'success': True}
+    
+    except Exception as e:
+        conn.rollback()
+        return {'success': False, 'error': str(e)}

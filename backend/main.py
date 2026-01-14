@@ -13,6 +13,10 @@ from api.routers.insert_router import router as insert_router
 from api.routers.reference_router import router as reference_router
 from api.routers.training_router import router as training_router
 from api.routers.patients_router import router as patients_router
+from api.routers.reports_router import router as reports_router
+from api.routers.settings_router import router as settings_router
+from api.routers.doctors_router import router as doctors_router
+from api.routers.follow_up_router import router as follow_up_router
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Incident Manager API")
@@ -41,6 +45,10 @@ app.include_router(insert_router)
 app.include_router(reference_router)
 app.include_router(training_router)
 app.include_router(patients_router)
+app.include_router(reports_router)
+app.include_router(settings_router)
+app.include_router(doctors_router)
+app.include_router(follow_up_router)
 
 @app.get("/")
 def health_check():

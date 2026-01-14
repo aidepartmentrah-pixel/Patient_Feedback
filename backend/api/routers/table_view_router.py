@@ -4,7 +4,7 @@ FastAPI endpoints for the TableView page (main operational data table).
 """
 
 from datetime import datetime
-from fastapi import APIRouter, Query, HTTPException, Body, Path
+from fastapi import APIRouter, Query, HTTPException, Body, Path, UploadFile, File
 from fastapi.responses import StreamingResponse
 from typing import Optional, List, Dict, Any, Literal
 from pydantic import BaseModel
@@ -16,7 +16,8 @@ from ..services.table_view_service import (
     get_complaints_count,
     export_complaints,
     export_complaints_excel,
-    get_table_views
+    get_table_views,
+    bulk_import_records_from_excel
 )
 from ..db_layer.incident_case import soft_delete_incident_case, hard_delete_incident_case
 
@@ -513,4 +514,91 @@ async def hard_delete_complaint(
             "error": "permanent_deletion_failed",
             "message": f"Failed to permanently delete record: {str(e)}",
             "message_ar": f"فشل الحذف النهائي للسجل: {str(e)}"
+        })
+
+
+@router.post("/import-excel")
+async def import_complaints_from_excel(
+    file: UploadFile = File(...)
+):
+    """
+    Import historical records from Excel file.
+    
+    **SPECIAL RULES:**
+    - All imported records are inserted as: CaseStatusID=3 (Closed), ExplanationStatusID=4 (No Explanation Needed)
+    - Bypasses FSM workflow (does not affect normal UI insert behavior)
+    - Uses same Excel template as /api/complaints/export endpoint
+    
+    **Expected File:**
+    - Excel file (.xlsx) with columns matching export template
+    - Must include Arabic headers: تاريخ تلقي الملاحظة, محتوى الشكوى, Domain, Category, etc.
+    
+    **Example Request:**
+    ```bash
+    curl -X POST "http://127.0.0.1:8000/api/complaints/import-excel" \
+      -F "file=@historical_records.xlsx"
+    ```
+    
+    **Returns:**
+    ```json
+    {
+      "success": true,
+      "total_rows": 150,
+      "inserted_count": 145,
+      "failed_count": 5,
+      "errors": [
+        {"row": 23, "error": "Missing complaint text", "complaint_text": "..."},
+        {"row": 47, "error": "Domain not found: Invalid Domain", "complaint_text": "..."}
+      ]
+    }
+    ```
+    
+    **Error Response:**
+    ```json
+    {
+      "success": false,
+      "error": "INVALID_TEMPLATE",
+      "message": "Excel template does not match expected format"
+    }
+    ```
+    """
+    # Validate file type
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        raise HTTPException(status_code=400, detail={
+            "error": "invalid_file_type",
+            "message": "Only Excel files (.xlsx, .xls) are allowed",
+            "message_ar": "مسموح فقط بملفات Excel"
+        })
+    
+    try:
+        # Read file content
+        file_content = await file.read()
+        
+        # Process import
+        result = bulk_import_records_from_excel(file_content)
+        
+        if not result.get('success'):
+            raise HTTPException(status_code=400, detail={
+                "error": result.get('error', 'import_failed'),
+                "message": result.get('message', 'Failed to import records'),
+                "message_ar": "فشل استيراد السجلات"
+            })
+        
+        return {
+            "success": True,
+            "message": f"Successfully imported {result['inserted_count']} records",
+            "message_ar": f"تم استيراد {result['inserted_count']} سجل بنجاح",
+            "total_rows": result['total_rows'],
+            "inserted_count": result['inserted_count'],
+            "failed_count": result['failed_count'],
+            "errors": result['errors']
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={
+            "error": "import_processing_error",
+            "message": f"Failed to process import: {str(e)}",
+            "message_ar": f"فشل معالجة الاستيراد: {str(e)}"
         })

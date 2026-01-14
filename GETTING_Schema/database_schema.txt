@@ -54,12 +54,13 @@ COLUMNS:
   - IsDone: bit (NOT NULL) (Default=((0)))
   - CreatedAt: datetime (NOT NULL) (Default=(getdate()))
   - CreatedByUserID: int (NOT NULL)
+  - SeasonalReportID: int
 
 PRIMARY KEY:
   - ActionItemID
 
 FOREIGN KEYS:
-  None
+  - SeasonalReportID -> APP_SeasonalOrgUnitReport.SeasonalReportID
 
 
 ============================================================
@@ -533,6 +534,39 @@ PRIMARY KEY:
 
 FOREIGN KEYS:
   - OrgUnitID -> AdminsrationUnit.UniqueID
+
+
+============================================================
+TABLE: APP_SeasonalOrgUnitReport
+============================================================
+COLUMNS:
+  - SeasonalReportID: int (NOT NULL)
+  - SeasonID: int (NOT NULL)
+  - OrgUnitID: int (NOT NULL)
+  - OrgUnitType: int (NOT NULL)
+  - TotalCases: int (NOT NULL) (Default=((0)))
+  - LowSeverityCount: int (NOT NULL) (Default=((0)))
+  - MediumSeverityCount: int (NOT NULL) (Default=((0)))
+  - HighSeverityCount: int (NOT NULL) (Default=((0)))
+  - ClinicalDomainCount: int (NOT NULL) (Default=((0)))
+  - ManagementDomainCount: int (NOT NULL) (Default=((0)))
+  - RelationalDomainCount: int (NOT NULL) (Default=((0)))
+  - IsCompliant: bit (NOT NULL) (Default=((1)))
+  - ViolatedRules: nvarchar(-1)
+  - EvaluatedAt: datetime (NOT NULL) (Default=(getdate()))
+  - ExplanationStatusID: int (NOT NULL)
+  - ExplanationText: nvarchar(-1)
+  - ExplanationSubmittedAt: datetime
+  - CreatedAt: datetime (NOT NULL) (Default=(getdate()))
+  - CreatedByUserID: int (NOT NULL)
+
+PRIMARY KEY:
+  - SeasonalReportID
+
+FOREIGN KEYS:
+  - ExplanationStatusID -> APP_LOOKUP_EXPLANATION_STATUS.StatusID
+  - OrgUnitID -> AdminsrationUnit.UniqueID
+  - SeasonID -> Season.UniqueID
 
 
 ============================================================

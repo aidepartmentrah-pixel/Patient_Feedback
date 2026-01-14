@@ -161,7 +161,19 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
         # -----------------------------
         # Insert main record via db_layer
         # -----------------------------
-        is_inpatient_val = 1 if bool(data.get('is_inpatient', True)) else 0
+        # Safe, strict conversion for is_inpatient (MUST be boolean)
+        raw = data.get("is_inpatient", True)
+        if isinstance(raw, bool):
+            is_inpatient_val = 1 if raw else 0
+        elif isinstance(raw, str):
+            is_inpatient_val = 1 if raw.upper() in ("IN", "TRUE", "1") else 0
+        elif isinstance(raw, int):
+            is_inpatient_val = 1 if raw == 1 else 0
+        else:
+            is_inpatient_val = 1
+        
+        print(f"[DEBUG] is_inpatient raw: {data.get('is_inpatient')} (type: {type(raw).__name__}) -> stored: {is_inpatient_val}")
+        
         clinical_risk_type_id = data.get('clinical_risk_type_id') or 1
         feedback_intent_type_id = data.get('feedback_intent_type_id') or 1
 
@@ -200,13 +212,14 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
                     building_id = row.BuildingID
             except Exception:
                 building_id = None
+
         if clinical_risk_type_id in (2, 3):  # Red Flag or Never Event
+            # S0: Open + Waiting
             case_status_id = 1  # Open
-        else:
-            case_status_id = 3  # Closed
-        if clinical_risk_type_id in (2, 3):  # Red Flag or Never Event
             explanation_status_id = 1  # Waiting
         else:
+            # S4: Closed + No Explanation Needed
+            case_status_id = 3  # Closed
             explanation_status_id = 4  # No Explanation Needed
 
         payload = {
@@ -228,7 +241,7 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
             "SeverityID": data.get('severity_id'),
             "StageID": data.get('stage_id'),
             "HarmLevelID": data.get('harm_id'),
-            "CaseStatusID": 3,
+            "CaseStatusID": case_status_id,
             "SourceID": data.get('source_id'),
             "ExplanationStatusID": explanation_status_id,
         }
@@ -310,13 +323,27 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def update_record(record_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
-    """Update an existing incident case record."""
+
+
+# -----------------------------
+# Load current FSM state
+# -----------------------------
+
     conn = None
     cursor = None
 
     try:
         conn = get_connection()
         cursor = conn.cursor()
+
+        # DEBUG: Log incoming payload
+        print(f"\n{'='*60}")
+        print(f"[DEBUG] UPDATE RECORD {record_id}")
+        print(f"[DEBUG] Incoming payload keys: {list(data.keys())}")
+        print(f"[DEBUG] building = {data.get('building')}")
+        print(f"[DEBUG] building_id = {data.get('building_id')}")
+        print(f"[DEBUG] building_code = {data.get('building_code')}")
+        print(f"{'='*60}\n")
 
         # Validation
         required_fields = [
@@ -333,9 +360,23 @@ def update_record(record_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
             'clinical_risk_type_id',
             'feedback_intent_type_id'
         ]
+        
+        # Load current FSM state + ClinicalRiskTypeID
+        cursor.execute(
+            "SELECT CaseStatusID, ExplanationStatusID, ClinicalRiskTypeID FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID = ?",
+            (record_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            return {"success": False, "error": "NOT_FOUND", "message": "Record not found"}
+        
+        current_case_status_id = row.CaseStatusID
+        current_explanation_status_id = row.ExplanationStatusID
+        current_clinical_risk_type_id = row.ClinicalRiskTypeID
 
+        # Fix: Allow False/0 values, only reject None/empty string
         for field in required_fields:
-            if field not in data or not data[field]:
+            if field not in data or data[field] is None or data[field] == "":
                 return {
                     "success": False,
                     "error": "VALIDATION_ERROR",
@@ -343,6 +384,16 @@ def update_record(record_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
                     "message_ar": f"حقل {field} مطلوب",
                     "field": field
                 }
+        
+        # Block changing Clinical Risk Type
+        if data.get('clinical_risk_type_id') != current_clinical_risk_type_id:
+            return {
+                "success": False,
+                "error": "IMMUTABLE_FIELD",
+                "message": "Clinical Risk Type cannot be changed after creation",
+                "message_ar": "لا يمكن تغيير نوع المخاطر السريرية بعد الإنشاء",
+                "field": "clinical_risk_type_id"
+            }
 
         # Validate foreign keys (same as create_record)
         validations = [
@@ -350,6 +401,57 @@ def update_record(record_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
             ('category_id', 'Category', 'dbo.APP_LOOKUP_CATEGORY', 'CategoryID', 'الفئة'),
             ('severity_id', 'Severity', 'dbo.APP_LOOKUP_SEVERITY', 'SeverityID', 'مستوى الخطورة')
         ]
+
+        # -----------------------------
+        # FSM TRANSITION LOGIC
+        # -----------------------------
+        new_case_status_id = current_case_status_id
+        new_explanation_status_id = current_explanation_status_id
+
+        command = data.get("fsm_command")  # "submit_explanation" | "complete_actions" | "force_close"
+        
+        # Protect terminal states - block FSM transitions on closed cases
+        if current_case_status_id == 3 and command:  # CaseStatusID = 3 is Closed
+            return {
+                "success": False,
+                "error": "TERMINAL_STATE",
+                "message": "Cannot perform FSM transitions on closed cases",
+                "message_ar": "لا يمكن تنفيذ تغييرات الحالة على القضايا المغلقة",
+                "field": "fsm_command"
+            }
+
+        # S0 → S1
+        if command == "submit_explanation":
+            if not (current_case_status_id == 1 and current_explanation_status_id == 1):
+                return {"success": False, "error": "INVALID_STATE", "message": "Cannot submit explanation in this state"}
+
+            new_case_status_id = 2  # In Progress
+            new_explanation_status_id = 2  # Responded
+
+        # S1 → S3
+        elif command == "complete_actions":
+            if not (current_case_status_id == 2 and current_explanation_status_id == 2):
+                return {"success": False, "error": "INVALID_STATE", "message": "Cannot complete actions in this state"}
+
+            # TODO: Check all action items completed here
+
+            new_case_status_id = 3  # Closed
+            new_explanation_status_id = 2  # Responded
+
+        # S0 → S2
+        elif command == "force_close":
+            if not (current_case_status_id == 1 and current_explanation_status_id == 1):
+                return {"success": False, "error": "INVALID_STATE", "message": "Cannot force close in this state"}
+
+            new_case_status_id = 3  # Closed
+            new_explanation_status_id = 3  # Forcibly Closed
+
+        
+        
+
+
+
+
 
         for field_name, english_name, table_name, id_column, arabic_name in validations:
             if data.get(field_name):
@@ -368,11 +470,136 @@ def update_record(record_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
                         }
                 except Exception:
                     pass
+        
+        # Hierarchy validation
+        try:
+            if data.get('category_id') and data.get('domain_id'):
+                cursor.execute(
+                    "SELECT COUNT(*) FROM dbo.APP_LOOKUP_CATEGORY WHERE CategoryID = ? AND DomainID = ?",
+                    (data['category_id'], data['domain_id'])
+                )
+                if cursor.fetchone()[0] == 0:
+                    return {
+                        "success": False,
+                        "error": "VALIDATION_ERROR",
+                        "message": "Selected category does not belong to the selected domain",
+                        "message_ar": "الفئة المختارة لا تنتمي للقطاع المختار",
+                        "field": "category_id"
+                    }
+        except Exception:
+            pass
+        
+        try:
+            if data.get('subcategory_id') and data.get('category_id'):
+                cursor.execute(
+                    "SELECT COUNT(*) FROM dbo.APP_LOOKUP_SUBCATEGORY WHERE SubCategoryID = ? AND CategoryID = ?",
+                    (data['subcategory_id'], data['category_id'])
+                )
+                if cursor.fetchone()[0] == 0:
+                    return {
+                        "success": False,
+                        "error": "VALIDATION_ERROR",
+                        "message": "Selected subcategory does not belong to the selected category",
+                        "message_ar": "الفئة الفرعية المختارة لا تنتمي للفئة المختارة",
+                        "field": "subcategory_id"
+                    }
+        except Exception:
+            pass
+        
+        try:
+            if data.get('classification_id') and data.get('subcategory_id'):
+                cursor.execute(
+                    "SELECT COUNT(*) FROM dbo.APP_LOOKUP_CLASSIFICATION WHERE ClassificationID = ? AND SubCategoryID = ?",
+                    (data['classification_id'], data['subcategory_id'])
+                )
+                if cursor.fetchone()[0] == 0:
+                    return {
+                        "success": False,
+                        "error": "VALIDATION_ERROR",
+                        "message": "Selected classification does not belong to the selected subcategory",
+                        "message_ar": "التصنيف المختار لا ينتمي للفئة الفرعية المختارة",
+                        "field": "classification_id"
+                    }
+        except Exception:
+            pass
 
         # Update main record
-        is_inpatient_val = 1 if bool(data.get('is_inpatient', True)) else 0
+        # Safe, strict conversion for is_inpatient (MUST be boolean)
+        raw = data.get("is_inpatient", True)
+        if isinstance(raw, bool):
+            is_inpatient_val = 1 if raw else 0
+        elif isinstance(raw, str):
+            is_inpatient_val = 1 if raw.upper() in ("IN", "TRUE", "1") else 0
+        elif isinstance(raw, int):
+            is_inpatient_val = 1 if raw == 1 else 0
+        else:
+            is_inpatient_val = 1
+        
+        print(f"[DEBUG] is_inpatient raw: {data.get('is_inpatient')} (type: {type(raw).__name__}) -> stored: {is_inpatient_val}")
+        
         clinical_risk_type_id = data.get('clinical_risk_type_id') or 1
         feedback_intent_type_id = data.get('feedback_intent_type_id') or 1
+
+        # -----------------------------
+        # BUILDING RESOLUTION WITH FALLBACK
+        # -----------------------------
+        # Step 1: Get existing BuildingID from database
+        cursor.execute(
+            "SELECT BuildingID FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID = ?",
+            (record_id,)
+        )
+        existing_row = cursor.fetchone()
+        existing_building_id = existing_row.BuildingID if existing_row else None
+        print(f"[DEBUG] Building: Existing BuildingID in DB = {existing_building_id}")
+
+        # DEBUG: Show all buildings in lookup table
+        try:
+            cursor.execute("SELECT BuildingID, BuildingCode FROM dbo.APP_LOOKUP_BUILDING ORDER BY BuildingID")
+            all_buildings = cursor.fetchall()
+            print(f"[DEBUG] Building: Available codes in lookup table:")
+            for b in all_buildings:
+                print(f"  - BuildingID={b.BuildingID}, BuildingCode='{b.BuildingCode}'")
+        except Exception as e:
+            print(f"[DEBUG] Building: Could not list lookup table: {e}")
+
+        # Step 2: Try to resolve new BuildingID from payload
+        building_id = None
+        
+        # Option A: Direct BuildingID provided
+        if data.get('building_id'):
+            building_id = data.get('building_id')
+            print(f"[DEBUG] Building: Direct BuildingID provided = {building_id}")
+        
+        # Option B: BuildingCode provided - lookup in database
+        elif data.get('building_code'):
+            code = str(data.get('building_code')).strip().upper()
+            print(f"[DEBUG] Building: Incoming BuildingCode = '{code}'")
+            
+            try:
+                cursor.execute(
+                    """
+                    SELECT TOP 1 BuildingID, BuildingCode
+                    FROM dbo.APP_LOOKUP_BUILDING
+                    WHERE UPPER(BuildingCode) = ?
+                    ORDER BY BuildingID
+                    """,
+                    (code,)
+                )
+                row = cursor.fetchone()
+                if row:
+                    building_id = row.BuildingID
+                    print(f"[DEBUG] Building: Resolved '{code}' → BuildingID = {building_id} (Actual code in DB: '{row.BuildingCode}')")
+                else:
+                    print(f"[DEBUG] Building: Code '{code}' NOT FOUND in APP_LOOKUP_BUILDING")
+            except Exception as e:
+                print(f"[DEBUG] Building: Lookup query failed: {e}")
+        
+        # Step 3: Fallback to existing BuildingID if resolution failed
+        if building_id is None:
+            building_id = existing_building_id
+            print(f"[DEBUG] Building: Using fallback to existing BuildingID = {building_id}")
+        
+        print(f"[DEBUG] Building: FINAL BuildingID for update = {building_id}")
 
         update_query = """
             UPDATE dbo.APP_IncidentCase
@@ -395,11 +622,24 @@ def update_record(record_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
                 StageID = ?,
                 HarmLevelID = ?,
                 SourceID = ?,
+                CaseStatusID = ?,
                 ExplanationStatusID = ?
             WHERE IncidentRequestCaseID = ?
         """
+        # -----------------------------
+        # FSM SAFETY CHECK
+        # -----------------------------
+        allowed = {
+            (3,4),  # Closed + No Explanation Needed
+            (1,1),  # Open + Waiting
+            (2,2),  # In Progress + Responded
+            (3,2),  # Closed + Responded
+            (3,3),  # Closed + Forcibly Closed
+        }
 
-        explanation_status_id = 1 if clinical_risk_type_id in (2, 3) else 4
+        if (new_case_status_id, new_explanation_status_id) not in allowed:
+            conn.rollback()
+            return {"success": False, "error": "FSM_VIOLATION", "message": "Illegal state combination"}
 
         cursor.execute(update_query, (
             data.get('complaint_text'),
@@ -411,7 +651,7 @@ def update_record(record_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
             is_inpatient_val,
             clinical_risk_type_id,
             feedback_intent_type_id,
-            data.get('building_id'),
+            building_id,
             data.get('domain_id'),
             data.get('category_id'),
             data.get('subcategory_id'),
@@ -420,9 +660,47 @@ def update_record(record_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
             data.get('stage_id'),
             data.get('harm_id'),
             data.get('source_id'),
-            explanation_status_id,
+            new_case_status_id,
+            new_explanation_status_id,
             record_id
         ))
+
+        # Fix: Handle Target Departments update (NO nested connection calls!)
+        if 'target_department_ids' in data:
+            # Validate: At least one target department required
+            if not data['target_department_ids'] or len(data['target_department_ids']) == 0:
+                conn.rollback()
+                return {
+                    "success": False,
+                    "error": "VALIDATION_ERROR",
+                    "message": "At least one target department is required",
+                    "message_ar": "يجب اختيار قسم مستهدف واحد على الأقل",
+                    "field": "target_department_ids"
+                }
+            
+            # Remove existing target departments (same cursor - no deadlock)
+            cursor.execute(
+                "DELETE FROM dbo.APP_IncidentCaseTargetDepartment WHERE IncidentRequestCaseID = ?",
+                (record_id,)
+            )
+            
+            # Add new target departments (same cursor - no deadlock)
+            for idx, dept_id in enumerate(data['target_department_ids']):
+                is_primary = 1 if idx == 0 else 0
+                cursor.execute(
+                    """
+                    INSERT INTO dbo.APP_IncidentCaseTargetDepartment (
+                        IncidentRequestCaseID,
+                        DepartmentID,
+                        IsPrimary,
+                        AssignedByUserID
+                    )
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (record_id, dept_id, is_primary, 1)
+                )
+
+
 
         conn.commit()
 

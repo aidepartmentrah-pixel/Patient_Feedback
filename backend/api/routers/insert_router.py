@@ -50,8 +50,10 @@ class CreateRecordRequest(BaseModel):
     target_department_ids: Optional[list[int]] = Field(None, description="List of target department IDs")
     source_id: Optional[int] = Field(None, gt=0, description="Feedback source ID")
     building_id: Optional[int] = Field(None, gt=0, description="Building ID")
+    building: Optional[str] = Field(None, description="Building code (alternative to building_id)")
     explanation_status_id: Optional[int] = Field(None, gt=0, description="Explanation status ID")
     is_inpatient: Optional[bool] = Field(True, description="Is inpatient (True) or outpatient (False). Default: True")
+    in_out: Optional[str] = Field(None, description="Alternative to is_inpatient: 'IN' or 'OUT'")
     worker_type: Optional[str] = Field(None, description="Worker type involved")
     
     # Optional entity data
@@ -172,6 +174,14 @@ async def add_record(request: CreateRecordRequest = Body(...)):
     try:
         # Convert request to dictionary
         data = request.model_dump()
+        
+        # Map frontend field names to backend field names
+        # NOTE: is_inpatient must be boolean (true/false) - no "IN"/"OUT" strings
+        
+        if 'building' in data and isinstance(data['building'], str):
+            # Convert building code to building_id if needed
+            data['building_code'] = data['building']
+            del data['building']
         
         # Call service to create record
         result = create_record(data)
@@ -296,6 +306,15 @@ async def update_record(
         
         # Convert request to dictionary
         data = request.model_dump()
+        
+        # Map frontend field names to backend field names
+        # NOTE: is_inpatient must be boolean (true/false) - no "IN"/"OUT" strings
+        
+        if 'building' in data and isinstance(data['building'], str):
+            # Convert building code to building_id if needed
+            # For now, just rename the field (building_code expected by service)
+            data['building_code'] = data['building']
+            del data['building']
         
         # Add record_id to data for update operation
         data['id'] = record_id

@@ -1,0 +1,5 @@
+flowchart LR
+    InsertService --> PredictionService
+    PredictionService --> EmbeddingModel
+    PredictionService --> Classifiers
+    PredictionService --> ML_DB

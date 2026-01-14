@@ -1,0 +1,5 @@
+flowchart LR
+    SeasonalReportsRouter --> SeasonalReportGenerator
+    SeasonalReportGenerator --> SeasonalReportDB
+    SeasonalReportGenerator --> SeasonalAggregationDB
+    SeasonalReportGenerator --> OrgPolicyDB

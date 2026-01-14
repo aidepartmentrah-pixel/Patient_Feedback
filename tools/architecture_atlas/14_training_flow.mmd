@@ -1,0 +1,5 @@
+flowchart LR
+    TrainingRouter --> TrainingService
+    TrainingService --> TrainingDB
+    TrainingService --> ML_Trainer
+    ML_Trainer --> ML_DB

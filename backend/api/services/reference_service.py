@@ -529,6 +529,45 @@ def get_feedback_intent_types() -> Dict[str, Any]:
             conn.close()
 
 
+def get_case_statuses() -> Dict[str, Any]:
+    """Get all case statuses."""
+    conn = None
+    cursor = None
+    
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT CaseStatusID, Code, Name, IsFinal, IsActive, DisplayOrder
+            FROM dbo.APP_LOOKUP_CASE_STATUS
+            WHERE IsActive = 1
+            ORDER BY DisplayOrder
+        """)
+        
+        statuses = []
+        for row in cursor.fetchall():
+            statuses.append({
+                "id": row.CaseStatusID,
+                "code": row.Code,
+                "name": row.Name,
+                "is_final": row.IsFinal
+            })
+        
+        return {"case_statuses": statuses}
+        
+    except Exception as e:
+        return {
+            "case_statuses": [],
+            "error": f"Failed to fetch case statuses: {str(e)}"
+        }
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
 def get_all_reference_data() -> Dict[str, Any]:
     """Get all reference data in a single call."""
     return {
@@ -540,6 +579,7 @@ def get_all_reference_data() -> Dict[str, Any]:
         **get_classifications(),
         **get_severity_levels(),
         **get_stages(),
+        **get_case_statuses(),
         **get_harm_levels(),
         **get_explanation_statuses(),
         **get_clinical_risk_types(),

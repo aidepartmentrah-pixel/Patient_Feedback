@@ -1,0 +1,335 @@
+# 🗺️ Routers — Subtree Map
+
+_Generated on: 2026-01-09 14:24_
+
+
+---
+## 📦 Routers
+
+### 📄 backend\api\routers\__init__.py
+_No functions found_
+
+### 📄 backend\api\routers\action_items.py
+**Routes:**
+- `GET /{action_item_id}`
+- `GET /by-incident/{incident_case_id}`
+- `GET /by-seasonal-report/{seasonal_report_id}`
+- `GET /by-season/{season_case_id}`
+- `POST /{action_item_id}/mark-done`
+**Functions:**
+- `get_action_item_by_id()`
+- `get_action_items_by_incident()`
+- `get_action_items_by_seasonal_report()`
+- `get_action_items_by_season()`
+- `mark_action_item_done()`
+
+### 📄 backend\api\routers\classification_router.py
+**Routes:**
+- `POST /classify`
+- `POST /classify-batch`
+- `GET /test`
+**Functions:**
+- `classify_feedback_text()`
+- `classify_batch_texts()`
+- `test_classification()`
+
+### 📄 backend\api\routers\custom_views_router.py
+**Routes:**
+- `GET /{view_id}`
+- `PUT /{view_id}`
+- `DELETE /{view_id}`
+**Functions:**
+- `list_custom_views_endpoint()`
+- `get_custom_view_endpoint()`
+- `create_custom_view_endpoint()`
+- `update_custom_view_endpoint()`
+- `delete_custom_view_endpoint()`
+
+### 📄 backend\api\routers\dashboard_router.py
+**Routes:**
+- `GET /stats`
+- `GET /hierarchy`
+- `GET /debug/classifications`
+- `GET /debug/stage-histogram`
+**Functions:**
+- `dashboard_stats()`
+- `dashboard_hierarchy()`
+- `debug_classifications()`
+- `debug_stage_histogram()`
+
+### 📄 backend\api\routers\doctors_router.py
+**Routes:**
+- `GET /{doctor_id}/profile`
+- `GET /{doctor_id}/statistics`
+- `GET /{doctor_id}/analytics`
+- `GET /{doctor_id}/incidents`
+- `GET /{doctor_id}/full-report`
+- `GET /health-check/check`
+**Functions:**
+- `search_doctors()`
+- `get_doctor_profile()`
+- `get_doctor_statistics()`
+- `get_doctor_analytics()`
+- `get_doctor_incidents()`
+- `get_doctor_full_report()`
+- `health_check()`
+
+### 📄 backend\api\routers\follow_up_router.py
+**Routes:**
+- `POST /actions`
+- `GET /actions`
+- `GET /actions/{action_id}`
+- `PATCH /actions/{action_id}`
+- `POST /actions/{action_id}/complete`
+- `POST /actions/{action_id}/delay`
+- `POST /actions/{action_id}/reopen`
+- `GET /actions/{action_id}/history`
+- `GET /calendar`
+- `POST /actions/bulk-complete`
+- `POST /actions/bulk-delay`
+- `POST /actions/bulk-update`
+**Functions:**
+- `create_follow_up_action()`
+- `get_follow_up_actions()`
+- `get_follow_up_action_by_id()`
+- `update_follow_up_action()`
+- `complete_follow_up_action()`
+- `delay_follow_up_action()`
+- `reopen_follow_up_action()`
+- `get_action_history()`
+- `get_calendar_actions()`
+- `bulk_complete_actions()`
+- `bulk_delay_actions()`
+- `bulk_update_actions()`
+
+### 📄 backend\api\routers\insert_router.py
+**Routes:**
+- `POST /add`
+- `GET /{record_id}`
+- `PUT /{record_id}`
+- `GET /test`
+- `GET /search/patients`
+- `GET /search/doctors`
+- `GET /search/employees`
+- `GET /patient/{patient_admission_id}`
+- `GET /doctor/{doctor_id}`
+- `GET /employee/{employee_id}`
+**Functions:**
+- `add_record()`
+- `get_record()`
+- `update_record()`
+- `test_records_endpoint()`
+- `search_patients_endpoint()`
+- `search_doctors_endpoint()`
+- `search_employees_endpoint()`
+- `get_patient_endpoint()`
+- `get_doctor_endpoint()`
+- `get_employee_endpoint()`
+
+### 📄 backend\api\routers\investigation_router.py
+**Routes:**
+- `GET /tree`
+- `GET /seasons`
+- `GET /hierarchy`
+**Functions:**
+- `fetch_investigation_tree()`
+- `fetch_available_seasons()`
+- `fetch_organizational_hierarchy()`
+
+### 📄 backend\api\routers\ner_router.py
+**Routes:**
+- `POST /extract`
+- `POST /extract-batch`
+- `GET /test`
+**Functions:**
+- `extract_named_entities()`
+- `extract_entities_from_batch()`
+- `test_ner()`
+
+### 📄 backend\api\routers\never_events_router.py
+**Routes:**
+- `GET /statistics`
+- `GET /trends`
+- `GET /category-breakdown`
+- `GET /timeline-comparison`
+- `GET /{never_event_id}`
+- `GET /test`
+**Functions:**
+- `get_never_events()`
+- `get_statistics()`
+- `get_trends()`
+- `get_category_breakdown()`
+- `get_timeline_comparison()`
+- `get_single_never_event()`
+- `test_never_events()`
+
+### 📄 backend\api\routers\patients_router.py
+**Routes:**
+- `GET /search`
+- `GET /{patient_id}/profile`
+- `GET /{patient_id}/incidents`
+- `GET /{patient_id}/incidents/{incident_id}`
+- `GET /{patient_id}/full-history`
+- `GET /{patient_id}/export`
+**Functions:**
+- `search_patients_endpoint()`
+- `get_patient_profile_endpoint()`
+- `get_patient_incidents_endpoint()`
+- `get_incident_details_endpoint()`
+- `get_patient_full_history_endpoint()`
+- `export_patient_history_endpoint()`
+
+### 📄 backend\api\routers\red_flags_router.py
+**Routes:**
+- `GET /statistics`
+- `GET /trends`
+- `GET /category-breakdown`
+- `GET /department-breakdown`
+- `GET /{red_flag_id}`
+- `POST /{red_flag_id}/export-pdf`
+- `POST /export-batch`
+- `GET /test`
+**Functions:**
+- `get_red_flags()`
+- `get_statistics()`
+- `get_trends()`
+- `get_category_breakdown()`
+- `get_department_breakdown()`
+- `get_single_red_flag()`
+- `export_red_flag_pdf()`
+- `export_batch_red_flags()`
+- `test_red_flags()`
+
+### 📄 backend\api\routers\reference_router.py
+**Routes:**
+- `GET /departments`
+- `GET /sources`
+- `GET /domains`
+- `GET /categories`
+- `GET /subcategories`
+- `GET /classifications`
+- `GET /severity-levels`
+- `GET /stages`
+- `GET /case-statuses`
+- `GET /harm-levels`
+- `GET /buildings`
+- `GET /explanation-statuses`
+- `GET /clinical-risk-types`
+- `GET /feedback-intent-types`
+- `GET /all`
+- `GET /test`
+**Functions:**
+- `get_departments_endpoint()`
+- `get_sources_endpoint()`
+- `get_domains_endpoint()`
+- `get_categories_endpoint()`
+- `get_subcategories_endpoint()`
+- `get_classifications_endpoint()`
+- `get_severity_levels_endpoint()`
+- `get_stages_endpoint()`
+- `get_case_statuses_endpoint()`
+- `get_harm_levels_endpoint()`
+- `get_buildings_endpoint()`
+- `get_explanation_statuses_endpoint()`
+- `get_clinical_risk_types_endpoint()`
+- `get_feedback_intent_types_endpoint()`
+- `get_all_reference_data_endpoint()`
+- `test_reference_endpoint()`
+
+### 📄 backend\api\routers\reports_router.py
+**Routes:**
+- `POST /seasonal/view`
+- `POST /monthly/view`
+- `POST /seasonal/{report_id}/explanation`
+- `PUT /seasonal/{report_id}/explanation`
+- `POST /export`
+**Functions:**
+- `view_seasonal_report()`
+- `view_monthly_report()`
+- `submit_explanation()`
+- `update_explanation()`
+- `export_report()`
+
+### 📄 backend\api\routers\settings_router.py
+**Routes:**
+- `GET /departments`
+- `POST /departments`
+- `PUT /departments/{department_id}`
+- `DELETE /departments/{department_id}`
+- `GET /attributes`
+- `PUT /attributes`
+- `GET /policies`
+- `PUT /policies`
+- `GET /export`
+- `POST /save-snapshot`
+- `GET /snapshots`
+**Functions:**
+- `get_departments()`
+- `create_department()`
+- `update_department()`
+- `delete_department()`
+- `get_attributes()`
+- `update_attributes()`
+- `get_policies()`
+- `update_policies()`
+- `export_configuration()`
+- `save_snapshot()`
+- `get_snapshots()`
+
+### 📄 backend\api\routers\stt_router.py
+**Routes:**
+- `POST /transcribe`
+- `POST /transcribe-path`
+- `GET /test`
+**Functions:**
+- `transcribe_audio()`
+- `transcribe_audio_from_path()`
+- `test_stt()`
+
+### 📄 backend\api\routers\table_view_router.py
+**Routes:**
+- `GET /filter-options`
+- `GET /count`
+- `GET /export`
+- `GET /{complaint_id}`
+- `POST /export`
+- `GET /views`
+- `DELETE /{complaint_id}`
+- `DELETE /{complaint_id}/hard-delete`
+- `POST /import-excel`
+**Functions:**
+- `get_complaints()`
+- `get_filter_dropdown_options()`
+- `get_filtered_count()`
+- `export_complaints_to_excel()`
+- `get_single_complaint()`
+- `export_filtered_complaints()`
+- `get_available_views()`
+- `delete_complaint()`
+- `hard_delete_complaint()`
+- `import_complaints_from_excel()`
+
+### 📄 backend\api\routers\training_router.py
+**Routes:**
+- `GET /status`
+- `GET /history`
+- `GET /db-size`
+- `POST /run`
+**Functions:**
+- `get_training_status_endpoint()`
+- `get_training_history_endpoint()`
+- `get_ml_database_size_endpoint()`
+- `trigger_training_endpoint()`
+
+### 📄 backend\api\routers\trend_router.py
+**Routes:**
+- `GET /domains`
+- `GET /categories`
+- `GET /periods`
+- `GET /analysis`
+**Functions:**
+- `fetch_domain_trends()`
+- `fetch_category_trends()`
+- `fetch_time_periods()`
+- `fetch_trends_analysis()`
+

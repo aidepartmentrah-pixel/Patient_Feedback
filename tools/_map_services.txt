@@ -1,0 +1,305 @@
+# 🗺️ Services Layer — Subtree Map
+
+_Generated on: 2026-01-09 14:24_
+
+
+---
+## 📦 Services
+
+### 📄 backend\api\services\__init__.py
+_No functions found_
+
+### 📄 backend\api\services\action_item_service.py
+**Functions:**
+- `_validate_exactly_one_parent()`
+- `create_action_item()`
+- `update_action_item()`
+- `get_action_item()`
+- `get_action_items_for_incident()`
+- `get_action_items_for_seasonal_report()`
+- `get_action_items_for_season()`
+- `mark_action_done()`
+
+### 📄 backend\api\services\classification_service.py
+**Functions:**
+- `_get_classifier()`
+- `classify_text()`
+- `classify_batch()`
+
+### 📄 backend\api\services\compliance_evaluator.py
+**Functions:**
+- `evaluate()`
+- `_evaluate_domain_limits()`
+- `_evaluate_high_severity_limits()`
+
+### 📄 backend\api\services\custom_views_service.py
+**Functions:**
+- `_normalize_flags()`
+- `create_view()`
+- `get_view()`
+- `list_views()`
+- `update_view()`
+- `delete_view()`
+
+### 📄 backend\api\services\dashboard_service.py
+**Functions:**
+- `_row_to_dict()`
+- `get_dashboard_stats()`
+- `get_dashboard_hierarchy()`
+- `_resolve_scope()`
+- `_collect_descendants()`
+- `_fetch_incidents_in_scope()`
+- `_compute_metrics()`
+- `_build_charts()`
+- `_build_recent_activity()`
+- `_compute_trends()`
+- `pct()`
+- `direction()`
+- `_top5()`
+- `_histogram()`
+- `_top5_with_names()`
+- `_histogram_with_names()`
+- `_unit_payload()`
+
+### 📄 backend\api\services\doctors_service.py
+**Functions:**
+- `search_doctors()`
+- `get_doctor_profile()`
+- `get_doctor_statistics()`
+- `get_doctor_analytics()`
+- `get_doctor_incidents()`
+- `get_doctor_analytics()`
+- `_zero_fill_months()`
+- `get_doctor_full_report()`
+
+### 📄 backend\api\services\follow_up_service.py
+**Functions:**
+- `get_follow_up_actions()`
+- `get_follow_up_action_by_id()`
+- `update_follow_up_action()`
+- `complete_follow_up_action()`
+- `delay_follow_up_action()`
+- `reopen_follow_up_action()`
+- `get_action_history()`
+- `get_calendar_actions()`
+- `create_follow_up_action()`
+- `bulk_complete_actions()`
+- `bulk_delay_actions()`
+- `bulk_update_actions()`
+
+### 📄 backend\api\services\insert_service.py
+**Functions:**
+- `create_record()`
+- `update_record()`
+
+### 📄 backend\api\services\investigation_service.py
+**Functions:**
+- `get_investigation_tree()`
+- `get_available_seasons()`
+- `get_organizational_hierarchy()`
+- `_get_season_info()`
+- `_fetch_incidents_for_season()`
+- `_get_descendant_unit_ids()`
+- `_build_org_hierarchy()`
+- `build_tree()`
+- `_build_incident_count_tree()`
+- `populate_node()`
+- `_build_domain_distribution_tree()`
+- `populate_node()`
+- `_build_severity_distribution_tree()`
+- `populate_node()`
+- `_build_red_flag_tree()`
+- `populate_node()`
+- `_build_never_event_tree()`
+- `populate_node()`
+- `_build_incident_count_summary()`
+- `count_nodes()`
+- `_build_domain_distribution_summary()`
+- `_build_severity_distribution_summary()`
+- `_build_red_flag_summary()`
+- `_build_never_event_summary()`
+
+### 📄 backend\api\services\monthly_report_service.py
+**Functions:**
+- `get_detailed_monthly_report()`
+- `get_numeric_monthly_report()`
+
+### 📄 backend\api\services\ner_service.py
+**Functions:**
+- `extract_entities()`
+- `extract_entities_batch()`
+
+### 📄 backend\api\services\never_events_service.py
+**Functions:**
+- `get_never_events_list()`
+- `get_never_events_statistics()`
+- `get_never_events_trends()`
+- `get_never_event_details()`
+- `get_never_events_category_breakdown()`
+- `get_never_events_timeline_comparison()`
+
+### 📄 backend\api\services\patients_service.py
+**Functions:**
+- `search_patients_service()`
+- `get_patient_profile_service()`
+- `get_patient_incidents_service()`
+- `get_incident_details_service()`
+- `get_patient_full_history_service()`
+- `export_patient_history_service()`
+- `_generate_csv_export()`
+
+### 📄 backend\api\services\prediction_service.py
+**Functions:**
+- `_get_classifier()`
+- `run_intelligence_pipeline()`
+
+### 📄 backend\api\services\red_flags_service.py
+**Functions:**
+- `get_red_flags_list()`
+- `get_red_flags_statistics()`
+- `get_red_flags_trends()`
+- `get_red_flag_details()`
+- `get_red_flags_category_breakdown()`
+- `get_red_flags_department_breakdown()`
+
+### 📄 backend\api\services\reference_service.py
+**Functions:**
+- `get_departments()`
+- `get_sources()`
+- `get_domains()`
+- `get_categories()`
+- `get_subcategories()`
+- `get_classifications()`
+- `get_severity_levels()`
+- `get_stages()`
+- `get_harm_levels()`
+- `get_buildings()`
+- `get_explanation_statuses()`
+- `get_clinical_risk_types()`
+- `get_feedback_intent_types()`
+- `get_case_statuses()`
+- `get_all_reference_data()`
+
+### 📄 backend\api\services\report_export_service.py
+**Functions:**
+- `generate_export()`
+- `_fetch_monthly_data()`
+- `_fetch_seasonal_data()`
+
+### 📄 backend\api\services\reports_service.py
+**Functions:**
+- `get_period_dates()`
+- `get_filtered_complaints_with_pagination()`
+- `get_monthly_statistics_report()`
+- `get_seasonal_hcat_report()`
+- `get_bulk_summary_report()`
+- `generate_csv_export()`
+- `generate_pdf_export()`
+
+### 📄 backend\api\services\search_service.py
+**Functions:**
+- `search_patients()`
+- `search_doctors()`
+- `search_employees()`
+- `get_patient_by_id()`
+- `get_doctor_by_id()`
+- `get_employee_by_id()`
+
+### 📄 backend\api\services\seasonal_report_explanation_service.py
+**Functions:**
+- `__init__()`
+- `submit_explanation()`
+- `update_explanation()`
+
+### 📄 backend\api\services\seasonal_report_generator.py
+**Functions:**
+- `generate_or_regenerate_report()`
+- `_aggregate_classification_stats()`
+- `_aggregate_domain_totals()`
+- `_get_policy_snapshot()`
+- `_evaluate_compliance()`
+
+### 📄 backend\api\services\seasonal_report_orchestrator.py
+**Functions:**
+- `get_or_generate_seasonal_report()`
+
+### 📄 backend\api\services\seasonal_report_query_service.py
+**Functions:**
+- `get_by_season_orgunit()`
+- `get_by_id()`
+
+### 📄 backend\api\services\settings_service.py
+**Functions:**
+- `get_departments()`
+- `create_department()`
+- `update_department()`
+- `delete_department()`
+- `get_attributes()`
+- `update_attributes()`
+- `get_policies()`
+- `update_policies()`
+- `export_configuration()`
+- `save_snapshot()`
+- `get_snapshots()`
+- `_get_descendants()`
+
+### 📄 backend\api\services\stt_service.py
+**Functions:**
+- `transcribe_audio_to_text()`
+- `transcribe_audio_bytes()`
+
+### 📄 backend\api\services\table_view_service.py
+**Functions:**
+- `get_complaints_paginated()`
+- `get_filter_options()`
+- `get_complaint_by_id()`
+- `get_complaints_count()`
+- `export_complaints_excel()`
+- `export_complaints()`
+- `get_table_views()`
+- `bulk_import_records_from_excel()`
+- `_build_lookup_caches()`
+- `_map_excel_row_to_payload()`
+- `_insert_historical_record()`
+
+### 📄 backend\api\services\test_action_item_service.py
+**Functions:**
+- `test_action_item_with_no_parent_raises_error()`
+- `test_action_item_with_two_parents_raises_error()`
+- `test_action_item_with_three_parents_raises_error()`
+- `test_action_item_with_incident_parent_only()`
+- `test_action_item_with_seasonal_report_parent_only()`
+- `test_action_item_with_season_case_parent_only()`
+- `test_action_item_missing_required_fields()`
+
+### 📄 backend\api\services\training_service.py
+**Functions:**
+- `_generate_run_id()`
+- `_run_train_all()`
+- `run_training_pipeline()`
+- `_background_training()`
+- `get_training_status()`
+- `get_training_history_list()`
+- `get_ml_database_size_history()`
+- `is_training_running()`
+
+### 📄 backend\api\services\trend_service.py
+**Functions:**
+- `get_trends_analysis()`
+- `get_domain_trends()`
+- `get_category_trends()`
+- `get_time_periods()`
+- `_fetch_incidents_by_domain_and_month()`
+- `_fetch_incidents_by_category_and_month()`
+- `_fetch_incidents_per_month()`
+- `_generate_month_range()`
+- `_get_previous_month()`
+- `_calculate_trend()`
+- `_build_time_range_info()`
+- `_generate_category_color()`
+- `_generate_color_from_id()`
+- `_generate_months()`
+- `_build_domain_trends()`
+- `_build_category_trends()`
+- `_build_classification_trends()`
+

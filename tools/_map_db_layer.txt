@@ -1,0 +1,200 @@
+# 🗺️ DB Layer — Subtree Map
+
+_Generated on: 2026-01-09 14:24_
+
+
+---
+## 📦 DB Layer
+
+### 📄 backend\api\db_layer\__init__.py
+_No functions found_
+
+### 📄 backend\api\db_layer\action_items.py
+**Functions:**
+- `get_connection()`
+- `create_action_item()`
+- `get_action_item_by_id()`
+- `list_action_items_for_incident()`
+- `list_action_items_for_season()`
+- `list_action_items_for_seasonal_report()`
+- `update_action_item()`
+- `mark_action_item_done()`
+
+### 📄 backend\api\db_layer\admin_units.py
+**Functions:**
+- `get_connection()`
+- `get_admin_unit_by_id()`
+- `get_admin_unit_children()`
+- `get_admin_unit_parent()`
+- `get_admin_unit_tree()`
+- `get_admin_unit_leaves()`
+- `get_active_admin_units()`
+
+### 📄 backend\api\db_layer\custom_views.py
+**Functions:**
+- `get_connection()`
+- `create_custom_view()`
+- `get_custom_view()`
+- `list_custom_views()`
+- `update_custom_view()`
+- `deactivate_custom_view()`
+- `delete_custom_view()`
+
+### 📄 backend\api\db_layer\database.py
+**Functions:**
+- `get_connection()`
+
+### 📄 backend\api\db_layer\doctors_db.py
+**Functions:**
+- `get_connection()`
+- `search_doctors()`
+- `get_doctor_profile()`
+- `get_doctor_statistics()`
+- `get_doctor_category_breakdown()`
+- `get_doctor_monthly_trend()`
+- `get_doctor_incidents()`
+
+### 📄 backend\api\db_layer\follow_up_db.py
+**Functions:**
+- `get_connection()`
+- `create_follow_up_action()`
+- `get_follow_up_actions()`
+- `get_follow_up_action_by_id()`
+- `update_follow_up_action()`
+- `complete_follow_up_action()`
+- `reopen_follow_up_action()`
+- `get_action_history()`
+- `get_calendar_actions()`
+- `bulk_complete_actions()`
+- `bulk_delay_actions()`
+- `bulk_update_actions()`
+- `delay_follow_up_action()`
+
+### 📄 backend\api\db_layer\incident_case.py
+**Functions:**
+- `get_connection()`
+- `create_incident_case()`
+- `get_incident_case_by_id()`
+- `list_incident_cases()`
+- `update_incident_case()`
+- `soft_delete_incident_case()`
+- `hard_delete_incident_case()`
+
+### 📄 backend\api\db_layer\incident_case_doctor.py
+**Functions:**
+- `get_connection()`
+- `add_doctor_to_case()`
+- `list_case_doctors()`
+- `set_primary_doctor()`
+- `remove_doctor_from_case()`
+
+### 📄 backend\api\db_layer\incident_case_feedback.py
+**Functions:**
+- `get_connection()`
+- `create_incident_case_feedback()`
+- `get_incident_case_feedback()`
+- `update_incident_case_feedback()`
+
+### 📄 backend\api\db_layer\incident_case_target_department.py
+**Functions:**
+- `get_connection()`
+- `add_target_department()`
+- `list_target_departments()`
+- `set_primary_department()`
+- `remove_target_department()`
+
+### 📄 backend\api\db_layer\lookups.py
+**Functions:**
+- `get_connection()`
+- `_fetch_all()`
+- `get_case_stages()`
+- `get_case_statuses()`
+- `get_domains()`
+- `get_categories()`
+- `get_subcategories()`
+- `get_classifications()`
+- `get_clinical_risk_types()`
+- `get_feedback_intent_types()`
+- `get_harm_levels()`
+- `get_explanation_statuses()`
+- `get_buildings()`
+- `get_doctors()`
+
+### 📄 backend\api\db_layer\org_unit_policy.py
+**Functions:**
+- `get_connection()`
+- `get_policy_by_unit_id()`
+- `get_administration_policy()`
+- `get_department_policy()`
+- `get_section_policy()`
+- `update_policy_for_unit()`
+- `update_policy_for_unit_with_descendants()`
+
+### 📄 backend\api\db_layer\patients_db.py
+**Functions:**
+- `get_connection()`
+- `search_patients()`
+- `get_patient_profile()`
+- `get_patient_incidents()`
+- `get_incident_details()`
+- `get_patient_incidents_for_export()`
+
+### 📄 backend\api\db_layer\reports_db.py
+**Functions:**
+- `get_connection()`
+- `get_filtered_complaints()`
+- `get_monthly_statistics()`
+- `get_seasonal_hcat()`
+- `get_bulk_summary()`
+
+### 📄 backend\api\db_layer\season_cases.py
+**Functions:**
+- `get_connection()`
+- `create_season_case()`
+- `get_season_case_by_id()`
+- `list_season_cases()`
+- `update_season_case()`
+
+### 📄 backend\api\db_layer\seasonal_report.py
+**Functions:**
+- `delete_seasonal_report_by_key()`
+- `insert_seasonal_report_header()`
+- `insert_seasonal_report_classification_stats()`
+- `insert_seasonal_report_policy_snapshot()`
+- `get_full_seasonal_report()`
+
+### 📄 backend\api\db_layer\seasonal_report_aggregation.py
+**Functions:**
+- `get_seasonal_classification_stats()`
+- `get_seasonal_domain_totals()`
+- `get_orgunit_policy_row()`
+
+### 📄 backend\api\db_layer\settings_db.py
+**Functions:**
+- `get_connection()`
+- `get_all_departments()`
+- `_build_department_tree()`
+- `get_department_by_id()`
+- `create_department()`
+- `update_department()`
+- `deactivate_department()`
+- `count_incidents_by_department()`
+- `get_all_attributes()`
+- `update_attribute_values()`
+- `get_all_policies()`
+- `update_policies()`
+- `export_full_configuration()`
+- `save_configuration_snapshot()`
+- `get_configuration_snapshots()`
+
+### 📄 backend\api\db_layer\training_db.py
+**Functions:**
+- `_get_training_connection()`
+- `_init_training_db()`
+- `store_training_run()`
+- `get_latest_training_status()`
+- `get_training_history()`
+- `record_ml_db_size()`
+- `get_ml_db_size_history()`
+- `get_current_ml_db_size()`
+

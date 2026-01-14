@@ -1,0 +1,7 @@
+flowchart LR
+    InsertRouter --> InsertService
+    InsertService --> IncidentCaseDB
+    InsertService --> IncidentCaseDoctorDB
+    InsertService --> IncidentTargetDepartmentDB
+    InsertService --> IncidentFeedbackDB
+    InsertService --> ML_Insert

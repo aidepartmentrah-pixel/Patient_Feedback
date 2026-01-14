@@ -15,8 +15,9 @@ from ..services.reference_service import (
     get_classifications,
     get_severity_levels,
     get_stages,
+    get_case_statuses,
     get_harm_levels,
-  get_explanation_statuses,
+    get_explanation_statuses,
     get_clinical_risk_types,
     get_feedback_intent_types,
     get_buildings,
@@ -201,6 +202,25 @@ async def get_stages_endpoint():
     ```
     """
     return get_stages()
+
+
+@router.get("/case-statuses")
+async def get_case_statuses_endpoint():
+    """
+    Get all case statuses.
+    
+    **Returns:**
+    ```json
+    {
+      "case_statuses": [
+        { "id": 1, "code": "OPEN", "name": "Open", "is_final": false },
+        { "id": 2, "code": "IN_PROGRESS", "name": "In Progress", "is_final": false },
+        { "id": 3, "code": "CLOSED", "name": "Closed", "is_final": true }
+      ]
+    }
+    ```
+    """
+    return get_case_statuses()
 
 
 @router.get("/harm-levels")

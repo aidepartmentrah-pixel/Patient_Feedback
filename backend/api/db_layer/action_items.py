@@ -17,20 +17,22 @@ def create_action_item(
     action_title: str,
     created_by_user_id: int,
     incident_case_id: int | None = None,
+    seasonal_report_id: int | None = None,
     season_case_id: int | None = None,
     action_description: str | None = None,
     due_date: date | None = None,
 ) -> int:
     """
-    Create an action item linked to either an Incident case OR a Season case.
-    Exactly one of incident_case_id or season_case_id must be provided.
+    Create an action item linked to exactly ONE parent:
+    - Incident case (IncidentRequestCaseID)
+    - Seasonal report (SeasonalReportID)
+    - Season case (SeasonCaseID)
+    
+    NOTE: Validation that exactly one parent is provided should be done
+    in the service layer before calling this function.
+    
     Returns ActionItemID.
     """
-    if (incident_case_id is None) == (season_case_id is None):
-        raise ValueError(
-            "Exactly one of incident_case_id or season_case_id must be provided."
-        )
-
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -38,6 +40,7 @@ def create_action_item(
         """
         INSERT INTO dbo.APP_ActionItem (
             IncidentRequestCaseID,
+            SeasonalReportID,
             SeasonCaseID,
             ActionTitle,
             ActionDescription,
@@ -45,9 +48,10 @@ def create_action_item(
             CreatedByUserID
         )
         OUTPUT INSERTED.ActionItemID
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         incident_case_id,
+        seasonal_report_id,
         season_case_id,
         action_title,
         action_description,
@@ -117,6 +121,26 @@ def list_action_items_for_season(season_case_id: int) -> list[dict]:
         ORDER BY CreatedAt DESC
         """,
         season_case_id,
+    )
+
+    rows = cursor.fetchall()
+    columns = [col[0] for col in cursor.description]
+
+    conn.close()
+    return [dict(zip(columns, row)) for row in rows]
+
+def list_action_items_for_seasonal_report(seasonal_report_id: int) -> list[dict]:
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM dbo.APP_ActionItem
+        WHERE SeasonalReportID = ?
+        ORDER BY CreatedAt DESC
+        """,
+        seasonal_report_id,
     )
 
     rows = cursor.fetchall()

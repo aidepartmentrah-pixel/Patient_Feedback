@@ -32,6 +32,36 @@ def get_admin_unit_by_id(admin_unit_id: int):
     return row
 
 
+def get_admin_unit_type(admin_unit_id: int) -> int | None:
+    """
+    Get the Type of an administration unit by its UniqueID.
+    
+    Args:
+        admin_unit_id: UniqueID of the organizational unit
+    
+    Returns:
+        Type value (int) or None if not found
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT Type
+        FROM AdminsrationUnit
+        WHERE UniqueID = ?
+        """,
+        admin_unit_id
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row:
+        return row.Type
+    return None
+
+
 def get_admin_unit_children(parent_id: int):
     """
     Return direct children of a given administration unit.

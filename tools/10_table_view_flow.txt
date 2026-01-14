@@ -1,0 +1,65 @@
+# Table View Flow
+
+## Routers
+- backend/api/routers/reports_router.py
+  - view_seasonal_report()
+  - view_monthly_report()
+  - submit_explanation()
+  - update_explanation()
+  - export_report()
+  - ROUTE POST /seasonal/view
+  - ROUTE POST /monthly/view
+  - ROUTE POST /seasonal/{report_id}/explanation
+  - ROUTE PUT /seasonal/{report_id}/explanation
+  - ROUTE POST /export
+- backend/api/routers/table_view_router.py
+  - get_complaints()
+  - get_filter_dropdown_options()
+  - get_filtered_count()
+  - export_complaints_to_excel()
+  - get_single_complaint()
+  - export_filtered_complaints()
+  - get_available_views()
+  - delete_complaint()
+  - hard_delete_complaint()
+  - import_complaints_from_excel()
+  - ROUTE GET /filter-options
+  - ROUTE GET /count
+  - ROUTE GET /export
+  - ROUTE GET /{complaint_id}
+  - ROUTE POST /export
+  - ROUTE GET /views
+  - ROUTE DELETE /{complaint_id}
+  - ROUTE DELETE /{complaint_id}/hard-delete
+  - ROUTE POST /import-excel
+
+## Services
+- backend/api/services/reports_service.py
+  - get_period_dates()
+  - get_filtered_complaints_with_pagination()
+  - get_monthly_statistics_report()
+  - get_seasonal_hcat_report()
+  - get_bulk_summary_report()
+  - generate_csv_export()
+  - generate_pdf_export()
+- backend/api/services/table_view_service.py
+  - get_complaints_paginated()
+  - get_filter_options()
+  - get_complaint_by_id()
+  - get_complaints_count()
+  - export_complaints_excel()
+  - export_complaints()
+  - get_table_views()
+  - bulk_import_records_from_excel()
+  - _build_lookup_caches()
+  - _map_excel_row_to_payload()
+  - _insert_historical_record()
+
+## DB Layer
+- backend/api/db_layer/reports_db.py
+  - get_connection()
+  - get_filtered_complaints()
+  - get_monthly_statistics()
+  - get_seasonal_hcat()
+  - get_bulk_summary()
+
