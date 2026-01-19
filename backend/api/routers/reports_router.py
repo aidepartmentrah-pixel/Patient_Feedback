@@ -13,6 +13,7 @@ from io import BytesIO
 
 # FastAPI imports
 from fastapi import APIRouter, Query, HTTPException, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 # Import for emergency fallback
@@ -24,10 +25,10 @@ except ImportError:
 
 # Service imports
 from ..services.reports_service import reports_service
-from backend.api.services.monthly_report_service import monthly_report_service
-from backend.api.services.report_export_service import report_export_service
-from backend.api.services.seasonal_report_orchestrator import get_or_generate_seasonal_report
-from backend.api.services.seasonal_report_explanation_service import SeasonalReportExplanationService
+from ..services.monthly_report_service import monthly_report_service
+from ..services.report_export_service import report_export_service
+from ..services.seasonal_report_orchestrator import get_or_generate_seasonal_report
+from ..services.seasonal_report_explanation_service import SeasonalReportExplanationService
 
 
 
@@ -47,8 +48,9 @@ class ExportRequest(BaseModel):
     display_mode: Literal["detailed", "numeric", "hcat"] = "detailed"
     year: int
     month: Optional[int] = None
-    trimester: Optional[int] = None
-    quarter: Optional[int] = None
+    trimester: Optional[int] = None  # DEPRECATED: Use period string instead
+    quarter: Optional[int] = None    # DEPRECATED: Use period string instead
+    period: Optional[str] = None     # Preferred: Q1, Q2, Q3, Q4, Trim1, Trim2, Trim3
     filters: Optional[Dict[str, Any]] = {}
     include_charts: bool = True
     include_metadata: bool = True
@@ -63,9 +65,9 @@ class SeasonalViewRequest(BaseModel):
 
 
 class SeasonalViewRequestV2(BaseModel):
-    """Request model for viewing seasonal reports (V2 - year/trimester based)."""
+    """Request model for viewing seasonal reports (V2 - year/period based)."""
     year: int
-    trimester: str  # Trim1, Trim2, Trim3
+    trimester: str  # Q1, Q2, Q3, Q4 (quarters) or Trim1, Trim2, Trim3 (trimesters)
     orgunit_id: int
     orgunit_type: int
     user_id: Optional[int] = 1
@@ -82,6 +84,16 @@ class MonthlyViewRequest(BaseModel):
     administration_ids: Optional[str] = None
     department_ids: Optional[str] = None
     section_ids: Optional[str] = None
+
+
+class SeasonalExportRequest(BaseModel):
+    """Request model for exporting seasonal reports."""
+    year: int
+    period: str  # Q1, Q2, Q3, Q4, Trim1, Trim2, Trim3
+    orgunit_id: int
+    orgunit_type: int  # 0=Hospital, 1=Administration, 2=Department, 3=Section
+    format: Literal["pdf", "csv", "xlsx", "docx"] = "docx"
+    language: Literal["en", "ar"] = "en"
 
 
 class SubmitExplanationRequest(BaseModel):
@@ -122,18 +134,28 @@ def view_seasonal_report(request: SeasonalViewRequestV2):
     """View a seasonal report (generates if needed)."""
     from backend.api.db_layer.seasonal_report import resolve_season_id_from_year_trimester
     
-    # Resolve season_id from year + trimester
+    # 🔍 DEBUG: Log incoming request
+    print("\n" + "="*100)
+    print(f"[SEASONAL/VIEW] 📥 INCOMING REQUEST")
+    print(f"  year: {request.year}")
+    print(f"  trimester: {request.trimester}")
+    print(f"  orgunit_id: {request.orgunit_id}")
+    print(f"  orgunit_type: {request.orgunit_type}")
+    print(f"  user_id: {request.user_id}")
+    print("="*100 + "\n")
+    
+    # Resolve season_id from year + period (quarter or trimester)
     try:
         season_id = resolve_season_id_from_year_trimester(
             year=request.year,
             trimester=request.trimester
         )
     except ValueError as e:
-        # Ambiguous season (multiple matches)
+        # Handle validation errors
         error_msg = str(e)
         if "Ambiguous" in error_msg:
             raise HTTPException(status_code=409, detail=error_msg)
-        elif "Invalid trimester" in error_msg:
+        elif "Invalid" in error_msg:
             raise HTTPException(status_code=400, detail=error_msg)
         else:
             raise HTTPException(status_code=400, detail=str(e))
@@ -141,7 +163,7 @@ def view_seasonal_report(request: SeasonalViewRequestV2):
     if season_id is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Season not found for year={request.year}, trimester={request.trimester}"
+            detail=f"Season not found for year={request.year}, period={request.trimester}"
         )
     
     try:
@@ -273,26 +295,303 @@ async def export_report(request: ExportRequest, format: Literal["pdf", "csv", "x
         })
 
 
+@router.post("/seasonal/export")
+async def export_seasonal_report(request: SeasonalExportRequest):
+    """
+    Export a seasonal report.
+    
+    SMART DETECTION (matches monthly pattern):
+    - If orgunit_id=1 and orgunit_type=1/2/3 → Generate ZIP with one file per unit
+    - Otherwise → Generate single file
+    
+    Supports: pdf, csv, xlsx (Excel), docx (Word).
+    """
+    year = request.year
+    period = request.period
+    orgunit_id = request.orgunit_id
+    orgunit_type = request.orgunit_type
+    format = request.format
+    language = request.language
+    
+    print("\n" + "="*100)
+    print(f"[ROUTER] ⚡ SEASONAL EXPORT ENDPOINT CALLED ⚡")
+    print(f"[ROUTER] Params: year={year}, period={period}, format={format}")
+    print(f"[ROUTER] orgunit_id={orgunit_id}, orgunit_type={orgunit_type}")
+    print("="*100 + "\n")
+    
+    try:
+        from backend.api.db_layer.seasonal_report import resolve_season_id_from_year_trimester
+        from ..services.multi_seasonal_export_service import multi_seasonal_export_service
+        
+        # Resolve season_id from year + period
+        try:
+            season_id = resolve_season_id_from_year_trimester(
+                year=year,
+                trimester=period
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        
+        if season_id is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Season not found for year={year}, period={period}"
+            )
+        
+        # DETECTION LOGIC (same as monthly)
+        is_multi_export = False
+        report_level = None
+        
+        if orgunit_id == 1 and orgunit_type > 0:
+            # Multi-export mode
+            is_multi_export = True
+            level_mapping = {1: "administration", 2: "department", 3: "section"}
+            report_level = level_mapping.get(orgunit_type)
+            print(f"[ROUTER] Multi-export detected: {report_level} level")
+        
+        # MULTI-FILE EXPORT PATH (ZIP)
+        if is_multi_export:
+            result = multi_seasonal_export_service.generate_multi_seasonal_export(
+                season_id=season_id,
+                year=year,
+                period=period,
+                file_format=format,
+                report_level=report_level,
+                selected_unit_ids=None,  # All units
+                language=language
+            )
+            
+            print(f"[ROUTER] 🎯 Multi-seasonal export result:")
+            print(f"  - filename: {result['filename']}")
+            print(f"  - content_type: {result['content_type']}")
+            print(f"  - content size: {len(result['content'])} bytes")
+            
+            # Return ZIP directly
+            return Response(
+                content=result["content"],
+                media_type=result["content_type"],
+                headers={
+                    "Content-Disposition": f"attachment; filename={result['filename']}"
+                }
+            )
+        
+        # SINGLE FILE EXPORT PATH (existing logic)
+        print(f"[ROUTER] Single file seasonal export")
+        
+        # Build filters for seasonal report
+        filters = {
+            "season_id": season_id,
+            "orgunit_id": orgunit_id,
+            "orgunit_type": orgunit_type
+        }
+        
+        # Generate export
+        # Note: Seasonal reports don't use display_mode (pass None)
+        result = report_export_service.generate_export(
+            report_type="seasonal",
+            display_mode=None,
+            file_format=format,
+            year=year,
+            month=None,
+            trimester=None,
+            quarter=None,
+            filters=filters,
+            include_charts=True,
+            language=language
+        )
+        
+        # Return file directly
+        return Response(
+            content=result["content"],
+            media_type=result["content_type"],
+            headers={
+                "Content-Disposition": f"attachment; filename={result['filename']}"
+            }
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print("\n" + "="*80)
+        print(f"[ROUTER] SEASONAL EXPORT FAIL: {format.upper()} export")
+        print(f"Parameters: year={year}, period={period}, orgunit={orgunit_id}")
+        print(f"Exception: {type(e).__name__}: {str(e)}")
+        print("="*80)
+        traceback.print_exc()
+        print("="*80 + "\n")
+        
+        raise HTTPException(status_code=500, detail={
+            "error": f"seasonal_{format}_export_failed",
+            "message": f"Failed to generate seasonal {format.upper()}: {str(e)}",
+            "message_ar": f"فشل إنشاء تقرير موسمي {format.upper()}: {str(e)}",
+            "exception_type": type(e).__name__,
+            "exception_details": str(e)
+        })
+
+
 @router.post("/monthly/export")
 async def export_monthly_report(
     year: int = Query(..., description="Year for the report"),
-    month: int = Query(..., description="Month for the report"),
+    month: Optional[int] = Query(None, description="Month for the report (1-12), or use start_date/end_date"),
+    start_date: Optional[str] = Query(None, description="Custom range start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="Custom range end date (YYYY-MM-DD)"),
     format: Literal["pdf", "csv", "xlsx", "docx"] = Query(..., description="Export format"),
     display_mode: Literal["detailed", "numeric"] = Query(default="detailed", description="Display mode"),
     scope: Optional[str] = Query(None, description="Scope filter"),
-    administration_ids: Optional[str] = Query(None, description="Administration IDs (comma-separated)"),
-    department_ids: Optional[str] = Query(None, description="Department IDs (comma-separated)"),
-    section_ids: Optional[str] = Query(None, description="Section IDs (comma-separated)"),
+    administration_ids: Optional[str] = Query(None, description="Administration IDs (comma-separated or 'all')"),
+    department_ids: Optional[str] = Query(None, description="Department IDs (comma-separated or 'all')"),
+    section_ids: Optional[str] = Query(None, description="Section IDs (comma-separated or 'all')"),
     include_charts: bool = Query(default=True, description="Include charts in export"),
     language: Literal["en", "ar"] = Query(default="en", description="Export language")
 ):
     """
-    Export a monthly report.
+    Export a monthly report (or custom date range).
     
-    Returns the file content directly (not JSON metadata).
+    SMART DETECTION (No frontend changes needed):
+    - If section_ids = "all" or multiple → Generate one file per Section (ZIP)
+    - If department_ids = "all" or multiple → Generate one file per Department (ZIP)
+    - If administration_ids = "all" or multiple → Generate one file per Administration (ZIP)
+    - Otherwise → Generate single file with filters applied
+    
+    Returns the file content directly (ZIP for multi-file, single file otherwise).
     Supports: pdf, csv, xlsx (Excel), docx (Word).
+    Can use month parameter OR start_date/end_date for custom ranges.
     """
+    print("\n" + "="*100)
+    print(f"[ROUTER] ⚡ EXPORT ENDPOINT CALLED ⚡")
+    print(f"[ROUTER] Params: year={year}, month={month}, format={format}, display_mode={display_mode}")
+    print(f"[ROUTER] Date range: start_date={start_date}, end_date={end_date}")
+    print(f"[ROUTER] scope={scope}")
+    print(f"[ROUTER] administration_ids={administration_ids}")
+    print(f"[ROUTER] department_ids={department_ids}")
+    print(f"[ROUTER] section_ids={section_ids}")
+    print("="*100 + "\n")
+    
+    # Validation: Must provide either month OR both start_date and end_date
+    if not month and not (start_date and end_date):
+        raise HTTPException(
+            status_code=422,
+            detail="Must provide either 'month' parameter OR both 'start_date' and 'end_date'"
+        )
+    
     try:
+        from ..services.multi_report_export_service import multi_report_export_service
+        
+        # Smart detection: Determine if multi-file export is needed
+        is_multi_export = False
+        report_level = None
+        selected_ids = None
+        
+        # DETECTION STRATEGY:
+        # 1. If scope is set to a level BUT no specific IDs provided → Multi-export for ALL units
+        # 2. If specific IDs provided with "all" or comma-separated → Multi-export
+        # 3. If single ID provided → Single export
+        
+        # Check if scope indicates a level without specific IDs (frontend pattern)
+        print(f"[ROUTER] Detection check: scope={scope}, sect={section_ids}, dept={department_ids}, admin={administration_ids}")
+        if scope and not section_ids and not department_ids and not administration_ids:
+            # Frontend sends: scope=administration (means "all administrations")
+            if scope == "section":
+                is_multi_export = True
+                report_level = "section"
+                selected_ids = None
+            elif scope == "department":
+                is_multi_export = True
+                report_level = "department"
+                selected_ids = None
+            elif scope == "administration":
+                is_multi_export = True
+                report_level = "administration"
+                selected_ids = None
+        
+        # Priority: Section > Department > Administration (most specific first)
+        elif section_ids:
+            if section_ids.lower() == "all":
+                is_multi_export = True
+                report_level = "section"
+                selected_ids = None  # All sections
+            elif "," in section_ids:
+                # Multiple sections selected
+                is_multi_export = True
+                report_level = "section"
+                selected_ids = [int(x.strip()) for x in section_ids.split(",") if x.strip()]
+        
+        elif department_ids:
+            if department_ids.lower() == "all":
+                is_multi_export = True
+                report_level = "department"
+                selected_ids = None
+            elif "," in department_ids:
+                is_multi_export = True
+                report_level = "department"
+                selected_ids = [int(x.strip()) for x in department_ids.split(",") if x.strip()]
+        
+        elif administration_ids:
+            if administration_ids.lower() == "all":
+                is_multi_export = True
+                report_level = "administration"
+                selected_ids = None
+            elif "," in administration_ids:
+                is_multi_export = True
+                report_level = "administration"
+                selected_ids = [int(x.strip()) for x in administration_ids.split(",") if x.strip()]
+        
+        # MULTI-FILE EXPORT PATH
+        if is_multi_export:
+            print(f"[ROUTER] Multi-file export detected: {report_level} level, IDs: {selected_ids}")
+            
+            result = multi_report_export_service.generate_multi_export(
+                year=year,
+                month=month,
+                start_date=start_date,
+                end_date=end_date,
+                file_format=format,
+                display_mode=display_mode,
+                report_level=report_level,
+                selected_unit_ids=selected_ids,
+                language=language
+            )
+            
+            print(f"[ROUTER] 🎯 Multi-export result:")
+            print(f"  - filename: {result['filename']}")
+            print(f"  - content_type: {result['content_type']}")
+            print(f"  - content size: {len(result['content'])} bytes")
+            print(f"  - Is bytes: {isinstance(result['content'], bytes)}")
+            
+            # Store the ZIP in EXPORT_STORAGE and return download URL
+            # This bypasses frontend's format-based file extension logic
+            export_id = f"multi-{datetime.now().strftime('%Y%m%d%H%M%S')}-{str(uuid.uuid4())[:8]}"
+            
+            EXPORT_STORAGE[export_id] = {
+                "filename": result["filename"],
+                "content": result["content"],
+                "content_type": result["content_type"],
+                "created_at": datetime.now(),
+                "user_id": None,
+                "filters_applied": {"multi_export": True, "level": report_level}
+            }
+            
+            print(f"[ROUTER] 📦 Stored ZIP as export_id: {export_id}")
+            print(f"[ROUTER] ✅ Returning download metadata (not file directly)")
+            
+            # Return JSON with download URL instead of file
+            # Frontend will see this isn't a file and should handle the download_url
+            return {
+                "export_id": export_id,
+                "file_name": result["filename"],
+                "file_size_bytes": len(result["content"]),
+                "download_url": f"/api/reports/download/{export_id}",
+                "is_multi_export": True,
+                "report_level": report_level,
+                "generated_at": datetime.now().isoformat(),
+                "expires_at": (datetime.now() + timedelta(hours=24)).isoformat(),
+                "message": f"Multi-file export ready: {result['filename']}",
+                "message_ar": f"تصدير متعدد الملفات جاهز: {result['filename']}"
+            }
+        
+        # SINGLE FILE EXPORT PATH (existing logic)
+        print(f"[ROUTER] Single file export")
+        
         # Build filters from query parameters
         filters = {}
         if scope:
@@ -311,6 +610,8 @@ async def export_monthly_report(
             file_format=format,
             year=year,
             month=month,
+            start_date=start_date,
+            end_date=end_date,
             trimester=None,
             quarter=None,
             filters=filters,
@@ -401,3 +702,26 @@ async def export_monthly_report(
             "exception_type": type(e).__name__,
             "exception_details": str(e)
         })
+
+
+@router.get("/download/{export_id}")
+async def download_export(export_id: str):
+    """
+    Download a previously generated export file.
+    Used for multi-file exports (ZIP) to bypass frontend's format-based extension logic.
+    """
+    if export_id not in EXPORT_STORAGE:
+        raise HTTPException(status_code=404, detail="Export not found or expired")
+    
+    export_data = EXPORT_STORAGE[export_id]
+    
+    print(f"[DOWNLOAD] Serving export: {export_data['filename']} ({len(export_data['content'])} bytes)")
+    
+    # Return file with correct content type
+    return Response(
+        content=export_data["content"],
+        media_type=export_data["content_type"],
+        headers={
+            "Content-Disposition": f'attachment; filename="{export_data["filename"]}"'
+        }
+    )

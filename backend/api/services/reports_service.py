@@ -47,6 +47,7 @@ from ..db_layer.reports_db import (
     get_seasonal_hcat,
     get_bulk_summary
 )
+from ..db_layer.admin_units import get_admin_unit_by_id, get_units_by_type
 
 
 class ReportsService:
@@ -362,6 +363,574 @@ class ReportsService:
         }
     
     @staticmethod
+    def _get_org_unit_name(unit_id: int) -> str:
+        """Helper to get organizational unit name by ID."""
+        try:
+            unit = get_admin_unit_by_id(unit_id)
+            if unit and hasattr(unit, 'Name'):
+                return unit.Name
+            return "—"
+        except:
+            return "—"
+    
+    @staticmethod
+    def generate_monthly_numeric_word_report(
+        report_data: Dict[str, Any],
+        filename: str,
+        language: str = "ar",
+        report_entity_name: str = None,
+        report_entity_type: str = None
+    ) -> bytes:
+        """
+        Generate professional Word document for monthly numeric (aggregated) reports.
+        
+        Creates a comprehensive Arabic report with:
+        - Summary statistics table
+        - Domain breakdown with counts and percentages
+        - Severity breakdown (Low/Medium/High)
+        - Department breakdown (top departments)
+        
+        Args:
+            report_data: Numeric report dict with period, summary, by_domain, by_severity, by_department
+            filename: Target filename
+            language: Language code (defaults to ar for Arabic)
+            report_entity_name: Name of the organizational unit (e.g., "الادارة الطبية")
+            report_entity_type: Type of entity (hospital/administration/department/section)
+        
+        Returns:
+            bytes: Valid Word .docx file content
+        """
+        if not PYTHON_DOCX_AVAILABLE:
+            raise ImportError(
+                "python-docx is required for Word export. "
+                "Install with: pip install python-docx"
+            )
+        
+        def _safe(v):
+            """Convert dimension values to int (python-docx requirement)"""
+            return int(v)
+        
+        def center_cell_content(cell):
+            """Center-align cell content"""
+            for paragraph in cell.paragraphs:
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        def apply_cell_borders(cell):
+            """Apply borders to cell"""
+            tc = cell._element
+            tcPr = tc.get_or_add_tcPr()
+            
+            # Add borders
+            tcBorders = OxmlElement('w:tcBorders')
+            for border_name in ['top', 'left', 'bottom', 'right']:
+                border = OxmlElement(f'w:{border_name}')
+                border.set(qn('w:val'), 'single')
+                border.set(qn('w:sz'), '4')
+                border.set(qn('w:color'), '000000')
+                tcBorders.append(border)
+            tcPr.append(tcBorders)
+        
+        # Extract data
+        period = report_data.get("period", {})
+        summary = report_data.get("summary", {})
+        by_domain = report_data.get("by_domain", [])
+        by_severity = report_data.get("by_severity", [])
+        by_department = report_data.get("by_department", [])
+        
+        # Build period label
+        year = period.get("year", "")
+        month = period.get("month")
+        start_date = period.get("start_date", "")
+        end_date = period.get("end_date", "")
+        
+        if month:
+            # Month-based label
+            period_label = period.get("label", f"Month {month}, {year}")
+            period_label_ar = period.get("label_ar", f"الشهر {month}، {year}")
+        else:
+            # Date range label
+            period_label = f"{start_date} to {end_date}"
+            period_label_ar = f"{start_date} إلى {end_date}"
+        
+        # Build scope label
+        if report_entity_type == "hospital" or not report_entity_type:
+            scope_label = "التقرير الشهري الإحصائي للمستشفى"
+            scope_name = "مستشفى الملك فهد التخصصي بالدمام"
+        elif report_entity_type == "administration":
+            scope_label = "التقرير الشهري الإحصائي للإدارة"
+            scope_name = report_entity_name or "—"
+        elif report_entity_type == "department":
+            scope_label = "التقرير الشهري الإحصائي للقسم"
+            scope_name = report_entity_name or "—"
+        elif report_entity_type == "section":
+            scope_label = "التقرير الشهري الإحصائي للشعبة"
+            scope_name = report_entity_name or "—"
+        else:
+            scope_label = "التقرير الشهري الإحصائي"
+            scope_name = report_entity_name or "—"
+        
+        # Create Word document
+        doc = Document()
+        
+        # Set page to A4 Landscape
+        section = doc.sections[0]
+        section.page_height = _safe(Mm(210))
+        section.page_width = _safe(Mm(297))
+        section.orientation = WD_ORIENT.LANDSCAPE
+        section.left_margin = _safe(Mm(15))
+        section.right_margin = _safe(Mm(15))
+        section.top_margin = _safe(Mm(15))
+        section.bottom_margin = _safe(Mm(15))
+        
+        # ============================================================
+        # HEADER SECTION
+        # ============================================================
+        
+        # Main title
+        title_para = doc.add_paragraph()
+        title_run = title_para.add_run(scope_label)
+        title_run.font.size = Pt(18)
+        title_run.font.bold = True
+        title_run.font.name = 'Traditional Arabic'
+        title_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+        title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Entity name
+        if scope_name != "—":
+            entity_para = doc.add_paragraph()
+            entity_run = entity_para.add_run(scope_name)
+            entity_run.font.size = Pt(14)
+            entity_run.font.bold = True
+            entity_run.font.name = 'Traditional Arabic'
+            entity_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+            entity_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Period
+        period_para = doc.add_paragraph()
+        period_run = period_para.add_run(f"الفترة: {period_label_ar}")
+        period_run.font.size = Pt(12)
+        period_run.font.name = 'Traditional Arabic'
+        period_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+        period_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        doc.add_paragraph()  # Spacer
+        
+        # ============================================================
+        # SUMMARY STATISTICS TABLE
+        # ============================================================
+        
+        summary_heading = doc.add_paragraph()
+        summary_heading_run = summary_heading.add_run("الإحصائيات العامة")
+        summary_heading_run.font.size = Pt(14)
+        summary_heading_run.font.bold = True
+        summary_heading_run.font.name = 'Traditional Arabic'
+        summary_heading_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+        summary_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        
+        # Create summary table (2 columns: label, value)
+        summary_table = doc.add_table(rows=7, cols=2)
+        summary_table.alignment = WD_TABLE_ALIGNMENT.RIGHT
+        summary_table.autofit = False
+        summary_table.allow_autofit = False
+        
+        # Set column widths (RTL: value on right, label on left)
+        summary_table.columns[0].width = _safe(Cm(4))  # Value column
+        summary_table.columns[1].width = _safe(Cm(10))  # Label column
+        
+        # Define summary rows (RTL order)
+        summary_rows = [
+            ("إجمالي الشكاوى", summary.get("total_complaints", 0)),
+            ("الشكاوى المفتوحة", summary.get("open_complaints", 0)),
+            ("الشكاوى المغلقة", summary.get("closed_complaints", 0)),
+            ("الحالات الحرجة (Red Flags)", summary.get("red_flags_count", 0)),
+            ("الأحداث التي لا يجب أن تحدث (Never Events)", summary.get("never_events_count", 0)),
+            ("متوسط أيام الإغلاق", f"{summary.get('avg_closure_days', 0):.1f}"),
+            ("الوسيط لأيام الإغلاق", f"{summary.get('median_closure_days', 0):.1f}")
+        ]
+        
+        # Populate summary table
+        for idx, (label, value) in enumerate(summary_rows):
+            row_cells = summary_table.rows[idx].cells
+            
+            # Value cell (right side in RTL)
+            row_cells[0].text = str(value)
+            for paragraph in row_cells[0].paragraphs:
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for run in paragraph.runs:
+                    run.font.size = Pt(11)
+                    run.font.name = 'Traditional Arabic'
+                    run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+            
+            # Label cell (left side in RTL)
+            row_cells[1].text = label
+            for paragraph in row_cells[1].paragraphs:
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                for run in paragraph.runs:
+                    run.font.size = Pt(11)
+                    run.font.bold = True
+                    run.font.name = 'Traditional Arabic'
+                    run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+            
+            # Apply borders
+            apply_cell_borders(row_cells[0])
+            apply_cell_borders(row_cells[1])
+        
+        doc.add_paragraph()  # Spacer
+        
+        # ============================================================
+        # DOMAIN BREAKDOWN TABLE
+        # ============================================================
+        
+        domain_heading = doc.add_paragraph()
+        domain_heading_run = domain_heading.add_run("التوزيع حسب المجال (Domain)")
+        domain_heading_run.font.size = Pt(14)
+        domain_heading_run.font.bold = True
+        domain_heading_run.font.name = 'Traditional Arabic'
+        domain_heading_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+        domain_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        
+        # Create domain table (3 columns: percentage, count, domain name)
+        domain_table = doc.add_table(rows=len(by_domain) + 1, cols=3)
+        domain_table.alignment = WD_TABLE_ALIGNMENT.RIGHT
+        domain_table.autofit = False
+        domain_table.allow_autofit = False
+        
+        # Set column widths (RTL order: percentage, count, name)
+        domain_table.columns[0].width = _safe(Cm(3))   # Percentage
+        domain_table.columns[1].width = _safe(Cm(3))   # Count
+        domain_table.columns[2].width = _safe(Cm(8))   # Domain name
+        
+        # Header row
+        header_cells = domain_table.rows[0].cells
+        headers = ["النسبة المئوية", "العدد", "المجال"]
+        
+        for idx, header_text in enumerate(headers):
+            header_cells[idx].text = header_text
+            for paragraph in header_cells[idx].paragraphs:
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for run in paragraph.runs:
+                    run.font.size = Pt(11)
+                    run.font.bold = True
+                    run.font.name = 'Traditional Arabic'
+                    run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+            apply_cell_borders(header_cells[idx])
+            
+            # Shade header
+            shading_elm = OxmlElement('w:shd')
+            shading_elm.set(qn('w:fill'), 'D3D3D3')
+            header_cells[idx]._element.get_or_add_tcPr().append(shading_elm)
+        
+        # Data rows
+        for idx, domain in enumerate(by_domain, start=1):
+            row_cells = domain_table.rows[idx].cells
+            
+            # Percentage
+            percentage = domain.get("percentage", 0)
+            row_cells[0].text = f"{percentage:.1f}%"
+            center_cell_content(row_cells[0])
+            
+            # Count
+            count = domain.get("count", 0)
+            row_cells[1].text = str(count)
+            center_cell_content(row_cells[1])
+            
+            # Domain name (use Arabic if available)
+            domain_name = domain.get("domain_name_ar", domain.get("domain_name", "—"))
+            row_cells[2].text = domain_name
+            for paragraph in row_cells[2].paragraphs:
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                for run in paragraph.runs:
+                    run.font.size = Pt(11)
+                    run.font.name = 'Traditional Arabic'
+                    run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+            
+            # Apply borders
+            for cell in row_cells:
+                apply_cell_borders(cell)
+        
+        doc.add_paragraph()  # Spacer
+        
+        # ============================================================
+        # SEVERITY BREAKDOWN TABLE
+        # ============================================================
+        
+        if by_severity:
+            severity_heading = doc.add_paragraph()
+            severity_heading_run = severity_heading.add_run("التوزيع حسب درجة الخطورة")
+            severity_heading_run.font.size = Pt(14)
+            severity_heading_run.font.bold = True
+            severity_heading_run.font.name = 'Traditional Arabic'
+            severity_heading_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+            severity_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            
+            # Create severity table (2 columns: count, severity name)
+            severity_table = doc.add_table(rows=len(by_severity) + 1, cols=2)
+            severity_table.alignment = WD_TABLE_ALIGNMENT.RIGHT
+            severity_table.autofit = False
+            severity_table.allow_autofit = False
+            
+            # Set column widths
+            severity_table.columns[0].width = _safe(Cm(3))   # Count
+            severity_table.columns[1].width = _safe(Cm(11))  # Severity name
+            
+            # Header row
+            header_cells = severity_table.rows[0].cells
+            headers = ["العدد", "درجة الخطورة"]
+            
+            for idx, header_text in enumerate(headers):
+                header_cells[idx].text = header_text
+                for paragraph in header_cells[idx].paragraphs:
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    for run in paragraph.runs:
+                        run.font.size = Pt(11)
+                        run.font.bold = True
+                        run.font.name = 'Traditional Arabic'
+                        run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+                apply_cell_borders(header_cells[idx])
+                
+                # Shade header
+                shading_elm = OxmlElement('w:shd')
+                shading_elm.set(qn('w:fill'), 'D3D3D3')
+                header_cells[idx]._element.get_or_add_tcPr().append(shading_elm)
+            
+            # Data rows
+            for idx, severity in enumerate(by_severity, start=1):
+                row_cells = severity_table.rows[idx].cells
+                
+                # Count
+                count = severity.get("count", 0)
+                row_cells[0].text = str(count)
+                center_cell_content(row_cells[0])
+                
+                # Severity name
+                severity_name = severity.get("severity_name_ar", severity.get("severity_name", "—"))
+                row_cells[1].text = severity_name
+                for paragraph in row_cells[1].paragraphs:
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                    for run in paragraph.runs:
+                        run.font.size = Pt(11)
+                        run.font.name = 'Traditional Arabic'
+                        run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+                
+                # Apply borders
+                for cell in row_cells:
+                    apply_cell_borders(cell)
+            
+            doc.add_paragraph()  # Spacer
+        
+        # ============================================================
+        # DEPARTMENT BREAKDOWN TABLE (TOP DEPARTMENTS)
+        # ============================================================
+        
+        if by_department:
+            dept_heading = doc.add_paragraph()
+            dept_heading_run = dept_heading.add_run("التوزيع حسب الأقسام")
+            dept_heading_run.font.size = Pt(14)
+            dept_heading_run.font.bold = True
+            dept_heading_run.font.name = 'Traditional Arabic'
+            dept_heading_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+            dept_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            
+            # Create department table (2 columns: count, department name)
+            # Show top 15 departments or all if less
+            top_departments = by_department[:15]
+            dept_table = doc.add_table(rows=len(top_departments) + 1, cols=2)
+            dept_table.alignment = WD_TABLE_ALIGNMENT.RIGHT
+            dept_table.autofit = False
+            dept_table.allow_autofit = False
+            
+            # Set column widths
+            dept_table.columns[0].width = _safe(Cm(3))   # Count
+            dept_table.columns[1].width = _safe(Cm(11))  # Department name
+            
+            # Header row
+            header_cells = dept_table.rows[0].cells
+            headers = ["العدد", "القسم"]
+            
+            for idx, header_text in enumerate(headers):
+                header_cells[idx].text = header_text
+                for paragraph in header_cells[idx].paragraphs:
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    for run in paragraph.runs:
+                        run.font.size = Pt(11)
+                        run.font.bold = True
+                        run.font.name = 'Traditional Arabic'
+                        run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+                apply_cell_borders(header_cells[idx])
+                
+                # Shade header
+                shading_elm = OxmlElement('w:shd')
+                shading_elm.set(qn('w:fill'), 'D3D3D3')
+                header_cells[idx]._element.get_or_add_tcPr().append(shading_elm)
+            
+            # Data rows
+            for idx, dept in enumerate(top_departments, start=1):
+                row_cells = dept_table.rows[idx].cells
+                
+                # Count
+                count = dept.get("count", 0)
+                row_cells[0].text = str(count)
+                center_cell_content(row_cells[0])
+                
+                # Department name
+                dept_name = dept.get("dayra_name_ar", dept.get("dayra_name", "—"))
+                row_cells[1].text = dept_name
+                for paragraph in row_cells[1].paragraphs:
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                    for run in paragraph.runs:
+                        run.font.size = Pt(11)
+                        run.font.name = 'Traditional Arabic'
+                        run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+                
+                # Apply borders
+                for cell in row_cells:
+                    apply_cell_borders(cell)
+            
+            # Add note if there are more departments
+            if len(by_department) > 15:
+                note_para = doc.add_paragraph()
+                note_run = note_para.add_run(f"ملاحظة: تم عرض أعلى 15 قسماً من أصل {len(by_department)} قسماً")
+                note_run.font.size = Pt(10)
+                note_run.font.italic = True
+                note_run.font.name = 'Traditional Arabic'
+                note_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+                note_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        
+        # ============================================================
+        # ORGANIZATIONAL BREAKDOWN (FOR "ALL" SCOPE)
+        # ============================================================
+        
+        organizational_breakdown = report_data.get("organizational_breakdown", [])
+        if organizational_breakdown:
+            doc.add_paragraph()  # Spacer
+            
+            # Determine breakdown label based on entity type
+            if report_entity_type == "all_administrations":
+                breakdown_label = "مقارنة الإحصائيات بين الإدارات"
+            elif report_entity_type == "all_departments":
+                breakdown_label = "مقارنة الإحصائيات بين الأقسام"
+            elif report_entity_type == "all_sections":
+                breakdown_label = "مقارنة الإحصائيات بين الشعب"
+            else:
+                breakdown_label = "مقارنة الإحصائيات بين الوحدات التنظيمية"
+            
+            breakdown_heading = doc.add_paragraph()
+            breakdown_heading_run = breakdown_heading.add_run(breakdown_label)
+            breakdown_heading_run.font.size = Pt(14)
+            breakdown_heading_run.font.bold = True
+            breakdown_heading_run.font.name = 'Traditional Arabic'
+            breakdown_heading_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+            breakdown_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            
+            # Create comparison table
+            breakdown_table = doc.add_table(rows=len(organizational_breakdown) + 1, cols=6)
+            breakdown_table.alignment = WD_TABLE_ALIGNMENT.RIGHT
+            breakdown_table.autofit = False
+            breakdown_table.allow_autofit = False
+            
+            # Set column widths (RTL order)
+            breakdown_table.columns[0].width = _safe(Cm(2.5))  # Average closure days
+            breakdown_table.columns[1].width = _safe(Cm(2.5))  # Never events
+            breakdown_table.columns[2].width = _safe(Cm(2.5))  # Red flags
+            breakdown_table.columns[3].width = _safe(Cm(2.5))  # Closed
+            breakdown_table.columns[4].width = _safe(Cm(2.5))  # Open
+            breakdown_table.columns[5].width = _safe(Cm(7))    # Unit name
+            
+            # Header row
+            header_cells = breakdown_table.rows[0].cells
+            headers = ["متوسط أيام الإغلاق", "Never Events", "Red Flags", "مغلقة", "مفتوحة", "الوحدة التنظيمية"]
+            
+            for idx, header_text in enumerate(headers):
+                header_cells[idx].text = header_text
+                for paragraph in header_cells[idx].paragraphs:
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    for run in paragraph.runs:
+                        run.font.size = Pt(10)
+                        run.font.bold = True
+                        run.font.name = 'Traditional Arabic'
+                        run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+                apply_cell_borders(header_cells[idx])
+                
+                # Shade header
+                shading_elm = OxmlElement('w:shd')
+                shading_elm.set(qn('w:fill'), 'D3D3D3')
+                header_cells[idx]._element.get_or_add_tcPr().append(shading_elm)
+            
+            # Data rows
+            for idx, unit in enumerate(organizational_breakdown, start=1):
+                row_cells = breakdown_table.rows[idx].cells
+                
+                # Average closure days
+                avg_days = unit.get("avg_closure_days", 0)
+                row_cells[0].text = f"{avg_days:.1f}"
+                center_cell_content(row_cells[0])
+                
+                # Never events
+                never_events = unit.get("never_events_count", 0)
+                row_cells[1].text = str(never_events)
+                center_cell_content(row_cells[1])
+                
+                # Red flags
+                red_flags = unit.get("red_flags_count", 0)
+                row_cells[2].text = str(red_flags)
+                center_cell_content(row_cells[2])
+                
+                # Closed complaints
+                closed = unit.get("closed_complaints", 0)
+                row_cells[3].text = str(closed)
+                center_cell_content(row_cells[3])
+                
+                # Open complaints
+                open_complaints = unit.get("open_complaints", 0)
+                row_cells[4].text = str(open_complaints)
+                center_cell_content(row_cells[4])
+                
+                # Unit name
+                unit_name = unit.get("unit_name", "—")
+                row_cells[5].text = unit_name
+                for paragraph in row_cells[5].paragraphs:
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                    for run in paragraph.runs:
+                        run.font.size = Pt(10)
+                        run.font.name = 'Traditional Arabic'
+                        run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+                
+                # Apply borders
+                for cell in row_cells:
+                    apply_cell_borders(cell)
+            
+            doc.add_paragraph()  # Spacer
+            
+            # Add note about total units
+            breakdown_note = doc.add_paragraph()
+            breakdown_note_run = breakdown_note.add_run(f"عدد الوحدات المعروضة: {len(organizational_breakdown)} (تم عرض الوحدات التي بها شكاوى فقط)")
+            breakdown_note_run.font.size = Pt(10)
+            breakdown_note_run.font.italic = True
+            breakdown_note_run.font.name = 'Traditional Arabic'
+            breakdown_note_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+            breakdown_note.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        
+        # ============================================================
+        # FOOTER
+        # ============================================================
+        
+        doc.add_paragraph()
+        footer_para = doc.add_paragraph()
+        footer_run = footer_para.add_run(f"تم إنشاء التقرير في: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+        footer_run.font.size = Pt(9)
+        footer_run.font.italic = True
+        footer_run.font.name = 'Traditional Arabic'
+        footer_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+        footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Save to buffer
+        buffer = BytesIO()
+        doc.save(buffer)
+        buffer.seek(0)
+        
+        return buffer.read()
+    
+    @staticmethod
     def generate_csv_export(
         report_data: List[Dict[str, Any]],
         filename: str,
@@ -386,292 +955,31 @@ class ReportsService:
         return csv_buffer.getvalue().encode('utf-8')
     
     @staticmethod
-    def generate_xlsx_export(
-        report_data: List[Dict[str, Any]],
-        filename: str,
-        language: str = "en"
-    ) -> bytes:
-        """
-        Generate professional Excel XLSX file from report data using openpyxl.
-        Formatted for official hospital monthly reports with RTL support.
-        
-        Args:
-            report_data: List of dictionaries (rows) - FULL complaint DTO
-            filename: Target filename
-            language: Language code (en or ar)
-        
-        Returns:
-            bytes: Real Excel .xlsx file content
-        """
-        if not OPENPYXL_AVAILABLE:
-            raise ImportError(
-                "openpyxl is required for Excel export. "
-                "Install with: pip install openpyxl"
-            )
-        
-        from openpyxl.styles import Alignment, Border, Side
-        
-        if not report_data:
-            # Return empty workbook
-            wb = Workbook()
-            ws = wb.active
-            ws.title = "Report"
-            excel_buffer = BytesIO()
-            wb.save(excel_buffer)
-            excel_buffer.seek(0)
-            return excel_buffer.getvalue()
-        
-        # Create workbook and active sheet
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "تقرير فرص التحسين الشهري"  # Official sheet name
-        
-        # Set RTL direction
-        ws.sheet_view.rightToLeft = True
-        
-        # Define official columns (RTL order - right to left)
-        # Format: (header, field, width, is_vertical)
-        columns = [
-            ("تاريخ تلقي الملاحظة", "received_date", 4, True),           # 1 - Vertical
-            ("الرقم", "id", 4, True),                                     # 2 - Vertical
-            ("P. Full Name", "patient_name", 6, True),                    # 3 - Vertical
-            ("قسم الصادر", "section_name", 6, True),            # 4 - Section (actual issuing unit)
-            ("الإدارة", "administration_name", 5, True),                # 5 - Administration (top level)
-            ("القسم المعني", "department_name", 6, True),           # 6 - Department (middle level)
-            ("المصدر", "source_name", 5, True),                           # 7 - Vertical
-            ("النوع", "feedback_intent_type_name", 5, True),              # 8 - Vertical
-            ("Domain", "domain_name", 6, True),                           # 9 - Vertical
-            ("Category", "category_name", 6, True),                       # 10 - Vertical
-            ("Sub-Category", "subcategory_name", 6, True),                # 11 - Vertical
-            ("Target Departments", "target_departments_display", 8, True),    # 12 - Vertical
-            ("classification in Arabic", "classification_name", 7, True), # 13 - Vertical
-            ("classification in English", "classification_name", 7, True),# 14 - Vertical
-            ("محتوى الشكوى (Raw Content)", "complaint_text", 60, False), # 14 - VERY WIDE (8x)
-            ("Immediate Action (خدمات المرضى+القسم)", "immediate_action", 35, False), # 15 - WIDE (4x)
-            ("الإجراءات المتخذة (القسم/الدائرة/الإدارة)", "taken_action", 28, False), # 16 - WIDE (3x)
-            ("Severity", "severity_name", 5, True),                       # 17 - Vertical
-            ("Stage", "stage_name", 5, True),                             # 18 - Vertical
-            ("Harm", "harm_level", 4, True)                               # 19 - Vertical
-        ]
-        
-        # Extract metadata from data
-        start_date = "—"
-        end_date = "—"
-        idara_name = "—"
-        dayra_name = "—"
-        qism_name = "—"
-        
-        if report_data:
-            first_record = report_data[0]
-            last_record = report_data[-1] if len(report_data) > 1 else first_record
-            
-            # Extract dates
-            if first_record.get("received_date"):
-                start_date = first_record["received_date"]
-                if isinstance(start_date, (datetime, date)):
-                    start_date = start_date.strftime("%Y-%m-%d") if isinstance(start_date, datetime) else start_date.isoformat()
-            
-            if last_record.get("received_date"):
-                end_date = last_record["received_date"]
-                if isinstance(end_date, (datetime, date)):
-                    end_date = end_date.strftime("%Y-%m-%d") if isinstance(end_date, datetime) else end_date.isoformat()
-            
-            # Extract department info
-            idara_name = first_record.get("administration_name", "—")
-            dayra_name = first_record.get("department_name", "—")
-            qism_name = first_record.get("section_name", "—")
-        
-        # Define styles
-        thin_border = Border(
-            left=Side(style='thin'),
-            right=Side(style='thin'),
-            top=Side(style='thin'),
-            bottom=Side(style='thin')
-        )
-        
-        # Light green hospital color for header
-        header_fill = PatternFill(start_color="B4E7CE", end_color="B4E7CE", fill_type="solid")
-        header_font = Font(bold=True, color="000000", size=9)
-        title_font = Font(bold=True, size=12)
-        subtitle_font = Font(bold=True, size=11)
-        
-        current_row = 1
-        num_columns = len(columns)
-        
-        # Row 1: Date range header
-        date_text = f"الشهر المعني: من {start_date} إلى {end_date}"
-        ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=num_columns)
-        cell = ws.cell(row=current_row, column=1, value=date_text)
-        cell.font = title_font
-        cell.alignment = Alignment(horizontal="center", vertical="center")
-        current_row += 1
-        
-        # Row 2: Department info header
-        dept_text = f"الإدارة: {idara_name}      الدائرة: {dayra_name}      القسم المعني: {qism_name}"
-        ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=num_columns)
-        cell = ws.cell(row=current_row, column=1, value=dept_text)
-        cell.font = subtitle_font
-        cell.alignment = Alignment(horizontal="center", vertical="center")
-        current_row += 1
-        
-        # Empty row
-        current_row += 1
-        
-        # Row for column headers
-        header_row = current_row
-        for col_idx, (header_name, _, _, is_vertical) in enumerate(columns, start=1):
-            cell = ws.cell(row=header_row, column=col_idx, value=header_name)
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.border = thin_border
-            
-            if is_vertical:
-                # Vertical text: rotate 90 degrees, center align
-                cell.alignment = Alignment(
-                    horizontal="center", 
-                    vertical="center", 
-                    wrap_text=True,
-                    text_rotation=90
-                )
-            else:
-                # Horizontal text: center align, wrap
-                cell.alignment = Alignment(
-                    horizontal="center", 
-                    vertical="center", 
-                    wrap_text=True
-                )
-        
-        # Set row height for header to accommodate vertical text
-        ws.row_dimensions[header_row].height = 100
-        
-        current_row += 1
-        
-        # Data rows
-        for row_data in report_data:
-            for col_idx, (header_name, field_name, _, is_vertical) in enumerate(columns, start=1):
-                # Special handling for target departments: concatenate all department names
-                if field_name == "target_departments_display":
-                    target_depts = row_data.get("target_departments", [])
-                    if target_depts and isinstance(target_depts, list):
-                        dept_names = [dept.get("department_name", "") for dept in target_depts if dept.get("department_name")]
-                        value = ", ".join(dept_names) if dept_names else "—"
-                    else:
-                        value = "—"
-                else:
-                    # Get value from data
-                    value = row_data.get(field_name, "")
-                
-                # Convert date/datetime to string
-                if isinstance(value, datetime):
-                    value = value.strftime("%Y-%m-%d")
-                elif isinstance(value, date):
-                    value = value.isoformat()
-                
-                # Handle None
-                if value is None:
-                    value = ""
-                
-                # Write cell
-                cell = ws.cell(row=current_row, column=col_idx, value=value)
-                cell.border = thin_border
-                
-                # Apply alignment based on column type
-                if is_vertical:
-                    # Vertical columns: centered
-                    cell.alignment = Alignment(horizontal="center", vertical="center")
-                else:
-                    # Wide columns: wrapped, top-aligned
-                    cell.alignment = Alignment(wrap_text=True, vertical="top", horizontal="right")
-            
-            current_row += 1
-        
-        # Set column widths USING INDEX (not column_letter from cells to avoid MergedCell bug)
-        from openpyxl.utils import get_column_letter
-        for col_idx, (_, _, width, _) in enumerate(columns, start=1):
-            col_letter = get_column_letter(col_idx)
-            ws.column_dimensions[col_letter].width = width
-        
-        # Add footer signature block
-        # Leave 2 empty rows
-        current_row += 2
-        
-        # Signature block structure (4 rows x 4 columns spanning all columns)
-        sig_start_row = current_row
-        
-        # Row 1: إسم مسؤول العملية
-        ws.cell(row=current_row, column=1, value="إسم مسؤول العملية:..........")
-        ws.cell(row=current_row, column=5, value="التوقيع:..............................")
-        ws.cell(row=current_row, column=10, value="التاريخ:.....................")
-        ws.cell(row=current_row, column=14, value="خاص خدمات المرضى-")
-        
-        # Row 2: إسم رئيس الدائرة
-        current_row += 1
-        ws.cell(row=current_row, column=1, value="إسم رئيس الدائرة:.............")
-        ws.cell(row=current_row, column=5, value="التوقيع:..............................")
-        ws.cell(row=current_row, column=10, value="التاريخ:.....................")
-        ws.cell(row=current_row, column=14, value="الإسم: ....................")
-        
-        # Row 3: تاريخ الإستلام
-        current_row += 1
-        ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=num_columns)
-        ws.cell(row=current_row, column=1, value="تاريخ الإستلام: ....................")
-        
-        # Row 4: إسم مدير الإدارة
-        current_row += 1
-        ws.cell(row=current_row, column=1, value="إسم مدير الإدارة:...............")
-        ws.cell(row=current_row, column=5, value="التوقيع:..............................")
-        ws.cell(row=current_row, column=10, value="التاريخ:.....................")
-        ws.cell(row=current_row, column=14, value="التوقيع: ....................")
-        
-        # Apply borders and alignment to signature block
-        for row_idx in range(sig_start_row, current_row + 1):
-            for col_idx in range(1, num_columns + 1):
-                cell = ws.cell(row=row_idx, column=col_idx)
-                if cell.value:  # Only style cells with content
-                    cell.border = thin_border
-                    cell.alignment = Alignment(horizontal="right", vertical="center")
-                    cell.font = Font(size=10)
-        
-        # Add footer quote
-        current_row += 2
-        ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=num_columns)
-        quote_cell = ws.cell(row=current_row, column=1, 
-                            value='"نؤمن أن الإبتكار لا يكون فقط في التقنيات، بل في أسلوب الخدمة والتواصل والتعاطف… فلنبتكر معًا تجربة ذات أثر طيب"')
-        quote_cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        quote_cell.font = Font(italic=True, size=11)
-        
-        # Page setup for printing
-        ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
-        ws.page_setup.fitToWidth = 1
-        ws.page_setup.fitToHeight = 0  # Auto height
-        ws.print_options.gridLines = True
-        
-        # Freeze panes at header row
-        ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
-        
-        # Save to BytesIO
-        excel_buffer = BytesIO()
-        wb.save(excel_buffer)
-        excel_buffer.seek(0)
-        
-        return excel_buffer.getvalue()
-    
-    @staticmethod
     def generate_pdf_export(
         report_data: Dict[str, Any],
         filename: str,
         language: str = "en",
-        include_charts: bool = True
+        include_charts: bool = True,
+        report_entity_name: str = None,
+        report_entity_type: str = None,
+        report_administration: str = None,
+        report_department: str = None,
+        report_section: str = None
     ) -> bytes:
         """
         Generate professional PDF matching Word export exactly.
-        A4 landscape with RTL layout, vertical headers, signature block.
+        A4 landscape with RTL layout, vertical headers, logo, footer.
         
         Args:
             report_data: List of dictionaries OR dict with "complaints" key
             filename: Target filename
             language: Language code (en or ar)
             include_charts: Not used (kept for compatibility)
+            report_entity_name: Name of the entity being reported
+            report_entity_type: Type of entity (administration/department/section)
+            report_administration: Administration name for header
+            report_department: Department name for header
+            report_section: Section name for header
         
         Returns:
             bytes: Valid PDF file content
@@ -681,6 +989,25 @@ class ReportsService:
                 "reportlab is required for PDF export. "
                 "Install with: pip install reportlab"
             )
+        
+        # Import additional reportlab components
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        from reportlab.lib.enums import TA_RIGHT, TA_CENTER
+        from reportlab.lib.pagesizes import landscape, A4 as portrait_a4
+        from reportlab.pdfgen import canvas
+        from reportlab.platypus import Flowable
+        import os
+        
+        # Try to import Arabic text reshaping libraries (optional)
+        try:
+            import arabic_reshaper
+            from bidi.algorithm import get_display
+            ARABIC_RESHAPER_AVAILABLE = True
+        except ImportError:
+            ARABIC_RESHAPER_AVAILABLE = False
+            print("[PDF] WARNING: arabic-reshaper and python-bidi not installed. Arabic text may not render correctly.")
+            print("[PDF] Install with: pip install arabic-reshaper python-bidi")
         
         def sanitize_value(value):
             """Convert value to string, handling dates and None"""
@@ -694,6 +1021,27 @@ class ReportsService:
                 return str(value)
             except:
                 return ""
+        
+        def normalize_text(text: str) -> str:
+            """Normalize text - remove manual line breaks"""
+            text = str(text)
+            text = text.replace("\r\n", "\n").replace("\r", "\n")
+            lines = [l.strip() for l in text.split("\n") if l.strip()]
+            return " ".join(lines)
+        
+        def ar(text: str) -> str:
+            """Apply Arabic text reshaping for proper rendering in PDFs.
+            ONLY use when creating Paragraph text - never in rotated/transformed contexts.
+            """
+            if not text:
+                return ""
+            if not ARABIC_RESHAPER_AVAILABLE:
+                return str(text)  # Return as-is if libraries not available
+            try:
+                reshaped = arabic_reshaper.reshape(str(text))
+                return get_display(reshaped)
+            except:
+                return str(text)
         
         # Normalize data source
         try:
@@ -709,286 +1057,518 @@ class ReportsService:
         except:
             rows = []
         
+        # Extract metadata for header
+        start_date = "—"
+        end_date = "—"
+        
+        # Use provided parameters for header info
+        print(f"[PDF EXPORT] Parameters: admin={report_administration}, dept={report_department}, section={report_section}")
+        
+        if report_administration or report_department or report_section:
+            Administration = report_administration or "—"
+            Department = report_department or "—"
+            Section = report_section or "—"
+        else:
+            # Fallback to first row
+            Administration = "—"
+            Department = "—"
+            Section = "—"
+            if rows:
+                try:
+                    first_record = rows[0]
+                    Administration = first_record.get("administration_name", "—")
+                    Department = first_record.get("department_name", "—")
+                    Section = first_record.get("section_name", "—")
+                except:
+                    pass
+
+        # Extract date range
+        if rows:
+            try:
+                first_record = rows[0]
+                last_record = rows[-1] if len(rows) > 1 else first_record
+                start_date = sanitize_value(first_record.get("received_date", "—"))
+                end_date = sanitize_value(last_record.get("received_date", "—"))
+            except:
+                pass
+        
+        # Register Arabic font with strict priority order
+        try:
+            # PRIORITY ORDER (strict):
+            # 1. Amiri-Regular.ttf (best Arabic support)
+            # 2. NotoNaskhArabic-Regular.ttf (good Arabic support)
+            # 3. Tahoma (fallback with partial Arabic support)
+            # 4. Arial (last resort)
+            arabic_font_paths = [
+                # Amiri fonts (HIGHEST PRIORITY)
+                ("C:\\Windows\\Fonts\\Amiri-Regular.ttf", "Amiri"),
+                ("/usr/share/fonts/truetype/amiri/Amiri-Regular.ttf", "Amiri"),
+                ("assets/fonts/Amiri-Regular.ttf", "Amiri"),
+                ("Amiri-Regular.ttf", "Amiri"),
+                
+                # NotoNaskh fonts (SECOND PRIORITY)
+                ("C:\\Windows\\Fonts\\NotoNaskhArabic-Regular.ttf", "NotoNaskh"),
+                ("/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf", "NotoNaskh"),
+                
+                # Tahoma (THIRD PRIORITY - Windows default with Arabic)
+                ("C:\\Windows\\Fonts\\tahoma.ttf", "Tahoma"),
+                
+                # Arial (LAST RESORT - minimal Arabic support)
+                ("C:\\Windows\\Fonts\\arial.ttf", "Arial"),
+            ]
+            
+            font_registered = False
+            font_name = None
+            
+            for font_path, font_label in arabic_font_paths:
+                if os.path.exists(font_path):
+                    try:
+                        pdfmetrics.registerFont(TTFont('ArabicFont', font_path))
+                        font_registered = True
+                        font_name = 'ArabicFont'
+                        print(f"[PDF] ✅ SUCCESS: Registered Arabic font: {font_label} ({font_path})")
+                        break
+                    except Exception as e:
+                        print(f"[PDF] ❌ Failed to register {font_label} ({font_path}): {e}")
+                        continue
+            
+            if not font_registered:
+                print("[PDF] ⚠️ WARNING: No Arabic font found! Arabic text will NOT render correctly.")
+                print("[PDF] ⚠️ Please install Amiri or NotoNaskhArabic fonts for proper Arabic support.")
+                # Use Helvetica as absolute last resort
+                font_name = 'Helvetica'
+            
+        except Exception as e:
+            print(f"[PDF] ❌ CRITICAL: Font registration error: {e}")
+            font_name = 'Helvetica'
+        
         # Create PDF buffer
         pdf_buffer = BytesIO()
         
-        # A4 Landscape
-        from reportlab.lib.pagesizes import landscape, A4 as portrait_a4
+        # A4 Landscape dimensions
+        page_width, page_height = landscape(portrait_a4)
         
-        # Create PDF document
+        # Custom canvas with header/footer
+        class HeaderFooterCanvas(canvas.Canvas):
+            def __init__(self, *args, **kwargs):
+                canvas.Canvas.__init__(self, *args, **kwargs)
+                self.pages = []
+                
+            def showPage(self):
+                self.pages.append(dict(self.__dict__))
+                self._startPage()
+                
+            def save(self):
+                for page in self.pages:
+                    self.__dict__.update(page)
+                    self.draw_header_footer()
+                    canvas.Canvas.showPage(self)
+                canvas.Canvas.save(self)
+                
+            def draw_header_footer(self):
+                self.saveState()
+                
+                # Logo in header (top right)
+                try:
+                    logo_path = os.path.join(os.path.dirname(__file__), '..', '..', 'assets', 'logo.png')
+                    if os.path.exists(logo_path):
+                        x = page_width - 100
+                        y = page_height - 90
+                        self.drawImage(logo_path, x, y, width=70, height=70, preserveAspectRatio=True)
+                except Exception as e:
+                    print(f"[PDF] Logo error: {e}")
+                
+                # Footer with quote
+                try:
+                    self.setFont(font_name, 9)
+                    footer_text = "نؤمن أن الإبتكار لا يكون فقط في التقنيات، بل في أسلوب الخدمة والتواصل والتعاطف… فلنبتكر معًا تجربة ذات أثر طيب"
+                    footer_text_shaped = ar(footer_text)
+                    
+                    # Border line
+                    self.setStrokeColorRGB(0.8, 0.8, 0.8)
+                    self.setLineWidth(0.5)
+                    self.line(30, 40, page_width - 30, 40)
+                    
+                    # Centered text
+                    text_width = self.stringWidth(footer_text_shaped, font_name, 9)
+                    x = (page_width - text_width) / 2
+                    self.drawString(x, 25, footer_text_shaped)
+                except Exception as e:
+                    print(f"[PDF] Footer error: {e}")
+                
+                self.restoreState()
+        
+        # Create document
         doc = SimpleDocTemplate(
             pdf_buffer,
             pagesize=landscape(portrait_a4),
-            rightMargin=0.4*inch,
-            leftMargin=0.4*inch,
-            topMargin=0.6*inch,
-            bottomMargin=0.5*inch
+            rightMargin=30,
+            leftMargin=30,
+            topMargin=90,
+            bottomMargin=50
         )
         
-        # Container for PDF elements
-        elements = []
-        
-        # Styles
+        # Define styles
         styles = getSampleStyleSheet()
         
-        # Define columns with behavior (vertical vs horizontal)
-        # Format: (header, field, width_ratio, is_vertical)
-        columns = [
-            ("تاريخ تلقي الملاحظة", "received_date", 0.4, True),          # 1 - Vertical
-            ("الرقم", "id", 0.3, True),                                    # 2 - Vertical
-            ("P. Full Name", "patient_name", 0.5, True),                   # 3 - Vertical
-            ("قسم الصادر", "section_name", 0.5, True),           # 4 - Section (actual issuing unit)
-            ("الإدارة", "administration_name", 0.4, True),               # 5 - Administration (top level)
-            ("القسم المعني", "department_name", 0.5, True),          # 6 - Department (middle level)
-            ("المصدر", "source_name", 0.4, True),                          # 7 - Vertical
-            ("النوع", "feedback_intent_type_name", 0.4, True),             # 8 - Vertical
-            ("Domain", "domain_name", 0.5, True),                          # 9 - Vertical
-            ("Category", "category_name", 0.5, True),                      # 10 - Vertical
-            ("Sub-Category", "subcategory_name", 0.5, True),               # 11 - Vertical
-            ("Target Departments", "target_departments_display", 1.0, True),  # 12 - Vertical
-            ("classification in Arabic", "classification_name", 0.6, True), # 13 - Vertical
-            ("classification in English", "classification_name", 0.6, True),# 14 - Vertical
-            ("محتوى الشكوى", "complaint_text", 8.0, False),                # 14 - Horizontal WIDE
-            ("Immediate Action", "immediate_action", 4.0, False),          # 15 - Horizontal WIDE
-            ("الإجراءات المتخذة", "taken_action", 3.0, False),             # 16 - Horizontal WIDE
-            ("Severity", "severity_name", 0.4, True),                      # 17 - Vertical
-            ("Stage", "stage_name", 0.4, True),                            # 18 - Vertical
-            ("Harm", "harm_level", 0.3, True)                              # 19 - Vertical
-        ]
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Title'],
+            fontSize=16,
+            alignment=TA_CENTER,
+            fontName=font_name,
+            spaceAfter=6
+        )
         
-        # Handle empty data
-        if not rows:
-            title_style = ParagraphStyle(
-                'Title',
-                parent=styles['Heading1'],
-                fontSize=16,
-                textColor=colors.HexColor('#366092'),
-                alignment=TA_CENTER
-            )
-            title = Paragraph("تقرير شهري - Monthly Report", title_style)
-            elements.append(title)
-            elements.append(Spacer(1, 0.3*inch))
-            elements.append(Paragraph("No data available", styles['Normal']))
-            doc.build(elements)
-            pdf_buffer.seek(0)
-            return pdf_buffer.getvalue()
-        
-        # Extract metadata
-        try:
-            first_record = rows[0]
-            last_record = rows[-1] if len(rows) > 1 else first_record
-            
-            start_date = sanitize_value(first_record.get("received_date", "—"))
-            end_date = sanitize_value(last_record.get("received_date", "—"))
-            idara_name = first_record.get("administration_name", "—")
-            dayra_name = first_record.get("department_name", "—")
-            qism_name = first_record.get("section_name", "—")
-        except:
-            start_date = "—"
-            end_date = "—"
-            idara_name = "—"
-            dayra_name = "—"
-            qism_name = "—"
-        
-        # Header block (colored background)
-        header_style = ParagraphStyle(
-            'Header',
+        subtitle_style = ParagraphStyle(
+            'Subtitle',
             parent=styles['Normal'],
             fontSize=11,
             alignment=TA_CENTER,
-            fontName='Helvetica-Bold',
-            textColor=colors.black
+            fontName=font_name,
+            spaceAfter=6
         )
         
-        # Date range header
-        date_header = Paragraph(
-            f"الشهر المعني: من {start_date} إلى {end_date}",
-            header_style
+        period_style = ParagraphStyle(
+            'Period',
+            parent=styles['Normal'],
+            fontSize=10,
+            alignment=TA_CENTER,
+            fontName=font_name,
+            spaceAfter=6
         )
-        elements.append(date_header)
-        elements.append(Spacer(1, 0.05*inch))
         
-        # Department info header
-        dept_header = Paragraph(
-            f"الإدارة: {idara_name}      الدائرة: {dayra_name}      القسم المعني: {qism_name}",
-            header_style
+        dept_style = ParagraphStyle(
+            'Department',
+            parent=styles['Normal'],
+            fontSize=10,
+            alignment=TA_CENTER,
+            fontName=font_name
         )
-        elements.append(dept_header)
-        elements.append(Spacer(1, 0.15*inch))
+        
+        # Build elements
+        elements = []
+        
+        # Title
+        elements.append(Paragraph(
+            ar("نموذج التقرير الشهري لفرص التحسين والإجراءات التصحيحية الواردة من المرضى وذويهم"),
+            title_style
+        ))
+        
+        # Subtitle
+        elements.append(Paragraph(
+            ar("(إصدار رسمي — للاستخدام الإداري والجودة)"),
+            subtitle_style
+        ))
+        
+        # Period
+        elements.append(Paragraph(
+            ar(f"الشهر المعني: من {start_date} إلى {end_date}"),
+            period_style
+        ))
+        
+        # Department info table
+        dept_data = [[
+            Paragraph(ar(f"الإدارة: {Administration}"), dept_style),
+            Paragraph(ar(f"الدائرة: {Department}"), dept_style),
+            Paragraph(ar(f"القسم المعني: {Section}"), dept_style)
+        ]]
+        dept_table = Table(dept_data, colWidths=[250, 250, 250])
+        dept_table.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('GRID', (0, 0), (-1, -1), 0, colors.white),
+        ]))
+        elements.append(dept_table)
+        elements.append(Spacer(1, 6))
+        
+        # Handle empty data
+        if not rows:
+            elements.append(Paragraph(ar("No data available"), period_style))
+            doc.build(elements, canvasmaker=HeaderFooterCanvas)
+            pdf_buffer.seek(0)
+            return pdf_buffer.getvalue()
+        
+        # Calculate usable width
+        usable_width = page_width - 60
+        
+        # Define columns (19 columns - ALL HORIZONTAL, no vertical text)
+        columns = [
+            ("Date", "received_date", False, 0.6),
+            ("ID", "id", False, 0.4),
+            ("Name", "patient_name", False, 0.8),
+            ("Section", "section_name", False, 0.8),
+            ("Admin", "administration_name", False, 0.6),
+            ("Dept", "department_name", False, 0.8),
+            ("Source", "source_name", False, 0.6),
+            ("Type", "feedback_intent_type_name", False, 0.6),
+            ("Domain", "domain_name", False, 0.8),
+            ("Category", "category_name", False, 0.8),
+            ("Sub-Cat", "subcategory_name", False, 0.8),
+            ("Target Depts", "target_departments_display", False, 1.2),
+            ("Classification", "classification_name_en", False, 1.2),
+            ("Complaint", "complaint_text", False, 3.0),
+            ("Immediate Action", "immediate_action", False, 2.5),
+            ("Actions Taken", "taken_action", False, 2.0),
+            ("Severity", "severity_name", False, 0.6),
+            ("Stage", "stage_name", False, 0.6),
+            ("Harm", "harm_level", False, 0.5)
+        ]
+        
+        # Reverse for RTL
+        columns = list(reversed(columns))
+        
+        # Calculate column widths
+        total_ratio = sum(col[3] for col in columns)
+        col_widths = [(col[3] / total_ratio) * usable_width for col in columns]
         
         # Build table data
-        # Header row - for vertical columns, we'll use short text (rotation not natively supported in reportlab Table)
-        # We'll use abbreviated headers or split text
         table_data = []
         
-        # Create header row
-        header_row = []
-        for header_name, _, _, is_vertical in columns:
-            if is_vertical:
-                # For vertical columns, use short or split text
-                header_row.append(header_name)
-            else:
-                # For horizontal columns, use full text
-                header_row.append(header_name)
-        table_data.append(header_row)
+        # Header row - ALL HORIZONTAL (simple and stable)
+        header_style = ParagraphStyle(
+            'Header',
+            parent=styles['Normal'],
+            fontSize=7,
+            alignment=TA_CENTER,
+            fontName=font_name,
+            wordWrap='LTR'
+        )
         
-        # Data rows (limit to 30 for PDF)
+        headers = []
+        for col_idx, (header_name, _, _, _) in enumerate(columns):
+            shaped_text = ar(header_name)
+            headers.append(Paragraph(f"<b>{shaped_text}</b>", header_style))
+        table_data.append(headers)
+        
+        # Data rows (limit to 30)
         row_count = min(len(rows), 30)
         for row_dict in rows[:row_count]:
-            row = []
-            for header_name, field_name, _, is_vertical in columns:
-                # Special handling for target departments: concatenate all department names
+            row_values = []
+            
+            # Check for red flag
+            is_red_flag = False
+            try:
+                clinical_risk = row_dict.get("clinical_risk_type_name", "")
+                if clinical_risk and clinical_risk != "Ordinary":
+                    is_red_flag = True
+            except:
+                pass
+            
+            for col_idx, (header_name, field_name, is_vertical, _) in enumerate(columns):
+                # Handle target departments
                 if field_name == "target_departments_display":
                     target_depts = row_dict.get("target_departments", [])
                     if target_depts and isinstance(target_depts, list):
-                        dept_names = [dept.get("department_name", "") for dept in target_depts if dept.get("department_name")]
-                        value = ", ".join(dept_names) if dept_names else "—"
+                        primary_and_matching = []
+                        primary_only = []
+                        matching_only = []
+                        others = []
+                        
+                        for dept in target_depts:
+                            if dept.get("section_name"):
+                                display = dept["section_name"]
+                            elif dept.get("department_name"):
+                                display = dept["department_name"]
+                            elif dept.get("administration_name"):
+                                display = dept["administration_name"]
+                            else:
+                                continue
+                            
+                            is_primary = dept.get("is_primary", False)
+                            matches_entity = report_entity_name and report_entity_name in display
+                            
+                            if is_primary and matches_entity:
+                                primary_and_matching.append(display)
+                            elif is_primary:
+                                primary_only.append(display)
+                            elif matches_entity:
+                                matching_only.append(display)
+                            else:
+                                others.append(display)
+                        
+                        all_displays = primary_and_matching + primary_only + matching_only + others
+                        
+                        MAX_DISPLAY = 3
+                        if len(all_displays) > MAX_DISPLAY:
+                            displayed = all_displays[:MAX_DISPLAY]
+                            remaining = len(all_displays) - MAX_DISPLAY
+                            raw_value = ", ".join(displayed) + f" +{remaining}"
+                        else:
+                            raw_value = ", ".join(all_displays) if all_displays else "—"
                     else:
-                        value = "—"
+                        raw_value = "—"
                 else:
-                    value = sanitize_value(row_dict.get(field_name, ""))
+                    raw_value = sanitize_value(row_dict.get(field_name, ""))
                 
-                # Truncate based on column type
-                if not is_vertical:  # Horizontal wide columns
-                    if len(value) > 300:
-                        value = value[:300] + "..."
-                else:  # Vertical narrow columns
-                    if len(value) > 40:
-                        value = value[:40] + "..."
+                # Normalize text
+                value = normalize_text(raw_value)
                 
-                row.append(value)
-            table_data.append(row)
-        
-        # Note if data was truncated
-        if len(rows) > 30:
-            note_style = ParagraphStyle(
-                'Note',
-                parent=styles['Normal'],
-                fontSize=8,
-                alignment=TA_CENTER,
-                textColor=colors.grey
-            )
-            note = Paragraph(
-                f"Showing first 30 of {len(rows)} records. Download Excel or Word for full data.",
-                note_style
-            )
-            elements.append(note)
-            elements.append(Spacer(1, 0.05*inch))
-        
-        # Calculate column widths
-        available_width = doc.width
-        total_width_units = sum(col[2] for col in columns)
-        col_widths = [(col[2] / total_width_units) * available_width for col in columns]
+                # Truncate (all fields treated the same)
+                if len(value) > 200:
+                    value = value[:200] + "..."
+                
+                # Create cell content - ALL HORIZONTAL (simple)
+                shaped_value = ar(value)
+                cell_style = ParagraphStyle(
+                    'Cell',
+                    parent=styles['Normal'],
+                    fontSize=6,
+                    alignment=TA_CENTER,
+                    fontName=font_name,
+                    wordWrap='LTR'
+                )
+                row_values.append(Paragraph(shaped_value, cell_style))
+            
+            table_data.append(row_values)
         
         # Create table
         table = Table(table_data, colWidths=col_widths, repeatRows=1)
         
-        # Build style commands
-        style_commands = [
-            # Header styling - light turquoise/green background
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#B4E7CE')),  # Light green
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
-            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 6),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 4),
-            ('TOPPADDING', (0, 0), (-1, 0), 4),
-            
-            # Data styling - vertical columns (narrow, centered)
-            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 1), (-1, -1), 6),
-            ('TOPPADDING', (0, 1), (-1, -1), 2),
-            ('BOTTOMPADDING', (0, 1), (-1, -1), 2),
-            ('LEFTPADDING', (0, 0), (-1, -1), 2),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 2),
-            
-            # Grid
+        # Base table style - SIMPLE AND STABLE (no height constraints)
+        table_style = [
+            ('BACKGROUND', (0, 0), (-1, 0), colors.Color(0.706, 0.906, 0.808)),  # #B4E7CE
+            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('FONTNAME', (0, 0), (-1, -1), font_name),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            
-            # Word wrap for all
-            ('WORDWRAP', (0, 0), (-1, -1), True),
+            ('LEFTPADDING', (0, 0), (-1, -1), 3),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
         ]
         
-        # Apply specific alignment for columns
-        for col_idx, (_, _, _, is_vertical) in enumerate(columns):
-            if is_vertical:
-                # Vertical columns: center align
-                style_commands.append(('ALIGN', (col_idx, 1), (col_idx, -1), 'CENTER'))
+        # Alternating row colors
+        for i in range(1, len(table_data)):
+            if i % 2 == 0:
+                table_style.append(('BACKGROUND', (0, i), (-1, i), colors.Color(0.97, 0.97, 0.97)))
             else:
-                # Horizontal columns: left align, top valign
-                style_commands.append(('ALIGN', (col_idx, 1), (col_idx, -1), 'LEFT'))
-                style_commands.append(('VALIGN', (col_idx, 1), (col_idx, -1), 'TOP'))
+                table_style.append(('BACKGROUND', (0, i), (-1, i), colors.white))
         
-        table.setStyle(TableStyle(style_commands))
+        # Semantic coloring
+        for row_idx, row_dict in enumerate(rows[:row_count], start=1):
+            is_red_flag = False
+            try:
+                clinical_risk = row_dict.get("clinical_risk_type_name", "")
+                if clinical_risk and clinical_risk != "Ordinary":
+                    is_red_flag = True
+                    table_style.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.Color(1.0, 0.898, 0.898)))
+            except:
+                pass
+            
+            # Column-specific coloring
+            for col_idx, (_, field_name, _, _) in enumerate(columns):
+                value = sanitize_value(row_dict.get(field_name, ""))
+                value_lower = value.lower()
+                cell_color = None
+                
+                if field_name == "severity_name":
+                    if "high" in value_lower:
+                        cell_color = colors.Color(1.0, 0.702, 0.729)
+                    elif "medium" in value_lower:
+                        cell_color = colors.Color(1.0, 0.875, 0.729)
+                    elif "low" in value_lower:
+                        cell_color = colors.Color(0.729, 1.0, 0.788)
+                
+                elif field_name == "harm_level":
+                    if "death" in value_lower:
+                        cell_color = colors.Color(1.0, 0.420, 0.420)
+                    elif "severe" in value_lower:
+                        cell_color = colors.Color(1.0, 0.647, 0.0)
+                    elif "no harm" in value_lower or "none" in value_lower:
+                        cell_color = colors.Color(0.729, 1.0, 0.788)
+                    elif "minor" in value_lower or "temporary" in value_lower:
+                        cell_color = colors.Color(1.0, 1.0, 0.729)
+                
+                elif field_name == "stage_name":
+                    if "admission" in value_lower:
+                        cell_color = colors.Color(0.729, 0.882, 1.0)
+                    elif "discharge" in value_lower or "transfer" in value_lower:
+                        cell_color = colors.Color(0.878, 0.733, 0.894)
+                    elif "examination" in value_lower or "diagnosis" in value_lower:
+                        cell_color = colors.Color(0.706, 0.973, 0.973)
+                
+                elif field_name == "domain_name":
+                    if "clinical" in value_lower:
+                        cell_color = colors.Color(0.729, 0.882, 1.0)
+                    elif "management" in value_lower:
+                        cell_color = colors.Color(0.878, 0.733, 0.894)
+                    elif "relational" in value_lower:
+                        cell_color = colors.Color(1.0, 0.875, 0.729)
+                
+                if cell_color and not is_red_flag:
+                    table_style.append(('BACKGROUND', (col_idx, row_idx), (col_idx, row_idx), cell_color))
         
+        table.setStyle(TableStyle(table_style))
         elements.append(table)
         
-        # Add signature block
-        elements.append(Spacer(1, 0.3*inch))
+        # Truncation note
+        if len(rows) > 30:
+            elements.append(Spacer(1, 10))
+            elements.append(Paragraph(
+                ar(f"عرض أول 30 من {len(rows)} سجل. قم بتنزيل Excel للحصول على البيانات الكاملة."),
+                period_style
+            ))
         
-        # Signature table (4 rows x 4 columns)
+        # Signature block
+        elements.append(Spacer(1, 20))
+        
         sig_data = [
-            ["إسم مسؤول العملية:..........", "التوقيع:............................", "التاريخ:.....................", "خاص خدمات المرضى-"],
-            ["إسم رئيس الدائرة:............", "التوقيع:............................", "التاريخ:.....................", "الإسم: ...................."],
-            ["تاريخ الإستلام: ....................", "", "", ""],
-            ["إسم مدير الإدارة:..............", "التوقيع:............................", "التاريخ:.....................", "التوقيع: ...................."]
+            [
+                Paragraph(ar("<b>التاريخ:</b>"), dept_style),
+                Paragraph(ar("<b>التوقيع:</b>"), dept_style),
+                Paragraph(ar("<b>إسم مسؤول العملية</b>"), dept_style),
+                Paragraph(ar("<b>خاص خدمات المرضى<br/>الإسم:</b>"), dept_style)
+            ],
+            [
+                Paragraph(ar("<b>التاريخ:</b>"), dept_style),
+                Paragraph(ar("<b>التوقيع:</b>"), dept_style),
+                Paragraph(ar("<b>إسم رئيس الدائرة</b>"), dept_style),
+                Paragraph(ar("<b>تاريخ الإستلام:</b>"), dept_style)
+            ],
+            [
+                Paragraph(ar("<b>التاريخ:</b>"), dept_style),
+                Paragraph(ar("<b>التوقيع:</b>"), dept_style),
+                Paragraph(ar("<b>إسم مدير الإدارة</b>"), dept_style),
+                Paragraph(ar("<b>التوقيع:</b>"), dept_style)
+            ]
         ]
         
-        sig_table = Table(sig_data, colWidths=[doc.width * 0.25] * 4)
+        sig_table = Table(sig_data, colWidths=[100, 120, 150, 180])
         sig_table.setStyle(TableStyle([
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-            ('LEFTPADDING', (0, 0), (-1, -1), 5),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 5),
-            # Merge cells in row 3 (index 2)
-            ('SPAN', (0, 2), (3, 2)),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+            ('FONTNAME', (0, 0), (-1, -1), font_name),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
         ]))
-        
         elements.append(sig_table)
-        
-        # Add footer quote
-        elements.append(Spacer(1, 0.2*inch))
-        
-        quote_style = ParagraphStyle(
-            'Quote',
-            parent=styles['Normal'],
-            fontSize=10,
-            alignment=TA_CENTER,
-            fontName='Helvetica-Oblique',
-            textColor=colors.HexColor('#555555')
-        )
-        
-        quote = Paragraph(
-            '"نؤمن أن الإبتكار لا يكون فقط في التقنيات، بل في أسلوب الخدمة والتواصل والتعاطف… فلنبتكر معًا تجربة ذات أثر طيب"',
-            quote_style
-        )
-        elements.append(quote)
         
         # Build PDF
         try:
-            doc.build(elements)
+            doc.build(elements, canvasmaker=HeaderFooterCanvas)
         except Exception as e:
-            # Fallback: simple version if complex layout fails
+            print(f"[PDF] Error building report: {e}")
             elements = []
-            elements.append(Paragraph("Monthly Report - تقرير شهري", styles['Title']))
-            elements.append(Paragraph(f"Error generating full report: {str(e)}", styles['Normal']))
-            doc.build(elements)
+            elements.append(Paragraph(ar("تقرير شهري - Monthly Report"), title_style))
+            elements.append(Paragraph(ar(f"خطأ في إنشاء التقرير: {str(e)}"), period_style))
+            doc.build(elements, canvasmaker=HeaderFooterCanvas)
         
-        # Get PDF bytes
         pdf_buffer.seek(0)
         return pdf_buffer.getvalue()
+
     
     @staticmethod
     def generate_docx_export(
         report_data: Dict[str, Any],
         filename: str,
-        language: str = "en"
+        language: str = "en",
+        report_entity_name: str = None,
+        report_entity_type: str = None,
+        report_administration: str = None,
+        report_department: str = None,
+        report_section: str = None
     ) -> bytes:
         """
         Generate official hospital audit form Word document.
@@ -998,6 +1578,11 @@ class ReportsService:
             report_data: List of dictionaries OR dict with "complaints" key
             filename: Target filename
             language: Language code (en or ar)
+            report_entity_name: Name of the entity being reported (for prioritization)
+            report_entity_type: Type of entity (administration/department/section)
+            report_administration: Administration name for header
+            report_department: Department name for header
+            report_section: Section name for header
         
         Returns:
             bytes: Valid Word .docx file content
@@ -1068,21 +1653,39 @@ class ReportsService:
         # Extract metadata
         start_date = "—"
         end_date = "—"
-        Administration = "—"
-        Department = "—"
-        Section = "—"
         
+        # Use provided parameters for header info, fallback to first row if not provided
+        print(f"[DOCX EXPORT] Parameters received: admin={report_administration}, dept={report_department}, section={report_section}")
+        
+        if report_administration or report_department or report_section:
+            Administration = report_administration or "—"
+            Department = report_department or "—"
+            Section = report_section or "—"
+            print(f"[DOCX EXPORT] Using parameters: admin={Administration}, dept={Department}, section={Section}")
+        else:
+            # Fallback: extract from first row if parameters not provided
+            Administration = "—"
+            Department = "—"
+            Section = "—"
+            if rows:
+                try:
+                    first_record = rows[0]
+                    Administration = first_record.get("administration_name", "—")
+                    Department = first_record.get("department_name", "—")
+                    Section = first_record.get("section_name", "—")
+                    print(f"[DOCX EXPORT] Extracted from data: admin={Administration}, dept={Department}, section={Section}")
+                    print(f"[DOCX EXPORT] First record keys: {list(first_record.keys())[:10]}...")
+                except Exception as e:
+                    print(f"[DOCX EXPORT] Error extracting from data: {e}")
+                    pass
 
-
+        # Extract date range from rows
         if rows:
             try:
                 first_record = rows[0]
                 last_record = rows[-1] if len(rows) > 1 else first_record
                 start_date = sanitize_value(first_record.get("received_date", "—"))
                 end_date = sanitize_value(last_record.get("received_date", "—"))
-                Administration = first_record.get("administration_name", "—")
-                Department = first_record.get("department_name", "—")
-                Section = first_record.get("section_name", "—")
             except:
                 pass
         
@@ -1245,16 +1848,16 @@ class ReportsService:
             ("تاريخ تلقي الملاحظة", "received_date", True, 0.353),     # 0.53 / 1.5
             ("الرقم", "id", True, 0.267),                               # 0.4 / 1.5
             ("P. Full Name", "patient_name", True, 0.444),             # 0.6666 / 1.5
-            ("قسم الصادر", "issuing_org_unit_name", True, 0.444),
-            ("الإدارة", "issuing_org_unit_name", True, 0.353),
-            ("القسم المعني", "issuing_org_unit_name", True, 0.444),
+            ("قسم الصادر", "section_name", True, 0.444),
+            ("الإدارة", "administration_name", True, 0.353),
+            ("القسم المعني", "department_name", True, 0.444),
             ("المصدر", "source_name", True, 0.353),
             ("النوع", "feedback_intent_type_name", True, 0.353),
             ("Domain", "domain_name", True, 0.444),
             ("Category", "category_name", True, 0.444),
             ("Sub-Category", "subcategory_name", True, 0.444),
             ("Target Departments", "target_departments_display", True, 0.8),
-            ("Classification", "classification_name", True, 0.8),   # 1.2 / 1.5
+            ("Classification", "classification_name_en", True, 0.8),   # 1.2 / 1.5
             ("محتوى الشكوى (Raw Content)", "complaint_text", False, 3.555),   # 8.0 / 1.5
             ("Immediate Action (خدمات المرضى+القسم)", "immediate_action", False, 2.667), # 4.0 / 1.5
             ("الإجراءات المتخذة (القسم/الدائرة/الإدارة)", "taken_action", False, 2.0),   # 3.0 / 1.5
@@ -1315,7 +1918,7 @@ class ReportsService:
             
             # Style header cell
             for paragraph in cell.paragraphs:
-                paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 paragraph.paragraph_format.right_to_left = True
                 for run in paragraph.runs:
                     run.font.bold = True
@@ -1395,12 +1998,52 @@ class ReportsService:
                 pass
             
             for idx, (header_name, field_name, is_vertical, _) in enumerate(columns):
-                # Special handling for target departments: concatenate all department names
+                # Special handling for target departments: concatenate all department names with hierarchy
                 if field_name == "target_departments_display":
                     target_depts = row_dict.get("target_departments", [])
                     if target_depts and isinstance(target_depts, list):
-                        dept_names = [dept.get("department_name", "") for dept in target_depts if dept.get("department_name")]
-                        raw_value = ", ".join(dept_names) if dept_names else "—"
+                        # Categorize departments by priority
+                        primary_and_matching = []  # Primary AND matches report entity
+                        primary_only = []          # Primary but doesn't match
+                        matching_only = []         # Matches entity but not primary
+                        others = []                # Neither primary nor matching
+                        
+                        for dept in target_depts:
+                            # For compact display, show only the most specific level (Section)
+                            # If no section, show Department, if no department show Administration
+                            if dept.get("section_name"):
+                                display = dept["section_name"]
+                            elif dept.get("department_name"):
+                                display = dept["department_name"]
+                            elif dept.get("administration_name"):
+                                display = dept["administration_name"]
+                            else:
+                                continue  # Skip if no name available
+                            
+                            is_primary = dept.get("is_primary", False)
+                            matches_entity = report_entity_name and report_entity_name in display
+                            
+                            # Categorize by priority
+                            if is_primary and matches_entity:
+                                primary_and_matching.append(display)
+                            elif is_primary:
+                                primary_only.append(display)
+                            elif matches_entity:
+                                matching_only.append(display)
+                            else:
+                                others.append(display)
+                        
+                        # Combine in priority order
+                        all_displays = primary_and_matching + primary_only + matching_only + others
+                        
+                        # Limit to 3 departments for compact display
+                        MAX_DISPLAY = 3
+                        if len(all_displays) > MAX_DISPLAY:
+                            displayed = all_displays[:MAX_DISPLAY]
+                            remaining = len(all_displays) - MAX_DISPLAY
+                            raw_value = ", ".join(displayed) + f" +{remaining}"
+                        else:
+                            raw_value = ", ".join(all_displays) if all_displays else "—"
                     else:
                         raw_value = "—"
                 else:
@@ -1409,8 +2052,11 @@ class ReportsService:
                 # CRITICAL: Normalize text to remove manual line breaks from UI
                 value = normalize_text(raw_value)
                 
-                # Truncate text appropriately
-                if not is_vertical:  # Wide horizontal columns
+                # Truncate text appropriately (except for target departments)
+                if field_name == "target_departments_display":
+                    # Don't truncate target departments - show full hierarchy
+                    pass
+                elif not is_vertical:  # Wide horizontal columns
                     if len(value) > 400:
                         value = value[:400] + "..."
                 else:  # Narrow vertical columns
@@ -1543,128 +2189,89 @@ class ReportsService:
         # Add signature block
         doc.add_paragraph()  # Spacer
         
-        # Signature table (1 row x 2 columns: 70% right for approvals, 30% left for patient services)
-        sig_table = doc.add_table(rows=1, cols=2)
+        # Simple signature table (3 rows × 4 columns)
+        sig_table = doc.add_table(rows=3, cols=4)
         sig_table.style = 'Table Grid'
         
-        # Set RTL direction for signature table
-        sig_tbl = sig_table._element
-        sig_tblPr = sig_tbl.tblPr
-        if sig_tblPr is None:
-            sig_tblPr = OxmlElement('w:tblPr')
-            sig_tbl.insert(0, sig_tblPr)
+        # Set column widths
+        sig_table.columns[0].width = Cm(4)   # التاريخ
+        sig_table.columns[1].width = Cm(5)   # التوقيع
+        sig_table.columns[2].width = Cm(6)   # الاسم
+        sig_table.columns[3].width = Cm(7)   # خاص خدمات المرضى
         
-        # Force RTL table
-        sig_bidiVisual = OxmlElement('w:bidiVisual')
-        sig_tblPr.append(sig_bidiVisual)
-        
-        # Set column widths - RIGHT cell 70%, LEFT cell 30%
-        sig_table.columns[0].width = int(Cm(18))  # RIGHT column: Approvals (70%)
-        sig_table.columns[1].width = int(Cm(8))   # LEFT column: Patient Services (30%)
-        
-        # RIGHT CELL (BIG - 70%): 3-row approval signatures with nested 3x3 table
-        approvals_cell = sig_table.rows[0].cells[0]
-        approvals_cell.text = ""  # Clear default text
-        
-        # Create nested 3x3 table for proper approval structure
-        nested_table = approvals_cell.add_table(rows=3, cols=3)
-        nested_table.style = 'Table Grid'
-        
-        # Remove borders from nested table
-        nested_tbl = nested_table._element
-        nested_tblPr = nested_tbl.tblPr
-        if nested_tblPr is None:
-            nested_tblPr = OxmlElement('w:tblPr')
-            nested_tbl.insert(0, nested_tblPr)
-        
-        nested_tblBorders = OxmlElement('w:tblBorders')
-        for border_name in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
-            border_elem = OxmlElement(f'w:{border_name}')
-            border_elem.set(qn('w:val'), 'nil')
-            nested_tblBorders.append(border_elem)
-        nested_tblPr.append(nested_tblBorders)
-        
-        # Set RTL for nested table
-        nested_bidiVisual = OxmlElement('w:bidiVisual')
-        nested_tblPr.append(nested_bidiVisual)
-        
-        # Set equal column widths for nested 3x3 table
-        nested_col_width = int(Cm(18) / 3)  # Divide 70% into 3 equal parts
-        for i in range(3):
-            nested_table.columns[i].width = nested_col_width
-        
-        # Fill nested table with approval data (3 rows × 3 columns)
-        approval_rows = [
-            ["إسم مسؤول العملية:", "التوقيع:", "التاريخ:"],
-            ["إسم رئيس الدائرة:", "التوقيع:", "التاريخ:"],
-            ["إسم مدير الإدارة:", "التوقيع:", "التاريخ:"]
+        # Define approval role names
+        names = [
+            "إسم مسؤول العملية",
+            "إسم رئيس الدائرة", 
+            "إسم مدير الإدارة"
         ]
         
-        for row_idx, row_data in enumerate(approval_rows):
-            for col_idx, label_text in enumerate(row_data):
-                cell = nested_table.rows[row_idx].cells[col_idx]
-                para = cell.paragraphs[0]
-                
-                # Add bold label
-                label_run = para.add_run(label_text)
-                label_run.font.bold = True
-                label_run.font.size = int(Pt(10))
-                label_run.font.name = 'Traditional Arabic'
-                label_run.italic = False
-                label_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
-                
-                # Add dots after label
-                dots_run = para.add_run(" ............")
-                dots_run.font.bold = False
-                dots_run.font.size = int(Pt(10))
-                dots_run.font.name = 'Traditional Arabic'
-                dots_run.italic = False
-                dots_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
-                
-                # Set RTL alignment
-                para.paragraph_format.right_to_left = True
-                para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        # Define patient services content for each row
+        patient_services_content = [
+            "خاص خدمات المرضى\nالإسم:",
+            "تاريخ الإستلام:",
+            "التوقيع:"
+        ]
         
-        # LEFT CELL (SMALL - 30%): Patient Services section
-        patient_cell = sig_table.rows[0].cells[1]
-        patient_cell.text = ""
-        
-        # Title: خاص خدمات المرضى (centered, bold)
-        title_para = patient_cell.paragraphs[0]
-        title_run = title_para.add_run("خاص خدمات المرضى")
-        title_run.font.size = int(Pt(11))
-        title_run.font.bold = True
-        title_run.font.name = 'Traditional Arabic'
-        title_run.italic = False
-        title_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
-        title_para.paragraph_format.right_to_left = True
-        title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        
-        # Patient services fields
-        patient_fields = ["الإسم:", "تاريخ الإستلام:", "التوقيع:"]
-        
-        for field_label in patient_fields:
-            field_para = patient_cell.add_paragraph()
+        # Fill all cells
+        for row_idx in range(3):
+            row_cells = sig_table.rows[row_idx].cells
             
-            # Bold label
-            label_run = field_para.add_run(field_label)
-            label_run.font.bold = True
-            label_run.font.size = int(Pt(10))
-            label_run.font.name = 'Traditional Arabic'
-            label_run.italic = False
-            label_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+            # Column 0: التاريخ
+            cell = row_cells[0]
+            para = cell.paragraphs[0]
+            para.clear()
+            para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            para.paragraph_format.right_to_left = True
             
-            # Normal dots after label
-            dots_run = field_para.add_run(" ............")
-            dots_run.font.bold = False
-            dots_run.font.size = int(Pt(10))
-            dots_run.font.name = 'Traditional Arabic'
-            dots_run.italic = False
-            dots_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+            run = para.add_run("التاريخ:")
+            run.font.bold = True
+            run.font.size = int(Pt(10))
+            run.font.name = 'Traditional Arabic'
+            run.italic = False
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
             
-            # RTL alignment
-            field_para.paragraph_format.right_to_left = True
-            field_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            # Column 1: التوقيع
+            cell = row_cells[1]
+            para = cell.paragraphs[0]
+            para.clear()
+            para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            para.paragraph_format.right_to_left = True
+            
+            run = para.add_run("التوقيع:")
+            run.font.bold = True
+            run.font.size = int(Pt(10))
+            run.font.name = 'Traditional Arabic'
+            run.italic = False
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+            
+            # Column 2: الاسم (role names)
+            cell = row_cells[2]
+            para = cell.paragraphs[0]
+            para.clear()
+            para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            para.paragraph_format.right_to_left = True
+            
+            run = para.add_run(names[row_idx])
+            run.font.bold = True
+            run.font.size = int(Pt(10))
+            run.font.name = 'Traditional Arabic'
+            run.italic = False
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+            
+            # Column 3: خاص خدمات المرضى (patient services)
+            cell = row_cells[3]
+            para = cell.paragraphs[0]
+            para.clear()
+            para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            para.paragraph_format.right_to_left = True
+            
+            run = para.add_run(patient_services_content[row_idx])
+            run.font.bold = True
+            run.font.size = int(Pt(10))
+            run.font.name = 'Traditional Arabic'
+            run.italic = False
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
         
         # ========== ADD MOTIVATIONAL QUOTE TO REAL FOOTER ==========
         try:

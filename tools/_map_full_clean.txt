@@ -1,6 +1,6 @@
 # 🗺️ Backend Architecture (Exclude Mode)
 
-_Generated on: 2026-01-09 14:24_
+_Generated on: 2026-01-14 13:41_
 
 
 ---
@@ -208,6 +208,7 @@ _No functions found_
 **Functions:**
 - `get_connection()`
 - `get_admin_unit_by_id()`
+- `get_admin_unit_type()`
 - `get_admin_unit_children()`
 - `get_admin_unit_parent()`
 - `get_admin_unit_tree()`
@@ -326,6 +327,9 @@ _No functions found_
 ### 📄 backend\api\db_layer\reports_db.py
 **Functions:**
 - `get_connection()`
+- `get_org_unit_descendants()`
+- `debug_expand_org_units()`
+- `build_org_filter_condition()`
 - `get_filtered_complaints()`
 - `get_monthly_statistics()`
 - `get_seasonal_hcat()`
@@ -341,10 +345,13 @@ _No functions found_
 
 ### 📄 backend\api\db_layer\seasonal_report.py
 **Functions:**
+- `resolve_season_id_from_year_trimester()`
+- `validate_season_exists()`
 - `delete_seasonal_report_by_key()`
 - `insert_seasonal_report_header()`
 - `insert_seasonal_report_classification_stats()`
 - `insert_seasonal_report_policy_snapshot()`
+- `get_seasonal_report_keys_by_id()`
 - `get_full_seasonal_report()`
 
 ### 📄 backend\api\db_layer\seasonal_report_aggregation.py
@@ -623,12 +630,14 @@ _No functions found_
 - `POST /seasonal/{report_id}/explanation`
 - `PUT /seasonal/{report_id}/explanation`
 - `POST /export`
+- `POST /monthly/export`
 **Functions:**
 - `view_seasonal_report()`
 - `view_monthly_report()`
 - `submit_explanation()`
 - `update_explanation()`
 - `export_report()`
+- `export_monthly_report()`
 
 ### 📄 backend\api\routers\settings_router.py
 **Routes:**
@@ -832,6 +841,7 @@ _No functions found_
 
 ### 📄 backend\api\services\monthly_report_service.py
 **Functions:**
+- `generate_monthly_report()`
 - `get_detailed_monthly_report()`
 - `get_numeric_monthly_report()`
 
@@ -905,7 +915,13 @@ _No functions found_
 - `get_seasonal_hcat_report()`
 - `get_bulk_summary_report()`
 - `generate_csv_export()`
+- `generate_xlsx_export()`
 - `generate_pdf_export()`
+- `sanitize_value()`
+- `generate_docx_export()`
+- `_safe()`
+- `sanitize_value()`
+- `normalize_text()`
 
 ### 📄 backend\api\services\search_service.py
 **Functions:**

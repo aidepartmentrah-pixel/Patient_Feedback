@@ -150,7 +150,7 @@ def get_admin_unit_leaves():
 
 def get_active_admin_units():
     """
-    Return administration units that are not frozen.
+    Return administration units that are not frozen and have valid type.
     Returns list of dicts with UniqueID and Name.
     """
     conn = get_connection()
@@ -160,7 +160,7 @@ def get_active_admin_units():
         """
         SELECT UniqueID, Name
         FROM AdminsrationUnit
-        WHERE Frozen = 0
+        WHERE Frozen = 0 AND Type IS NOT NULL
         """
     )
 
@@ -173,5 +173,42 @@ def get_active_admin_units():
         result.append({
             "UniqueID": row[0],
             "Name": row[1]
+        })
+    return result
+
+
+def get_units_by_type(unit_type: int):
+    """
+    Get all active organizational units of a specific type.
+    Excludes frozen units and units with NULL type.
+    
+    Args:
+        unit_type: 323=Administration, 324=Section, 325=Department
+        
+    Returns:
+        List of dicts with UniqueID and Name
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT UniqueID, Name, ParentID
+        FROM AdminsrationUnit
+        WHERE Frozen = 0 AND Type = ? AND Type IS NOT NULL
+        ORDER BY Name
+        """,
+        unit_type
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+    
+    result = []
+    for row in rows:
+        result.append({
+            "id": row[0],
+            "name": row[1],
+            "parent_id": row[2]
         })
     return result

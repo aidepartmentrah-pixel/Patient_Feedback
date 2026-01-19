@@ -19,6 +19,163 @@ def get_connection():
     return conn
 
 
+def get_org_unit_descendants(unit_id: int) -> List[int]:
+    """
+    Get all descendant organizational unit IDs (including the unit itself) using recursive CTE.
+    This works for any depth of organizational hierarchy.
+    Handles self-referencing root nodes properly to avoid infinite loops.
+    
+    Args:
+        unit_id: The organizational unit ID to get descendants for
+        
+    Returns:
+        List of all descendant unit IDs including the unit itself
+    """
+    if not unit_id:
+        return []
+        
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Recursive CTE to find all descendants with loop prevention
+    query = """
+    WITH OrgTree AS (
+        -- Anchor: Start with the selected unit
+        SELECT UniqueID, 0 as level
+        FROM dbo.AdminsrationUnit 
+        WHERE UniqueID = ?
+        
+        UNION ALL
+        
+        -- Recursive: Find all children (prevent self-reference loops)
+        SELECT child.UniqueID, parent.level + 1
+        FROM dbo.AdminsrationUnit child
+        INNER JOIN OrgTree parent ON child.ParentID = parent.UniqueID
+        WHERE child.UniqueID != child.ParentID  -- Avoid infinite loops from self-references
+        AND parent.level < 10  -- Additional safety limit
+    )
+    SELECT DISTINCT UniqueID FROM OrgTree
+    """
+    
+    try:
+        cursor.execute(query, (unit_id,))
+        descendants = [row[0] for row in cursor.fetchall()]
+        cursor.close()
+        conn.close()
+        return descendants
+    except Exception as e:
+        cursor.close()
+        conn.close()
+        # Fallback: return just the unit itself if recursive query fails
+        return [unit_id]
+
+
+def debug_expand_org_units(unit_ids: List[int]) -> List[int]:
+    """
+    Debug helper function to expand a list of org unit IDs into all their descendants.
+    
+    Args:
+        unit_ids: List of organizational unit IDs to expand
+        
+    Returns:
+        List of all expanded unit IDs (including originals and all descendants)
+    """
+    expanded = set()
+    for uid in unit_ids:
+        expanded.update(get_org_unit_descendants(uid))
+    return list(expanded)
+
+
+def build_org_filter_condition(building_id: Optional[int] = None, idara_id: Optional[int] = None, 
+                              dayra_id: Optional[int] = None, qism_id: Optional[int] = None) -> str:
+    """
+    Build a tree-aware organizational filtering condition for target departments.
+    
+    CRITICAL LOGIC:
+    - When you filter by Administration X, get ALL complaints where ANY target department 
+      belongs to Administration X or ANY of its descendants (departments, sections)
+    - Same logic applies for Department and Section filtering
+    - Works regardless of primary/non-primary status
+    - Uses recursive tree expansion to include entire subtree
+    
+    Args:
+        building_id: Hospital/Building ID
+        idara_id: Administration ID (single int) - will expand to include all departments/sections under it
+        dayra_id: Department ID (single int) - will expand to include all sections under it
+        qism_id: Section ID (single int) - leaf node, no expansion needed
+        
+    Returns:
+        SQL WHERE condition string for target department filtering
+    
+    Example:
+        If Administration 3 has:
+            - Department 28 → Sections [43, 44, 45]
+            - Department 24 → Sections [46, 47]
+        
+        Filter by idara_id=3 will find complaints where ANY target department is in:
+        [3, 28, 24, 43, 44, 45, 46, 47]
+    """
+    # Collect ALL selected organizational unit IDs (supporting multiple levels)
+    selected_unit_ids = []
+    
+    # Priority order: Section > Department > Administration
+    # If you specify Section, it takes precedence (most specific)
+    if qism_id:
+        if isinstance(qism_id, list):
+            selected_unit_ids.extend(qism_id)
+        else:
+            selected_unit_ids.append(qism_id)
+        print(f"[ORG FILTER] Section filter: {qism_id}")
+    
+    if dayra_id:
+        if isinstance(dayra_id, list):
+            selected_unit_ids.extend(dayra_id)
+        else:
+            selected_unit_ids.append(dayra_id)
+        print(f"[ORG FILTER] Department filter: {dayra_id}")
+            
+    if idara_id:
+        if isinstance(idara_id, list):
+            selected_unit_ids.extend(idara_id)
+        else:
+            selected_unit_ids.append(idara_id)
+        print(f"[ORG FILTER] Administration filter: {idara_id}")
+    
+    if building_id:
+        # For building/hospital level, return all (no org filtering)
+        print(f"[ORG FILTER] Hospital/Building level - no org filter applied")
+        return "1=1"
+        
+    if not selected_unit_ids:
+        print("[ORG FILTER] No org filter specified - returning all")
+        return "1=1"  # No org filtering
+    
+    # CRITICAL: Expand each selected unit to include ALL its descendants
+    # Example: Administration 3 → expands to [3, 28, 24, 43, 44, 45, 46, 47]
+    expanded_org_unit_ids = debug_expand_org_units(selected_unit_ids)
+    
+    print(f"[ORG FILTER] Input IDs: {selected_unit_ids}")
+    print(f"[ORG FILTER] Expanded to include descendants: {expanded_org_unit_ids}")
+    
+    if not expanded_org_unit_ids:
+        print("[ORG FILTER] WARNING: No descendants found - returning no results")
+        return "1=0"  # No results if no descendants found
+    
+    # Build the filter: Find complaints where ANY target department is in the expanded list
+    # This checks APP_IncidentCaseTargetDepartment table (regardless of IsPrimary status)
+    id_list = ",".join(str(id) for id in expanded_org_unit_ids)
+    
+    filter_condition = f"""EXISTS (
+        SELECT 1 FROM dbo.APP_IncidentCaseTargetDepartment td_filter 
+        WHERE td_filter.IncidentRequestCaseID = ic.IncidentRequestCaseID 
+        AND td_filter.DepartmentID IN ({id_list})
+    )"""
+    
+    print(f"[ORG FILTER] Generated filter for {len(expanded_org_unit_ids)} unit IDs")
+    
+    return filter_condition
+
+
 # =============================================
 # B1: FETCH FILTERED COMPLAINTS (DETAILED MODE)
 # =============================================
@@ -61,12 +218,13 @@ def get_filtered_complaints(
     
     if building_id:
         where_parts.append(f"AND ic.BuildingID = {building_id}")
-    if idara_id:
-        where_parts.append(f"AND org_unit.ParentID = {idara_id}")
-    if dayra_id:
-        where_parts.append(f"AND tdep.DepartmentID = {dayra_id}")
-    if qism_id:
-        where_parts.append(f"AND org_unit.UniqueID = {qism_id}")
+    
+    # Tree-aware organizational filtering (Administration → Department → Section)
+    # This automatically expands selected units to include all descendants
+    org_filter = build_org_filter_condition(building_id, idara_id, dayra_id, qism_id)
+    if org_filter and org_filter != "1=1":
+        where_parts.append(f"AND {org_filter}")
+    
     if domain_id:
         where_parts.append(f"AND ic.DomainID = {domain_id}")
     if category_id:
@@ -81,12 +239,10 @@ def get_filtered_complaints(
     
     where_clause = " ".join(where_parts)
     
-    # Count total records
+    # Count total records - count DISTINCT complaints only
     count_query = f"""
     SELECT COUNT(DISTINCT ic.IncidentRequestCaseID) as total
     FROM dbo.APP_IncidentCase ic
-    LEFT JOIN dbo.AdminsrationUnit org_unit ON ic.IssuingOrgUnitID = org_unit.UniqueID
-    LEFT JOIN dbo.APP_IncidentCaseTargetDepartment tdep ON ic.IncidentRequestCaseID = tdep.IncidentRequestCaseID
     WHERE 1=1 {where_clause}
     """
     
@@ -96,9 +252,10 @@ def get_filtered_complaints(
     # Calculate offset
     offset = (page - 1) * page_size
     
-    # Main query - FULL COMPLAINT DTO (matches TableView/Single Complaint endpoint)
+    # Main query - one record per COMPLAINT (not per target department)
+    # Target departments are fetched separately to avoid duplicates
     query = f"""
-    SELECT DISTINCT
+    SELECT
         ic.IncidentRequestCaseID as id,
         ic.ComplaintText as complaint_text,
         ic.ImmediateAction as immediate_action,
@@ -109,14 +266,18 @@ def get_filtered_complaints(
         ic.CreatedByUserID as created_by_user_id,
         ic.isINPatient as is_inpatient,
         
-        -- Issuing organizational unit
+        -- Issuing organizational unit (the section that received/created the complaint)
         ic.IssuingOrgUnitID as issuing_org_unit_id,
-        org_unit.Name as issuing_org_unit_name,
+        issuing_section.Name as issuing_org_unit_name,
         
-        -- Organizational hierarchy (3 levels)
-        COALESCE(sec_unit.Name, '—') as section_name,
-        COALESCE(dept_unit.Name, '—') as department_name,
-        COALESCE(admin_unit.Name, '—') as administration_name,
+        -- No target department in main query (fetched separately)
+        NULL as target_department_id,
+        NULL as target_department_name,
+        
+        -- Issuing organizational hierarchy (Section -> Department -> Administration)
+        issuing_section.Name as section_name,
+        issuing_dept.Name as department_name,
+        issuing_admin.Name as administration_name,
         
         -- Domain
         ic.DomainID as domain_id,
@@ -169,13 +330,11 @@ def get_filtered_complaints(
         ic.ExplanationStatusID as explanation_status_id,
         explanation_status.StatusName as explanation_status_name
     FROM dbo.APP_IncidentCase ic
-    LEFT JOIN dbo.AdminsrationUnit org_unit ON ic.IssuingOrgUnitID = org_unit.UniqueID
-    LEFT JOIN dbo.APP_IncidentCaseTargetDepartment tdep ON ic.IncidentRequestCaseID = tdep.IncidentRequestCaseID
     
-    -- Organizational hierarchy joins (3 levels)
-    LEFT JOIN dbo.AdminsrationUnit sec_unit ON ic.IssuingOrgUnitID = sec_unit.UniqueID  -- Section (leaf)
-    LEFT JOIN dbo.AdminsrationUnit dept_unit ON sec_unit.ParentID = dept_unit.UniqueID   -- Department (middle)
-    LEFT JOIN dbo.AdminsrationUnit admin_unit ON dept_unit.ParentID = admin_unit.UniqueID -- Administration (top)
+    -- Join issuing organizational unit hierarchy (Section -> Department -> Administration)
+    LEFT JOIN dbo.AdminsrationUnit issuing_section ON ic.IssuingOrgUnitID = issuing_section.UniqueID
+    LEFT JOIN dbo.AdminsrationUnit issuing_dept ON issuing_section.ParentID = issuing_dept.UniqueID
+    LEFT JOIN dbo.AdminsrationUnit issuing_admin ON issuing_dept.ParentID = issuing_admin.UniqueID
     
     LEFT JOIN dbo.APP_LOOKUP_DOMAIN domain ON ic.DomainID = domain.DomainID
     LEFT JOIN dbo.APP_LOOKUP_CATEGORY category ON ic.CategoryID = category.CategoryID
@@ -217,13 +376,19 @@ def get_filtered_complaints(
         # Fetch target departments for this complaint (same logic as single complaint endpoint)
         target_dept_query = """
             SELECT 
-                td.DepartmentID as department_id,
-                org.Name as department_name,
+                td.DepartmentID as section_id,
+                sec_unit.Name as section_name,
+                dept_unit.UniqueID as department_id,
+                dept_unit.Name as department_name,
+                admin_unit.UniqueID as administration_id,
+                admin_unit.Name as administration_name,
                 td.IsPrimary as is_primary
             FROM dbo.APP_IncidentCaseTargetDepartment td
-            LEFT JOIN dbo.AdminsrationUnit org ON td.DepartmentID = org.UniqueID
+            LEFT JOIN dbo.AdminsrationUnit sec_unit ON td.DepartmentID = sec_unit.UniqueID      -- Section (leaf)
+            LEFT JOIN dbo.AdminsrationUnit dept_unit ON sec_unit.ParentID = dept_unit.UniqueID   -- Department (parent)
+            LEFT JOIN dbo.AdminsrationUnit admin_unit ON dept_unit.ParentID = admin_unit.UniqueID -- Administration (grandparent)
             WHERE td.IncidentRequestCaseID = ?
-            ORDER BY td.IsPrimary DESC, td.DepartmentID
+            ORDER BY td.DepartmentID
         """
         cursor.execute(target_dept_query, (complaint['id'],))
         target_dept_rows = cursor.fetchall()
@@ -231,8 +396,12 @@ def get_filtered_complaints(
         target_departments = []
         for dept_row in target_dept_rows:
             target_departments.append({
+                'section_id': dept_row.section_id,
+                'section_name': dept_row.section_name,
                 'department_id': dept_row.department_id,
                 'department_name': dept_row.department_name,
+                'administration_id': dept_row.administration_id,
+                'administration_name': dept_row.administration_name,
                 'is_primary': bool(dept_row.is_primary)
             })
         
@@ -274,10 +443,11 @@ def get_monthly_statistics(
     filter_parts = []
     if building_id:
         filter_parts.append(f"ic.BuildingID = {building_id}")
-    if dayra_id:
-        filter_parts.append(f"ic.IssuingOrgUnitID = {dayra_id}")
-    if qism_id:
-        filter_parts.append(f"ou.UniqueID = {qism_id}")
+    
+    # Generic tree-aware organizational filtering
+    org_filter = build_org_filter_condition(building_id, idara_id, dayra_id, qism_id)
+    if org_filter and org_filter != "1=1":
+        filter_parts.append(org_filter)
     
     additional_filter = " AND ".join(filter_parts)
     if additional_filter:
@@ -293,7 +463,6 @@ def get_monthly_statistics(
         SUM(CASE WHEN ic.HarmLevelID = 5 THEN 1 ELSE 0 END) as never_events_count,
         AVG(CASE WHEN ic.CaseStatusID = 3 THEN DATEDIFF(DAY, ic.FeedbackRecievedDate, ic.CreatedAt) ELSE NULL END) as avg_closure_days
     FROM dbo.APP_IncidentCase ic
-    LEFT JOIN dbo.AdminsrationUnit ou ON ic.IssuingOrgUnitID = ou.UniqueID
     {date_filter}
     """
     
@@ -316,7 +485,6 @@ def get_monthly_statistics(
         COUNT(*) as count,
         ROUND(CAST(COUNT(*) AS FLOAT) / SUM(COUNT(*)) OVER () * 100, 1) as percentage
     FROM dbo.APP_IncidentCase ic
-    LEFT JOIN dbo.AdminsrationUnit ou ON ic.IssuingOrgUnitID = ou.UniqueID
     {date_filter}
     GROUP BY ic.DomainID
     ORDER BY count DESC
@@ -366,16 +534,17 @@ def get_monthly_statistics(
             "count": row[1]
         })
     
-    # By department
+    # By target department (count target department records, not distinct complaints)
     dept_query = f"""
     SELECT 
-        ic.IssuingOrgUnitID,
+        td.DepartmentID,
         COALESCE(ou.Name, 'Unknown') as dept_name,
-        COUNT(*) as count
+        COUNT(td.IncidentRequestCaseID) as count
     FROM dbo.APP_IncidentCase ic
-    LEFT JOIN dbo.AdminsrationUnit ou ON ic.IssuingOrgUnitID = ou.UniqueID
+    INNER JOIN dbo.APP_IncidentCaseTargetDepartment td ON ic.IncidentRequestCaseID = td.IncidentRequestCaseID
+    LEFT JOIN dbo.AdminsrationUnit ou ON td.DepartmentID = ou.UniqueID
     {date_filter}
-    GROUP BY ic.IssuingOrgUnitID, ou.Name
+    GROUP BY td.DepartmentID, ou.Name
     ORDER BY count DESC
     """
     
@@ -423,8 +592,11 @@ def get_seasonal_hcat(
     
     if building_id:
         filter_parts.append(f"ic.BuildingID = {building_id}")
-    if dayra_id:
-        filter_parts.append(f"ic.IssuingOrgUnitID = {dayra_id}")
+    
+    # Generic tree-aware organizational filtering
+    org_filter = build_org_filter_condition(building_id, idara_id, dayra_id, None)  # qism_id not used in seasonal
+    if org_filter and org_filter != "1=1":
+        filter_parts.append(org_filter)
     
     where_clause = " AND ".join(filter_parts)
     
@@ -536,21 +708,22 @@ def get_bulk_summary(
     
     where_clause = " AND ".join(filter_parts)
     
-    # Department summaries
+    # Department summaries (based on target departments - count records, not distinct complaints)
     dept_query = f"""
     SELECT 
-        ic.IssuingOrgUnitID as dayra_id,
+        td.DepartmentID as dayra_id,
         COALESCE(ou.Name, 'Unknown') as dayra_name,
-        COUNT(*) as total_complaints,
+        COUNT(td.IncidentRequestCaseID) as total_complaints,
         SUM(CASE WHEN ic.CaseStatusID != 3 THEN 1 ELSE 0 END) as open_complaints,
         SUM(CASE WHEN ic.CaseStatusID = 3 THEN 1 ELSE 0 END) as closed_complaints,
         SUM(CASE WHEN ic.ClassificationID >= 78 THEN 1 ELSE 0 END) as red_flags_count,
         SUM(CASE WHEN ic.HarmLevelID = 5 THEN 1 ELSE 0 END) as never_events_count,
-        TOP 1 ic.DomainID as top_domain_id
+        MAX(ic.DomainID) as top_domain_id
     FROM dbo.APP_IncidentCase ic
-    LEFT JOIN dbo.AdminsrationUnit ou ON ic.IssuingOrgUnitID = ou.UniqueID
+    INNER JOIN dbo.APP_IncidentCaseTargetDepartment td ON ic.IncidentRequestCaseID = td.IncidentRequestCaseID
+    LEFT JOIN dbo.AdminsrationUnit ou ON td.DepartmentID = ou.UniqueID
     WHERE {where_clause}
-    GROUP BY ic.IssuingOrgUnitID, ou.Name
+    GROUP BY td.DepartmentID, ou.Name
     ORDER BY total_complaints DESC
     """
     

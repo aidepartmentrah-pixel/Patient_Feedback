@@ -5,6 +5,7 @@ Read-only queries for computing seasonal report statistics from raw case data.
 
 from typing import Dict, Any, List, Optional
 from core.database import get_connection
+from backend.api.db_layer.reports_db import build_org_filter_condition
 
 
 def get_seasonal_classification_stats(
@@ -46,8 +47,8 @@ def get_seasonal_classification_stats(
         cursor.execute(
             """
             SELECT StartDate, EndDate
-            FROM dbo.APP_LOOKUP_SEASON
-            WHERE SeasonID = ?
+            FROM dbo.Season
+            WHERE UniqueID = ?
             """,
             (season_id,)
         )
@@ -59,45 +60,103 @@ def get_seasonal_classification_stats(
         start_date = season_row.StartDate
         end_date = season_row.EndDate
         
-        # TODO: OrgUnit filtering logic is ambiguous
-        # Currently filtering by IssuingOrgUnitID only
-        # May need to consider target departments or hierarchical org structure
+        # Hospital-level (orgunit_id=1, orgunit_type=0): Aggregate ALL incidents
+        # Specific unit: Filter by TARGET DEPARTMENTS with tree expansion (same as monthly reporting)
+        # This ensures Administration reports include ALL complaints where target dept belongs to that Administration
+        if orgunit_id == 1 and orgunit_type == 0:
+            # Hospital-level: No orgunit filter
+            where_clause = f"""
+            WHERE ic.FeedbackRecievedDate >= ?
+              AND ic.FeedbackRecievedDate <= ?
+            """
+            params = (start_date, end_date)
+        else:
+            # Specific unit: Apply tree-aware target department filter
+            # Map orgunit_type to filter parameters:
+            # orgunit_type 1 (Administration) -> idara_id
+            # orgunit_type 2 (Department) -> dayra_id  
+            # orgunit_type 3 (Section) -> qism_id
+            if orgunit_type == 1:  # Administration
+                idara_id = orgunit_id
+                dayra_id = None
+                qism_id = None
+            elif orgunit_type == 2:  # Department
+                idara_id = None
+                dayra_id = orgunit_id
+                qism_id = None
+            elif orgunit_type == 3:  # Section
+                idara_id = None
+                dayra_id = None
+                qism_id = orgunit_id
+            else:
+                idara_id = None
+                dayra_id = None
+                qism_id = None
+            
+            # Build tree-aware org filter (same mechanism as monthly reporting)
+            org_filter = build_org_filter_condition(None, idara_id, dayra_id, qism_id)
+            
+            where_clause = f"""
+            WHERE ic.FeedbackRecievedDate >= ?
+              AND ic.FeedbackRecievedDate <= ?
+              AND {org_filter}
+            """
+            params = (start_date, end_date)
         
         # Aggregate classification stats with severity breakdown
-        cursor.execute(
-            """
+        # Note: IsPreventive calculated based on presence of preventive measures
+        # Group by ClassificationID, DomainID, CategoryID, AND SubCategoryID (required by table schema)
+        query = f"""
             SELECT
                 ic.ClassificationID,
+                ic.DomainID,
+                ic.CategoryID,
+                ic.SubCategoryID,
                 COUNT(*) AS TotalCount,
                 SUM(CASE WHEN ic.SeverityID = 1 THEN 1 ELSE 0 END) AS LowCount,
                 SUM(CASE WHEN ic.SeverityID = 2 THEN 1 ELSE 0 END) AS MediumCount,
                 SUM(CASE WHEN ic.SeverityID = 3 THEN 1 ELSE 0 END) AS HighCount,
                 SUM(CASE 
-                    WHEN ic.ClinicalRiskTypeID IN (2, 3) AND icf.IsPreventive = 1 
+                    WHEN ic.ClinicalRiskTypeID IN (2, 3) AND (
+                        icf.Preventive_MonthlyMeetings = 1 OR
+                        icf.Preventive_TrainingPrograms = 1 OR
+                        icf.Preventive_IncreaseStaff = 1 OR
+                        icf.Preventive_MMCommitteeActions = 1 OR
+                        icf.Preventive_Other = 1
+                    )
                     THEN 1 
                     ELSE 0 
                 END) AS PreventiveYesCount,
                 SUM(CASE 
-                    WHEN ic.ClinicalRiskTypeID IN (2, 3) AND icf.IsPreventive = 0 
+                    WHEN ic.ClinicalRiskTypeID IN (2, 3) AND icf.IncidentRequestCaseID IS NOT NULL AND (
+                        ISNULL(icf.Preventive_MonthlyMeetings, 0) = 0 AND
+                        ISNULL(icf.Preventive_TrainingPrograms, 0) = 0 AND
+                        ISNULL(icf.Preventive_IncreaseStaff, 0) = 0 AND
+                        ISNULL(icf.Preventive_MMCommitteeActions, 0) = 0 AND
+                        ISNULL(icf.Preventive_Other, 0) = 0
+                    )
                     THEN 1 
                     ELSE 0 
                 END) AS PreventiveNoCount
             FROM dbo.APP_IncidentCase ic
             LEFT JOIN dbo.APP_IncidentCaseFeedback icf
                 ON ic.IncidentRequestCaseID = icf.IncidentRequestCaseID
-            WHERE ic.FeedbackRecievedDate >= ?
-              AND ic.FeedbackRecievedDate <= ?
-              AND ic.IssuingOrgUnitID = ?
-            GROUP BY ic.ClassificationID
-            ORDER BY ic.ClassificationID
-            """,
-            (start_date, end_date, orgunit_id)
-        )
+            INNER JOIN dbo.APP_IncidentCaseTargetDepartment td
+                ON ic.IncidentRequestCaseID = td.IncidentRequestCaseID
+            {where_clause}
+            GROUP BY ic.ClassificationID, ic.DomainID, ic.CategoryID, ic.SubCategoryID
+            ORDER BY ic.ClassificationID, ic.DomainID, ic.CategoryID, ic.SubCategoryID
+        """
+        
+        cursor.execute(query, params)
         
         results = []
         for row in cursor.fetchall():
             results.append({
                 'classification_id': row.ClassificationID,
+                'domain_id': row.DomainID,
+                'category_id': row.CategoryID,
+                'subcategory_id': row.SubCategoryID,
                 'total_count': row.TotalCount,
                 'low_count': row.LowCount,
                 'medium_count': row.MediumCount,
@@ -154,8 +213,8 @@ def get_seasonal_domain_totals(
         cursor.execute(
             """
             SELECT StartDate, EndDate
-            FROM dbo.APP_LOOKUP_SEASON
-            WHERE SeasonID = ?
+            FROM dbo.Season
+            WHERE UniqueID = ?
             """,
             (season_id,)
         )
@@ -175,16 +234,50 @@ def get_seasonal_domain_totals(
         start_date = season_row.StartDate
         end_date = season_row.EndDate
         
-        # TODO: Domain ID mapping is assumed based on context
-        # DomainID 1 = Clinical, 2 = Management, 3 = Relational
-        # Verify with actual APP_LOOKUP_DOMAIN table
-        
-        # TODO: Same orgunit filtering ambiguity as classification stats
-        
-        cursor.execute(
+        # Hospital-level (orgunit_id=1, orgunit_type=0): Aggregate ALL incidents
+        # Specific unit: Filter by TARGET DEPARTMENTS with tree expansion (same as monthly reporting)
+        if orgunit_id == 1 and orgunit_type == 0:
+            # Hospital-level: No orgunit filter
+            where_clause = f"""
+            WHERE ic.FeedbackRecievedDate >= ?
+              AND ic.FeedbackRecievedDate <= ?
             """
+            params = (start_date, end_date)
+        else:
+            # Specific unit: Apply tree-aware target department filter
+            # Map orgunit_type to filter parameters
+            if orgunit_type == 1:  # Administration
+                idara_id = orgunit_id
+                dayra_id = None
+                qism_id = None
+            elif orgunit_type == 2:  # Department
+                idara_id = None
+                dayra_id = orgunit_id
+                qism_id = None
+            elif orgunit_type == 3:  # Section
+                idara_id = None
+                dayra_id = None
+                qism_id = orgunit_id
+            else:
+                idara_id = None
+                dayra_id = None
+                qism_id = None
+            
+            # Build tree-aware org filter (same mechanism as monthly reporting)
+            org_filter = build_org_filter_condition(None, idara_id, dayra_id, qism_id)
+            
+            where_clause = f"""
+            WHERE ic.FeedbackRecievedDate >= ?
+              AND ic.FeedbackRecievedDate <= ?
+              AND {org_filter}
+            """
+            params = (start_date, end_date)
+        
+        # Count DISTINCT complaints to avoid counting same complaint multiple times
+        # (a complaint may have multiple target departments)
+        query = f"""
             SELECT
-                COUNT(*) AS TotalCases,
+                COUNT(DISTINCT ic.IncidentRequestCaseID) AS TotalCases,
                 SUM(CASE WHEN ic.DomainID = 1 THEN 1 ELSE 0 END) AS ClinicalDomainCount,
                 SUM(CASE WHEN ic.DomainID = 2 THEN 1 ELSE 0 END) AS ManagementDomainCount,
                 SUM(CASE WHEN ic.DomainID = 3 THEN 1 ELSE 0 END) AS RelationalDomainCount,
@@ -192,12 +285,12 @@ def get_seasonal_domain_totals(
                 SUM(CASE WHEN ic.SeverityID = 2 THEN 1 ELSE 0 END) AS MediumSeverityCount,
                 SUM(CASE WHEN ic.SeverityID = 3 THEN 1 ELSE 0 END) AS HighSeverityCount
             FROM dbo.APP_IncidentCase ic
-            WHERE ic.FeedbackRecievedDate >= ?
-              AND ic.FeedbackRecievedDate <= ?
-              AND ic.IssuingOrgUnitID = ?
-            """,
-            (start_date, end_date, orgunit_id)
-        )
+            INNER JOIN dbo.APP_IncidentCaseTargetDepartment td
+                ON ic.IncidentRequestCaseID = td.IncidentRequestCaseID
+            {where_clause}
+        """
+        
+        cursor.execute(query, params)
         
         row = cursor.fetchone()
         if not row:
@@ -273,16 +366,20 @@ def get_orgunit_policy_row(
             SELECT
                 OrgUnitID,
                 OrgUnitType,
-                MaxAllowedCases,
-                MaxClinicalDomain,
-                MaxManagementDomain,
-                MaxRelationalDomain,
-                RequireExplanationAboveThreshold,
-                EscalationEnabled,
-                EscalationThresholdPercentage
+                LowSeverityLimit,
+                MediumSeverityLimit,
+                HighSeverityLimit,
+                ClinicalDomainLimit,
+                ManagementDomainLimit,
+                RelationalDomainLimit,
+                EnableLowSeverityRepetitionRule,
+                EnableMediumSeverityRepetitionRule,
+                EnableHighSeverityPercentageRule,
+                EnableHighSeverityPercentageByDomainRule
             FROM dbo.APP_OrgUnitPolicy
             WHERE OrgUnitID = ?
               AND OrgUnitType = ?
+              AND IsActive = 1
             """,
             (orgunit_id, orgunit_type)
         )
@@ -294,13 +391,16 @@ def get_orgunit_policy_row(
         return {
             'OrgUnitID': row.OrgUnitID,
             'OrgUnitType': row.OrgUnitType,
-            'MaxAllowedCases': row.MaxAllowedCases,
-            'MaxClinicalDomain': row.MaxClinicalDomain,
-            'MaxManagementDomain': row.MaxManagementDomain,
-            'MaxRelationalDomain': row.MaxRelationalDomain,
-            'RequireExplanationAboveThreshold': row.RequireExplanationAboveThreshold,
-            'EscalationEnabled': row.EscalationEnabled,
-            'EscalationThresholdPercentage': row.EscalationThresholdPercentage
+            'LowSeverityLimit': row.LowSeverityLimit,
+            'MediumSeverityLimit': row.MediumSeverityLimit,
+            'HighSeverityLimit': row.HighSeverityLimit,
+            'ClinicalDomainLimit': row.ClinicalDomainLimit,
+            'ManagementDomainLimit': row.ManagementDomainLimit,
+            'RelationalDomainLimit': row.RelationalDomainLimit,
+            'EnableLowSeverityRepetitionRule': row.EnableLowSeverityRepetitionRule,
+            'EnableMediumSeverityRepetitionRule': row.EnableMediumSeverityRepetitionRule,
+            'EnableHighSeverityPercentageRule': row.EnableHighSeverityPercentageRule,
+            'EnableHighSeverityPercentageByDomainRule': row.EnableHighSeverityPercentageByDomainRule
         }
     
     except Exception as e:

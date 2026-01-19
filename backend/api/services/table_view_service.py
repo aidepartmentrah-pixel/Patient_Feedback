@@ -582,11 +582,17 @@ def get_complaint_by_id(complaint_id: int) -> Optional[Dict[str, Any]]:
         # Fetch target departments
         target_dept_query = """
             SELECT 
-                td.DepartmentID as department_id,
-                org.Name as department_name,
+                td.DepartmentID as section_id,
+                sec_unit.Name as section_name,
+                dept_unit.UniqueID as department_id,
+                dept_unit.Name as department_name,
+                admin_unit.UniqueID as administration_id,
+                admin_unit.Name as administration_name,
                 td.IsPrimary as is_primary
             FROM dbo.APP_IncidentCaseTargetDepartment td
-            LEFT JOIN AdminsrationUnit org ON td.DepartmentID = org.UniqueID
+            LEFT JOIN dbo.AdminsrationUnit sec_unit ON td.DepartmentID = sec_unit.UniqueID      -- Section (leaf)
+            LEFT JOIN dbo.AdminsrationUnit dept_unit ON sec_unit.ParentID = dept_unit.UniqueID   -- Department (parent)
+            LEFT JOIN dbo.AdminsrationUnit admin_unit ON dept_unit.ParentID = admin_unit.UniqueID -- Administration (grandparent)
             WHERE td.IncidentRequestCaseID = ?
             ORDER BY td.IsPrimary DESC, td.DepartmentID
         """
@@ -596,8 +602,12 @@ def get_complaint_by_id(complaint_id: int) -> Optional[Dict[str, Any]]:
         target_departments = []
         for dept_row in target_dept_rows:
             target_departments.append({
+                'section_id': dept_row.section_id,
+                'section_name': dept_row.section_name,
                 'department_id': dept_row.department_id,
                 'department_name': dept_row.department_name,
+                'administration_id': dept_row.administration_id,
+                'administration_name': dept_row.administration_name,
                 'is_primary': bool(dept_row.is_primary)
             })
         

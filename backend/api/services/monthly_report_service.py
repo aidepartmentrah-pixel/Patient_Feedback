@@ -26,6 +26,8 @@ class MonthlyReportService:
         administration_ids: Optional[str],
         department_ids: Optional[str],
         section_ids: Optional[str],
+        page: int = 1,
+        page_size: int = 50
     ) -> Dict[str, Any]:
         """
         Generate a monthly report (dispatcher method).
@@ -44,6 +46,8 @@ class MonthlyReportService:
             administration_ids: Comma-separated administration IDs (optional)
             department_ids: Comma-separated department IDs (optional)
             section_ids: Comma-separated section IDs (optional)
+            page: Page number for pagination (default 1)
+            page_size: Number of records per page (default 50, use 9999 for exports)
         
         Returns:
             Report dictionary structure (depends on mode)
@@ -67,7 +71,9 @@ class MonthlyReportService:
         
         # Build filters dictionary
         filters: Dict[str, Any] = {
-            "year": year
+            "year": year,
+            "page": page,
+            "page_size": page_size
         }
         
         # Add month or date range
@@ -82,25 +88,27 @@ class MonthlyReportService:
             except (ValueError, TypeError) as e:
                 raise ValueError(f"Invalid date format: {e}. Use ISO format (YYYY-MM-DD)")
         
-        # Map organizational unit filters
-        # Note: The existing service uses building_id, idara_id (administration),
-        # dayra_id (department), qism_id (section)
+        # Map organizational unit filters - UNION logic (OR)
+        # Multiple selections are combined with OR logic:
+        # Example: Administration 3 OR Administration 1 → Get cases from BOTH
         
         if administration_ids:
-            # Parse first ID if comma-separated (simple approach)
+            # Parse ALL IDs and pass them as list for UNION (OR) filtering
             admin_id_list = [int(x.strip()) for x in administration_ids.split(",") if x.strip()]
             if admin_id_list:
-                filters["idara_id"] = admin_id_list[0]
+                filters["idara_id"] = admin_id_list if len(admin_id_list) > 1 else admin_id_list[0]
         
         if department_ids:
+            # Parse ALL IDs and pass them as list for UNION (OR) filtering
             dept_id_list = [int(x.strip()) for x in department_ids.split(",") if x.strip()]
             if dept_id_list:
-                filters["dayra_id"] = dept_id_list[0]
+                filters["dayra_id"] = dept_id_list if len(dept_id_list) > 1 else dept_id_list[0]
         
         if section_ids:
+            # Parse ALL IDs and pass them as list for UNION (OR) filtering
             section_id_list = [int(x.strip()) for x in section_ids.split(",") if x.strip()]
             if section_id_list:
-                filters["qism_id"] = section_id_list[0]
+                filters["qism_id"] = section_id_list if len(section_id_list) > 1 else section_id_list[0]
         
         # Handle scope parameter (if needed for future enhancements)
         if scope:
@@ -135,7 +143,7 @@ class MonthlyReportService:
                 - severity_id: Optional[int]
                 - status: Optional[str]
                 - page: int (default 1)
-                - page_size: int (default 50)
+                - page_size: int (default 50, use 9999 for exports to get all records)
         
         Returns:
             Dictionary containing:
@@ -157,7 +165,7 @@ class MonthlyReportService:
         severity_id = filters.get("severity_id")
         status = filters.get("status")
         page = filters.get("page", 1)
-        page_size = filters.get("page_size", 50)
+        page_size = filters.get("page_size", 50)  # Default 50 for UI, exports can override with 9999
         
         # Calculate period dates
         if start_date and end_date:

@@ -5,7 +5,7 @@ Handles business logic for creating new incident/feedback records.
 
 from datetime import datetime
 from typing import Dict, Any
-from core.database import get_connection
+from backend.core.database import get_connection
 from backend.api.db_layer.incident_case import create_incident_case
 from backend.api.db_layer.incident_case_target_department import add_target_department
 from backend.api.db_layer.incident_case_doctor import add_doctor_to_case
@@ -213,14 +213,38 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
             except Exception:
                 building_id = None
 
-        if clinical_risk_type_id in (2, 3):  # Red Flag or Never Event
-            # S0: Open + Waiting
+        # -----------------------------
+        # FSM LOGIC: Explanation Workflow
+        # -----------------------------
+        # Three paths:
+        # 1. Red Flag (2) OR Never Event (3) -> ALWAYS needs explanation
+        # 2. Ordinary with RequiresExplanation=True -> needs explanation
+        # 3. Ordinary with RequiresExplanation=False -> no explanation needed
+        
+        is_red_flag = clinical_risk_type_id == 2
+        is_never_event = clinical_risk_type_id == 3
+        requires_explanation = data.get('requires_explanation', False)
+        
+        # Convert to BIT value (0 or 1)
+        if isinstance(requires_explanation, bool):
+            requires_explanation_bit = 1 if requires_explanation else 0
+        elif isinstance(requires_explanation, str):
+            requires_explanation_bit = 1 if requires_explanation.lower() in ('true', '1', 'yes') else 0
+        elif isinstance(requires_explanation, int):
+            requires_explanation_bit = 1 if requires_explanation == 1 else 0
+        else:
+            requires_explanation_bit = 0
+        
+        if is_red_flag or is_never_event or requires_explanation_bit:
+            # Path 1 & 2: Open + Waiting (S0)
             case_status_id = 1  # Open
             explanation_status_id = 1  # Waiting
+            print(f"[FSM] Case requires explanation: RedFlag={is_red_flag}, NeverEvent={is_never_event}, RequiresExplanation={requires_explanation_bit}")
         else:
-            # S4: Closed + No Explanation Needed
+            # Path 3: Closed + No Explanation Needed (S4)
             case_status_id = 3  # Closed
             explanation_status_id = 4  # No Explanation Needed
+            print(f"[FSM] Case does not require explanation")
 
         payload = {
             "ComplaintText": data.get('complaint_text'),
@@ -244,6 +268,7 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
             "CaseStatusID": case_status_id,
             "SourceID": data.get('source_id'),
             "ExplanationStatusID": explanation_status_id,
+            "RequiresExplanation": requires_explanation_bit,
         }
 
         new_id = create_incident_case(payload)
@@ -301,6 +326,7 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
             "message_ar": "تم إنشاء السجل بنجاح",
             "record_id": record_id,
             "id": new_id,
+            "incident_id": new_id,  # For compatibility
             "status_id": 3,
             "created_at": datetime.now().isoformat()
         }

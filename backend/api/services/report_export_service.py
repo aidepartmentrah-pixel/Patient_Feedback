@@ -3,7 +3,7 @@ Report Export Service
 Handles export logic for monthly and seasonal reports.
 """
 
-from typing import Dict, Any, Literal
+from typing import Dict, Any, Literal, Optional, List
 import traceback
 from io import BytesIO
 from .monthly_report_service import monthly_report_service
@@ -27,10 +27,12 @@ class ReportExportService:
         self,
         *,
         report_type: Literal["monthly", "seasonal"],
-        display_mode: Literal["detailed", "numeric", "hcat"],
+        display_mode: Optional[Literal["detailed", "numeric", "hcat"]],
         file_format: Literal["pdf", "csv", "xlsx", "docx"],
         year: int,
-        month: int = None,
+        month: Optional[int] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
         trimester: int = None,
         quarter: int = None,
         filters: Dict[str, Any] = None,
@@ -45,7 +47,9 @@ class ReportExportService:
             display_mode: Display mode (detailed, numeric, hcat)
             file_format: Output format (pdf, csv, xlsx, docx)
             year: Year for the report
-            month: Month for monthly reports
+            month: Month for monthly reports (or use start_date/end_date)
+            start_date: Custom range start date (YYYY-MM-DD) for monthly reports
+            end_date: Custom range end date (YYYY-MM-DD) for monthly reports
             trimester: Trimester for seasonal reports
             quarter: Quarter for seasonal reports
             filters: Additional filters
@@ -81,6 +85,8 @@ class ReportExportService:
                     display_mode=display_mode,
                     year=year,
                     month=month,
+                    start_date=start_date,
+                    end_date=end_date,
                     filters=filters
                 )
                 # Normalize monthly detailed data: extract complaints list
@@ -89,23 +95,154 @@ class ReportExportService:
                 else:
                     export_data = report_data
             else:  # seasonal
-                report_data = self._fetch_seasonal_data(
-                    display_mode=display_mode,
-                    year=year,
-                    trimester=trimester,
-                    quarter=quarter,
-                    filters=filters
-                )
+                # For seasonal reports with display_mode=None, use orchestrator
+                if display_mode is None:
+                    from ..services.seasonal_report_orchestrator import get_or_generate_comparative_seasonal_reports
+                    season_id = filters.get("season_id")
+                    orgunit_id = filters.get("orgunit_id")
+                    orgunit_type = filters.get("orgunit_type")
+                    
+                    # Get BOTH current and previous season reports for comparison
+                    comparative_data = get_or_generate_comparative_seasonal_reports(
+                        season_id=season_id,
+                        orgunit_id=orgunit_id,
+                        orgunit_type=orgunit_type,
+                        user_id=1  # System user for exports
+                    )
+                    report_data = comparative_data  # Store full comparison data
+                else:
+                    report_data = self._fetch_seasonal_data(
+                        display_mode=display_mode,
+                        year=year,
+                        trimester=trimester,
+                        quarter=quarter,
+                        filters=filters
+                    )
                 export_data = report_data
+            
+            # Extract entity info from filters for meaningful filenames and headers
+            report_entity_name = None
+            report_entity_type = None
+            report_administration = None
+            report_department = None
+            report_section = None
+            scope_is_all = False  # Track if this is an "all" scope report
+            
+            if filters:
+                # Determine which entity is being reported on
+                administration_ids = filters.get("administration_ids")
+                department_ids = filters.get("department_ids")
+                section_ids = filters.get("section_ids")
+                
+                if administration_ids:
+                    if administration_ids == "all":
+                        report_entity_type = "all_administrations"
+                        scope_is_all = True
+                        report_entity_name = "جميع الإدارات"  # All Administrations
+                    else:
+                        report_entity_type = "administration"
+                        # Get specific administration name
+                        try:
+                            from ..db_layer.admin_units import get_admin_unit_by_id
+                            unit = get_admin_unit_by_id(int(administration_ids.split(',')[0]))
+                            report_entity_name = unit.Name if unit else None
+                        except:
+                            pass
+                elif department_ids:
+                    if department_ids == "all":
+                        report_entity_type = "all_departments"
+                        scope_is_all = True
+                        report_entity_name = "جميع الأقسام"  # All Departments
+                    else:
+                        report_entity_type = "department"
+                        try:
+                            from ..db_layer.admin_units import get_admin_unit_by_id
+                            unit = get_admin_unit_by_id(int(department_ids.split(',')[0]))
+                            report_entity_name = unit.Name if unit else None
+                        except:
+                            pass
+                elif section_ids:
+                    if section_ids == "all":
+                        report_entity_type = "all_sections"
+                        scope_is_all = True
+                        report_entity_name = "جميع الشعب"  # All Sections
+                    else:
+                        report_entity_type = "section"
+                        try:
+                            from ..db_layer.admin_units import get_admin_unit_by_id
+                            unit = get_admin_unit_by_id(int(section_ids.split(',')[0]))
+                            report_entity_name = unit.Name if unit else None
+                        except:
+                            pass
+                else:
+                    # Hospital level (no specific filter)
+                    report_entity_type = "hospital"
             
             # Step 2: Generate file based on format
             if file_format == "pdf":
-                content = reports_service.generate_pdf_export(
-                    report_data=export_data,
-                    filename=f"report_{year}.pdf",
-                    language=language,
-                    include_charts=include_charts
-                )
+                # Use dedicated seasonal formatter for seasonal reports
+                if report_type == "seasonal" and display_mode is None:
+                    import zipfile
+                    from .seasonal_report_formatter import (
+                        generate_seasonal_word_report,
+                        generate_comparative_seasonal_word_report
+                    )
+                    
+                    print(f"\n[EXPORT SERVICE] Generating ZIP with both PDF reports:")
+                    print(f"  - report_data type: {type(report_data)}")
+                    print(f"  - has comparative data: {isinstance(report_data, dict) and 'current_report' in report_data}")
+                    
+                    # Generate BOTH reports (PDF uses Word format for now)
+                    if isinstance(report_data, dict) and 'current_report' in report_data:
+                        # 1. Generate regular current season report
+                        current_report_bytes = generate_seasonal_word_report(
+                            seasonal_data=report_data['current_report'],
+                            language=language
+                        )
+                        
+                        # 2. Generate comparative report
+                        comparison_report_bytes = generate_comparative_seasonal_word_report(
+                            current_data=report_data['current_report'],
+                            previous_data=report_data['previous_report'],
+                            language=language
+                        )
+                        
+                        # 3. Package both into ZIP
+                        current_period = report_data['current_report'].get('header', {}).get('period', 'Current')
+                        previous_period = report_data['previous_report'].get('header', {}).get('period', 'Previous')
+                        
+                        zip_buffer = BytesIO()
+                        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                            # Add current season report
+                            current_filename = f"Seasonal_Report_{current_period}.docx"
+                            zip_file.writestr(current_filename, current_report_bytes)
+                            
+                            # Add comparison report
+                            comparison_filename = f"Comparison_{current_period}_vs_{previous_period}.docx"
+                            zip_file.writestr(comparison_filename, comparison_report_bytes)
+                        
+                        content = zip_buffer.getvalue()
+                        content_type = "application/zip"
+                        
+                        print(f"[EXPORT SERVICE] ✅ ZIP created with 2 files:")
+                        print(f"  1. {current_filename}")
+                        print(f"  2. {comparison_filename}")
+                    else:
+                        # Fallback to single report
+                        from .seasonal_report_formatter import generate_seasonal_pdf_report
+                        content = generate_seasonal_pdf_report(report_data, language)
+                else:
+                    content = reports_service.generate_pdf_export(
+                        report_data=export_data,
+                        filename=f"report_{year}.pdf",
+                        language=language,
+                        include_charts=include_charts,
+                        report_entity_name=report_entity_name,
+                        report_entity_type=report_entity_type,
+                        report_administration=report_administration,
+                        report_department=report_department,
+                        report_section=report_section
+                    )
             elif file_format == "xlsx":
                 content = reports_service.generate_xlsx_export(
                     report_data=export_data,
@@ -113,11 +250,97 @@ class ReportExportService:
                     language=language
                 )
             elif file_format == "docx":
-                content = reports_service.generate_docx_export(
-                    report_data=export_data,
-                    filename=f"report_{year}.docx",
-                    language=language
-                )
+                # Use dedicated seasonal formatter for seasonal reports
+                if report_type == "seasonal" and display_mode is None:
+                    import zipfile
+                    from .seasonal_report_formatter import (
+                        generate_seasonal_word_report,
+                        generate_comparative_seasonal_word_report
+                    )
+                    
+                    print(f"\n[EXPORT SERVICE] Generating ZIP with both reports:")
+                    print(f"  - report_data type: {type(report_data)}")
+                    print(f"  - has comparative data: {isinstance(report_data, dict) and 'current_report' in report_data}")
+                    
+                    # Generate BOTH reports
+                    if isinstance(report_data, dict) and 'current_report' in report_data:
+                        # 1. Generate regular current season report
+                        current_report_bytes = generate_seasonal_word_report(
+                            seasonal_data=report_data['current_report'],
+                            language=language
+                        )
+                        
+                        # 2. Generate comparative report
+                        comparison_report_bytes = generate_comparative_seasonal_word_report(
+                            current_data=report_data['current_report'],
+                            previous_data=report_data['previous_report'],
+                            language=language
+                        )
+                        
+                        # 3. Package both into ZIP
+                        current_period = report_data['current_report'].get('header', {}).get('period', 'Current')
+                        previous_period = report_data['previous_report'].get('header', {}).get('period', 'Previous')
+                        
+                        zip_buffer = BytesIO()
+                        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                            # Add current season report
+                            current_filename = f"Seasonal_Report_{current_period}.docx"
+                            zip_file.writestr(current_filename, current_report_bytes)
+                            
+                            # Add comparison report
+                            comparison_filename = f"Comparison_{current_period}_vs_{previous_period}.docx"
+                            zip_file.writestr(comparison_filename, comparison_report_bytes)
+                        
+                        content = zip_buffer.getvalue()
+                        content_type = "application/zip"
+                        
+                        print(f"[EXPORT SERVICE] ✅ ZIP created with 2 files:")
+                        print(f"  1. {current_filename}")
+                        print(f"  2. {comparison_filename}")
+                    else:
+                        # Fallback to single report if data structure unexpected
+                        from .seasonal_report_formatter import generate_seasonal_word_report
+                        content = generate_seasonal_word_report(report_data, language)
+                else:
+                    # Check if this is a numeric (aggregated) report or detailed report
+                    if display_mode == "numeric":
+                        # Use numeric report generator
+                        print(f"[EXPORT SERVICE] Generating numeric monthly Word report")
+                        print(f"[EXPORT SERVICE] Scope is all: {scope_is_all}, Entity type: {report_entity_type}")
+                        
+                        # If scope is "all", fetch organizational breakdown data
+                        if scope_is_all and report_entity_type in ["all_administrations", "all_departments", "all_sections"]:
+                            print(f"[EXPORT SERVICE] Fetching organizational breakdown for {report_entity_type}")
+                            org_breakdown = self._fetch_organizational_breakdown(
+                                report_entity_type=report_entity_type,
+                                year=year,
+                                month=month,
+                                start_date=start_date,
+                                end_date=end_date
+                            )
+                            # Add organizational breakdown to report data
+                            report_data["organizational_breakdown"] = org_breakdown
+                        
+                        content = reports_service.generate_monthly_numeric_word_report(
+                            report_data=report_data,  # Pass full dict (not export_data)
+                            filename=f"report_{year}.docx",
+                            language=language,
+                            report_entity_name=report_entity_name,
+                            report_entity_type=report_entity_type
+                        )
+                    else:
+                        # Use detailed report generator (existing)
+                        print(f"[EXPORT SERVICE] Generating detailed monthly Word report")
+                        content = reports_service.generate_docx_export(
+                            report_data=export_data,
+                            filename=f"report_{year}.docx",
+                            language=language,
+                            report_entity_name=report_entity_name,
+                            report_entity_type=report_entity_type,
+                            report_administration=report_administration,
+                            report_department=report_department,
+                            report_section=report_section
+                        )
             else:  # csv
                 content = reports_service.generate_csv_export(
                     report_data=export_data,
@@ -128,6 +351,16 @@ class ReportExportService:
             # Step 3: Build filename
             if report_type == "monthly" and month:
                 filename = f"Monthly_Report_{year}_{month:02d}.{file_format}"
+            elif report_type == "monthly" and start_date and end_date:
+                filename = f"Monthly_Report_{start_date}_to_{end_date}.{file_format}"
+            elif report_type == "seasonal" and trimester and display_mode is None:
+                # ZIP package with both reports
+                actual_format = "zip" if content_type == "application/zip" else file_format
+                filename = f"Seasonal_Reports_{year}_T{trimester}.{actual_format}"
+            elif report_type == "seasonal" and quarter and display_mode is None:
+                # ZIP package with both reports
+                actual_format = "zip" if content_type == "application/zip" else file_format
+                filename = f"Seasonal_Reports_{year}_Q{quarter}.{actual_format}"
             elif report_type == "seasonal" and trimester:
                 filename = f"Seasonal_Report_{year}_T{trimester}.{file_format}"
             elif report_type == "seasonal" and quarter:
@@ -198,35 +431,130 @@ class ReportExportService:
             # Re-raise if not Word or if fallback failed
             raise
     
+    def _fetch_organizational_breakdown(
+        self,
+        report_entity_type: str,
+        year: int,
+        month: Optional[int],
+        start_date: Optional[str],
+        end_date: Optional[str]
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetch organizational breakdown for 'all' scope reports.
+        Gets statistics for each organizational unit (administration/department/section).
+        
+        Args:
+            report_entity_type: 'all_administrations', 'all_departments', or 'all_sections'
+            year: Report year
+            month: Optional month
+            start_date: Optional custom start date
+            end_date: Optional custom end date
+            
+        Returns:
+            List of dicts with organizational unit name and statistics
+        """
+        from ..db_layer.admin_units import get_units_by_type
+        
+        # Map entity type to organizational unit type
+        type_mapping = {
+            "all_administrations": 323,  # Type for Administration
+            "all_departments": 325,      # Type for Department
+            "all_sections": 324           # Type for Section
+        }
+        
+        unit_type = type_mapping.get(report_entity_type)
+        if not unit_type:
+            return []
+        
+        # Get all units of this type
+        units = get_units_by_type(unit_type)
+        
+        breakdown = []
+        for unit in units:
+            unit_id = unit["id"]
+            unit_name = unit["name"]
+            
+            # Build filters for this specific unit
+            filters = {}
+            if report_entity_type == "all_administrations":
+                filters["administration_ids"] = str(unit_id)
+            elif report_entity_type == "all_departments":
+                filters["department_ids"] = str(unit_id)
+            elif report_entity_type == "all_sections":
+                filters["section_ids"] = str(unit_id)
+            
+            try:
+                # Fetch statistics for this unit
+                unit_data = self._fetch_monthly_data(
+                    display_mode="numeric",
+                    year=year,
+                    month=month,
+                    start_date=start_date,
+                    end_date=end_date,
+                    filters=filters
+                )
+                
+                # Extract summary statistics
+                summary = unit_data.get("summary", {})
+                total_complaints = summary.get("total_complaints", 0)
+                
+                # Only include units with data
+                if total_complaints > 0:
+                    breakdown.append({
+                        "unit_id": unit_id,
+                        "unit_name": unit_name,
+                        "total_complaints": total_complaints,
+                        "open_complaints": summary.get("open_complaints", 0),
+                        "closed_complaints": summary.get("closed_complaints", 0),
+                        "red_flags_count": summary.get("red_flags_count", 0),
+                        "never_events_count": summary.get("never_events_count", 0),
+                        "avg_closure_days": summary.get("avg_closure_days", 0),
+                        "by_domain": unit_data.get("by_domain", []),
+                        "by_severity": unit_data.get("by_severity", [])
+                    })
+            except Exception as e:
+                print(f"[EXPORT SERVICE] Error fetching data for unit {unit_name} (ID {unit_id}): {e}")
+                continue
+        
+        # Sort by total complaints descending
+        breakdown.sort(key=lambda x: x["total_complaints"], reverse=True)
+        
+        return breakdown
+    
     def _fetch_monthly_data(
         self,
         display_mode: str,
         year: int,
-        month: int,
+        month: Optional[int],
+        start_date: Optional[str],
+        end_date: Optional[str],
         filters: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Fetch monthly report data based on display mode."""
-        if display_mode == "detailed":
-            filters_dict = {
-                "report_type": "monthly",
-                "year": year,
-                "month": month,
-                "page": 1,
-                "page_size": 500,
-                **filters
-            }
-            return monthly_report_service.get_detailed_monthly_report(filters=filters_dict)
+        """
+        Fetch monthly report data based on display mode.
         
-        elif display_mode == "numeric":
-            filters_dict = {
-                "year": year,
-                "month": month,
-                **filters
-            }
-            return monthly_report_service.get_numeric_monthly_report(filters=filters_dict)
+        IMPORTANT: Uses the EXACT same logic as the view endpoint to ensure
+        export data matches what the user sees in the Generate button.
         
-        else:
-            raise ValueError(f"Invalid display_mode for monthly report: {display_mode}")
+        The only difference is page_size=9999 to get ALL records for export.
+        """
+        # Use the same unified entry point as the view endpoint
+        # This ensures 100% consistency between view and export data
+        result = monthly_report_service.generate_monthly_report(
+            year=year,
+            month=month,
+            start_date=start_date,
+            end_date=end_date,
+            mode=display_mode,
+            scope=filters.get("scope"),
+            administration_ids=filters.get("administration_ids"),
+            department_ids=filters.get("department_ids"),
+            section_ids=filters.get("section_ids"),
+            page=1,
+            page_size=9999  # Get ALL records for export (not paginated like view)
+        )
+        
+        return result
     
     def _fetch_seasonal_data(
         self,

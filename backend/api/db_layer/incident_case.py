@@ -33,6 +33,7 @@ UPDATABLE_FIELDS = {
     "HarmLevelID",
     "CaseStatusID",
     "SourceID",
+    "RequiresExplanation",
 }
 
 
@@ -67,16 +68,17 @@ def create_incident_case(data: dict) -> int:
             HarmLevelID,
             CaseStatusID,
             SourceID,
-            ExplanationStatusID
+            ExplanationStatusID,
+            RequiresExplanation
         )
         OUTPUT INSERTED.IncidentRequestCaseID
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         data.get("ComplaintText"),
-        data.get("ImmediateAction"),
-        data.get("TakenAction"),
+        data.get("ImmediateAction") or "",
+        data.get("TakenAction") or "",
         data.get("FeedbackRecievedDate"),
-        data.get("PatientName"),
+        data.get("PatientName") or "",
         data.get("IssuingOrgUnitID"),
         data.get("CreatedByUserID"),
         data.get("isINPatient", 1),
@@ -93,6 +95,7 @@ def create_incident_case(data: dict) -> int:
         data.get("CaseStatusID"),
         data.get("SourceID"),
         data.get("ExplanationStatusID"),
+        data.get("RequiresExplanation", 0),
     )
 
     incident_id = cursor.fetchone()[0]
@@ -197,7 +200,7 @@ def soft_delete_incident_case(
     conn.commit()
     conn.close()
 
-from core.database import get_connection
+from backend.core.database import get_connection
 
 
 def hard_delete_incident_case(incident_id: int) -> None:

@@ -7,11 +7,13 @@
   - submit_explanation()
   - update_explanation()
   - export_report()
+  - export_monthly_report()
   - ROUTE POST /seasonal/view
   - ROUTE POST /monthly/view
   - ROUTE POST /seasonal/{report_id}/explanation
   - ROUTE PUT /seasonal/{report_id}/explanation
   - ROUTE POST /export
+  - ROUTE POST /monthly/export
 - backend/api/routers/table_view_router.py
   - get_complaints()
   - get_filter_dropdown_options()
@@ -41,7 +43,13 @@
   - get_seasonal_hcat_report()
   - get_bulk_summary_report()
   - generate_csv_export()
+  - generate_xlsx_export()
   - generate_pdf_export()
+  - sanitize_value()
+  - generate_docx_export()
+  - _safe()
+  - sanitize_value()
+  - normalize_text()
 - backend/api/services/table_view_service.py
   - get_complaints_paginated()
   - get_filter_options()
@@ -58,6 +66,9 @@
 ## DB Layer
 - backend/api/db_layer/reports_db.py
   - get_connection()
+  - get_org_unit_descendants()
+  - debug_expand_org_units()
+  - build_org_filter_condition()
   - get_filtered_complaints()
   - get_monthly_statistics()
   - get_seasonal_hcat()

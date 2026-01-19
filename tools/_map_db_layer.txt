@@ -1,6 +1,6 @@
 # 🗺️ DB Layer — Subtree Map
 
-_Generated on: 2026-01-09 14:24_
+_Generated on: 2026-01-14 13:41_
 
 
 ---
@@ -24,6 +24,7 @@ _No functions found_
 **Functions:**
 - `get_connection()`
 - `get_admin_unit_by_id()`
+- `get_admin_unit_type()`
 - `get_admin_unit_children()`
 - `get_admin_unit_parent()`
 - `get_admin_unit_tree()`
@@ -142,6 +143,9 @@ _No functions found_
 ### 📄 backend\api\db_layer\reports_db.py
 **Functions:**
 - `get_connection()`
+- `get_org_unit_descendants()`
+- `debug_expand_org_units()`
+- `build_org_filter_condition()`
 - `get_filtered_complaints()`
 - `get_monthly_statistics()`
 - `get_seasonal_hcat()`
@@ -157,10 +161,13 @@ _No functions found_
 
 ### 📄 backend\api\db_layer\seasonal_report.py
 **Functions:**
+- `resolve_season_id_from_year_trimester()`
+- `validate_season_exists()`
 - `delete_seasonal_report_by_key()`
 - `insert_seasonal_report_header()`
 - `insert_seasonal_report_classification_stats()`
 - `insert_seasonal_report_policy_snapshot()`
+- `get_seasonal_report_keys_by_id()`
 - `get_full_seasonal_report()`
 
 ### 📄 backend\api\db_layer\seasonal_report_aggregation.py
