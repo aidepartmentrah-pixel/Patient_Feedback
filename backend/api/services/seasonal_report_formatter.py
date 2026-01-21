@@ -14,7 +14,7 @@ Features:
 - Policy targets footer in Arabic
 """
 
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 import os
 from docx import Document
 from docx.shared import Pt, Inches, RGBColor, Mm, Cm
@@ -1795,12 +1795,70 @@ def generate_comparative_seasonal_word_report(
     doc.add_paragraph()
     
     # ============================================================
-    # VISUALIZATION SECTION - GENERATE ALL CHARTS
+    # HIERARCHICAL CLASSIFICATION COMPARISON BY DOMAIN
     # ============================================================
     
-    # Build hierarchies for chart generation
+    # Build hierarchies for table generation (moved before graphs)
     current_hierarchy = _build_hierarchy(current_data.get("classification_stats", []))
     previous_hierarchy = _build_hierarchy(previous_data.get("classification_stats", []))
+    
+    # Merge all domains from both seasons
+    all_domains = set(list(current_hierarchy.keys()) + list(previous_hierarchy.keys()))
+    
+    # Create comparative tables for each domain
+    _create_comparative_hierarchical_tables_by_domain(
+        doc, 
+        current_hierarchy, 
+        previous_hierarchy, 
+        current_period,
+        previous_period,
+        all_domains,
+        language
+    )
+    
+    doc.add_paragraph()
+    
+    # ============================================================
+    # POLICY COMPLIANCE COMPARISON
+    # ============================================================
+    
+    policy_heading = doc.add_paragraph()
+    policy_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    policy_heading.paragraph_format.right_to_left = True
+    
+    ph_run = policy_heading.add_run("📊 مقارنة الامتثال للسياسة | Policy Compliance Comparison")
+    ph_run.font.bold = True
+    ph_run.font.size = Pt(14)
+    ph_run.font.name = 'Traditional Arabic'
+    ph_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+    
+    doc.add_paragraph()
+    
+    current_compliant = current_header.get('is_compliant', False)
+    previous_compliant = previous_header.get('is_compliant', False)
+    
+    compliance_para = doc.add_paragraph()
+    compliance_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    compliance_para.paragraph_format.right_to_left = True
+    
+    cp_text = f"{previous_period}: {'✓ مطابق' if previous_compliant else '✗ غير مطابق'}  |  {current_period}: {'✓ مطابق' if current_compliant else '✗ غير مطابق'}"
+    cp_run = compliance_para.add_run(cp_text)
+    cp_run.font.size = Pt(12)
+    cp_run.font.bold = True
+    cp_run.font.name = 'Traditional Arabic'
+    cp_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+    
+    doc.add_paragraph()
+    
+    # ============================================================
+    # PAGE BREAK BEFORE VISUALIZATION SECTION
+    # ============================================================
+    
+    doc.add_page_break()
+    
+    # ============================================================
+    # VISUALIZATION SECTION - GRAPHS AT THE END
+    # ============================================================
     
     try:
         # Add visual analysis heading
@@ -1837,76 +1895,56 @@ def generate_comparative_seasonal_word_report(
         
         # Generate Domain Spider Chart
         if all_domain_names:
-            domain_spider_heading = doc.add_paragraph()
-            domain_spider_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            dsh_run = domain_spider_heading.add_run("🕸️ مقارنة المجالات | Domain Spider Chart")
-            dsh_run.font.bold = True
-            dsh_run.font.size = Pt(13)
-            dsh_run.font.name = 'Traditional Arabic'
-            dsh_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
-            
             spider_buf = _generate_spider_chart(
                 labels=all_domain_names,
                 prev_values=prev_domain_values,
                 curr_values=curr_domain_values,
-                title="Domain Comparison",
+                title="Domain Comparison | مقارنة المجالات",
                 prev_label=previous_period,
                 curr_label=current_period
             )
+            
+            # Add image centered
             spider_para = doc.add_paragraph()
             spider_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
             spider_run = spider_para.add_run()
-            spider_run.add_picture(spider_buf, width=Inches(6.5))
+            spider_run.add_picture(spider_buf, width=Inches(6))
             
-            doc.add_paragraph()
+            # Add bilingual caption centered
+            caption_para = doc.add_paragraph()
+            caption_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            caption_run = caption_para.add_run("🕸️ مخطط العنكبوت - المجالات | Domain Spider Chart")
+            caption_run.font.bold = True
+            caption_run.font.size = Pt(11)
+            caption_run.font.name = 'Traditional Arabic'
+            caption_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+            
+            doc.add_paragraph()  # Spacer
         
-        # Generate Domain Diverging Bar Chart
+        # Generate Domain Bar Subtraction Chart
         if all_domain_names:
-            domain_bar_heading = doc.add_paragraph()
-            domain_bar_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            dbh_run = domain_bar_heading.add_run("📊 تغيرات المجالات | Domain Changes")
-            dbh_run.font.bold = True
-            dbh_run.font.size = Pt(13)
-            dbh_run.font.name = 'Traditional Arabic'
-            dbh_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
-            
             bar_buf = _generate_diverging_bar_chart(
                 labels=all_domain_names,
                 changes=domain_changes,
-                title="Domain Change Analysis"
+                title="Domain Change Analysis | تحليل تغيرات المجالات"
             )
+            
+            # Add image centered
             bar_para = doc.add_paragraph()
             bar_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
             bar_run = bar_para.add_run()
-            bar_run.add_picture(bar_buf, width=Inches(6.5))
+            bar_run.add_picture(bar_buf, width=Inches(6))
             
-            doc.add_paragraph()
-        
-        # Generate Domain Heatmap
-        if all_domain_names:
-            domain_heat_heading = doc.add_paragraph()
-            domain_heat_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            dhh_run = domain_heat_heading.add_run("🔥 خريطة حرارية للمجالات | Domain Heatmap")
-            dhh_run.font.bold = True
-            dhh_run.font.size = Pt(13)
-            dhh_run.font.name = 'Traditional Arabic'
-            dhh_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+            # Add bilingual caption centered
+            bar_caption_para = doc.add_paragraph()
+            bar_caption_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            bar_caption_run = bar_caption_para.add_run("📊 مخطط الأعمدة - الفروقات (المجالات) | Domain Bar Subtraction Chart")
+            bar_caption_run.font.bold = True
+            bar_caption_run.font.size = Pt(11)
+            bar_caption_run.font.name = 'Traditional Arabic'
+            bar_caption_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
             
-            # Prepare heatmap data: rows=domains, cols=[Previous, Current]
-            heatmap_data = np.array([prev_domain_values, curr_domain_values]).T
-            
-            heat_buf = _generate_heatmap(
-                data=heatmap_data,
-                row_labels=all_domain_names,
-                col_labels=[previous_period, current_period],
-                title="Domain Intensity Comparison"
-            )
-            heat_para = doc.add_paragraph()
-            heat_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            heat_run = heat_para.add_run()
-            heat_run.add_picture(heat_buf, width=Inches(6.5))
-            
-            doc.add_page_break()
+            doc.add_paragraph()  # Spacer
         
         # =================== CATEGORY LEVEL CHARTS ===================
         
@@ -1941,78 +1979,58 @@ def generate_comparative_seasonal_word_report(
         
         # Generate Category Spider Chart
         if all_category_names:
-            category_spider_heading = doc.add_paragraph()
-            category_spider_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            csh_run = category_spider_heading.add_run("🕸️ مقارنة الفئات | Category Spider Chart")
-            csh_run.font.bold = True
-            csh_run.font.size = Pt(13)
-            csh_run.font.name = 'Traditional Arabic'
-            csh_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
-            
             cat_spider_buf = _generate_spider_chart(
                 labels=all_category_names,
                 prev_values=prev_category_values,
                 curr_values=curr_category_values,
-                title="Category Comparison (Top 10)",
+                title="Category Comparison (Top 10) | مقارنة الفئات (أعلى 10)",
                 prev_label=previous_period,
                 curr_label=current_period
             )
+            
+            # Add image centered
             cat_spider_para = doc.add_paragraph()
             cat_spider_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
             cat_spider_run = cat_spider_para.add_run()
-            cat_spider_run.add_picture(cat_spider_buf, width=Inches(6.5))
+            cat_spider_run.add_picture(cat_spider_buf, width=Inches(6))
             
-            doc.add_paragraph()
+            # Add bilingual caption centered
+            cat_caption_para = doc.add_paragraph()
+            cat_caption_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            cat_caption_run = cat_caption_para.add_run("🕸️ مخطط العنكبوت - الفئات | Category Spider Chart")
+            cat_caption_run.font.bold = True
+            cat_caption_run.font.size = Pt(11)
+            cat_caption_run.font.name = 'Traditional Arabic'
+            cat_caption_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+            
+            doc.add_paragraph()  # Spacer
         
-        # Generate Category Diverging Bar Chart
+        # Generate Category Bar Subtraction Chart
         if all_category_names:
-            category_bar_heading = doc.add_paragraph()
-            category_bar_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            cbh_run = category_bar_heading.add_run("📊 تغيرات الفئات | Category Changes")
-            cbh_run.font.bold = True
-            cbh_run.font.size = Pt(13)
-            cbh_run.font.name = 'Traditional Arabic'
-            cbh_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
-            
             cat_bar_buf = _generate_diverging_bar_chart(
                 labels=all_category_names,
                 changes=category_changes,
-                title="Category Change Analysis (Top 10)"
+                title="Category Change Analysis (Top 10) | تحليل تغيرات الفئات (أعلى 10)"
             )
+            
+            # Add image centered
             cat_bar_para = doc.add_paragraph()
             cat_bar_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
             cat_bar_run = cat_bar_para.add_run()
-            cat_bar_run.add_picture(cat_bar_buf, width=Inches(6.5))
+            cat_bar_run.add_picture(cat_bar_buf, width=Inches(6))
             
-            doc.add_paragraph()
+            # Add bilingual caption centered
+            cat_bar_caption_para = doc.add_paragraph()
+            cat_bar_caption_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            cat_bar_caption_run = cat_bar_caption_para.add_run("📊 مخطط الأعمدة - الفروقات (الفئات) | Category Bar Subtraction Chart")
+            cat_bar_caption_run.font.bold = True
+            cat_bar_caption_run.font.size = Pt(11)
+            cat_bar_caption_run.font.name = 'Traditional Arabic'
+            cat_bar_caption_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+            
+            doc.add_paragraph()  # Spacer
         
-        # Generate Category Heatmap
-        if all_category_names:
-            category_heat_heading = doc.add_paragraph()
-            category_heat_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            chh_run = category_heat_heading.add_run("🔥 خريطة حرارية للفئات | Category Heatmap")
-            chh_run.font.bold = True
-            chh_run.font.size = Pt(13)
-            chh_run.font.name = 'Traditional Arabic'
-            chh_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
-            
-            # Prepare heatmap data
-            cat_heatmap_data = np.array([prev_category_values, curr_category_values]).T
-            
-            cat_heat_buf = _generate_heatmap(
-                data=cat_heatmap_data,
-                row_labels=all_category_names,
-                col_labels=[previous_period, current_period],
-                title="Category Intensity Comparison (Top 10)"
-            )
-            cat_heat_para = doc.add_paragraph()
-            cat_heat_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            cat_heat_run = cat_heat_para.add_run()
-            cat_heat_run.add_picture(cat_heat_buf, width=Inches(6.5))
-            
-            doc.add_page_break()
-        
-        # =================== SUBCATEGORY LEVEL CHARTS ===================
+        # =================== SUBCATEGORY LEVEL CHART ===================
         
         # Extract subcategory data
         prev_subcategories, prev_subcategory_counts = _extract_subcategory_data(previous_hierarchy)
@@ -2043,78 +2061,33 @@ def generate_comparative_seasonal_word_report(
             curr_subcategory_values = [curr_subcategory_values[i] for i in sorted_indices]
             subcategory_changes = [subcategory_changes[i] for i in sorted_indices]
         
-        # Generate Subcategory Spider Chart
+        # Generate Subcategory Spider Chart ONLY (no bar or heatmap)
         if all_subcategory_names:
-            subcat_spider_heading = doc.add_paragraph()
-            subcat_spider_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            ssh_run = subcat_spider_heading.add_run("🕸️ مقارنة الفئات الفرعية | Subcategory Spider Chart")
-            ssh_run.font.bold = True
-            ssh_run.font.size = Pt(13)
-            ssh_run.font.name = 'Traditional Arabic'
-            ssh_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
-            
             subcat_spider_buf = _generate_spider_chart(
                 labels=all_subcategory_names,
                 prev_values=prev_subcategory_values,
                 curr_values=curr_subcategory_values,
-                title="Subcategory Comparison (Top 10)",
+                title="Subcategory Comparison (Top 10) | مقارنة الفئات الفرعية (أعلى 10)",
                 prev_label=previous_period,
                 curr_label=current_period
             )
+            
+            # Add image centered
             subcat_spider_para = doc.add_paragraph()
             subcat_spider_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
             subcat_spider_run = subcat_spider_para.add_run()
-            subcat_spider_run.add_picture(subcat_spider_buf, width=Inches(6.5))
+            subcat_spider_run.add_picture(subcat_spider_buf, width=Inches(6))
             
-            doc.add_paragraph()
-        
-        # Generate Subcategory Diverging Bar Chart
-        if all_subcategory_names:
-            subcat_bar_heading = doc.add_paragraph()
-            subcat_bar_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            sbh_run = subcat_bar_heading.add_run("📊 تغيرات الفئات الفرعية | Subcategory Changes")
-            sbh_run.font.bold = True
-            sbh_run.font.size = Pt(13)
-            sbh_run.font.name = 'Traditional Arabic'
-            sbh_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+            # Add bilingual caption centered
+            subcat_caption_para = doc.add_paragraph()
+            subcat_caption_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            subcat_caption_run = subcat_caption_para.add_run("🕸️ مخطط العنكبوت - الفئات الفرعية | SubCategory Spider Chart")
+            subcat_caption_run.font.bold = True
+            subcat_caption_run.font.size = Pt(11)
+            subcat_caption_run.font.name = 'Traditional Arabic'
+            subcat_caption_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
             
-            subcat_bar_buf = _generate_diverging_bar_chart(
-                labels=all_subcategory_names,
-                changes=subcategory_changes,
-                title="Subcategory Change Analysis (Top 10)"
-            )
-            subcat_bar_para = doc.add_paragraph()
-            subcat_bar_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            subcat_bar_run = subcat_bar_para.add_run()
-            subcat_bar_run.add_picture(subcat_bar_buf, width=Inches(6.5))
-            
-            doc.add_paragraph()
-        
-        # Generate Subcategory Heatmap
-        if all_subcategory_names:
-            subcat_heat_heading = doc.add_paragraph()
-            subcat_heat_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            shh_run = subcat_heat_heading.add_run("🔥 خريطة حرارية للفئات الفرعية | Subcategory Heatmap")
-            shh_run.font.bold = True
-            shh_run.font.size = Pt(13)
-            shh_run.font.name = 'Traditional Arabic'
-            shh_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
-            
-            # Prepare heatmap data
-            subcat_heatmap_data = np.array([prev_subcategory_values, curr_subcategory_values]).T
-            
-            subcat_heat_buf = _generate_heatmap(
-                data=subcat_heatmap_data,
-                row_labels=all_subcategory_names,
-                col_labels=[previous_period, current_period],
-                title="Subcategory Intensity Comparison (Top 10)"
-            )
-            subcat_heat_para = doc.add_paragraph()
-            subcat_heat_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            subcat_heat_run = subcat_heat_para.add_run()
-            subcat_heat_run.add_picture(subcat_heat_buf, width=Inches(6.5))
-            
-            doc.add_page_break()
+            doc.add_paragraph()  # Spacer
         
     except Exception as e:
         # If chart generation fails, add error message but continue with report
@@ -2427,6 +2400,972 @@ def _create_comparative_hierarchical_tables_by_domain(
                 print(f"[FORMATTER] Warning: Could not merge domain cells: {e}")
     
     doc.add_paragraph()
+
+
+def generate_3_quarter_comparison_report(comparison_data: Dict[str, Any], language: str = 'ar') -> Document:
+    """
+    Generate a professional Word document comparing 3 seasonal quarters.
+    
+    Features:
+    - Summary table with 3 quarters + trend indicators
+    - Hierarchical tables showing domain/category/subcategory comparisons
+    - Spider charts only (3 graphs: Domain, Category, SubCategory)
+    - Trend indicators (↑↑, ↑, →, ↓, ↓↓)
+    - A4 Landscape orientation with Arabic support
+    
+    Args:
+        comparison_data: Dictionary containing comparison data from seasonal_comparison_service
+        language: Language code ('ar' or 'en')
+        
+    Returns:
+        Document object ready for saving
+    """
+    doc = Document()
+    
+    # Configure page layout (A4 Landscape)
+    section = doc.sections[0]
+    section.page_width = Mm(297)
+    section.page_height = Mm(210)
+    section.left_margin = Cm(1.5)
+    section.right_margin = Cm(1.5)
+    section.top_margin = Cm(1.5)
+    section.bottom_margin = Cm(1.5)
+    
+    reports = comparison_data['reports']
+    periods = comparison_data['periods']
+    trends = comparison_data['trends']
+    orgunit_name = comparison_data.get('orgunit_name', 'N/A')
+    
+    # =============================
+    # 1. HEADER WITH LOGO
+    # =============================
+    try:
+        logo_path = os.path.join(os.path.dirname(__file__), '..', '..', 'assets', 'logo.png')
+        if os.path.exists(logo_path):
+            section.header_distance = Inches(0.1)
+            header_section = section.header
+            header_para = header_section.paragraphs[0]
+            header_para.clear()
+            header_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            run = header_para.add_run()
+            run.add_picture(logo_path, width=Inches(0.9))
+    except Exception as e:
+        print(f"[FORMATTER] Could not add logo: {e}")
+        pass
+    
+    # Title
+    title_text = "تقرير المقارنة الموسمية - 3 أرباع" if language == 'ar' else "Seasonal Comparison Report - 3 Quarters"
+    title = doc.add_paragraph()
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    title_run = title.add_run(title_text)
+    title_run.font.size = Pt(18)
+    title_run.font.bold = True
+    title_run.font.name = 'Traditional Arabic'
+    title_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+    
+    doc.add_paragraph()
+    
+    # =============================
+    # 2. SUMMARY TABLE (3 QUARTERS + TRENDS)
+    # =============================
+    summary_heading = doc.add_paragraph()
+    summary_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    summary_run = summary_heading.add_run("📊 ملخص المقارنة | Comparison Summary")
+    summary_run.font.size = Pt(14)
+    summary_run.font.bold = True
+    summary_run.font.name = 'Traditional Arabic'
+    summary_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+    
+    # Create summary table: 5 columns (Metric | Q1 | Q2 | Q3 | Trend)
+    summary_table = doc.add_table(rows=11, cols=5)
+    summary_table.alignment = WD_TABLE_ALIGNMENT.RIGHT
+    summary_table.style = 'Table Grid'
+    
+    # Header row
+    headers = ['الاتجاه | Trend', periods[2], periods[1], periods[0], 'المؤشر | Metric']
+    for i, header_text in enumerate(headers):
+        cell = summary_table.rows[0].cells[i]
+        cell.text = header_text
+        cell.paragraphs[0].runs[0].font.bold = True
+        cell.paragraphs[0].runs[0].font.size = Pt(11)
+        cell.paragraphs[0].runs[0].font.name = 'Traditional Arabic'
+        cell.paragraphs[0].runs[0]._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+        center_cell_content(cell)
+        set_cell_shading(cell, '4472C4')
+        cell.paragraphs[0].runs[0].font.color.rgb = RGBColor(255, 255, 255)
+    
+    # Data rows
+    metrics = [
+        ('إجمالي الحالات | Total Cases', 'total_cases', 'total_cases'),
+        ('السريرية | Clinical', 'clinical_domain_count', 'clinical'),
+        ('الإدارية | Management', 'management_domain_count', 'management'),
+        ('العلاقاتية | Relational', 'relational_domain_count', 'relational'),
+        ('منخفضة الخطورة | Low Severity', 'low_severity_count', 'low_severity'),
+        ('متوسطة الخطورة | Medium Severity', 'medium_severity_count', 'medium_severity'),
+        ('عالية الخطورة | High Severity', 'high_severity_count', 'high_severity'),
+        ('إجراءات وقائية | Prevention Actions', 'prevention_action_count', None),
+        ('تفسيرات مقدمة | Explanations Submitted', 'explanation_count', None),
+        ('حالات مفتوحة | Open Cases', 'open_cases_count', None)
+    ]
+    
+    for row_idx, (metric_label, metric_key, trend_key) in enumerate(metrics, start=1):
+        row = summary_table.rows[row_idx]
+        
+        # Metric name
+        row.cells[4].text = metric_label
+        row.cells[4].paragraphs[0].runs[0].font.size = Pt(10)
+        row.cells[4].paragraphs[0].runs[0].font.name = 'Traditional Arabic'
+        row.cells[4].paragraphs[0].runs[0]._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+        row.cells[4].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        set_cell_shading(row.cells[4], 'D9E2F3')
+        
+        # Q1, Q2, Q3 values
+        for i in range(3):
+            value = reports[i]['header'].get(metric_key, 0)
+            row.cells[3-i].text = str(value)
+            row.cells[3-i].paragraphs[0].runs[0].font.size = Pt(10)
+            center_cell_content(row.cells[3-i])
+        
+        # Trend indicator
+        if trend_key and trend_key in trends:
+            row.cells[0].text = trends[trend_key]
+            row.cells[0].paragraphs[0].runs[0].font.size = Pt(14)
+            center_cell_content(row.cells[0])
+            
+            # Color code trends
+            trend_value = trends[trend_key]
+            if trend_value in ['↑', '↑↑']:
+                set_cell_shading(row.cells[0], 'C6EFCE')  # Green
+            elif trend_value in ['↓', '↓↓']:
+                set_cell_shading(row.cells[0], 'FFC7CE')  # Red
+            else:
+                set_cell_shading(row.cells[0], 'FFEB9C')  # Yellow
+        else:
+            row.cells[0].text = '—'
+            center_cell_content(row.cells[0])
+    
+    doc.add_paragraph()
+    
+    # =============================
+    # 3. HIERARCHICAL COMPARISON TABLES
+    # =============================
+    
+    # 3A. Domain-Level Comparison
+    domain_heading = doc.add_paragraph()
+    domain_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    domain_run = domain_heading.add_run("🔷 مقارنة المجالات | Domain Comparison")
+    domain_run.font.size = Pt(14)
+    domain_run.font.bold = True
+    domain_run.font.name = 'Traditional Arabic'
+    domain_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+    
+    domain_data = comparison_data['domain_comparison']
+    _create_3quarter_hierarchical_table(doc, domain_data, periods, level='domain')
+    
+    doc.add_paragraph()
+    
+    # 3B. Category-Level Comparison
+    category_heading = doc.add_paragraph()
+    category_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    category_run = category_heading.add_run("🔶 مقارنة الفئات | Category Comparison")
+    category_run.font.size = Pt(14)
+    category_run.font.bold = True
+    category_run.font.name = 'Traditional Arabic'
+    category_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+    
+    category_data = comparison_data['category_comparison']
+    _create_3quarter_hierarchical_table(doc, category_data, periods, level='category')
+    
+    doc.add_paragraph()
+    
+    # 3C. SubCategory-Level Comparison
+    subcategory_heading = doc.add_paragraph()
+    subcategory_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    subcategory_run = subcategory_heading.add_run("🔸 مقارنة الفئات الفرعية | SubCategory Comparison")
+    subcategory_run.font.size = Pt(14)
+    subcategory_run.font.bold = True
+    subcategory_run.font.name = 'Traditional Arabic'
+    subcategory_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+    
+    subcategory_data = comparison_data['subcategory_comparison']
+    _create_3quarter_hierarchical_table(doc, subcategory_data, periods, level='subcategory')
+    
+    # =============================
+    # 4. PAGE BREAK BEFORE GRAPHS
+    # =============================
+    doc.add_page_break()
+    
+    # =============================
+    # 5. VISUAL ANALYSIS - SPIDER CHARTS ONLY
+    # =============================
+    visual_heading = doc.add_paragraph()
+    visual_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    visual_run = visual_heading.add_run("📊 التحليل البصري | Visual Analysis")
+    visual_run.font.size = Pt(16)
+    visual_run.font.bold = True
+    visual_run.font.name = 'Traditional Arabic'
+    visual_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+    
+    doc.add_paragraph()
+    
+    # 5A. Domain Spider Chart
+    domain_spider = _generate_3quarter_spider_chart(
+        domain_data,
+        periods,
+        title_ar="مخطط العنكبوت - المجالات",
+        title_en="Domain Spider Chart"
+    )
+    
+    spider_para = doc.add_paragraph()
+    spider_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    spider_run = spider_para.add_run()
+    spider_run.add_picture(domain_spider, width=Inches(7))
+    
+    caption_para = doc.add_paragraph()
+    caption_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    caption_run = caption_para.add_run("🕸️ مخطط العنكبوت - المجالات | Domain Spider Chart")
+    caption_run.font.bold = True
+    caption_run.font.size = Pt(11)
+    caption_run.font.name = 'Traditional Arabic'
+    caption_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+    
+    doc.add_paragraph()
+    
+    # 5B. Category Spider Chart
+    category_spider = _generate_3quarter_spider_chart(
+        category_data,
+        periods,
+        title_ar="مخطط العنكبوت - الفئات",
+        title_en="Category Spider Chart",
+        max_items=10
+    )
+    
+    spider_para = doc.add_paragraph()
+    spider_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    spider_run = spider_para.add_run()
+    spider_run.add_picture(category_spider, width=Inches(7))
+    
+    caption_para = doc.add_paragraph()
+    caption_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    caption_run = caption_para.add_run("🕸️ مخطط العنكبوت - الفئات | Category Spider Chart")
+    caption_run.font.bold = True
+    caption_run.font.size = Pt(11)
+    caption_run.font.name = 'Traditional Arabic'
+    caption_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+    
+    doc.add_paragraph()
+    
+    # 5C. SubCategory Spider Chart
+    subcategory_spider = _generate_3quarter_spider_chart(
+        subcategory_data,
+        periods,
+        title_ar="مخطط العنكبوت - الفئات الفرعية",
+        title_en="SubCategory Spider Chart",
+        max_items=12
+    )
+    
+    spider_para = doc.add_paragraph()
+    spider_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    spider_run = spider_para.add_run()
+    spider_run.add_picture(subcategory_spider, width=Inches(7))
+    
+    caption_para = doc.add_paragraph()
+    caption_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    caption_run = caption_para.add_run("🕸️ مخطط العنكبوت - الفئات الفرعية | SubCategory Spider Chart")
+    caption_run.font.bold = True
+    caption_run.font.size = Pt(11)
+    caption_run.font.name = 'Traditional Arabic'
+    caption_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+    
+    return doc
+
+
+def _create_3quarter_hierarchical_table(doc: Document, data: Dict[str, List[int]], periods: List[str], level: str):
+    """
+    Create a hierarchical table comparing 3 quarters for a specific level (domain/category/subcategory).
+    
+    Args:
+        doc: Document object
+        data: Dictionary mapping item names to list of 3 values
+        periods: List of 3 period labels
+        level: 'domain', 'category', or 'subcategory'
+    """
+    # Create table: 5 columns (Item | Q1 | Q2 | Q3 | Trend)
+    num_rows = len(data) + 2  # +1 for header, +1 for totals
+    table = doc.add_table(rows=num_rows, cols=5)
+    table.alignment = WD_TABLE_ALIGNMENT.RIGHT
+    table.style = 'Table Grid'
+    
+    # Header row
+    headers = ['الاتجاه | Trend', periods[2], periods[1], periods[0], f'{"المجال" if level == "domain" else "الفئة" if level == "category" else "الفئة الفرعية"} | {level.title()}']
+    for i, header_text in enumerate(headers):
+        cell = table.rows[0].cells[i]
+        cell.text = header_text
+        cell.paragraphs[0].runs[0].font.bold = True
+        cell.paragraphs[0].runs[0].font.size = Pt(11)
+        cell.paragraphs[0].runs[0].font.name = 'Traditional Arabic'
+        cell.paragraphs[0].runs[0]._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+        center_cell_content(cell)
+        set_cell_shading(cell, '4472C4')
+        cell.paragraphs[0].runs[0].font.color.rgb = RGBColor(255, 255, 255)
+    
+    # Data rows
+    totals = [0, 0, 0]
+    for row_idx, (item_name, values) in enumerate(sorted(data.items()), start=1):
+        row = table.rows[row_idx]
+        
+        # Item name
+        row.cells[4].text = item_name
+        row.cells[4].paragraphs[0].runs[0].font.size = Pt(10)
+        row.cells[4].paragraphs[0].runs[0].font.name = 'Traditional Arabic'
+        row.cells[4].paragraphs[0].runs[0]._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+        row.cells[4].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        
+        # Quarter values
+        for i in range(3):
+            row.cells[3-i].text = str(values[i])
+            row.cells[3-i].paragraphs[0].runs[0].font.size = Pt(10)
+            center_cell_content(row.cells[3-i])
+            totals[i] += values[i]
+        
+        # Trend indicator
+        trend = _calculate_trend_indicator(values[0], values[-1])
+        row.cells[0].text = trend
+        row.cells[0].paragraphs[0].runs[0].font.size = Pt(14)
+        center_cell_content(row.cells[0])
+        
+        # Color code trends
+        if trend in ['↑', '↑↑']:
+            set_cell_shading(row.cells[0], 'C6EFCE')  # Green
+        elif trend in ['↓', '↓↓']:
+            set_cell_shading(row.cells[0], 'FFC7CE')  # Red
+        else:
+            set_cell_shading(row.cells[0], 'FFEB9C')  # Yellow
+    
+    # Totals row
+    totals_row = table.rows[-1]
+    totals_row.cells[4].text = 'الإجمالي | Total'
+    totals_row.cells[4].paragraphs[0].runs[0].font.bold = True
+    totals_row.cells[4].paragraphs[0].runs[0].font.size = Pt(11)
+    totals_row.cells[4].paragraphs[0].runs[0].font.name = 'Traditional Arabic'
+    totals_row.cells[4].paragraphs[0].runs[0]._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+    totals_row.cells[4].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    set_cell_shading(totals_row.cells[4], 'D9E2F3')
+    
+    for i in range(3):
+        totals_row.cells[3-i].text = str(totals[i])
+        totals_row.cells[3-i].paragraphs[0].runs[0].font.bold = True
+        totals_row.cells[3-i].paragraphs[0].runs[0].font.size = Pt(11)
+        center_cell_content(totals_row.cells[3-i])
+        set_cell_shading(totals_row.cells[3-i], 'D9E2F3')
+    
+    # Overall trend
+    overall_trend = _calculate_trend_indicator(totals[0], totals[-1])
+    totals_row.cells[0].text = overall_trend
+    totals_row.cells[0].paragraphs[0].runs[0].font.size = Pt(14)
+    totals_row.cells[0].paragraphs[0].runs[0].font.bold = True
+    center_cell_content(totals_row.cells[0])
+    set_cell_shading(totals_row.cells[0], 'BDD7EE')
+
+
+def _calculate_trend_indicator(first_value: int, last_value: int) -> str:
+    """
+    Calculate trend indicator for 3-quarter comparison.
+    
+    Returns:
+        Trend string: '↑↑', '↑', '→', '↓', '↓↓'
+    """
+    if first_value == 0:
+        if last_value == 0:
+            return '→'
+        else:
+            return '↑↑'
+    
+    change_percent = ((last_value - first_value) / first_value) * 100
+    
+    if change_percent > 20:
+        return '↑↑'
+    elif change_percent > 5:
+        return '↑'
+    elif change_percent < -20:
+        return '↓↓'
+    elif change_percent < -5:
+        return '↓'
+    else:
+        return '→'
+
+
+def _generate_3quarter_spider_chart(
+    data: Dict[str, List[int]],
+    periods: List[str],
+    title_ar: str,
+    title_en: str,
+    max_items: int = 8
+) -> io.BytesIO:
+    """
+    Generate a spider chart comparing 3 quarters for multiple items.
+    
+    Args:
+        data: Dictionary mapping item names to list of 3 values
+        periods: List of 3 period labels
+        title_ar: Arabic title
+        title_en: English title
+        max_items: Maximum number of items to display
+        
+    Returns:
+        BytesIO buffer containing the chart image
+    """
+    # Setup Arabic font
+    font_path = 'C:/Windows/Fonts/trado.ttf'
+    if os.path.exists(font_path):
+        prop = fm.FontProperties(fname=font_path)
+        plt.rcParams['font.family'] = prop.get_name()
+    
+    # Select top items by total count
+    sorted_items = sorted(data.items(), key=lambda x: sum(x[1]), reverse=True)[:max_items]
+    
+    if not sorted_items:
+        # Return empty chart
+        fig, ax = plt.subplots(figsize=(10, 8), subplot_kw=dict(projection='polar'))
+        ax.text(0.5, 0.5, 'لا توجد بيانات\nNo Data', ha='center', va='center', 
+                transform=ax.transAxes, fontsize=16)
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+        plt.close(fig)
+        buf.seek(0)
+        return buf
+    
+    categories = [item[0] for item in sorted_items]
+    num_vars = len(categories)
+    
+    # Compute angle for each axis
+    angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
+    angles += angles[:1]  # Close the circle
+    
+    # Initialize plot
+    fig, ax = plt.subplots(figsize=(12, 10), subplot_kw=dict(projection='polar'))
+    
+    # Colors for 3 quarters
+    colors = ['#4472C4', '#ED7D31', '#A5A5A5']
+    
+    # Plot data for each quarter
+    for i in range(3):
+        values = [item[1][i] for item in sorted_items]
+        values += values[:1]  # Close the circle
+        
+        ax.plot(angles, values, 'o-', linewidth=2, label=periods[i], color=colors[i])
+        ax.fill(angles, values, alpha=0.15, color=colors[i])
+    
+    # Fix axis to go in the right order and start at 12 o'clock
+    ax.set_theta_offset(np.pi / 2)
+    ax.set_theta_direction(-1)
+    
+    # Set category labels
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(categories, fontsize=10)
+    
+    # Add title
+    title_text = f"{title_ar}\n{title_en}"
+    plt.title(title_text, size=14, weight='bold', pad=20)
+    
+    # Add legend
+    plt.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1), fontsize=10)
+    
+    # Grid
+    ax.grid(True, linestyle='--', alpha=0.7)
+    
+    # Save to buffer
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+    plt.close(fig)
+    buf.seek(0)
+    
+    return buf
+
+
+def generate_4_quarter_comparison_report(comparison_data: Dict[str, Any], language: str = 'ar') -> Document:
+    """
+    Generate a professional Word document comparing 4 seasonal quarters (full year).
+    
+    Features:
+    - Summary table with 4 quarters + yearly total + trend indicators
+    - Hierarchical tables showing domain/category/subcategory comparisons
+    - Spider charts only (3 graphs: Domain, Category, SubCategory)
+    - Trend indicators (↑↑, ↑, →, ↓, ↓↓)
+    - A4 Landscape orientation with Arabic support
+    
+    Args:
+        comparison_data: Dictionary containing comparison data from seasonal_comparison_service
+        language: Language code ('ar' or 'en')
+        
+    Returns:
+        Document object ready for saving
+    """
+    doc = Document()
+    
+    # Configure page layout (A4 Landscape)
+    section = doc.sections[0]
+    section.page_width = Mm(297)
+    section.page_height = Mm(210)
+    section.left_margin = Cm(1.5)
+    section.right_margin = Cm(1.5)
+    section.top_margin = Cm(1.5)
+    section.bottom_margin = Cm(1.5)
+    
+    reports = comparison_data['reports']
+    periods = comparison_data['periods']
+    trends = comparison_data['trends']
+    yearly_totals = comparison_data['yearly_totals']
+    orgunit_name = comparison_data.get('orgunit_name', 'N/A')
+    
+    # =============================
+    # 1. HEADER WITH LOGO
+    # =============================
+    try:
+        logo_path = os.path.join(os.path.dirname(__file__), '..', '..', 'assets', 'logo.png')
+        if os.path.exists(logo_path):
+            section.header_distance = Inches(0.1)
+            header_section = section.header
+            header_para = header_section.paragraphs[0]
+            header_para.clear()
+            header_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            run = header_para.add_run()
+            run.add_picture(logo_path, width=Inches(0.9))
+    except Exception as e:
+        print(f"[FORMATTER] Could not add logo: {e}")
+        pass
+    
+    # Title
+    title_text = "تقرير المقارنة الموسمية - التقرير السنوي (4 أرباع)" if language == 'ar' else "Seasonal Comparison Report - Annual (4 Quarters)"
+    title = doc.add_paragraph()
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    title_run = title.add_run(title_text)
+    title_run.font.size = Pt(18)
+    title_run.font.bold = True
+    title_run.font.name = 'Traditional Arabic'
+    title_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+    
+    doc.add_paragraph()
+    
+    # =============================
+    # 2. SUMMARY TABLE (4 QUARTERS + YEARLY TOTAL + TRENDS)
+    # =============================
+    summary_heading = doc.add_paragraph()
+    summary_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    summary_run = summary_heading.add_run("📊 ملخص المقارنة السنوية | Annual Comparison Summary")
+    summary_run.font.size = Pt(14)
+    summary_run.font.bold = True
+    summary_run.font.name = 'Traditional Arabic'
+    summary_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+    
+    # Create summary table: 7 columns (Metric | Q1 | Q2 | Q3 | Q4 | Yearly Total | Trend)
+    summary_table = doc.add_table(rows=11, cols=7)
+    summary_table.alignment = WD_TABLE_ALIGNMENT.RIGHT
+    summary_table.style = 'Table Grid'
+    
+    # Header row
+    headers = ['الاتجاه | Trend', 'الإجمالي السنوي | Yearly Total', periods[3], periods[2], periods[1], periods[0], 'المؤشر | Metric']
+    for i, header_text in enumerate(headers):
+        cell = summary_table.rows[0].cells[i]
+        cell.text = header_text
+        cell.paragraphs[0].runs[0].font.bold = True
+        cell.paragraphs[0].runs[0].font.size = Pt(10)
+        cell.paragraphs[0].runs[0].font.name = 'Traditional Arabic'
+        cell.paragraphs[0].runs[0]._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+        center_cell_content(cell)
+        set_cell_shading(cell, '4472C4')
+        cell.paragraphs[0].runs[0].font.color.rgb = RGBColor(255, 255, 255)
+    
+    # Data rows
+    metrics = [
+        ('إجمالي الحالات | Total Cases', 'total_cases', 'total_cases'),
+        ('السريرية | Clinical', 'clinical_domain_count', 'clinical'),
+        ('الإدارية | Management', 'management_domain_count', 'management'),
+        ('العلاقاتية | Relational', 'relational_domain_count', 'relational'),
+        ('منخفضة الخطورة | Low Severity', 'low_severity_count', 'low_severity'),
+        ('متوسطة الخطورة | Medium Severity', 'medium_severity_count', 'medium_severity'),
+        ('عالية الخطورة | High Severity', 'high_severity_count', 'high_severity'),
+        ('إجراءات وقائية | Prevention Actions', 'prevention_action_count', None),
+        ('تفسيرات مقدمة | Explanations Submitted', 'explanation_count', None),
+        ('حالات مفتوحة | Open Cases', 'open_cases_count', None)
+    ]
+    
+    for row_idx, (metric_label, metric_key, trend_key) in enumerate(metrics, start=1):
+        row = summary_table.rows[row_idx]
+        
+        # Metric name
+        row.cells[6].text = metric_label
+        row.cells[6].paragraphs[0].runs[0].font.size = Pt(9)
+        row.cells[6].paragraphs[0].runs[0].font.name = 'Traditional Arabic'
+        row.cells[6].paragraphs[0].runs[0]._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+        row.cells[6].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        set_cell_shading(row.cells[6], 'D9E2F3')
+        
+        # Q1, Q2, Q3, Q4 values
+        for i in range(4):
+            value = reports[i]['header'].get(metric_key, 0)
+            row.cells[5-i].text = str(value)
+            row.cells[5-i].paragraphs[0].runs[0].font.size = Pt(9)
+            center_cell_content(row.cells[5-i])
+        
+        # Yearly total
+        if trend_key and trend_key in yearly_totals:
+            yearly_value = yearly_totals[trend_key]
+        else:
+            yearly_value = sum(reports[i]['header'].get(metric_key, 0) for i in range(4))
+        
+        row.cells[1].text = str(yearly_value)
+        row.cells[1].paragraphs[0].runs[0].font.size = Pt(9)
+        row.cells[1].paragraphs[0].runs[0].font.bold = True
+        center_cell_content(row.cells[1])
+        set_cell_shading(row.cells[1], 'E7E6E6')
+        
+        # Trend indicator
+        if trend_key and trend_key in trends:
+            row.cells[0].text = trends[trend_key]
+            row.cells[0].paragraphs[0].runs[0].font.size = Pt(14)
+            center_cell_content(row.cells[0])
+            
+            # Color code trends
+            trend_value = trends[trend_key]
+            if trend_value in ['↑', '↑↑']:
+                set_cell_shading(row.cells[0], 'C6EFCE')  # Green
+            elif trend_value in ['↓', '↓↓']:
+                set_cell_shading(row.cells[0], 'FFC7CE')  # Red
+            else:
+                set_cell_shading(row.cells[0], 'FFEB9C')  # Yellow
+        else:
+            row.cells[0].text = '—'
+            center_cell_content(row.cells[0])
+    
+    doc.add_paragraph()
+    
+    # =============================
+    # 3. HIERARCHICAL COMPARISON TABLES
+    # =============================
+    
+    # 3A. Domain-Level Comparison
+    domain_heading = doc.add_paragraph()
+    domain_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    domain_run = domain_heading.add_run("🔷 مقارنة المجالات | Domain Comparison")
+    domain_run.font.size = Pt(14)
+    domain_run.font.bold = True
+    domain_run.font.name = 'Traditional Arabic'
+    domain_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+    
+    domain_data = comparison_data['domain_comparison']
+    _create_4quarter_hierarchical_table(doc, domain_data, periods, yearly_totals=None, level='domain')
+    
+    doc.add_paragraph()
+    
+    # 3B. Category-Level Comparison
+    category_heading = doc.add_paragraph()
+    category_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    category_run = category_heading.add_run("🔶 مقارنة الفئات | Category Comparison")
+    category_run.font.size = Pt(14)
+    category_run.font.bold = True
+    category_run.font.name = 'Traditional Arabic'
+    category_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+    
+    category_data = comparison_data['category_comparison']
+    _create_4quarter_hierarchical_table(doc, category_data, periods, yearly_totals=None, level='category')
+    
+    doc.add_paragraph()
+    
+    # 3C. SubCategory-Level Comparison
+    subcategory_heading = doc.add_paragraph()
+    subcategory_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    subcategory_run = subcategory_heading.add_run("🔸 مقارنة الفئات الفرعية | SubCategory Comparison")
+    subcategory_run.font.size = Pt(14)
+    subcategory_run.font.bold = True
+    subcategory_run.font.name = 'Traditional Arabic'
+    subcategory_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+    
+    subcategory_data = comparison_data['subcategory_comparison']
+    _create_4quarter_hierarchical_table(doc, subcategory_data, periods, yearly_totals=None, level='subcategory')
+    
+    # =============================
+    # 4. PAGE BREAK BEFORE GRAPHS
+    # =============================
+    doc.add_page_break()
+    
+    # =============================
+    # 5. VISUAL ANALYSIS - SPIDER CHARTS ONLY
+    # =============================
+    visual_heading = doc.add_paragraph()
+    visual_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    visual_run = visual_heading.add_run("📊 التحليل البصري | Visual Analysis")
+    visual_run.font.size = Pt(16)
+    visual_run.font.bold = True
+    visual_run.font.name = 'Traditional Arabic'
+    visual_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+    
+    doc.add_paragraph()
+    
+    # 5A. Domain Spider Chart
+    domain_spider = _generate_4quarter_spider_chart(
+        domain_data,
+        periods,
+        title_ar="مخطط العنكبوت - المجالات",
+        title_en="Domain Spider Chart"
+    )
+    
+    spider_para = doc.add_paragraph()
+    spider_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    spider_run = spider_para.add_run()
+    spider_run.add_picture(domain_spider, width=Inches(7))
+    
+    caption_para = doc.add_paragraph()
+    caption_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    caption_run = caption_para.add_run("🕸️ مخطط العنكبوت - المجالات | Domain Spider Chart")
+    caption_run.font.bold = True
+    caption_run.font.size = Pt(11)
+    caption_run.font.name = 'Traditional Arabic'
+    caption_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+    
+    doc.add_paragraph()
+    
+    # 5B. Category Spider Chart
+    category_spider = _generate_4quarter_spider_chart(
+        category_data,
+        periods,
+        title_ar="مخطط العنكبوت - الفئات",
+        title_en="Category Spider Chart",
+        max_items=10
+    )
+    
+    spider_para = doc.add_paragraph()
+    spider_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    spider_run = spider_para.add_run()
+    spider_run.add_picture(category_spider, width=Inches(7))
+    
+    caption_para = doc.add_paragraph()
+    caption_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    caption_run = caption_para.add_run("🕸️ مخطط العنكبوت - الفئات | Category Spider Chart")
+    caption_run.font.bold = True
+    caption_run.font.size = Pt(11)
+    caption_run.font.name = 'Traditional Arabic'
+    caption_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+    
+    doc.add_paragraph()
+    
+    # 5C. SubCategory Spider Chart
+    subcategory_spider = _generate_4quarter_spider_chart(
+        subcategory_data,
+        periods,
+        title_ar="مخطط العنكبوت - الفئات الفرعية",
+        title_en="SubCategory Spider Chart",
+        max_items=12
+    )
+    
+    spider_para = doc.add_paragraph()
+    spider_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    spider_run = spider_para.add_run()
+    spider_run.add_picture(subcategory_spider, width=Inches(7))
+    
+    caption_para = doc.add_paragraph()
+    caption_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    caption_run = caption_para.add_run("🕸️ مخطط العنكبوت - الفئات الفرعية | SubCategory Spider Chart")
+    caption_run.font.bold = True
+    caption_run.font.size = Pt(11)
+    caption_run.font.name = 'Traditional Arabic'
+    caption_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+    
+    return doc
+
+
+def _create_4quarter_hierarchical_table(doc: Document, data: Dict[str, List[int]], periods: List[str], yearly_totals: Optional[Dict] = None, level: str = 'domain'):
+    """
+    Create a hierarchical table comparing 4 quarters for a specific level (domain/category/subcategory).
+    
+    Args:
+        doc: Document object
+        data: Dictionary mapping item names to list of 4 values
+        periods: List of 4 period labels
+        yearly_totals: Optional dictionary of yearly totals
+        level: 'domain', 'category', or 'subcategory'
+    """
+    # Create table: 7 columns (Item | Q1 | Q2 | Q3 | Q4 | Yearly Total | Trend)
+    num_rows = len(data) + 2  # +1 for header, +1 for totals
+    table = doc.add_table(rows=num_rows, cols=7)
+    table.alignment = WD_TABLE_ALIGNMENT.RIGHT
+    table.style = 'Table Grid'
+    
+    # Header row
+    level_label = "المجال" if level == "domain" else "الفئة" if level == "category" else "الفئة الفرعية"
+    headers = ['الاتجاه | Trend', 'الإجمالي السنوي | Yearly', periods[3], periods[2], periods[1], periods[0], f'{level_label} | {level.title()}']
+    for i, header_text in enumerate(headers):
+        cell = table.rows[0].cells[i]
+        cell.text = header_text
+        cell.paragraphs[0].runs[0].font.bold = True
+        cell.paragraphs[0].runs[0].font.size = Pt(10)
+        cell.paragraphs[0].runs[0].font.name = 'Traditional Arabic'
+        cell.paragraphs[0].runs[0]._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+        center_cell_content(cell)
+        set_cell_shading(cell, '4472C4')
+        cell.paragraphs[0].runs[0].font.color.rgb = RGBColor(255, 255, 255)
+    
+    # Data rows
+    totals = [0, 0, 0, 0]
+    for row_idx, (item_name, values) in enumerate(sorted(data.items()), start=1):
+        row = table.rows[row_idx]
+        
+        # Item name
+        row.cells[6].text = item_name
+        row.cells[6].paragraphs[0].runs[0].font.size = Pt(9)
+        row.cells[6].paragraphs[0].runs[0].font.name = 'Traditional Arabic'
+        row.cells[6].paragraphs[0].runs[0]._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+        row.cells[6].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        
+        # Quarter values
+        for i in range(4):
+            row.cells[5-i].text = str(values[i])
+            row.cells[5-i].paragraphs[0].runs[0].font.size = Pt(9)
+            center_cell_content(row.cells[5-i])
+            totals[i] += values[i]
+        
+        # Yearly total for this item
+        yearly = sum(values)
+        row.cells[1].text = str(yearly)
+        row.cells[1].paragraphs[0].runs[0].font.size = Pt(9)
+        row.cells[1].paragraphs[0].runs[0].font.bold = True
+        center_cell_content(row.cells[1])
+        set_cell_shading(row.cells[1], 'F2F2F2')
+        
+        # Trend indicator
+        trend = _calculate_trend_indicator(values[0], values[-1])
+        row.cells[0].text = trend
+        row.cells[0].paragraphs[0].runs[0].font.size = Pt(14)
+        center_cell_content(row.cells[0])
+        
+        # Color code trends
+        if trend in ['↑', '↑↑']:
+            set_cell_shading(row.cells[0], 'C6EFCE')  # Green
+        elif trend in ['↓', '↓↓']:
+            set_cell_shading(row.cells[0], 'FFC7CE')  # Red
+        else:
+            set_cell_shading(row.cells[0], 'FFEB9C')  # Yellow
+    
+    # Totals row
+    totals_row = table.rows[-1]
+    totals_row.cells[6].text = 'الإجمالي | Total'
+    totals_row.cells[6].paragraphs[0].runs[0].font.bold = True
+    totals_row.cells[6].paragraphs[0].runs[0].font.size = Pt(10)
+    totals_row.cells[6].paragraphs[0].runs[0].font.name = 'Traditional Arabic'
+    totals_row.cells[6].paragraphs[0].runs[0]._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+    totals_row.cells[6].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    set_cell_shading(totals_row.cells[6], 'D9E2F3')
+    
+    for i in range(4):
+        totals_row.cells[5-i].text = str(totals[i])
+        totals_row.cells[5-i].paragraphs[0].runs[0].font.bold = True
+        totals_row.cells[5-i].paragraphs[0].runs[0].font.size = Pt(10)
+        center_cell_content(totals_row.cells[5-i])
+        set_cell_shading(totals_row.cells[5-i], 'D9E2F3')
+    
+    # Yearly grand total
+    grand_yearly = sum(totals)
+    totals_row.cells[1].text = str(grand_yearly)
+    totals_row.cells[1].paragraphs[0].runs[0].font.bold = True
+    totals_row.cells[1].paragraphs[0].runs[0].font.size = Pt(10)
+    center_cell_content(totals_row.cells[1])
+    set_cell_shading(totals_row.cells[1], 'BDD7EE')
+    
+    # Overall trend
+    overall_trend = _calculate_trend_indicator(totals[0], totals[-1])
+    totals_row.cells[0].text = overall_trend
+    totals_row.cells[0].paragraphs[0].runs[0].font.size = Pt(14)
+    totals_row.cells[0].paragraphs[0].runs[0].font.bold = True
+    center_cell_content(totals_row.cells[0])
+    set_cell_shading(totals_row.cells[0], 'BDD7EE')
+
+
+def _generate_4quarter_spider_chart(
+    data: Dict[str, List[int]],
+    periods: List[str],
+    title_ar: str,
+    title_en: str,
+    max_items: int = 8
+) -> io.BytesIO:
+    """
+    Generate a spider chart comparing 4 quarters for multiple items.
+    
+    Args:
+        data: Dictionary mapping item names to list of 4 values
+        periods: List of 4 period labels
+        title_ar: Arabic title
+        title_en: English title
+        max_items: Maximum number of items to display
+        
+    Returns:
+        BytesIO buffer containing the chart image
+    """
+    # Setup Arabic font
+    font_path = 'C:/Windows/Fonts/trado.ttf'
+    if os.path.exists(font_path):
+        prop = fm.FontProperties(fname=font_path)
+        plt.rcParams['font.family'] = prop.get_name()
+    
+    # Select top items by total count
+    sorted_items = sorted(data.items(), key=lambda x: sum(x[1]), reverse=True)[:max_items]
+    
+    if not sorted_items:
+        # Return empty chart
+        fig, ax = plt.subplots(figsize=(10, 8), subplot_kw=dict(projection='polar'))
+        ax.text(0.5, 0.5, 'لا توجد بيانات\nNo Data', ha='center', va='center', 
+                transform=ax.transAxes, fontsize=16)
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+        plt.close(fig)
+        buf.seek(0)
+        return buf
+    
+    categories = [item[0] for item in sorted_items]
+    num_vars = len(categories)
+    
+    # Compute angle for each axis
+    angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
+    angles += angles[:1]  # Close the circle
+    
+    # Initialize plot
+    fig, ax = plt.subplots(figsize=(12, 10), subplot_kw=dict(projection='polar'))
+    
+    # Colors for 4 quarters
+    colors = ['#4472C4', '#ED7D31', '#A5A5A5', '#FFC000']
+    
+    # Plot data for each quarter
+    for i in range(4):
+        values = [item[1][i] for item in sorted_items]
+        values += values[:1]  # Close the circle
+        
+        ax.plot(angles, values, 'o-', linewidth=2, label=periods[i], color=colors[i])
+        ax.fill(angles, values, alpha=0.15, color=colors[i])
+    
+    # Fix axis to go in the right order and start at 12 o'clock
+    ax.set_theta_offset(np.pi / 2)
+    ax.set_theta_direction(-1)
+    
+    # Set category labels
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(categories, fontsize=10)
+    
+    # Add title
+    title_text = f"{title_ar}\n{title_en}"
+    plt.title(title_text, size=14, weight='bold', pad=20)
+    
+    # Add legend
+    plt.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1), fontsize=10)
+    
+    # Grid
+    ax.grid(True, linestyle='--', alpha=0.7)
+    
+    # Save to buffer
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+    plt.close(fig)
+    buf.seek(0)
+    
+    return buf
 
 
 

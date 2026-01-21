@@ -1050,3 +1050,253 @@ def get_full_seasonal_report(
             cursor.close()
         if conn:
             conn.close()
+
+
+def get_consecutive_quarters(start_season_id: int, count: int) -> List[int]:
+    """
+    Get consecutive quarter season IDs starting from a given season.
+    
+    Args:
+        start_season_id: Starting season UniqueID
+        count: Number of consecutive quarters to fetch (2, 3, or 4)
+        
+    Returns:
+        List of season IDs in chronological order
+        
+    Raises:
+        ValueError: If start season not found or not enough consecutive quarters exist
+    """
+    conn = None
+    cursor = None
+    
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Get start season details
+        cursor.execute(
+            "SELECT UniqueID, StartDate, EndDate FROM dbo.Season WHERE UniqueID = ?",
+            (start_season_id,)
+        )
+        start_row = cursor.fetchone()
+        
+        if not start_row:
+            raise ValueError(f"Season {start_season_id} not found")
+        
+        # Get consecutive seasons ordered by StartDate
+        cursor.execute(
+            """
+            SELECT UniqueID
+            FROM dbo.Season
+            WHERE StartDate >= ?
+            ORDER BY StartDate ASC
+            """,
+            (start_row.StartDate,)
+        )
+        
+        rows = cursor.fetchall()
+        season_ids = [row.UniqueID for row in rows[:count]]
+        
+        if len(season_ids) < count:
+            raise ValueError(f"Not enough consecutive quarters available. Found {len(season_ids)}, need {count}")
+        
+        return season_ids
+    
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def validate_quarter_sequence(season_ids: List[int]) -> bool:
+    """
+    Validate that season IDs form a proper consecutive sequence.
+    
+    Args:
+        season_ids: List of season IDs to validate
+        
+    Returns:
+        True if seasons are consecutive, False otherwise
+        
+    Raises:
+        ValueError: If any season ID is invalid
+    """
+    conn = None
+    cursor = None
+    
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        if len(season_ids) < 2:
+            return True  # Single or empty list is trivially valid
+        
+        # Fetch season dates for all IDs
+        placeholders = ','.join('?' * len(season_ids))
+        cursor.execute(
+            f"""
+            SELECT UniqueID, StartDate, EndDate
+            FROM dbo.Season
+            WHERE UniqueID IN ({placeholders})
+            ORDER BY StartDate ASC
+            """,
+            tuple(season_ids)
+        )
+        
+        rows = cursor.fetchall()
+        
+        if len(rows) != len(season_ids):
+            raise ValueError("One or more season IDs are invalid")
+        
+        # Check if seasons are consecutive (each season's EndDate should be close to next season's StartDate)
+        for i in range(len(rows) - 1):
+            current_end = rows[i].EndDate
+            next_start = rows[i+1].StartDate
+            
+            # Allow up to 7 days gap (for month-end to month-start transitions)
+            gap_days = (next_start - current_end).days
+            
+            if gap_days > 7:
+                return False  # Not consecutive
+        
+        return True
+    
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_season_metadata(season_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Get detailed metadata for a season.
+    
+    Args:
+        season_id: Season UniqueID
+        
+    Returns:
+        Dictionary with season metadata or None if not found
+        
+    Example return:
+        {
+            'season_id': 5,
+            'start_date': '2026-01-01',
+            'end_date': '2026-03-31',
+            'year': 2026,
+            'quarter': 'Q1',
+            'period_label': 'Q1-2026',
+            'duration_days': 90
+        }
+    """
+    conn = None
+    cursor = None
+    
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            """
+            SELECT 
+                UniqueID,
+                StartDate,
+                EndDate,
+                YEAR(StartDate) as Year,
+                DATEDIFF(day, StartDate, EndDate) + 1 as DurationDays
+            FROM dbo.Season
+            WHERE UniqueID = ?
+            """,
+            (season_id,)
+        )
+        
+        row = cursor.fetchone()
+        
+        if not row:
+            return None
+        
+        # Determine quarter/trimester label based on start month
+        start_month = row.StartDate.month
+        
+        if start_month in [1, 2, 3]:
+            quarter = 'Q1'
+        elif start_month in [4, 5, 6]:
+            quarter = 'Q2'
+        elif start_month in [7, 8, 9]:
+            quarter = 'Q3'
+        elif start_month in [10, 11, 12]:
+            quarter = 'Q4'
+        else:
+            quarter = 'Unknown'
+        
+        period_label = f"{quarter}-{row.Year}"
+        
+        return {
+            'season_id': row.UniqueID,
+            'start_date': row.StartDate.strftime('%Y-%m-%d'),
+            'end_date': row.EndDate.strftime('%Y-%m-%d'),
+            'year': row.Year,
+            'quarter': quarter,
+            'period_label': period_label,
+            'duration_days': row.DurationDays
+        }
+    
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_all_seasons() -> List[Dict[str, Any]]:
+    """
+    Get all available seasons from the database.
+    
+    Returns:
+        List of dictionaries with season information:
+        - SeasonID: int
+        - SeasonName: str
+        - StartDate: date
+        - EndDate: date
+    
+    Example:
+        >>> seasons = get_all_seasons()
+        >>> print(f"Total seasons: {len(seasons)}")
+        Total seasons: 8
+    """
+    conn = None
+    cursor = None
+    
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            """
+            SELECT 
+                UniqueID,
+                SeasonName,
+                StartDate,
+                EndDate
+            FROM dbo.Season
+            ORDER BY StartDate DESC
+            """
+        )
+        
+        seasons = []
+        for row in cursor.fetchall():
+            seasons.append({
+                'SeasonID': row.UniqueID,
+                'SeasonName': row.SeasonName,
+                'StartDate': row.StartDate,
+                'EndDate': row.EndDate
+            })
+        
+        return seasons
+    
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()

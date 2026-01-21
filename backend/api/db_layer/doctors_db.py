@@ -31,74 +31,92 @@ def search_doctors(
     limit: int = 50
 ) -> List[Dict[str, Any]]:
     """
-    Search for doctors by name, employee ID, or department.
+    Search for doctors from BOTH hospital and reserve tables.
+    
+    Merges results from:
+    - APP_LOOKUP_DOCTOR (hospital system - read-only)
+    - APP_RESERVE_DOCTOR (reserve table - user-created)
     
     Args:
-        query: Search term (name or employee ID)
-        department: Filter by department
-        status: Filter by status (active, inactive, suspended)
+        query: Search term (name)
+        department: Filter by department (not used - tables don't have this field)
+        status: Filter by status (active, inactive)
         limit: Max results
     
     Returns:
-        List of doctor records
+        List of doctor records with 'source' field indicating origin
     """
     conn = get_connection()
     cursor = conn.cursor()
     
-    where_parts = []
+    where_parts_hospital = []
+    where_parts_reserve = []
     params = []
     
-    # Free-text search on name and employee ID
+    # Free-text search on name (both tables have DoctorName)
     if query:
-        search_condition = """(
-            d.DoctorName LIKE ? 
-            OR d.EmployeeID LIKE ?
-        )"""
-        where_parts.append(search_condition)
+        where_parts_hospital.append("d.DoctorName LIKE ?")
+        where_parts_reserve.append("r.DoctorName LIKE ?")
         search_param = f"%{query}%"
         params.extend([search_param, search_param])
     
-    # Department filter (if applicable)
-    if department:
-        where_parts.append("d.Department LIKE ?")
-        params.append(f"%{department}%")
-    
-    # Status filter
+    # Status filter (both tables have IsActive as BIT)
     if status:
-        status_map = {
-            'active': 1,
-            'inactive': 0,
-            'suspended': 2
-        }
-        status_value = status_map.get(status.lower())
-        if status_value is not None:
-            where_parts.append("d.IsActive = ?")
-            params.append(status_value)
+        status_value = 1 if status.lower() == 'active' else 0
+        where_parts_hospital.append("d.IsActive = ?")
+        where_parts_reserve.append("r.IsActive = ?")
+        params.extend([status_value, status_value])
     
-    where_clause = " WHERE " + " AND ".join(where_parts) if where_parts else ""
+    where_clause_hospital = " WHERE " + " AND ".join(where_parts_hospital) if where_parts_hospital else ""
+    where_clause_reserve = " WHERE " + " AND ".join(where_parts_reserve) if where_parts_reserve else ""
     
+    # UNION query: merge hospital and reserve tables
     query_sql = f"""
-        SELECT TOP {limit}
-            d.DoctorID as id,
-            d.EmployeeID as employee_id,
-            d.DoctorName as name_en,
-            d.DoctorName as name_ar,
-            d.Department as department,
-            d.Specialty as specialty,
-            d.HireDate as hire_date,
-            CASE WHEN d.IsActive = 1 THEN 'active'
-                 WHEN d.IsActive = 2 THEN 'suspended'
-                 ELSE 'inactive'
-            END as status
-        FROM dbo.APP_LOOKUP_DOCTOR d
-        {where_clause}
-        ORDER BY d.DoctorName ASC
+        SELECT TOP {limit} *
+        FROM (
+            -- Hospital doctors
+            SELECT
+                d.DoctorID as id,
+                d.DoctorName as name_en,
+                d.DoctorName as name_ar,
+                d.Specialty as specialty,
+                CASE WHEN d.IsActive = 1 THEN 'active' ELSE 'inactive' END as status,
+                'hospital' as source,
+                d.SourceSystem as source_system,
+                d.LastSyncedAt as last_synced_at
+            FROM dbo.APP_LOOKUP_DOCTOR d
+            {where_clause_hospital}
+            
+            UNION ALL
+            
+            -- Reserve doctors
+            SELECT
+                r.DoctorID as id,
+                r.DoctorName as name_en,
+                r.DoctorName as name_ar,
+                r.Specialty as specialty,
+                CASE WHEN r.IsActive = 1 THEN 'active' ELSE 'inactive' END as status,
+                'reserve' as source,
+                r.SourceSystem as source_system,
+                r.LastSyncedAt as last_synced_at
+            FROM dbo.APP_RESERVE_DOCTOR r
+            {where_clause_reserve}
+        ) AS combined
+        ORDER BY name_en ASC
     """
     
     try:
         cursor.execute(query_sql, params)
         columns = [col[0] for col in cursor.description]
-        results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        results = []
+        
+        for row in cursor.fetchall():
+            doctor = dict(zip(columns, row))
+            # Format datetime if present
+            if doctor.get('last_synced_at'):
+                doctor['last_synced_at'] = doctor['last_synced_at'].strftime('%Y-%m-%d %H:%M:%S')
+            results.append(doctor)
+        
         return results
     finally:
         cursor.close()
@@ -111,7 +129,10 @@ def search_doctors(
 
 def get_doctor_profile(doctor_id: int) -> Optional[Dict[str, Any]]:
     """
-    Fetch detailed profile information for a doctor.
+    Fetch detailed profile information for a doctor from BOTH sources.
+    
+    Checks both hospital and reserve tables. Reserve table is checked first
+    to give priority to user-created doctors if IDs conflict (unlikely).
     
     Args:
         doctor_id: Doctor ID
@@ -122,28 +143,51 @@ def get_doctor_profile(doctor_id: int) -> Optional[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
     
-    query = """
+    # Try reserve table first (user-created doctors)
+    query_reserve = """
         SELECT
-            d.DoctorID as id,
-            d.EmployeeID as employee_id,
-            d.DoctorName as name_en,
-            d.DoctorName as name_ar,
-            d.Department as department,
-            d.Specialty as specialty,
-            d.HireDate as hire_date,
-            d.Email as email,
-            d.Phone as phone,
-            d.LicenseNumber as license_number,
-            CASE WHEN d.IsActive = 1 THEN 'active'
-                 WHEN d.IsActive = 2 THEN 'suspended'
-                 ELSE 'inactive'
-            END as status
-        FROM dbo.APP_LOOKUP_DOCTOR d
-        WHERE d.DoctorID = ?
+            r.DoctorID as id,
+            r.DoctorName as name_en,
+            r.DoctorName as name_ar,
+            r.Specialty as specialty,
+            CASE WHEN r.IsActive = 1 THEN 'active' ELSE 'inactive' END as status,
+            'reserve' as source,
+            r.SourceSystem as source_system,
+            r.LastSyncedAt as last_synced_at
+        FROM dbo.APP_RESERVE_DOCTOR r
+        WHERE r.DoctorID = ?
     """
     
     try:
-        cursor.execute(query, (doctor_id,))
+        cursor.execute(query_reserve, (doctor_id,))
+        row = cursor.fetchone()
+        
+        if row:
+            columns = [col[0] for col in cursor.description]
+            profile = dict(zip(columns, row))
+            
+            # Format datetime
+            if profile.get('last_synced_at'):
+                profile['last_synced_at'] = profile['last_synced_at'].strftime('%Y-%m-%d %H:%M:%S')
+            
+            return profile
+        
+        # Not found in reserve, try hospital table
+        query_hospital = """
+            SELECT
+                d.DoctorID as id,
+                d.DoctorName as name_en,
+                d.DoctorName as name_ar,
+                d.Specialty as specialty,
+                CASE WHEN d.IsActive = 1 THEN 'active' ELSE 'inactive' END as status,
+                'hospital' as source,
+                d.SourceSystem as source_system,
+                d.LastSyncedAt as last_synced_at
+            FROM dbo.APP_LOOKUP_DOCTOR d
+            WHERE d.DoctorID = ?
+        """
+        
+        cursor.execute(query_hospital, (doctor_id,))
         row = cursor.fetchone()
         
         if not row:
@@ -152,14 +196,12 @@ def get_doctor_profile(doctor_id: int) -> Optional[Dict[str, Any]]:
         columns = [col[0] for col in cursor.description]
         profile = dict(zip(columns, row))
         
-        # Calculate years of service
-        if profile.get('hire_date'):
-            hire_date = profile['hire_date']
-            today = datetime.now()
-            years_of_service = (today - hire_date).days // 365
-            profile['years_of_service'] = years_of_service
+        # Format datetime
+        if profile.get('last_synced_at'):
+            profile['last_synced_at'] = profile['last_synced_at'].strftime('%Y-%m-%d %H:%M:%S')
         
         return profile
+        
     finally:
         cursor.close()
         conn.close()
@@ -484,6 +526,126 @@ def get_doctor_incidents(
             'limit': limit,
             'offset': offset
         }
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# =============================================
+# CREATE DOCTOR (RESERVE TABLE)
+# =============================================
+
+def create_doctor(
+    doctor_name: str,
+    specialty: Optional[str] = None,
+    is_active: bool = True,
+    source_system: str = 'MANUAL'
+) -> Dict[str, Any]:
+    """
+    Create a new doctor in the reserve table (APP_RESERVE_DOCTOR).
+    
+    This function ONLY writes to the reserve table. It does NOT touch
+    the hospital's view (APP_LOOKUP_DOCTOR).
+    
+    Reserve table structure is IDENTICAL to hospital table:
+    - DoctorID (auto-increment primary key)
+    - DoctorName (required)
+    - Specialty (optional)
+    - IsActive (bit: 1=active, 0=inactive)
+    - SourceSystem (defaults to 'MANUAL')
+    - LastSyncedAt (auto-set to current datetime)
+    
+    Args:
+        doctor_name: Doctor's full name (required)
+        specialty: Medical specialty (optional)
+        is_active: Active status (default: True)
+        source_system: Source identifier (default: 'MANUAL')
+    
+    Returns:
+        Dict with created doctor data including generated DoctorID
+        
+    Raises:
+        ValueError: If doctor_name already exists
+        Exception: For other database errors
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # ============================================
+        # STEP 1: Check for duplicate doctor name
+        # ============================================
+        # Check if doctor with same name already exists in reserve table
+        
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM dbo.APP_RESERVE_DOCTOR 
+            WHERE DoctorName = ?
+        """, (doctor_name,))
+        
+        reserve_count = cursor.fetchone()[0]
+        
+        if reserve_count > 0:
+            raise ValueError(
+                f"Doctor name '{doctor_name}' already exists in reserve table. "
+                "Doctor profile already created."
+            )
+        
+        # ============================================
+        # STEP 2: Insert into reserve table
+        # ============================================
+        
+        insert_query = """
+            INSERT INTO dbo.APP_RESERVE_DOCTOR (
+                DoctorName,
+                Specialty,
+                IsActive,
+                SourceSystem,
+                LastSyncedAt
+            )
+            OUTPUT INSERTED.DoctorID,
+                   INSERTED.DoctorName,
+                   INSERTED.Specialty,
+                   INSERTED.IsActive,
+                   INSERTED.SourceSystem,
+                   INSERTED.LastSyncedAt
+            VALUES (?, ?, ?, ?, GETDATE())
+        """
+        
+        cursor.execute(insert_query, (
+            doctor_name,
+            specialty,
+            1 if is_active else 0,
+            source_system
+        ))
+        
+        # Fetch the inserted record
+        row = cursor.fetchone()
+        conn.commit()
+        
+        # ============================================
+        # STEP 3: Format and return result
+        # ============================================
+        
+        result = {
+            'id': row.DoctorID,
+            'name_en': row.DoctorName,
+            'name_ar': row.DoctorName,
+            'specialty': row.Specialty if row.Specialty else '',
+            'status': 'active' if row.IsActive else 'inactive',
+            'source': 'reserve',
+            'source_system': row.SourceSystem if row.SourceSystem else '',
+            'last_synced_at': row.LastSyncedAt.strftime('%Y-%m-%d %H:%M:%S') if row.LastSyncedAt else ''
+        }
+        
+        return result
+        
+    except ValueError:
+        # Re-raise validation errors
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise Exception(f"Failed to create doctor: {str(e)}")
     finally:
         cursor.close()
         conn.close()

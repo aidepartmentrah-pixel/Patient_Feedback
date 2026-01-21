@@ -3,9 +3,10 @@ Patients Router
 API endpoints for patient history page.
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, status
 from typing import Optional
 from starlette.responses import StreamingResponse
+from pydantic import BaseModel, Field
 import io
 
 from ..services.patients_service import (
@@ -14,11 +15,357 @@ from ..services.patients_service import (
     get_patient_incidents_service,
     get_incident_details_service,
     get_patient_full_history_service,
-    export_patient_history_service
+    export_patient_history_service,
+    create_patient_service
 )
 
 
 router = APIRouter(prefix="/api/patients", tags=["Patients - History"])
+
+
+# ==================== REQUEST/RESPONSE MODELS ====================
+
+class CreatePatientRequest(BaseModel):
+    """Request model for creating a new patient."""
+    first_name: str = Field(
+        ...,
+        min_length=2,
+        max_length=150,
+        description="Patient's first name (required, 2-150 characters)",
+        example="Ahmed"
+    )
+    middle_name: Optional[str] = Field(
+        None,
+        max_length=150,
+        description="Patient's middle name (optional, max 150 characters)",
+        example="Mohammed"
+    )
+    last_name: Optional[str] = Field(
+        None,
+        max_length=150,
+        description="Patient's last name (optional, max 150 characters)",
+        example="Al-Rashid"
+    )
+    mother_name: Optional[str] = Field(
+        None,
+        max_length=150,
+        description="Patient's mother name (optional, max 150 characters)",
+        example="Fatima"
+    )
+    phone_number: Optional[str] = Field(
+        None,
+        max_length=50,
+        description="Primary phone number (optional, min 7 digits)",
+        example="0501234567"
+    )
+    phone_number2: Optional[str] = Field(
+        None,
+        max_length=50,
+        description="Secondary phone number (optional, min 7 digits)",
+        example="0509876543"
+    )
+    birth_date: Optional[str] = Field(
+        None,
+        description="Date of birth in YYYY-MM-DD format (optional)",
+        example="1985-05-15"
+    )
+    sex: Optional[str] = Field(
+        None,
+        description="Patient sex: M, F, Male, or Female (optional, normalized to M/F)",
+        example="M"
+    )
+    document_number: Optional[str] = Field(
+        None,
+        max_length=100,
+        description="ID/Document number (optional, alphanumeric + hyphens)",
+        example="1234567890"
+    )
+    medical_file_number: Optional[str] = Field(
+        None,
+        max_length=100,
+        description="Medical record number (optional, alphanumeric + hyphens)",
+        example="MRN-2026-001234"
+    )
+    spouse: Optional[str] = Field(
+        None,
+        max_length=150,
+        description="Spouse name (optional, max 150 characters)",
+        example="Sara Al-Ahmad"
+    )
+    address_line1: Optional[str] = Field(
+        None,
+        max_length=300,
+        description="Primary address line (optional, max 300 characters)",
+        example="123 King Fahd Road, Riyadh"
+    )
+    address_line2: Optional[str] = Field(
+        None,
+        max_length=300,
+        description="Secondary address line (optional, max 300 characters)",
+        example="Building 5, Apartment 201"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "first_name": "Ahmed",
+                "middle_name": "Mohammed",
+                "last_name": "Al-Rashid",
+                "mother_name": "Fatima",
+                "phone_number": "0501234567",
+                "phone_number2": "0509876543",
+                "birth_date": "1985-05-15",
+                "sex": "M",
+                "document_number": "1234567890",
+                "medical_file_number": "MRN-2026-001234",
+                "spouse": "Sara Al-Ahmad",
+                "address_line1": "123 King Fahd Road, Riyadh",
+                "address_line2": "Building 5, Apartment 201"
+            }
+        }
+
+
+class PatientResponse(BaseModel):
+    """Patient object in responses."""
+    patient_admission_id: int
+    full_name: str
+    first_name: str
+    middle_name: Optional[str]
+    last_name: Optional[str]
+    mother_name: Optional[str]
+    phone_number: Optional[str]
+    phone_number2: Optional[str]
+    birth_date: Optional[str]
+    sex: Optional[str]
+    document_number: Optional[str]
+    medical_file_number: Optional[str]
+    spouse: Optional[str]
+    address_line1: Optional[str]
+    address_line2: Optional[str]
+    source: str
+
+
+class CreatePatientResponse(BaseModel):
+    """Response model for patient creation."""
+    success: bool
+    message: str
+    message_ar: str
+    patient: PatientResponse
+
+
+router = APIRouter(prefix="/api/patients", tags=["Patients - History"])
+
+
+# ==================== B.1 SEARCH PATIENTS ====================
+
+# ==================== CREATE PATIENT ====================
+
+@router.post(
+    "/create",
+    response_model=CreatePatientResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create New Patient",
+    responses={
+        201: {
+            "description": "Patient created successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "success": True,
+                        "message": "Patient 'Ahmed Mohammed Al-Rashid' created successfully with ID 100001",
+                        "message_ar": "تم إنشاء المريض 'Ahmed Mohammed Al-Rashid' بنجاح بالرقم 100001",
+                        "patient": {
+                            "patient_admission_id": 100001,
+                            "full_name": "Ahmed Mohammed Al-Rashid",
+                            "first_name": "Ahmed",
+                            "middle_name": "Mohammed",
+                            "last_name": "Al-Rashid",
+                            "mother_name": "Fatima",
+                            "phone_number": "0501234567",
+                            "phone_number2": "0509876543",
+                            "birth_date": "1985-05-15",
+                            "sex": "M",
+                            "document_number": "1234567890",
+                            "medical_file_number": "MRN-2026-001234",
+                            "spouse": "Sara Al-Ahmad",
+                            "address_line1": "123 King Fahd Road, Riyadh",
+                            "address_line2": "Building 5, Apartment 201",
+                            "source": "reserve"
+                        }
+                    }
+                }
+            }
+        },
+        400: {"description": "Validation error - Invalid input"},
+        409: {"description": "Conflict - Patient already exists"},
+        500: {"description": "Internal server error"}
+    }
+)
+async def create_patient(request: CreatePatientRequest):
+    """
+    Create a new patient in the reserve table.
+    
+    This endpoint allows you to add patients that don't exist in the hospital's
+    main database. Created patients are stored in a separate reserve table and
+    will appear in all search and profile queries alongside hospital patients.
+    
+    **Request Body:**
+    - `first_name`: **Required**. Patient's first name (2-150 characters)
+    - `middle_name`: Optional. Patient's middle name (max 150 characters)
+    - `last_name`: Optional. Patient's last name (max 150 characters)
+    - `mother_name`: Optional. Patient's mother name (max 150 characters)
+    - `phone_number`: Optional. Primary phone (min 7 digits, max 50 characters)
+    - `phone_number2`: Optional. Secondary phone (min 7 digits, max 50 characters)
+    - `birth_date`: Optional. Date of birth in YYYY-MM-DD format
+    - `sex`: Optional. Patient sex (M, F, Male, or Female - normalized to M/F)
+    - `document_number`: Optional. ID/Document number (alphanumeric + hyphens, max 100 chars)
+    - `medical_file_number`: Optional. Medical record number (alphanumeric + hyphens, max 100 chars)
+    - `spouse`: Optional. Spouse name (max 150 characters)
+    - `address_line1`: Optional. Primary address (max 300 characters)
+    - `address_line2`: Optional. Secondary address (max 300 characters)
+    
+    **Validation Rules:**
+    - FirstName is required (2-150 characters)
+    - Names must contain only letters, spaces, hyphens, apostrophes (supports Arabic)
+    - Phone numbers must have at least 7 digits
+    - BirthDate must be YYYY-MM-DD format, not in future, age < 150 years
+    - SEX normalized: "Male"→"M", "Female"→"F"
+    - Duplicate detection by FullName, DocumentNumber, or MedicalFileNumber
+    - All whitespace automatically trimmed
+    
+    **Response:**
+    - Returns created patient with auto-generated ID (starting at 100000)
+    - Includes success message in English and Arabic
+    - Patient will have source='reserve' to distinguish from hospital patients
+    
+    **Example Request:**
+    ```json
+    {
+      "first_name": "Ahmed",
+      "middle_name": "Mohammed",
+      "last_name": "Al-Rashid",
+      "mother_name": "Fatima",
+      "phone_number": "0501234567",
+      "birth_date": "1985-05-15",
+      "sex": "M",
+      "document_number": "1234567890",
+      "medical_file_number": "MRN-2026-001234"
+    }
+    ```
+    
+    **Example Success Response (201):**
+    ```json
+    {
+      "success": true,
+      "message": "Patient 'Ahmed Mohammed Al-Rashid' created successfully with ID 100001",
+      "message_ar": "تم إنشاء المريض 'Ahmed Mohammed Al-Rashid' بنجاح بالرقم 100001",
+      "patient": {
+        "patient_admission_id": 100001,
+        "full_name": "Ahmed Mohammed Al-Rashid",
+        "first_name": "Ahmed",
+        "sex": "M",
+        "source": "reserve",
+        ...
+      }
+    }
+    ```
+    
+    **Error Response (409 - Duplicate):**
+    ```json
+    {
+      "detail": {
+        "error": "DUPLICATE_PATIENT",
+        "message": "Patient with FullName 'Ahmed Mohammed Al-Rashid' already exists in reserve",
+        "message_ar": "المريض موجود بالفعل"
+      }
+    }
+    ```
+    
+    **Error Response (400 - Validation):**
+    ```json
+    {
+      "detail": {
+        "error": "VALIDATION_ERROR",
+        "message": "FirstName is required and must be at least 2 characters",
+        "message_ar": "خطأ في التحقق من الصحة"
+      }
+    }
+    ```
+    """
+    try:
+        # Call service layer (handles all validation)
+        patient = create_patient_service(
+            first_name=request.first_name,
+            middle_name=request.middle_name,
+            last_name=request.last_name,
+            mother_name=request.mother_name,
+            phone_number=request.phone_number,
+            phone_number2=request.phone_number2,
+            birth_date=request.birth_date,
+            sex=request.sex,
+            document_number=request.document_number,
+            medical_file_number=request.medical_file_number,
+            spouse=request.spouse,
+            address_line1=request.address_line1,
+            address_line2=request.address_line2
+        )
+        
+        # Format response
+        return CreatePatientResponse(
+            success=True,
+            message=f"Patient '{patient['FullName']}' created successfully with ID {patient['PatientAdmissionID']}",
+            message_ar=f"تم إنشاء المريض '{patient['FullName']}' بنجاح بالرقم {patient['PatientAdmissionID']}",
+            patient=PatientResponse(
+                patient_admission_id=patient['PatientAdmissionID'],
+                full_name=patient['FullName'],
+                first_name=patient['FirstName'],
+                middle_name=patient.get('MiddleName'),
+                last_name=patient.get('LastName'),
+                mother_name=patient.get('MotherName'),
+                phone_number=patient.get('PhoneNumber1'),
+                phone_number2=patient.get('PhoneNumber2'),
+                birth_date=patient.get('BirthDate'),
+                sex=patient.get('SEX'),
+                document_number=patient.get('DocumentNumber'),
+                medical_file_number=patient.get('MedicalFileNumber'),
+                spouse=patient.get('Spouse'),
+                address_line1=patient.get('AddressLine1'),
+                address_line2=patient.get('AddressLine2'),
+                source=patient['Source']
+            )
+        )
+        
+    except ValueError as e:
+        # Validation errors (400) or duplicate errors (409)
+        error_msg = str(e)
+        if "already exists" in error_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "error": "DUPLICATE_PATIENT",
+                    "message": error_msg,
+                    "message_ar": "المريض موجود بالفعل"
+                }
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "VALIDATION_ERROR",
+                    "message": error_msg,
+                    "message_ar": "خطأ في التحقق من الصحة"
+                }
+            )
+    except Exception as e:
+        # Unexpected errors (500)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "INTERNAL_ERROR",
+                "message": f"Failed to create patient: {str(e)}",
+                "message_ar": "خطأ داخلي في النظام"
+            }
+        )
 
 
 # ==================== B.1 SEARCH PATIENTS ====================

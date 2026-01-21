@@ -1,6 +1,6 @@
 # 🗺️ DB Layer — Subtree Map
 
-_Generated on: 2026-01-14 13:41_
+_Generated on: 2026-01-20 12:54_
 
 
 ---
@@ -30,6 +30,7 @@ _No functions found_
 - `get_admin_unit_tree()`
 - `get_admin_unit_leaves()`
 - `get_active_admin_units()`
+- `get_units_by_type()`
 
 ### 📄 backend\api\db_layer\custom_views.py
 **Functions:**
@@ -55,9 +56,46 @@ _No functions found_
 - `get_doctor_monthly_trend()`
 - `get_doctor_incidents()`
 
-### 📄 backend\api\db_layer\follow_up_db.py
+### 📄 backend\api\db_layer\explanation_db.py
 **Functions:**
 - `get_connection()`
+- `_fetch_all()`
+- `_fetch_one()`
+- `get_explanation_status_id()`
+- `get_explanation_status_name()`
+- `get_all_explanation_statuses()`
+- `get_case_status_id()`
+- `get_case_status_name()`
+- `get_case_by_id()`
+- `get_cases_needing_explanation()`
+- `get_red_flag_never_event_cases_needing_explanation()`
+- `count_cases_by_explanation_status()`
+- `get_overdue_explanations()`
+- `check_case_has_explanation()`
+- `update_case_explanation()`
+- `update_case_requires_explanation()`
+- `force_close_case()`
+- `close_case_after_action_items()`
+
+### 📄 backend\api\db_layer\explanation_ordinary_db.py
+**Functions:**
+- `update_ordinary_explanation()`
+- `get_ordinary_explanation()`
+
+### 📄 backend\api\db_layer\explanation_red_flag_db.py
+**Functions:**
+- `create_red_flag_feedback()`
+- `get_red_flag_feedback_details()`
+
+### 📄 backend\api\db_layer\explanation_seasonal_db.py
+**Functions:**
+- `update_seasonal_explanation()`
+- `get_seasonal_explanation()`
+- `get_seasonal_reports_needing_explanation()`
+
+### 📄 backend\api\db_layer\follow_up_db.py
+**Functions:**
+- `get_db_connection()`
 - `create_follow_up_action()`
 - `get_follow_up_actions()`
 - `get_follow_up_action_by_id()`
@@ -162,13 +200,23 @@ _No functions found_
 ### 📄 backend\api\db_layer\seasonal_report.py
 **Functions:**
 - `resolve_season_id_from_year_trimester()`
+- `create_season_if_not_exists()`
+- `get_previous_season()`
 - `validate_season_exists()`
+- `get_existing_seasonal_report_id()`
+- `update_seasonal_report_header()`
 - `delete_seasonal_report_by_key()`
 - `insert_seasonal_report_header()`
+- `delete_seasonal_report_classification_stats()`
+- `delete_seasonal_report_policy_snapshot()`
 - `insert_seasonal_report_classification_stats()`
 - `insert_seasonal_report_policy_snapshot()`
 - `get_seasonal_report_keys_by_id()`
 - `get_full_seasonal_report()`
+- `get_consecutive_quarters()`
+- `validate_quarter_sequence()`
+- `get_season_metadata()`
+- `get_all_seasons()`
 
 ### 📄 backend\api\db_layer\seasonal_report_aggregation.py
 **Functions:**

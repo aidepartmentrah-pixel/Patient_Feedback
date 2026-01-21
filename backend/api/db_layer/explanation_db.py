@@ -217,10 +217,12 @@ def get_cases_needing_explanation(
     """
     Get all cases that need explanation but haven't received one yet.
     
-    Criteria:
-    - RequiresExplanation = 1
-    - ExplanationStatus = 'Waiting'
-    - TakenAction IS NULL or empty
+    FIXED Criteria (matching FSM logic from insert_service.py):
+    - (ClinicalRiskTypeID IN (2, 3) OR RequiresExplanation = 1)
+    - (ExplanationStatusID IS NULL OR ExplanationStatusID = 1)  -- 1 = 'Waiting'
+    - CaseStatusID IN (1, 2)  -- 1 = Open, 2 = In Progress
+    
+    This ensures Red Flag (2) and Never Event (3) cases appear even with NULL status.
     
     Args:
         department_id: Filter by target department (optional)
@@ -243,9 +245,10 @@ def get_cases_needing_explanation(
             ic.CreatedAt,
             ic.CaseStatusID,
             ic.ExplanationStatusID,
+            ic.ClinicalRiskTypeID,
             cs.Code AS CaseStatusCode,
             cs.Name AS CaseStatusName,
-            es.StatusName AS ExplanationStatusName,
+            COALESCE(es.StatusName, 'Waiting') AS ExplanationStatusName,
             crt.Name AS ClinicalRiskType,
             fit.NameEn AS FeedbackIntentType,
             org.UniqueID AS IssuingOrgUnitID,
@@ -258,11 +261,11 @@ def get_cases_needing_explanation(
         LEFT JOIN dbo.AdminsrationUnit org ON ic.IssuingOrgUnitID = org.UniqueID
     """
     
-    # Build WHERE clause
+    # Build WHERE clause - FIXED to match FSM logic
+    # Include closed cases if they still need explanations (removed CaseStatusID filter)
     conditions = [
-        "ic.RequiresExplanation = 1",
-        "es.StatusName = 'Waiting'",
-        "(ic.TakenAction IS NULL OR ic.TakenAction = '')"
+        "(ic.ClinicalRiskTypeID IN (2, 3) OR ic.RequiresExplanation = 1)",
+        "(ic.ExplanationStatusID IS NULL OR ic.ExplanationStatusID = 1)"
     ]
     params = []
     
@@ -301,10 +304,10 @@ def get_red_flag_never_event_cases_needing_explanation(
     """
     Get Red Flag and Never Event cases that are Open and need explanation.
     
-    Criteria:
-    - ClinicalRiskType = 'Red Flag' OR 'Never Event'
-    - CaseStatus = 'Open'
-    - ExplanationStatus = 'Waiting'
+    FIXED Criteria:
+    - ClinicalRiskTypeID IN (2, 3)  -- 2 = Red Flag, 3 = Never Event
+    - CaseStatusID IN (1, 2)  -- 1 = Open, 2 = In Progress
+    - (ExplanationStatusID IS NULL OR ExplanationStatusID = 1)  -- NULL or Waiting
     
     Args:
         department_id: Filter by target department (optional)
@@ -326,9 +329,10 @@ def get_red_flag_never_event_cases_needing_explanation(
             ic.CreatedAt,
             ic.CaseStatusID,
             ic.ExplanationStatusID,
+            ic.ClinicalRiskTypeID,
             cs.Code AS CaseStatusCode,
             cs.Name AS CaseStatusName,
-            es.StatusName AS ExplanationStatusName,
+            COALESCE(es.StatusName, 'Waiting') AS ExplanationStatusName,
             crt.Name AS ClinicalRiskType,
             fit.NameEn AS FeedbackIntentType,
             org.UniqueID AS IssuingOrgUnitID,
@@ -341,11 +345,11 @@ def get_red_flag_never_event_cases_needing_explanation(
         LEFT JOIN dbo.AdminsrationUnit org ON ic.IssuingOrgUnitID = org.UniqueID
     """
     
-    # Build WHERE clause
+    # Build WHERE clause - FIXED to use numeric IDs
+    # Include closed cases if they still need explanations (removed CaseStatusID filter)
     conditions = [
-        "(crt.Name = 'Red Flag' OR crt.Name = 'Never Event')",
-        "cs.Code = 'OPEN'",
-        "es.StatusName = 'Waiting'"
+        "ic.ClinicalRiskTypeID IN (2, 3)",
+        "(ic.ExplanationStatusID IS NULL OR ic.ExplanationStatusID = 1)"
     ]
     params = []
     

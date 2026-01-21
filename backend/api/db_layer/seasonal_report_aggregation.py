@@ -275,15 +275,17 @@ def get_seasonal_domain_totals(
         
         # Count DISTINCT complaints to avoid counting same complaint multiple times
         # (a complaint may have multiple target departments)
+        # FIXED: Use COUNT(DISTINCT ...) for ALL aggregations to ensure consistency
+        # Total cases = sum of domain counts (one case belongs to exactly one domain)
         query = f"""
             SELECT
                 COUNT(DISTINCT ic.IncidentRequestCaseID) AS TotalCases,
-                SUM(CASE WHEN ic.DomainID = 1 THEN 1 ELSE 0 END) AS ClinicalDomainCount,
-                SUM(CASE WHEN ic.DomainID = 2 THEN 1 ELSE 0 END) AS ManagementDomainCount,
-                SUM(CASE WHEN ic.DomainID = 3 THEN 1 ELSE 0 END) AS RelationalDomainCount,
-                SUM(CASE WHEN ic.SeverityID = 1 THEN 1 ELSE 0 END) AS LowSeverityCount,
-                SUM(CASE WHEN ic.SeverityID = 2 THEN 1 ELSE 0 END) AS MediumSeverityCount,
-                SUM(CASE WHEN ic.SeverityID = 3 THEN 1 ELSE 0 END) AS HighSeverityCount
+                COUNT(DISTINCT CASE WHEN ic.DomainID = 1 THEN ic.IncidentRequestCaseID ELSE NULL END) AS ClinicalDomainCount,
+                COUNT(DISTINCT CASE WHEN ic.DomainID = 2 THEN ic.IncidentRequestCaseID ELSE NULL END) AS ManagementDomainCount,
+                COUNT(DISTINCT CASE WHEN ic.DomainID = 3 THEN ic.IncidentRequestCaseID ELSE NULL END) AS RelationalDomainCount,
+                COUNT(DISTINCT CASE WHEN ic.SeverityID = 1 THEN ic.IncidentRequestCaseID ELSE NULL END) AS LowSeverityCount,
+                COUNT(DISTINCT CASE WHEN ic.SeverityID = 2 THEN ic.IncidentRequestCaseID ELSE NULL END) AS MediumSeverityCount,
+                COUNT(DISTINCT CASE WHEN ic.SeverityID = 3 THEN ic.IncidentRequestCaseID ELSE NULL END) AS HighSeverityCount
             FROM dbo.APP_IncidentCase ic
             INNER JOIN dbo.APP_IncidentCaseTargetDepartment td
                 ON ic.IncidentRequestCaseID = td.IncidentRequestCaseID
@@ -304,14 +306,44 @@ def get_seasonal_domain_totals(
                 'high_severity_count': 0
             }
         
+        # Extract values
+        total_cases = row.TotalCases or 0
+        clinical_count = row.ClinicalDomainCount or 0
+        management_count = row.ManagementDomainCount or 0
+        relational_count = row.RelationalDomainCount or 0
+        low_severity = row.LowSeverityCount or 0
+        medium_severity = row.MediumSeverityCount or 0
+        high_severity = row.HighSeverityCount or 0
+        
+        # SANITY CHECK: Verify domain counts sum equals total
+        domain_sum = clinical_count + management_count + relational_count
+        severity_sum = low_severity + medium_severity + high_severity
+        
+        print(f"\n{'='*80}")
+        print(f"[SANITY CHECK] Domain Totals Aggregation")
+        print(f"  Total Cases: {total_cases}")
+        print(f"  Domain Sum: {domain_sum} (Clinical={clinical_count}, Management={management_count}, Relational={relational_count})")
+        print(f"  Severity Sum: {severity_sum} (Low={low_severity}, Medium={medium_severity}, High={high_severity})")
+        
+        if domain_sum != total_cases:
+            print(f"  ⚠️  WARNING: Domain sum ({domain_sum}) != Total cases ({total_cases})")
+        else:
+            print(f"  ✅ PASS: Domain sum matches total cases")
+        
+        if severity_sum != total_cases:
+            print(f"  ⚠️  WARNING: Severity sum ({severity_sum}) != Total cases ({total_cases})")
+        else:
+            print(f"  ✅ PASS: Severity sum matches total cases")
+        print(f"{'='*80}\n")
+        
         return {
-            'total_cases': row.TotalCases or 0,
-            'clinical_domain_count': row.ClinicalDomainCount or 0,
-            'management_domain_count': row.ManagementDomainCount or 0,
-            'relational_domain_count': row.RelationalDomainCount or 0,
-            'low_severity_count': row.LowSeverityCount or 0,
-            'medium_severity_count': row.MediumSeverityCount or 0,
-            'high_severity_count': row.HighSeverityCount or 0
+            'total_cases': total_cases,
+            'clinical_domain_count': clinical_count,
+            'management_domain_count': management_count,
+            'relational_domain_count': relational_count,
+            'low_severity_count': low_severity,
+            'medium_severity_count': medium_severity,
+            'high_severity_count': high_severity
         }
     
     except Exception as e:

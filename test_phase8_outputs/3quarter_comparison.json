@@ -1,0 +1,32 @@
+{
+  "success": true,
+  "comparison_type": "3-quarters",
+  "periods": [
+    "Q4-2026",
+    "Q3-2026",
+    "Q2-2026"
+  ],
+  "season_ids": [
+    8,
+    7,
+    6
+  ],
+  "orgunit_id": 1,
+  "orgunit_type": 0,
+  "orgunit_name": "الادارة العامة",
+  "data": {
+    "domain_comparison": {},
+    "category_comparison": {},
+    "subcategory_comparison": {},
+    "trends": {
+      "total_cases": "→",
+      "clinical": "→",
+      "management": "→",
+      "relational": "→",
+      "low_severity": "→",
+      "medium_severity": "→",
+      "high_severity": "→"
+    }
+  },
+  "generated_at": "2026-01-20T09:52:22.810751"
+}

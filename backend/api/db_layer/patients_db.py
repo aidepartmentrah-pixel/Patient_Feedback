@@ -20,6 +20,198 @@ def get_connection():
     return conn
 
 
+# ==================== CREATE PATIENT (RESERVE TABLE) ====================
+
+def create_patient(
+    first_name: str,
+    middle_name: Optional[str] = None,
+    last_name: Optional[str] = None,
+    mother_name: Optional[str] = None,
+    phone_number: Optional[str] = None,
+    birth_date: Optional[str] = None,
+    sex: Optional[str] = None,
+    document_number: Optional[str] = None,
+    medical_file_number: Optional[str] = None,
+    spouse: Optional[str] = None,
+    address_line1: Optional[str] = None,
+    address_line2: Optional[str] = None,
+    phone_number2: Optional[str] = None,
+    created_by_user_id: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    Create a new patient in the APP_RESERVE_PATIENT table.
+    
+    This function writes ONLY to the reserve table (user-created patients).
+    Hospital patients come from APP_VIEWTABLE_PATIENT_ADMISSION (read-only).
+    
+    Args:
+        first_name: Patient's first name (REQUIRED)
+        middle_name: Patient's middle name (optional)
+        last_name: Patient's last name (optional)
+        mother_name: Patient's mother name (optional)
+        phone_number: Primary phone number (optional)
+        birth_date: Birth date as string YYYY-MM-DD (optional)
+        sex: Gender M/F (optional)
+        document_number: National ID or document number (optional)
+        medical_file_number: Medical record number (optional)
+        spouse: Spouse name (optional)
+        address_line1: Primary address (optional)
+        address_line2: Secondary address (optional)
+        phone_number2: Secondary phone number (optional)
+        created_by_user_id: User ID who created this patient (optional)
+    
+    Returns:
+        Dict with created patient data including PatientAdmissionID
+    
+    Raises:
+        ValueError: If validation fails or duplicate detected
+        Exception: If database operation fails
+    """
+    conn = None
+    cursor = None
+    
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Build full name from components
+        name_parts = [
+            first_name or '',
+            middle_name or '',
+            last_name or ''
+        ]
+        full_name = ' '.join(part for part in name_parts if part).strip()
+        
+        if not full_name:
+            raise ValueError("At least FirstName must be provided to build FullName")
+        
+        # Check for duplicate in RESERVE table only
+        # We check by FullName as the primary duplicate detection
+        cursor.execute("""
+            SELECT PatientAdmissionID, FullName 
+            FROM APP_RESERVE_PATIENT 
+            WHERE FullName = ?
+        """, (full_name,))
+        
+        existing = cursor.fetchone()
+        if existing:
+            raise ValueError(
+                f"Patient with name '{full_name}' already exists in reserve table "
+                f"(ID: {existing[0]}). Cannot create duplicate."
+            )
+        
+        # Additional check by DocumentNumber if provided
+        if document_number:
+            cursor.execute("""
+                SELECT PatientAdmissionID, FullName, DocumentNumber
+                FROM APP_RESERVE_PATIENT 
+                WHERE DocumentNumber = ?
+            """, (document_number,))
+            
+            existing_doc = cursor.fetchone()
+            if existing_doc:
+                raise ValueError(
+                    f"Patient with DocumentNumber '{document_number}' already exists "
+                    f"(ID: {existing_doc[0]}, Name: {existing_doc[1]}). Cannot create duplicate."
+                )
+        
+        # Additional check by MedicalFileNumber if provided
+        if medical_file_number:
+            cursor.execute("""
+                SELECT PatientAdmissionID, FullName, MedicalFileNumber
+                FROM APP_RESERVE_PATIENT 
+                WHERE MedicalFileNumber = ?
+            """, (medical_file_number,))
+            
+            existing_mrn = cursor.fetchone()
+            if existing_mrn:
+                raise ValueError(
+                    f"Patient with MedicalFileNumber '{medical_file_number}' already exists "
+                    f"(ID: {existing_mrn[0]}, Name: {existing_mrn[1]}). Cannot create duplicate."
+                )
+        
+        # Insert into APP_RESERVE_PATIENT
+        cursor.execute("""
+            INSERT INTO APP_RESERVE_PATIENT (
+                FirstName, 
+                MiddleName, 
+                LastName, 
+                MotherName, 
+                FullName,
+                PhoneNumber1, 
+                PhoneNumber2,
+                BirthDate, 
+                SEX, 
+                DocumentNumber, 
+                MedicalFileNumber,
+                Spouse,
+                AddressLine1,
+                AddressLine2,
+                SystemTime
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE())
+        """, (
+            first_name,
+            middle_name,
+            last_name,
+            mother_name,
+            full_name,
+            phone_number,
+            phone_number2,
+            birth_date,
+            sex,
+            document_number,
+            medical_file_number,
+            spouse,
+            address_line1,
+            address_line2
+        ))
+        
+        # Get the new PatientAdmissionID
+        cursor.execute("SELECT @@IDENTITY")
+        new_id = int(cursor.fetchone()[0])
+        
+        # Commit transaction
+        conn.commit()
+        
+        # Return created patient data
+        return {
+            "PatientAdmissionID": new_id,
+            "FullName": full_name,
+            "FirstName": first_name,
+            "MiddleName": middle_name,
+            "LastName": last_name,
+            "MotherName": mother_name,
+            "PhoneNumber1": phone_number,
+            "PhoneNumber2": phone_number2,
+            "BirthDate": birth_date,
+            "SEX": sex,
+            "DocumentNumber": document_number,
+            "MedicalFileNumber": medical_file_number,
+            "Spouse": spouse,
+            "AddressLine1": address_line1,
+            "AddressLine2": address_line2,
+            "Source": "reserve",
+            "CreatedAt": datetime.now().isoformat()
+        }
+        
+    except ValueError as ve:
+        # Re-raise validation errors
+        if conn:
+            conn.rollback()
+        raise ve
+    except Exception as e:
+        # Rollback on any error
+        if conn:
+            conn.rollback()
+        raise Exception(f"Failed to create patient in database: {str(e)}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
 # ==================== SEARCH PATIENTS ====================
 
 def search_patients(
@@ -31,10 +223,12 @@ def search_patients(
 ) -> List[Dict[str, Any]]:
     """
     Search for patients by name, MRN, phone, or date of birth.
+    Uses UNION to search both hospital (APP_VIEWTABLE_PATIENT_ADMISSION) 
+    and reserve (APP_RESERVE_PATIENT) tables.
     
     Args:
         query: Partial match on patient name
-        mrn: Exact match on Medical Record Number
+        mrn: Match on MedicalFileNumber
         phone: Partial match on phone number
         date_of_birth: Exact match on date of birth (YYYY-MM-DD)
         limit: Max results to return
@@ -46,44 +240,81 @@ def search_patients(
     cursor = conn.cursor()
     
     try:
-        conditions = []
-        params = []
+        conditions_hospital = []
+        conditions_reserve = []
+        params_hospital = []
+        params_reserve = []
         
-        # Build dynamic WHERE clause
+        # Build dynamic WHERE clauses for both sources
         if query:
-            conditions.append("(PatientName LIKE ? OR PatientNameEnglish LIKE ?)")
-            params.extend([f"%{query}%", f"%{query}%"])
+            conditions_hospital.append("(FullName LIKE ? OR FirstName LIKE ? OR LastName LIKE ?)")
+            params_hospital.extend([f"%{query}%", f"%{query}%", f"%{query}%"])
+            conditions_reserve.append("(FullName LIKE ? OR FirstName LIKE ? OR LastName LIKE ?)")
+            params_reserve.extend([f"%{query}%", f"%{query}%", f"%{query}%"])
         
         if mrn:
-            conditions.append("MRN = ?")
-            params.append(mrn)
+            conditions_hospital.append("MedicalFileNumber LIKE ?")
+            params_hospital.append(f"%{mrn}%")
+            conditions_reserve.append("MedicalFileNumber LIKE ?")
+            params_reserve.append(f"%{mrn}%")
         
         if phone:
-            conditions.append("Phone LIKE ?")
-            params.append(f"%{phone}%")
+            conditions_hospital.append("PhoneNumber1 LIKE ?")
+            params_hospital.append(f"%{phone}%")
+            conditions_reserve.append("PhoneNumber1 LIKE ?")
+            params_reserve.append(f"%{phone}%")
         
         if date_of_birth:
-            conditions.append("CONVERT(DATE, DateOfBirth) = ?")
-            params.append(date_of_birth)
+            conditions_hospital.append("CONVERT(DATE, BirthDate) = ?")
+            params_hospital.append(date_of_birth)
+            conditions_reserve.append("CONVERT(DATE, BirthDate) = ?")
+            params_reserve.append(date_of_birth)
         
-        where_clause = " AND ".join(conditions) if conditions else "1=1"
+        where_hospital = " AND ".join(conditions_hospital) if conditions_hospital else "1=1"
+        where_reserve = " AND ".join(conditions_reserve) if conditions_reserve else "1=1"
         
+        # UNION query combining both sources
         query_str = f"""
-            SELECT TOP {limit}
-                PatientID,
-                MRN,
-                PatientName,
-                PatientNameEnglish,
-                CONVERT(VARCHAR(10), DateOfBirth, 23) as DateOfBirth,
-                DATEDIFF(YEAR, DateOfBirth, GETDATE()) as Age,
-                Gender,
-                Phone
-            FROM dbo.APP_Patient
-            WHERE {where_clause}
-            ORDER BY PatientName ASC
+            SELECT TOP {limit} * FROM (
+                -- Hospital patients
+                SELECT
+                    PatientAdmissionID as patient_id,
+                    MedicalFileNumber as mrn,
+                    FullName as patient_name,
+                    FirstName as first_name,
+                    LastName as last_name,
+                    CONVERT(VARCHAR(10), BirthDate, 23) as date_of_birth,
+                    DATEDIFF(YEAR, BirthDate, GETDATE()) as age,
+                    SEX as gender,
+                    PhoneNumber1 as phone,
+                    'hospital' as source
+                FROM dbo.APP_VIEWTABLE_PATIENT_ADMISSION
+                WHERE {where_hospital}
+                
+                UNION ALL
+                
+                -- Reserve patients
+                SELECT
+                    PatientAdmissionID as patient_id,
+                    MedicalFileNumber as mrn,
+                    FullName as patient_name,
+                    FirstName as first_name,
+                    LastName as last_name,
+                    CONVERT(VARCHAR(10), BirthDate, 23) as date_of_birth,
+                    DATEDIFF(YEAR, BirthDate, GETDATE()) as age,
+                    SEX as gender,
+                    PhoneNumber1 as phone,
+                    'reserve' as source
+                FROM dbo.APP_RESERVE_PATIENT
+                WHERE {where_reserve}
+            ) AS CombinedPatients
+            ORDER BY patient_name ASC
         """
         
-        cursor.execute(query_str, params)
+        # Combine parameters for both queries
+        all_params = params_hospital + params_reserve
+        
+        cursor.execute(query_str, all_params)
         columns = [col[0] for col in cursor.description]
         rows = cursor.fetchall()
         

@@ -448,13 +448,18 @@ class SeasonalReportGenerator:
         
         is_compliant = len(violations) == 0
         
-        # Determine explanation status
-        # 1 = Not Required (compliant)
-        # 2 = Required (non-compliant, explanation pending)
-        explanation_status_id = 1 if is_compliant else 2
+        # Determine explanation status based on compliance
+        # FIXED: Correct status ID assignment
+        # - Compliant reports: Status 4 = "No Explanation Needed"
+        # - Non-compliant reports: Status 1 = "Waiting" (for explanation)
+        # - After explanation submitted: Status 2 = "Responded"
+        explanation_status_id = 4 if is_compliant else 1
+        
+        # Convert to JSON with ensure_ascii=False to preserve Arabic characters
+        violated_rules_json = json.dumps(violations, ensure_ascii=False) if violations else None
         
         return {
             'is_compliant': is_compliant,
-            'violated_rules': json.dumps(violations) if violations else None,
+            'violated_rules': violated_rules_json,
             'explanation_status_id': explanation_status_id
         }

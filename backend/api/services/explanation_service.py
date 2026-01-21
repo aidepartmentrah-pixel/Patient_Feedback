@@ -51,7 +51,7 @@ def get_pending_explanations(
     - Validates date formats
     - Applies department filtering
     - Separates red flag cases if requested
-    - Returns formatted response
+    - Returns formatted response matching frontend expectations
     
     Args:
         department_id: Filter by department
@@ -61,7 +61,7 @@ def get_pending_explanations(
         include_red_flags_only: If True, only return Red Flag/Never Event cases
     
     Returns:
-        Dictionary with cases list and metadata
+        Dictionary with { success, data: [...], statistics: {...} }
     """
     try:
         # Parse dates if provided
@@ -83,23 +83,42 @@ def get_pending_explanations(
                 case_type=case_type
             )
         
+        # DEBUG LOGGING (temporary)
+        print(f"\n{'='*60}")
+        print(f"[EXPLANATION SERVICE DEBUG]")
+        print(f"Query params: dept={department_id}, start={start_date}, end={end_date}, type={case_type}")
+        print(f"Total cases returned from DB: {len(cases)}")
+        if cases:
+            print(f"First 2 sample rows:")
+            for i, case in enumerate(cases[:2]):
+                print(f"  Case {i+1}: ID={case.get('IncidentRequestCaseID')}, "
+                      f"ClinicalRiskTypeID={case.get('ClinicalRiskTypeID')}, "
+                      f"ExplanationStatusID={case.get('ExplanationStatusID')}, "
+                      f"CaseStatusID={case.get('CaseStatusID')}")
+        else:
+            print(f"  No cases found matching criteria")
+        print(f"{'='*60}\n")
+        
         # Calculate statistics
         total_count = len(cases)
         red_flag_count = sum(1 for c in cases if c.get('ClinicalRiskType') in ['Red Flag', 'Never Event'])
         ordinary_count = total_count - red_flag_count
         
+        # Format response to match frontend expectations
         return {
             "success": True,
-            "total_count": total_count,
-            "red_flag_count": red_flag_count,
-            "ordinary_count": ordinary_count,
-            "cases": cases,
-            "filters": {
-                "department_id": department_id,
-                "start_date": start_date,
-                "end_date": end_date,
-                "case_type": case_type,
-                "red_flags_only": include_red_flags_only
+            "data": cases,  # Frontend expects "data" key with array
+            "statistics": {
+                "total_count": total_count,
+                "red_flag_count": red_flag_count,
+                "ordinary_count": ordinary_count,
+                "filters": {
+                    "department_id": department_id,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "case_type": case_type,
+                    "red_flags_only": include_red_flags_only
+                }
             }
         }
         
@@ -107,13 +126,18 @@ def get_pending_explanations(
         return {
             "success": False,
             "error": f"Invalid date format: {str(e)}",
-            "cases": []
+            "data": [],
+            "statistics": {}
         }
     except Exception as e:
+        print(f"[EXPLANATION SERVICE ERROR] {str(e)}")
+        import traceback
+        traceback.print_exc()
         return {
             "success": False,
             "error": str(e),
-            "cases": []
+            "data": [],
+            "statistics": {}
         }
 
 

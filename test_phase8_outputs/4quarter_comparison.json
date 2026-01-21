@@ -1,0 +1,112 @@
+{
+  "success": true,
+  "comparison_type": "4-quarters",
+  "periods": [
+    "Q4-2026",
+    "Q3-2026",
+    "Q2-2026",
+    "Q1-2026"
+  ],
+  "season_ids": [
+    8,
+    7,
+    6,
+    5
+  ],
+  "orgunit_id": 1,
+  "orgunit_type": 0,
+  "orgunit_name": "الادارة العامة",
+  "data": {
+    "domain_comparison": {
+      "Clinical": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "Management": [
+        0,
+        0,
+        0,
+        26
+      ]
+    },
+    "category_comparison": {
+      "Clinical - Quality of Care": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "Management - Environment": [
+        0,
+        0,
+        0,
+        12
+      ],
+      "Management - Institutional Processes": [
+        0,
+        0,
+        0,
+        14
+      ]
+    },
+    "subcategory_comparison": {
+      "Environment - Accommodation": [
+        0,
+        0,
+        0,
+        9
+      ],
+      "Environment - Security": [
+        0,
+        0,
+        0,
+        3
+      ],
+      "Institutional Processes - Bureaucracy": [
+        0,
+        0,
+        0,
+        3
+      ],
+      "Institutional Processes - Delay - Access": [
+        0,
+        0,
+        0,
+        3
+      ],
+      "Institutional Processes - Delay - General": [
+        0,
+        0,
+        0,
+        8
+      ],
+      "Quality of Care - Examination & Monitoring": [
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    "yearly_totals": {
+      "total_cases": 10,
+      "clinical": 1,
+      "management": 26,
+      "relational": 0,
+      "low_severity": 14,
+      "medium_severity": 12,
+      "high_severity": 1
+    },
+    "trends": {
+      "total_cases": "↑↑",
+      "clinical": "↑↑",
+      "management": "↑↑",
+      "relational": "→",
+      "low_severity": "↑↑",
+      "medium_severity": "↑↑",
+      "high_severity": "↑↑"
+    }
+  },
+  "generated_at": "2026-01-20T09:52:27.626344"
+}

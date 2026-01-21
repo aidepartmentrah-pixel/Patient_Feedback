@@ -1,0 +1,162 @@
+{
+  "total": 11,
+  "passed": 11,
+  "failed": 0,
+  "warnings": 0,
+  "tests": [
+    {
+      "name": "Available Quarters",
+      "status": "PASS",
+      "message": "Retrieved 8 seasons successfully",
+      "details": {
+        "seasons_count": 8,
+        "first_season": {
+          "season_id": 8,
+          "name": "Q4-2026",
+          "start_date": "2026-10-01",
+          "end_date": "2026-12-31"
+        }
+      },
+      "timestamp": "2026-01-20T09:52:14.253683"
+    },
+    {
+      "name": "2-Quarter JSON",
+      "status": "PASS",
+      "message": "JSON response structure valid",
+      "details": {
+        "periods": [
+          "Q4-2026",
+          "Q3-2026"
+        ],
+        "output_file": "test_phase8_outputs\\2quarter_comparison.json"
+      },
+      "timestamp": "2026-01-20T09:52:18.360331"
+    },
+    {
+      "name": "2-Quarter DOCX",
+      "status": "PASS",
+      "message": "DOCX file generated (56,208 bytes)",
+      "details": {
+        "file_size": 56208,
+        "output_file": "test_phase8_outputs\\2quarter_comparison.docx"
+      },
+      "timestamp": "2026-01-20T09:52:20.648573"
+    },
+    {
+      "name": "3-Quarter JSON",
+      "status": "PASS",
+      "message": "Trend analysis structure valid",
+      "details": {
+        "periods": [
+          "Q4-2026",
+          "Q3-2026",
+          "Q2-2026"
+        ],
+        "output_file": "test_phase8_outputs\\3quarter_comparison.json"
+      },
+      "timestamp": "2026-01-20T09:52:22.812448"
+    },
+    {
+      "name": "3-Quarter DOCX",
+      "status": "PASS",
+      "message": "DOCX file generated (152,268 bytes)",
+      "details": {
+        "file_size": 152268,
+        "output_file": "test_phase8_outputs\\3quarter_comparison.docx"
+      },
+      "timestamp": "2026-01-20T09:52:25.563597"
+    },
+    {
+      "name": "4-Quarter JSON",
+      "status": "PASS",
+      "message": "Yearly summary structure valid",
+      "details": {
+        "periods": [
+          "Q4-2026",
+          "Q3-2026",
+          "Q2-2026",
+          "Q1-2026"
+        ],
+        "output_file": "test_phase8_outputs\\4quarter_comparison.json"
+      },
+      "timestamp": "2026-01-20T09:52:27.628209"
+    },
+    {
+      "name": "4-Quarter DOCX",
+      "status": "PASS",
+      "message": "DOCX file generated (629,162 bytes)",
+      "details": {
+        "file_size": 629162,
+        "output_file": "test_phase8_outputs\\4quarter_comparison.docx"
+      },
+      "timestamp": "2026-01-20T09:52:31.188902"
+    },
+    {
+      "name": "Validation Error Handling",
+      "status": "PASS",
+      "message": "Passed 4/4 validation tests",
+      "details": {
+        "passed": 4,
+        "total": 4
+      },
+      "timestamp": "2026-01-20T09:52:39.342130"
+    },
+    {
+      "name": "Edge Cases",
+      "status": "PASS",
+      "message": "Handled 3/3 edge cases",
+      "details": {
+        "passed": 3,
+        "total": 3
+      },
+      "timestamp": "2026-01-20T09:52:45.549829"
+    },
+    {
+      "name": "Single Season Export",
+      "status": "PASS",
+      "message": "Single season export working (no auto-comparison)",
+      "details": {
+        "file_size": 55908,
+        "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "filename": "Seasonal_Report_2026_Q4.docx",
+        "export_id": "exp-20260120-ea162f61",
+        "output_file": "test_phase8_outputs\\single_season_export.docx"
+      },
+      "timestamp": "2026-01-20T09:52:49.682996"
+    },
+    {
+      "name": "Performance Testing",
+      "status": "PASS",
+      "message": "Average response time: 2.12s, 4/4 succeeded",
+      "details": {
+        "performance_results": [
+          {
+            "test": "2Q JSON",
+            "elapsed": 2.096843,
+            "status": 200,
+            "success": true
+          },
+          {
+            "test": "2Q DOCX",
+            "elapsed": 2.162898,
+            "status": 200,
+            "success": true
+          },
+          {
+            "test": "3Q JSON",
+            "elapsed": 2.105824,
+            "status": 200,
+            "success": true
+          },
+          {
+            "test": "4Q JSON",
+            "elapsed": 2.112543,
+            "status": 200,
+            "success": true
+          }
+        ]
+      },
+      "timestamp": "2026-01-20T09:52:58.163791"
+    }
+  ]
+}

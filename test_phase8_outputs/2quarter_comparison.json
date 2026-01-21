@@ -1,0 +1,117 @@
+{
+  "success": true,
+  "comparison_type": "2-quarters",
+  "periods": [
+    "Q4-2026",
+    "Q3-2026"
+  ],
+  "season_ids": [
+    8,
+    7
+  ],
+  "orgunit_id": 1,
+  "orgunit_type": 0,
+  "orgunit_name": "الادارة العامة",
+  "data": {
+    "reports": [
+      {
+        "header": {
+          "seasonal_report_id": 328,
+          "season_id": 8,
+          "orgunit_id": 1,
+          "orgunit_type": 0,
+          "total_cases": 0,
+          "low_severity_count": 0,
+          "medium_severity_count": 0,
+          "high_severity_count": 0,
+          "clinical_domain_count": 0,
+          "management_domain_count": 0,
+          "relational_domain_count": 0,
+          "is_compliant": true,
+          "violated_rules": null,
+          "explanation_status_id": 1,
+          "created_by_user_id": 1,
+          "created_at": "2026-01-20T08:59:24.307000",
+          "period": "Q4-2026",
+          "orgunit_name": "الادارة العامة"
+        },
+        "classification_stats": [],
+        "policy_snapshot": {
+          "low_severity_limit": 5,
+          "medium_severity_limit": 3,
+          "high_severity_limit": 0,
+          "clinical_domain_limit": 15,
+          "management_domain_limit": 55,
+          "relational_domain_limit": 25,
+          "enable_low_severity_repetition_rule": true,
+          "enable_medium_severity_repetition_rule": true,
+          "enable_high_severity_percentage_rule": true,
+          "enable_high_severity_percentage_by_domain_rule": true
+        }
+      },
+      {
+        "header": {
+          "seasonal_report_id": 327,
+          "season_id": 7,
+          "orgunit_id": 1,
+          "orgunit_type": 0,
+          "total_cases": 0,
+          "low_severity_count": 0,
+          "medium_severity_count": 0,
+          "high_severity_count": 0,
+          "clinical_domain_count": 0,
+          "management_domain_count": 0,
+          "relational_domain_count": 0,
+          "is_compliant": true,
+          "violated_rules": null,
+          "explanation_status_id": 1,
+          "created_by_user_id": 1,
+          "created_at": "2026-01-19T16:13:45.220000",
+          "period": "Q3-2026",
+          "orgunit_name": "الادارة العامة"
+        },
+        "classification_stats": [],
+        "policy_snapshot": {
+          "low_severity_limit": 5,
+          "medium_severity_limit": 3,
+          "high_severity_limit": 0,
+          "clinical_domain_limit": 15,
+          "management_domain_limit": 55,
+          "relational_domain_limit": 25,
+          "enable_low_severity_repetition_rule": true,
+          "enable_medium_severity_repetition_rule": true,
+          "enable_high_severity_percentage_rule": true,
+          "enable_high_severity_percentage_by_domain_rule": true
+        }
+      }
+    ],
+    "percentage_changes": {
+      "total_cases": 0.0,
+      "clinical_domain_count": 0.0,
+      "management_domain_count": 0.0,
+      "relational_domain_count": 0.0,
+      "low_severity_count": 0.0,
+      "medium_severity_count": 0.0,
+      "high_severity_count": 0.0,
+      "prevention_action_count": 0.0,
+      "explanation_count": 0.0
+    },
+    "summary": {
+      "previous": {
+        "period": "Q4-2026",
+        "total_cases": 0,
+        "clinical": 0,
+        "management": 0,
+        "relational": 0
+      },
+      "current": {
+        "period": "Q3-2026",
+        "total_cases": 0,
+        "clinical": 0,
+        "management": 0,
+        "relational": 0
+      }
+    }
+  },
+  "generated_at": "2026-01-20T09:52:18.358071"
+}

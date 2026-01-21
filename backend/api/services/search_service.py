@@ -12,12 +12,16 @@ def search_patients(search_text: str, limit: int = 20) -> Dict[str, Any]:
     """
     Search for patients by name or document number.
     
+    DUAL-SOURCE PATTERN: Merges results from both hospital table 
+    (APP_VIEWTABLE_PATIENT_ADMISSION) and reserve table (APP_RESERVE_PATIENT).
+    
     Args:
         search_text: Text to search for in patient names or document numbers
         limit: Maximum number of results to return (default: 20)
     
     Returns:
         Dictionary containing list of matching patients with their details
+        Each patient includes a 'source' field ('hospital' or 'reserve')
     """
     conn = None
     cursor = None
@@ -29,27 +33,57 @@ def search_patients(search_text: str, limit: int = 20) -> Dict[str, Any]:
         # Search in FullName, FirstName, LastName, and DocumentNumber
         search_pattern = f"%{search_text}%"
         
+        # UNION query: Merge hospital + reserve patients
         cursor.execute("""
-            SELECT TOP (?)
-                PatientAdmissionID,
-                FullName,
-                FirstName,
-                LastName,
-                DocumentNumber,
-                PhoneNumber1,
-                BirthDate,
-                SEX,
-                MedicalFileNumber,
-                AdmissionDate
-            FROM APP_VIEWTABLE_PATIENT_ADMISSION
-            WHERE 
-                FullName LIKE ? 
-                OR FirstName LIKE ? 
-                OR LastName LIKE ? 
-                OR DocumentNumber LIKE ?
-                OR MedicalFileNumber LIKE ?
+            SELECT TOP (?) * FROM (
+                -- Hospital patients
+                SELECT 
+                    PatientAdmissionID,
+                    FullName,
+                    FirstName,
+                    LastName,
+                    DocumentNumber,
+                    PhoneNumber1,
+                    BirthDate,
+                    SEX,
+                    MedicalFileNumber,
+                    AdmissionDate,
+                    'hospital' as Source
+                FROM APP_VIEWTABLE_PATIENT_ADMISSION
+                WHERE 
+                    FullName LIKE ? 
+                    OR FirstName LIKE ? 
+                    OR LastName LIKE ? 
+                    OR DocumentNumber LIKE ?
+                    OR MedicalFileNumber LIKE ?
+                
+                UNION ALL
+                
+                -- Reserve patients
+                SELECT 
+                    PatientAdmissionID,
+                    FullName,
+                    FirstName,
+                    LastName,
+                    DocumentNumber,
+                    PhoneNumber1,
+                    BirthDate,
+                    SEX,
+                    MedicalFileNumber,
+                    SystemTime as AdmissionDate,
+                    'reserve' as Source
+                FROM APP_RESERVE_PATIENT
+                WHERE 
+                    FullName LIKE ? 
+                    OR FirstName LIKE ? 
+                    OR LastName LIKE ? 
+                    OR DocumentNumber LIKE ?
+                    OR MedicalFileNumber LIKE ?
+            ) AS CombinedPatients
             ORDER BY AdmissionDate DESC
-        """, (limit, search_pattern, search_pattern, search_pattern, search_pattern, search_pattern))
+        """, (limit, 
+              search_pattern, search_pattern, search_pattern, search_pattern, search_pattern,
+              search_pattern, search_pattern, search_pattern, search_pattern, search_pattern))
         
         patients = []
         for row in cursor.fetchall():
@@ -63,7 +97,8 @@ def search_patients(search_text: str, limit: int = 20) -> Dict[str, Any]:
                 "birth_date": row.BirthDate.isoformat() if row.BirthDate else None,
                 "sex": row.SEX,
                 "medical_file_number": row.MedicalFileNumber,
-                "admission_date": row.AdmissionDate.isoformat() if row.AdmissionDate else None
+                "admission_date": row.AdmissionDate.isoformat() if row.AdmissionDate else None,
+                "source": row.Source  # NEW: Indicates if from hospital or reserve
             })
         
         return {
@@ -233,11 +268,15 @@ def get_patient_by_id(patient_admission_id: int) -> Dict[str, Any]:
     Get a specific patient by PatientAdmissionID.
     Used to verify patient selection.
     
+    DUAL-SOURCE PATTERN: Checks reserve table first, then hospital table.
+    This prioritizes user-created patients.
+    
     Args:
         patient_admission_id: The patient admission ID
     
     Returns:
         Dictionary containing patient details or error
+        Includes 'source' field ('hospital' or 'reserve')
     """
     conn = None
     cursor = None
@@ -246,6 +285,7 @@ def get_patient_by_id(patient_admission_id: int) -> Dict[str, Any]:
         conn = get_connection()
         cursor = conn.cursor()
         
+        # Check reserve table first
         cursor.execute("""
             SELECT 
                 PatientAdmissionID,
@@ -257,12 +297,36 @@ def get_patient_by_id(patient_admission_id: int) -> Dict[str, Any]:
                 BirthDate,
                 SEX,
                 MedicalFileNumber,
-                AdmissionDate
-            FROM APP_VIEWTABLE_PATIENT_ADMISSION
+                SystemTime as AdmissionDate,
+                'reserve' as Source
+            FROM APP_RESERVE_PATIENT
             WHERE PatientAdmissionID = ?
         """, (patient_admission_id,))
         
         row = cursor.fetchone()
+        source = 'reserve'
+        
+        # If not found in reserve, check hospital table
+        if not row:
+            cursor.execute("""
+                SELECT 
+                    PatientAdmissionID,
+                    FullName,
+                    FirstName,
+                    LastName,
+                    DocumentNumber,
+                    PhoneNumber1,
+                    BirthDate,
+                    SEX,
+                    MedicalFileNumber,
+                    AdmissionDate,
+                    'hospital' as Source
+                FROM APP_VIEWTABLE_PATIENT_ADMISSION
+                WHERE PatientAdmissionID = ?
+            """, (patient_admission_id,))
+            
+            row = cursor.fetchone()
+            source = 'hospital'
         
         if row:
             return {
@@ -277,7 +341,8 @@ def get_patient_by_id(patient_admission_id: int) -> Dict[str, Any]:
                     "birth_date": row.BirthDate.isoformat() if row.BirthDate else None,
                     "sex": row.SEX,
                     "medical_file_number": row.MedicalFileNumber,
-                    "admission_date": row.AdmissionDate.isoformat() if row.AdmissionDate else None
+                    "admission_date": row.AdmissionDate.isoformat() if row.AdmissionDate else None,
+                    "source": row.Source  # NEW: Indicates if from hospital or reserve
                 }
             }
         else:

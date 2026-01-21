@@ -6,15 +6,263 @@ Business logic for patient history operations.
 from typing import List, Dict, Any, Optional
 import csv
 import io
-from datetime import datetime
+import re
+from datetime import datetime, date
 
 from ..db_layer.patients_db import (
     search_patients,
     get_patient_profile,
     get_patient_incidents,
     get_incident_details,
-    get_patient_incidents_for_export
+    get_patient_incidents_for_export,
+    create_patient
 )
+
+
+# ==================== CREATE PATIENT ====================
+
+def create_patient_service(
+    first_name: str,
+    middle_name: Optional[str] = None,
+    last_name: Optional[str] = None,
+    mother_name: Optional[str] = None,
+    phone_number: Optional[str] = None,
+    phone_number2: Optional[str] = None,
+    birth_date: Optional[str] = None,
+    sex: Optional[str] = None,
+    document_number: Optional[str] = None,
+    medical_file_number: Optional[str] = None,
+    spouse: Optional[str] = None,
+    address_line1: Optional[str] = None,
+    address_line2: Optional[str] = None,
+    created_by_user_id: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    Create a new patient with validation and sanitization.
+    
+    This service layer adds business logic validation on top of DB layer.
+    All input is sanitized and validated before passing to DB layer.
+    
+    Validation Rules:
+    - FirstName: Required, 2-150 chars, alphanumeric + spaces + Arabic chars
+    - MiddleName/LastName/MotherName: Optional, max 150 chars
+    - PhoneNumber: Optional, max 50 chars, basic format check
+    - BirthDate: Optional, valid date format (YYYY-MM-DD), not in future, age < 150
+    - SEX: Optional, must be M/F/Male/Female (case-insensitive)
+    - DocumentNumber: Optional, max 100 chars, alphanumeric
+    - MedicalFileNumber: Optional, max 100 chars, alphanumeric
+    - Spouse: Optional, max 150 chars
+    - AddressLine1/2: Optional, max 300 chars
+    
+    Args:
+        first_name: Patient's first name (REQUIRED)
+        ... (other optional fields)
+        created_by_user_id: User ID who is creating this patient
+    
+    Returns:
+        Dict with created patient data
+    
+    Raises:
+        ValueError: If validation fails with descriptive message
+        Exception: If database operation fails
+    """
+    
+    # ============== VALIDATION ==============
+    
+    # 1. FirstName validation (REQUIRED)
+    if not first_name or not first_name.strip():
+        raise ValueError("FirstName is required and cannot be empty")
+    
+    first_name = first_name.strip()
+    
+    if len(first_name) < 2:
+        raise ValueError("FirstName must be at least 2 characters long")
+    
+    if len(first_name) > 150:
+        raise ValueError("FirstName must not exceed 150 characters")
+    
+    # Check for valid characters (letters, spaces, Arabic, hyphens, apostrophes)
+    if not re.match(r'^[\w\s\u0600-\u06FF\'-]+$', first_name, re.UNICODE):
+        raise ValueError("FirstName contains invalid characters. Only letters, spaces, hyphens, and apostrophes allowed")
+    
+    # 2. MiddleName validation (OPTIONAL)
+    if middle_name:
+        middle_name = middle_name.strip()
+        if len(middle_name) > 150:
+            raise ValueError("MiddleName must not exceed 150 characters")
+        if not re.match(r'^[\w\s\u0600-\u06FF\'-]+$', middle_name, re.UNICODE):
+            raise ValueError("MiddleName contains invalid characters")
+    else:
+        middle_name = None
+    
+    # 3. LastName validation (OPTIONAL)
+    if last_name:
+        last_name = last_name.strip()
+        if len(last_name) > 150:
+            raise ValueError("LastName must not exceed 150 characters")
+        if not re.match(r'^[\w\s\u0600-\u06FF\'-]+$', last_name, re.UNICODE):
+            raise ValueError("LastName contains invalid characters")
+    else:
+        last_name = None
+    
+    # 4. MotherName validation (OPTIONAL)
+    if mother_name:
+        mother_name = mother_name.strip()
+        if len(mother_name) > 150:
+            raise ValueError("MotherName must not exceed 150 characters")
+        if not re.match(r'^[\w\s\u0600-\u06FF\'-]+$', mother_name, re.UNICODE):
+            raise ValueError("MotherName contains invalid characters")
+    else:
+        mother_name = None
+    
+    # 5. PhoneNumber validation (OPTIONAL)
+    if phone_number:
+        phone_number = phone_number.strip()
+        if len(phone_number) > 50:
+            raise ValueError("PhoneNumber must not exceed 50 characters")
+        # Basic phone format check: digits, spaces, +, -, (, )
+        if not re.match(r'^[\d\s\+\-\(\)]+$', phone_number):
+            raise ValueError("PhoneNumber contains invalid characters. Only digits, spaces, +, -, (, ) allowed")
+        # Must have at least 7 digits
+        digits_only = re.sub(r'\D', '', phone_number)
+        if len(digits_only) < 7:
+            raise ValueError("PhoneNumber must contain at least 7 digits")
+    else:
+        phone_number = None
+    
+    # 6. PhoneNumber2 validation (OPTIONAL)
+    if phone_number2:
+        phone_number2 = phone_number2.strip()
+        if len(phone_number2) > 50:
+            raise ValueError("PhoneNumber2 must not exceed 50 characters")
+        if not re.match(r'^[\d\s\+\-\(\)]+$', phone_number2):
+            raise ValueError("PhoneNumber2 contains invalid characters")
+        digits_only = re.sub(r'\D', '', phone_number2)
+        if len(digits_only) < 7:
+            raise ValueError("PhoneNumber2 must contain at least 7 digits")
+    else:
+        phone_number2 = None
+    
+    # 7. BirthDate validation (OPTIONAL)
+    if birth_date:
+        birth_date = birth_date.strip()
+        
+        # Validate format YYYY-MM-DD
+        if not re.match(r'^\d{4}-\d{2}-\d{2}$', birth_date):
+            raise ValueError("BirthDate must be in format YYYY-MM-DD")
+        
+        # Parse and validate date
+        try:
+            birth_date_obj = datetime.strptime(birth_date, '%Y-%m-%d').date()
+        except ValueError:
+            raise ValueError("BirthDate is not a valid date")
+        
+        # Check not in future
+        today = date.today()
+        if birth_date_obj > today:
+            raise ValueError("BirthDate cannot be in the future")
+        
+        # Check reasonable age (< 150 years)
+        age_in_years = (today - birth_date_obj).days / 365.25
+        if age_in_years > 150:
+            raise ValueError("BirthDate indicates age over 150 years, please verify")
+        
+        # Check not too recent (at least born)
+        if age_in_years < 0:
+            raise ValueError("BirthDate is invalid")
+    else:
+        birth_date = None
+    
+    # 8. SEX validation (OPTIONAL)
+    if sex:
+        sex = sex.strip().upper()
+        valid_sex_values = ['M', 'F', 'MALE', 'FEMALE']
+        if sex not in valid_sex_values:
+            raise ValueError("SEX must be one of: M, F, Male, Female")
+        # Normalize to single letter
+        if sex == 'MALE':
+            sex = 'M'
+        elif sex == 'FEMALE':
+            sex = 'F'
+    else:
+        sex = None
+    
+    # 9. DocumentNumber validation (OPTIONAL)
+    if document_number:
+        document_number = document_number.strip()
+        if len(document_number) > 100:
+            raise ValueError("DocumentNumber must not exceed 100 characters")
+        # Alphanumeric + hyphens
+        if not re.match(r'^[\w\-]+$', document_number):
+            raise ValueError("DocumentNumber contains invalid characters. Only alphanumeric and hyphens allowed")
+    else:
+        document_number = None
+    
+    # 10. MedicalFileNumber validation (OPTIONAL)
+    if medical_file_number:
+        medical_file_number = medical_file_number.strip()
+        if len(medical_file_number) > 100:
+            raise ValueError("MedicalFileNumber must not exceed 100 characters")
+        # Alphanumeric + hyphens
+        if not re.match(r'^[\w\-]+$', medical_file_number):
+            raise ValueError("MedicalFileNumber contains invalid characters. Only alphanumeric and hyphens allowed")
+    else:
+        medical_file_number = None
+    
+    # 11. Spouse validation (OPTIONAL)
+    if spouse:
+        spouse = spouse.strip()
+        if len(spouse) > 150:
+            raise ValueError("Spouse name must not exceed 150 characters")
+        if not re.match(r'^[\w\s\u0600-\u06FF\'-]+$', spouse, re.UNICODE):
+            raise ValueError("Spouse name contains invalid characters")
+    else:
+        spouse = None
+    
+    # 12. AddressLine1 validation (OPTIONAL)
+    if address_line1:
+        address_line1 = address_line1.strip()
+        if len(address_line1) > 300:
+            raise ValueError("AddressLine1 must not exceed 300 characters")
+    else:
+        address_line1 = None
+    
+    # 13. AddressLine2 validation (OPTIONAL)
+    if address_line2:
+        address_line2 = address_line2.strip()
+        if len(address_line2) > 300:
+            raise ValueError("AddressLine2 must not exceed 300 characters")
+    else:
+        address_line2 = None
+    
+    # ============== CALL DB LAYER ==============
+    
+    try:
+        patient = create_patient(
+            first_name=first_name,
+            middle_name=middle_name,
+            last_name=last_name,
+            mother_name=mother_name,
+            phone_number=phone_number,
+            phone_number2=phone_number2,
+            birth_date=birth_date,
+            sex=sex,
+            document_number=document_number,
+            medical_file_number=medical_file_number,
+            spouse=spouse,
+            address_line1=address_line1,
+            address_line2=address_line2,
+            created_by_user_id=created_by_user_id
+        )
+        
+        return patient
+        
+    except ValueError as ve:
+        # Re-raise validation errors from DB layer (duplicates, etc.)
+        raise ve
+    except Exception as e:
+        # Wrap other exceptions
+        raise Exception(f"Failed to create patient: {str(e)}")
 
 
 # ==================== SEARCH PATIENTS ====================

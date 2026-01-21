@@ -5,11 +5,98 @@ Business logic for doctor profiles, statistics, and analytics.
 
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
+import re
 from ..db_layer import doctors_db
 
 
 class DoctorService:
     """Service for doctor-related operations."""
+    
+    @staticmethod
+    def create_doctor(
+        doctor_name: str,
+        specialty: Optional[str] = None,
+        is_active: bool = True,
+        source_system: str = 'MANUAL'
+    ) -> Dict[str, Any]:
+        """
+        Create a new doctor in the reserve table.
+        
+        Validates input and creates doctor record.
+        
+        Args:
+            doctor_name: Doctor's full name (required, 3-200 chars)
+            specialty: Medical specialty (optional, max 200 chars)
+            is_active: Active status (default: True)
+            source_system: Source identifier (default: 'MANUAL')
+        
+        Returns:
+            Dict with success status and created doctor data
+            
+        Raises:
+            ValueError: If validation fails
+            Exception: For database errors
+        """
+        try:
+            # ============================================
+            # VALIDATION
+            # ============================================
+            
+            # 1. Doctor name validation
+            if not doctor_name or not doctor_name.strip():
+                raise ValueError("Doctor name is required")
+            
+            doctor_name = doctor_name.strip()
+            
+            if len(doctor_name) < 3:
+                raise ValueError("Doctor name must be at least 3 characters")
+            
+            if len(doctor_name) > 200:
+                raise ValueError("Doctor name cannot exceed 200 characters")
+            
+            # 2. Specialty validation (if provided)
+            if specialty:
+                specialty = specialty.strip()
+                if len(specialty) > 200:
+                    raise ValueError("Specialty cannot exceed 200 characters")
+            
+            # 3. Source system validation (if provided)
+            if source_system:
+                source_system = source_system.strip()
+                if len(source_system) > 100:
+                    raise ValueError("Source system cannot exceed 100 characters")
+            
+            # ============================================
+            # CREATE DOCTOR
+            # ============================================
+            
+            doctor = doctors_db.create_doctor(
+                doctor_name=doctor_name,
+                specialty=specialty if specialty else None,
+                is_active=is_active,
+                source_system=source_system
+            )
+            
+            # ============================================
+            # SUCCESS RESPONSE
+            # ============================================
+            
+            return {
+                'success': True,
+                'message': f"Doctor '{doctor_name}' created successfully",
+                'message_ar': f"تم إنشاء الطبيب '{doctor_name}' بنجاح",
+                'doctor': doctor
+            }
+            
+        except ValueError as ve:
+            # Validation errors
+            raise ValueError(str(ve))
+        except Exception as e:
+            # Database or other errors
+            error_msg = str(e)
+            if "already exists" in error_msg.lower():
+                raise ValueError(f"Doctor with name '{doctor_name}' already exists")
+            raise Exception(f"Failed to create doctor: {error_msg}")
     
     @staticmethod
     def search_doctors(

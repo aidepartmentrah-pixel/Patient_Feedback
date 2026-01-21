@@ -1,6 +1,6 @@
 # 🗺️ Backend Architecture (Exclude Mode)
 
-_Generated on: 2026-01-14 13:41_
+_Generated on: 2026-01-20 12:54_
 
 
 ---
@@ -16,6 +16,12 @@ _No functions found_
 **Functions:**
 - `map_feedback_to_ids()`
 
+### 📄 backend\CHECK_TYPES.py
+_No functions found_
+
+### 📄 backend\DIAGNOSE_TARGET_DEPT_TYPES.py
+_No functions found_
+
 ### 📄 backend\DIAGNOSTIC_REPORT.py
 _No functions found_
 
@@ -25,6 +31,10 @@ _No functions found_
 
 ### 📄 backend\PRODUCTION_TEST_4FIELDS.py
 _No functions found_
+
+### 📄 backend\TEST_COUNT_INTEGRITY.py
+**Functions:**
+- `test_count_integrity()`
 
 ### 📄 backend\TEST_DIRECT_DB.py
 _No functions found_
@@ -42,10 +52,20 @@ _No functions found_
 ### 📄 backend\TEST_INSERT_SIMPLE.py
 _No functions found_
 
+### 📄 backend\TEST_MULTI_DEPT_VALIDATION.py
+**Functions:**
+- `comprehensive_count_validation()`
+
+### 📄 backend\TEST_ORG_FILTERING.py
+_No functions found_
+
 ### 📄 backend\TEST_QUICK.py
 _No functions found_
 
 ### 📄 backend\TEST_TIMING.py
+_No functions found_
+
+### 📄 backend\TEST_UNION_FILTERING.py
 _No functions found_
 
 ### 📄 backend\TROUBLESHOOTING_MISSING_FIELDS.py
@@ -94,6 +114,9 @@ _No functions found_
 ### 📄 backend\check_target_dept_table.py
 _No functions found_
 
+### 📄 backend\check_target_depts.py
+_No functions found_
+
 ### 📄 backend\config\ml_encoding_mapper.py
 **Functions:**
 - `_get_mapping_file_path()`
@@ -104,6 +127,12 @@ _No functions found_
 ### 📄 backend\final_verification.py
 **Functions:**
 - `main()`
+
+### 📄 backend\find_data_months.py
+_No functions found_
+
+### 📄 backend\investigate_missing.py
+_No functions found_
 
 ### 📄 backend\main.py
 **Functions:**
@@ -136,6 +165,13 @@ _No functions found_
 - `test_wrapper_with_no_text()`
 - `main()`
 
+### 📄 backend\test_explanation_fix.py
+**Functions:**
+- `test_pending_explanations()`
+
+### 📄 backend\test_frozen_filter.py
+_No functions found_
+
 ### 📄 backend\test_investigation.py
 **Functions:**
 - `test_seasons()`
@@ -150,12 +186,109 @@ _No functions found_
 - `test_3_return_value_unchanged()`
 - `main()`
 
+### 📄 backend\test_phase0_schema_changes.py
+**Functions:**
+- `test_column_exists()`
+- `test_default_values()`
+- `test_taken_action_field()`
+- `test_lookup_tables()`
+- `test_sample_insert()`
+- `run_all_tests()`
+
 ### 📄 backend\test_search_endpoints.py
 **Functions:**
 - `test_search_patients()`
 - `test_search_doctors()`
 - `test_search_employees()`
 - `test_health()`
+
+### 📄 backend\tests\test_phase1_explanation_db.py
+**Functions:**
+- `test_explanation_status_lookups()`
+- `test_case_status_lookups()`
+- `test_get_case_by_id()`
+- `test_get_cases_needing_explanation()`
+- `test_get_red_flag_cases()`
+- `test_count_by_status()`
+- `test_overdue_explanations()`
+- `test_check_has_explanation()`
+- `run_all_tests()`
+
+### 📄 backend\tests\test_phase2_explanation_write.py
+**Functions:**
+- `create_test_case()`
+- `delete_test_case()`
+- `test_update_case_explanation()`
+- `test_update_requires_explanation()`
+- `test_force_close_case()`
+- `test_close_after_action_items()`
+- `test_fsm_validation()`
+- `run_all_tests()`
+
+### 📄 backend\tests\test_phase3_explanation_service.py
+**Functions:**
+- `test_get_pending_explanations()`
+- `test_dashboard_statistics()`
+- `test_case_explanation_details()`
+- `test_validate_explanation()`
+- `test_submit_explanation_validation()`
+- `test_admin_operations()`
+- `test_explanation_history()`
+- `run_all_tests()`
+
+### 📄 backend\tests\test_phase4_insert_fsm.py
+**Functions:**
+- `cleanup_test_case()`
+- `test_red_flag_path()`
+- `test_never_event_path()`
+- `test_ordinary_requires_explanation_true()`
+- `test_ordinary_no_explanation_needed()`
+- `test_ordinary_default_false()`
+- `test_requires_explanation_string_conversion()`
+- `run_all_tests()`
+
+### 📄 backend\tests\test_phase5_action_items.py
+**Functions:**
+- `cleanup_test_case()`
+- `test_submit_explanation_with_action_items()`
+- `test_mark_action_items_complete()`
+- `test_completion_status_reporting()`
+- `test_check_and_close_validation()`
+- `run_all_tests()`
+
+### 📄 backend\tests\test_phase6_api_endpoints.py
+**Functions:**
+- `cleanup_test_case()`
+- `test_get_statistics_endpoint()`
+- `test_get_pending_explanations_endpoint()`
+- `test_get_case_details_endpoint()`
+- `test_submit_explanation_endpoint()`
+- `test_update_requires_explanation_endpoint()`
+- `test_validate_explanation_endpoint()`
+- `run_all_tests()`
+
+### 📄 backend\tests\test_phase6_integration.py
+**Functions:**
+- `cleanup_test_case()`
+- `test_statistics_logic()`
+- `test_pending_explanations_logic()`
+- `test_case_details_logic()`
+- `test_submit_explanation_logic()`
+- `test_update_requires_explanation_logic()`
+- `test_validation_logic()`
+- `run_all_tests()`
+
+### 📄 backend\tests\test_phase7_end_to_end.py
+**Functions:**
+- `cleanup_test_case()`
+- `test_red_flag_complete_workflow()`
+- `test_never_event_complete_workflow()`
+- `test_ordinary_complaint_with_explanation()`
+- `test_ordinary_complaint_without_explanation()`
+- `test_action_items_auto_closure()`
+- `test_force_close_workflow()`
+- `test_statistics_and_dashboard()`
+- `run_all_tests()`
 
 ### 📄 backend\verify_implementation.py
 **Functions:**
@@ -165,10 +298,119 @@ _No functions found_
 **Functions:**
 - `test_imports()`
 
+### 📄 check_policy_tables.py
+_No functions found_
+
+### 📄 check_season_table.py
+_No functions found_
+
+### 📄 check_season_table_name.py
+_No functions found_
+
+### 📄 debug_seasonal_empty.py
+_No functions found_
+
+### 📄 get_valid_ids.py
+_No functions found_
+
 ### 📄 project_paths.py
 **Functions:**
 - `get_project_root()`
 - `get_db_path()`
+
+### 📄 test_2quarter_comparison_update.py
+**Functions:**
+- `test_2quarter_comparison()`
+
+### 📄 test_3quarter_comparison.py
+**Functions:**
+- `test_3quarter_comparison()`
+
+### 📄 test_4quarter_comparison.py
+**Functions:**
+- `test_4quarter_comparison()`
+
+### 📄 test_auto_create_seasons.py
+**Functions:**
+- `check_seasons_before()`
+- `test_auto_create()`
+- `check_seasons_after()`
+
+### 📄 test_explanation_action_items.py
+**Functions:**
+- `print_section()`
+- `print_result()`
+- `test_red_flag_explanation_with_actions()`
+- `test_ordinary_explanation_with_actions()`
+- `test_seasonal_explanation_with_actions()`
+- `test_verify_action_items_in_followup()`
+- `test_calendar_view()`
+- `test_complete_action()`
+- `test_delay_action()`
+- `main()`
+
+### 📄 test_phase1_foundation.py
+**Functions:**
+- `test_phase1_foundation()`
+
+### 📄 test_phase1_single_seasonal_export.py
+**Functions:**
+- `test_phase1_single_unit_export()`
+
+### 📄 test_phase2_multi_seasonal_export.py
+**Functions:**
+- `test_phase2_multi_unit_export()`
+
+### 📄 test_phase4_comprehensive_export.py
+**Functions:**
+- `test_export()`
+- `run_all_tests()`
+
+### 📄 test_phase5_api_endpoints.py
+**Functions:**
+- `print_section()`
+- `test_available_quarters()`
+- `test_two_quarter_comparison_json()`
+- `test_two_quarter_comparison_docx()`
+- `test_three_quarter_comparison_json()`
+- `test_three_quarter_comparison_docx()`
+- `test_four_quarter_comparison_json()`
+- `test_four_quarter_comparison_docx()`
+- `test_error_handling()`
+- `run_all_tests()`
+
+### 📄 test_phase6_remove_auto_comparison.py
+**Functions:**
+- `test_phase6_single_season_export()`
+
+### 📄 test_phase8_comprehensive_backend.py
+**Functions:**
+- `log_test_result()`
+- `test_available_quarters()`
+- `test_2quarter_json()`
+- `test_2quarter_docx()`
+- `test_3quarter_json()`
+- `test_3quarter_docx()`
+- `test_4quarter_json()`
+- `test_4quarter_docx()`
+- `test_validation_errors()`
+- `test_edge_cases()`
+- `test_single_season_export()`
+- `test_performance()`
+- `generate_test_report()`
+- `main()`
+
+### 📄 test_quick_explanation.py
+**Functions:**
+- `get_db_connection()`
+- `test_red_flag_with_actions()`
+- `test_ordinary_with_actions()`
+- `test_seasonal_with_actions()`
+- `verify_in_followup()`
+- `main()`
+
+### 📄 test_report_id_stability.py
+_No functions found_
 
 ### 📄 test_reporting_api.py
 **Functions:**
@@ -183,8 +425,51 @@ _No functions found_
 - `test_bulk_export()`
 - `run_all_tests()`
 
+### 📄 test_seasonal_administration_fix.py
+_No functions found_
+
+### 📄 test_seasonal_all_levels.py
+_No functions found_
+
+### 📄 test_seasonal_exports.py
+**Functions:**
+- `print_section()`
+- `test_export()`
+- `main()`
+
+### 📄 test_seasonal_freeze.py
+**Functions:**
+- `timeout_handler()`
+- `resolve_season_id_from_year_period()`
+
+### 📄 test_seasonal_generation.py
+_No functions found_
+
+### 📄 test_seasonal_multi.py
+_No functions found_
+
+### 📄 test_seasonal_quarter_support.py
+**Functions:**
+- `test_quarter_support()`
+- `test_trimester_support()`
+- `test_invalid_formats()`
+- `test_database_match()`
+
+### 📄 test_three_type_explanation_system.py
+_No functions found_
+
+### 📄 test_validation_debug.py
+_No functions found_
+
+### 📄 test_violated_rules.py
+_No functions found_
+
 ### 📄 use_ai_models.py
 _No functions found_
+
+### 📄 verify_seasonal_data.py
+**Functions:**
+- `verify_season_data()`
 
 
 ---
@@ -214,6 +499,7 @@ _No functions found_
 - `get_admin_unit_tree()`
 - `get_admin_unit_leaves()`
 - `get_active_admin_units()`
+- `get_units_by_type()`
 
 ### 📄 backend\api\db_layer\custom_views.py
 **Functions:**
@@ -239,9 +525,46 @@ _No functions found_
 - `get_doctor_monthly_trend()`
 - `get_doctor_incidents()`
 
-### 📄 backend\api\db_layer\follow_up_db.py
+### 📄 backend\api\db_layer\explanation_db.py
 **Functions:**
 - `get_connection()`
+- `_fetch_all()`
+- `_fetch_one()`
+- `get_explanation_status_id()`
+- `get_explanation_status_name()`
+- `get_all_explanation_statuses()`
+- `get_case_status_id()`
+- `get_case_status_name()`
+- `get_case_by_id()`
+- `get_cases_needing_explanation()`
+- `get_red_flag_never_event_cases_needing_explanation()`
+- `count_cases_by_explanation_status()`
+- `get_overdue_explanations()`
+- `check_case_has_explanation()`
+- `update_case_explanation()`
+- `update_case_requires_explanation()`
+- `force_close_case()`
+- `close_case_after_action_items()`
+
+### 📄 backend\api\db_layer\explanation_ordinary_db.py
+**Functions:**
+- `update_ordinary_explanation()`
+- `get_ordinary_explanation()`
+
+### 📄 backend\api\db_layer\explanation_red_flag_db.py
+**Functions:**
+- `create_red_flag_feedback()`
+- `get_red_flag_feedback_details()`
+
+### 📄 backend\api\db_layer\explanation_seasonal_db.py
+**Functions:**
+- `update_seasonal_explanation()`
+- `get_seasonal_explanation()`
+- `get_seasonal_reports_needing_explanation()`
+
+### 📄 backend\api\db_layer\follow_up_db.py
+**Functions:**
+- `get_db_connection()`
 - `create_follow_up_action()`
 - `get_follow_up_actions()`
 - `get_follow_up_action_by_id()`
@@ -346,13 +669,23 @@ _No functions found_
 ### 📄 backend\api\db_layer\seasonal_report.py
 **Functions:**
 - `resolve_season_id_from_year_trimester()`
+- `create_season_if_not_exists()`
+- `get_previous_season()`
 - `validate_season_exists()`
+- `get_existing_seasonal_report_id()`
+- `update_seasonal_report_header()`
 - `delete_seasonal_report_by_key()`
 - `insert_seasonal_report_header()`
+- `delete_seasonal_report_classification_stats()`
+- `delete_seasonal_report_policy_snapshot()`
 - `insert_seasonal_report_classification_stats()`
 - `insert_seasonal_report_policy_snapshot()`
 - `get_seasonal_report_keys_by_id()`
 - `get_full_seasonal_report()`
+- `get_consecutive_quarters()`
+- `validate_quarter_sequence()`
+- `get_season_metadata()`
+- `get_all_seasons()`
 
 ### 📄 backend\api\db_layer\seasonal_report_aggregation.py
 **Functions:**
@@ -460,6 +793,52 @@ _No functions found_
 - `get_doctor_incidents()`
 - `get_doctor_full_report()`
 - `health_check()`
+
+### 📄 backend\api\routers\explanation_routes.py
+**Routes:**
+- `GET /pending`
+- `GET /statistics`
+- `GET /{case_id}`
+- `GET /{case_id}/completion-status`
+- `POST /{case_id}`
+- `PUT /{case_id}/requires-explanation`
+- `POST /{case_id}/force-close`
+- `POST /{case_id}/check-closure`
+- `POST /{case_id}/mark-action-complete`
+- `POST /{case_id}/validate`
+**Functions:**
+- `get_pending_explanations_endpoint()`
+- `get_explanation_statistics()`
+- `get_case_explanation_details_endpoint()`
+- `get_case_completion_status_endpoint()`
+- `submit_explanation_endpoint()`
+- `update_requires_explanation_flag()`
+- `admin_force_close_case_endpoint()`
+- `check_case_for_automatic_closure()`
+- `mark_action_item_complete_endpoint()`
+- `validate_explanation_endpoint()`
+
+### 📄 backend\api\routers\explanation_routes_refactored.py
+**Routes:**
+- `POST /red-flag/{case_id}`
+- `GET /red-flag/{case_id}`
+- `POST /ordinary/{case_id}`
+- `GET /ordinary/{case_id}`
+- `POST /seasonal/{report_id}`
+- `GET /seasonal/{report_id}`
+- `GET /pending/cases`
+- `GET /pending/seasonal`
+- `GET /statistics`
+**Functions:**
+- `submit_red_flag_explanation_endpoint()`
+- `get_red_flag_explanation_endpoint()`
+- `submit_ordinary_explanation_endpoint()`
+- `get_ordinary_explanation_endpoint()`
+- `submit_seasonal_explanation_endpoint()`
+- `get_seasonal_explanation_endpoint()`
+- `get_pending_cases_endpoint()`
+- `get_pending_seasonal_endpoint()`
+- `get_explanation_statistics()`
 
 ### 📄 backend\api\routers\follow_up_router.py
 **Routes:**
@@ -630,14 +1009,30 @@ _No functions found_
 - `POST /seasonal/{report_id}/explanation`
 - `PUT /seasonal/{report_id}/explanation`
 - `POST /export`
+- `POST /seasonal/export`
 - `POST /monthly/export`
+- `GET /download/{export_id}`
 **Functions:**
 - `view_seasonal_report()`
 - `view_monthly_report()`
 - `submit_explanation()`
 - `update_explanation()`
 - `export_report()`
+- `export_seasonal_report()`
 - `export_monthly_report()`
+- `download_export()`
+
+### 📄 backend\api\routers\seasonal_comparison_routes.py
+**Routes:**
+- `POST /2-quarters`
+- `POST /3-quarters`
+- `POST /4-quarters`
+- `GET /available-quarters`
+**Functions:**
+- `generate_two_quarter_comparison()`
+- `generate_three_quarter_comparison()`
+- `generate_four_quarter_comparison()`
+- `get_available_quarters()`
 
 ### 📄 backend\api\routers\settings_router.py
 **Routes:**
@@ -792,6 +1187,33 @@ _No functions found_
 - `_zero_fill_months()`
 - `get_doctor_full_report()`
 
+### 📄 backend\api\services\explanation_service.py
+**Functions:**
+- `get_pending_explanations()`
+- `get_explanation_dashboard_statistics()`
+- `get_case_explanation_details()`
+- `submit_explanation()`
+- `toggle_requires_explanation()`
+- `admin_force_close_case()`
+- `complete_case_with_action_items()`
+- `validate_explanation_submission()`
+- `get_explanation_history()`
+- `check_and_close_case_if_complete()`
+- `mark_action_item_complete_and_check_case()`
+- `get_case_completion_status()`
+
+### 📄 backend\api\services\explanation_service_refactored.py
+**Functions:**
+- `submit_red_flag_explanation()`
+- `get_red_flag_explanation_details()`
+- `submit_ordinary_explanation()`
+- `get_ordinary_explanation_details()`
+- `submit_seasonal_explanation()`
+- `get_seasonal_explanation_details()`
+- `get_pending_seasonal_explanations()`
+- `get_pending_case_explanations()`
+- `get_explanation_dashboard_statistics()`
+
 ### 📄 backend\api\services\follow_up_service.py
 **Functions:**
 - `get_follow_up_actions()`
@@ -844,6 +1266,29 @@ _No functions found_
 - `generate_monthly_report()`
 - `get_detailed_monthly_report()`
 - `get_numeric_monthly_report()`
+
+### 📄 backend\api\services\multi_report_export_service.py
+**Functions:**
+- `generate_multi_export()`
+- `_generate_unit_report()`
+- `_generate_file_content()`
+- `get_unique_values()`
+- `_generate_summary_file()`
+- `_get_month_name()`
+- `_sanitize_filename()`
+
+### 📄 backend\api\services\multi_seasonal_export_service.py
+**Functions:**
+- `generate_multi_seasonal_export()`
+- `_generate_unit_seasonal_report()`
+- `_generate_unit_seasonal_reports()`
+- `_create_empty_seasonal_report()`
+- `_generate_comparison_content()`
+- `_generate_file_content()`
+- `get_unique_values()`
+- `_convert_seasonal_to_export_format()`
+- `_generate_summary_file()`
+- `_sanitize_filename()`
 
 ### 📄 backend\api\services\ner_service.py
 **Functions:**
@@ -904,6 +1349,7 @@ _No functions found_
 ### 📄 backend\api\services\report_export_service.py
 **Functions:**
 - `generate_export()`
+- `_fetch_organizational_breakdown()`
 - `_fetch_monthly_data()`
 - `_fetch_seasonal_data()`
 
@@ -914,10 +1360,20 @@ _No functions found_
 - `get_monthly_statistics_report()`
 - `get_seasonal_hcat_report()`
 - `get_bulk_summary_report()`
+- `_get_org_unit_name()`
+- `generate_monthly_numeric_word_report()`
+- `_safe()`
+- `center_cell_content()`
+- `apply_cell_borders()`
 - `generate_csv_export()`
-- `generate_xlsx_export()`
 - `generate_pdf_export()`
 - `sanitize_value()`
+- `normalize_text()`
+- `ar()`
+- `__init__()`
+- `showPage()`
+- `save()`
+- `draw_header_footer()`
 - `generate_docx_export()`
 - `_safe()`
 - `sanitize_value()`
@@ -932,11 +1388,58 @@ _No functions found_
 - `get_doctor_by_id()`
 - `get_employee_by_id()`
 
+### 📄 backend\api\services\seasonal_comparison_service.py
+**Functions:**
+- `fetch_multiple_seasonal_reports()`
+- `generate_3_quarter_comparison_data()`
+- `_aggregate_domains()`
+- `_aggregate_categories()`
+- `_aggregate_subcategories()`
+- `_calculate_trends()`
+- `_get_trend_indicator()`
+- `calculate_percentage_changes()`
+- `aggregate_domain_data()`
+- `aggregate_category_data()`
+- `generate_4_quarter_comparison_data()`
+- `_calculate_yearly_totals()`
+
 ### 📄 backend\api\services\seasonal_report_explanation_service.py
 **Functions:**
 - `__init__()`
 - `submit_explanation()`
 - `update_explanation()`
+
+### 📄 backend\api\services\seasonal_report_formatter.py
+**Functions:**
+- `set_cell_shading()`
+- `center_cell_content()`
+- `merge_cells_vertically()`
+- `generate_seasonal_word_report()`
+- `_safe()`
+- `_add_policy_compliance_section()`
+- `_build_hierarchy()`
+- `_build_hierarchy()`
+- `_create_hierarchical_tables_by_domain_rtl()`
+- `_create_hierarchical_table_rtl()`
+- `generate_seasonal_pdf_report()`
+- `generate_seasonal_pdf_report()`
+- `_configure_arabic_matplotlib()`
+- `_generate_spider_chart()`
+- `_generate_diverging_bar_chart()`
+- `_generate_heatmap()`
+- `_extract_domain_data()`
+- `_extract_category_data()`
+- `_extract_subcategory_data()`
+- `generate_comparative_seasonal_word_report()`
+- `_safe()`
+- `_create_comparative_hierarchical_tables_by_domain()`
+- `generate_3_quarter_comparison_report()`
+- `_create_3quarter_hierarchical_table()`
+- `_calculate_trend_indicator()`
+- `_generate_3quarter_spider_chart()`
+- `generate_4_quarter_comparison_report()`
+- `_create_4quarter_hierarchical_table()`
+- `_generate_4quarter_spider_chart()`
 
 ### 📄 backend\api\services\seasonal_report_generator.py
 **Functions:**
@@ -949,6 +1452,7 @@ _No functions found_
 ### 📄 backend\api\services\seasonal_report_orchestrator.py
 **Functions:**
 - `get_or_generate_seasonal_report()`
+- `get_or_generate_comparative_seasonal_reports()`
 
 ### 📄 backend\api\services\seasonal_report_query_service.py
 **Functions:**

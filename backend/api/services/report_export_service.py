@@ -97,19 +97,19 @@ class ReportExportService:
             else:  # seasonal
                 # For seasonal reports with display_mode=None, use orchestrator
                 if display_mode is None:
-                    from ..services.seasonal_report_orchestrator import get_or_generate_comparative_seasonal_reports
+                    from ..services.seasonal_report_orchestrator import get_or_generate_seasonal_report
                     season_id = filters.get("season_id")
                     orgunit_id = filters.get("orgunit_id")
                     orgunit_type = filters.get("orgunit_type")
                     
-                    # Get BOTH current and previous season reports for comparison
-                    comparative_data = get_or_generate_comparative_seasonal_reports(
+                    # PHASE 6: Single season only (no auto-comparison)
+                    # Comparisons should be done via /api/seasonal-comparison endpoints
+                    report_data = get_or_generate_seasonal_report(
                         season_id=season_id,
                         orgunit_id=orgunit_id,
                         orgunit_type=orgunit_type,
                         user_id=1  # System user for exports
                     )
-                    report_data = comparative_data  # Store full comparison data
                 else:
                     report_data = self._fetch_seasonal_data(
                         display_mode=display_mode,
@@ -182,55 +182,23 @@ class ReportExportService:
             if file_format == "pdf":
                 # Use dedicated seasonal formatter for seasonal reports
                 if report_type == "seasonal" and display_mode is None:
-                    import zipfile
                     from .seasonal_report_formatter import (
                         generate_seasonal_word_report,
-                        generate_comparative_seasonal_word_report
+                        generate_seasonal_pdf_report
                     )
                     
-                    print(f"\n[EXPORT SERVICE] Generating ZIP with both PDF reports:")
+                    print(f"\n[EXPORT SERVICE] Generating single season PDF report")
                     print(f"  - report_data type: {type(report_data)}")
-                    print(f"  - has comparative data: {isinstance(report_data, dict) and 'current_report' in report_data}")
                     
-                    # Generate BOTH reports (PDF uses Word format for now)
-                    if isinstance(report_data, dict) and 'current_report' in report_data:
-                        # 1. Generate regular current season report
-                        current_report_bytes = generate_seasonal_word_report(
-                            seasonal_data=report_data['current_report'],
-                            language=language
-                        )
-                        
-                        # 2. Generate comparative report
-                        comparison_report_bytes = generate_comparative_seasonal_word_report(
-                            current_data=report_data['current_report'],
-                            previous_data=report_data['previous_report'],
-                            language=language
-                        )
-                        
-                        # 3. Package both into ZIP
-                        current_period = report_data['current_report'].get('header', {}).get('period', 'Current')
-                        previous_period = report_data['previous_report'].get('header', {}).get('period', 'Previous')
-                        
-                        zip_buffer = BytesIO()
-                        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-                            # Add current season report
-                            current_filename = f"Seasonal_Report_{current_period}.docx"
-                            zip_file.writestr(current_filename, current_report_bytes)
-                            
-                            # Add comparison report
-                            comparison_filename = f"Comparison_{current_period}_vs_{previous_period}.docx"
-                            zip_file.writestr(comparison_filename, comparison_report_bytes)
-                        
-                        content = zip_buffer.getvalue()
-                        content_type = "application/zip"
-                        
-                        print(f"[EXPORT SERVICE] ✅ ZIP created with 2 files:")
-                        print(f"  1. {current_filename}")
-                        print(f"  2. {comparison_filename}")
-                    else:
-                        # Fallback to single report
-                        from .seasonal_report_formatter import generate_seasonal_pdf_report
-                        content = generate_seasonal_pdf_report(report_data, language)
+                    # PHASE 6: Generate single season report only
+                    # Use Word format (better quality than PDF direct generation)
+                    content = generate_seasonal_word_report(
+                        seasonal_data=report_data,
+                        language=language
+                    )
+                    content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    
+                    print(f"[EXPORT SERVICE] ✅ Single season report generated")
                 else:
                     content = reports_service.generate_pdf_export(
                         report_data=export_data,
@@ -252,55 +220,18 @@ class ReportExportService:
             elif file_format == "docx":
                 # Use dedicated seasonal formatter for seasonal reports
                 if report_type == "seasonal" and display_mode is None:
-                    import zipfile
-                    from .seasonal_report_formatter import (
-                        generate_seasonal_word_report,
-                        generate_comparative_seasonal_word_report
+                    from .seasonal_report_formatter import generate_seasonal_word_report
+                    
+                    print(f"\n[EXPORT SERVICE] Generating single season DOCX report")
+                    print(f"  - report_data type: {type(report_data)}")
+                    
+                    # PHASE 6: Generate single season report only
+                    content = generate_seasonal_word_report(
+                        seasonal_data=report_data,
+                        language=language
                     )
                     
-                    print(f"\n[EXPORT SERVICE] Generating ZIP with both reports:")
-                    print(f"  - report_data type: {type(report_data)}")
-                    print(f"  - has comparative data: {isinstance(report_data, dict) and 'current_report' in report_data}")
-                    
-                    # Generate BOTH reports
-                    if isinstance(report_data, dict) and 'current_report' in report_data:
-                        # 1. Generate regular current season report
-                        current_report_bytes = generate_seasonal_word_report(
-                            seasonal_data=report_data['current_report'],
-                            language=language
-                        )
-                        
-                        # 2. Generate comparative report
-                        comparison_report_bytes = generate_comparative_seasonal_word_report(
-                            current_data=report_data['current_report'],
-                            previous_data=report_data['previous_report'],
-                            language=language
-                        )
-                        
-                        # 3. Package both into ZIP
-                        current_period = report_data['current_report'].get('header', {}).get('period', 'Current')
-                        previous_period = report_data['previous_report'].get('header', {}).get('period', 'Previous')
-                        
-                        zip_buffer = BytesIO()
-                        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-                            # Add current season report
-                            current_filename = f"Seasonal_Report_{current_period}.docx"
-                            zip_file.writestr(current_filename, current_report_bytes)
-                            
-                            # Add comparison report
-                            comparison_filename = f"Comparison_{current_period}_vs_{previous_period}.docx"
-                            zip_file.writestr(comparison_filename, comparison_report_bytes)
-                        
-                        content = zip_buffer.getvalue()
-                        content_type = "application/zip"
-                        
-                        print(f"[EXPORT SERVICE] ✅ ZIP created with 2 files:")
-                        print(f"  1. {current_filename}")
-                        print(f"  2. {comparison_filename}")
-                    else:
-                        # Fallback to single report if data structure unexpected
-                        from .seasonal_report_formatter import generate_seasonal_word_report
-                        content = generate_seasonal_word_report(report_data, language)
+                    print(f"[EXPORT SERVICE] ✅ Single season report generated")
                 else:
                     # Check if this is a numeric (aggregated) report or detailed report
                     if display_mode == "numeric":
@@ -354,13 +285,11 @@ class ReportExportService:
             elif report_type == "monthly" and start_date and end_date:
                 filename = f"Monthly_Report_{start_date}_to_{end_date}.{file_format}"
             elif report_type == "seasonal" and trimester and display_mode is None:
-                # ZIP package with both reports
-                actual_format = "zip" if content_type == "application/zip" else file_format
-                filename = f"Seasonal_Reports_{year}_T{trimester}.{actual_format}"
+                # PHASE 6: Single season report (no ZIP)
+                filename = f"Seasonal_Report_{year}_T{trimester}.{file_format}"
             elif report_type == "seasonal" and quarter and display_mode is None:
-                # ZIP package with both reports
-                actual_format = "zip" if content_type == "application/zip" else file_format
-                filename = f"Seasonal_Reports_{year}_Q{quarter}.{actual_format}"
+                # PHASE 6: Single season report (no ZIP)
+                filename = f"Seasonal_Report_{year}_Q{quarter}.{file_format}"
             elif report_type == "seasonal" and trimester:
                 filename = f"Seasonal_Report_{year}_T{trimester}.{file_format}"
             elif report_type == "seasonal" and quarter:

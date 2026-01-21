@@ -200,7 +200,7 @@ def soft_delete_incident_case(
     conn.commit()
     conn.close()
 
-from backend.core.database import get_connection
+from core.database import get_connection
 
 
 def hard_delete_incident_case(incident_id: int) -> None:

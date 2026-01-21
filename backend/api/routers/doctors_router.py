@@ -3,9 +3,9 @@ Doctors Router
 API endpoints for doctor profiles, statistics, and analytics.
 """
 
-from fastapi import APIRouter, Query, Path, HTTPException
+from fastapi import APIRouter, Query, Path, HTTPException, status
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..services.doctors_service import DoctorService
 
@@ -15,16 +15,223 @@ router = APIRouter(prefix="/api/doctors", tags=["Doctors"])
 
 # ==================== REQUEST/RESPONSE MODELS ====================
 
+class CreateDoctorRequest(BaseModel):
+    """Request model for creating a new doctor."""
+    doctor_name: str = Field(
+        ..., 
+        min_length=3, 
+        max_length=200,
+        description="Doctor's full name (3-200 characters)",
+        example="Dr. Ahmed Al-Mansour"
+    )
+    specialty: Optional[str] = Field(
+        None,
+        max_length=200,
+        description="Medical specialty (optional)",
+        example="Interventional Cardiology"
+    )
+    is_active: bool = Field(
+        True,
+        description="Active status (default: true)",
+        example=True
+    )
+    source_system: str = Field(
+        "MANUAL",
+        max_length=100,
+        description="Source system identifier (default: MANUAL)",
+        example="MANUAL"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "doctor_name": "Dr. Ahmed Al-Mansour",
+                "specialty": "Interventional Cardiology",
+                "is_active": True,
+                "source_system": "MANUAL"
+            }
+        }
+
+
+class DoctorResponse(BaseModel):
+    """Doctor object in responses."""
+    id: int
+    name_en: str
+    name_ar: str
+    specialty: str
+    status: str
+    source: str
+    source_system: str
+    last_synced_at: str
+
+
+class CreateDoctorResponse(BaseModel):
+    """Response model for doctor creation."""
+    success: bool
+    message: str
+    message_ar: str
+    doctor: DoctorResponse
+
+
 class DoctorSearchResponse(BaseModel):
     """Response model for doctor search."""
     id: int
-    employee_id: str
     name_en: str
     name_ar: str
-    department: str
     specialty: str
-    hire_date: str
     status: str
+    source: str
+
+
+# ==================== A.1: CREATE DOCTOR ====================
+
+@router.post(
+    "",
+    response_model=CreateDoctorResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new doctor",
+    responses={
+        201: {
+            "description": "Doctor created successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "success": True,
+                        "message": "Doctor 'Dr. Ahmed Al-Mansour' created successfully",
+                        "message_ar": "تم إنشاء الطبيب 'Dr. Ahmed Al-Mansour' بنجاح",
+                        "doctor": {
+                            "id": 1,
+                            "name_en": "Dr. Ahmed Al-Mansour",
+                            "name_ar": "Dr. Ahmed Al-Mansour",
+                            "specialty": "Interventional Cardiology",
+                            "status": "active",
+                            "source": "reserve",
+                            "source_system": "MANUAL",
+                            "last_synced_at": "2026-01-20 14:30:00"
+                        }
+                    }
+                }
+            }
+        },
+        400: {"description": "Validation error - Invalid input"},
+        409: {"description": "Conflict - Doctor already exists"},
+        500: {"description": "Internal server error"}
+    }
+)
+async def create_doctor(request: CreateDoctorRequest):
+    """
+    Create a new doctor in the reserve table.
+    
+    This endpoint allows you to add doctors that don't exist in the hospital's
+    main database. Created doctors are stored in a separate reserve table and
+    will appear in all search and profile queries alongside hospital doctors.
+    
+    **Request Body:**
+    - `doctor_name`: Required. Doctor's full name (3-200 characters)
+    - `specialty`: Optional. Medical specialty (max 200 characters)
+    - `is_active`: Optional. Active status (default: true)
+    - `source_system`: Optional. Source identifier (default: "MANUAL")
+    
+    **Validation Rules:**
+    - Doctor name must be 3-200 characters
+    - Doctor name must be unique (not already in reserve table)
+    - Specialty max 200 characters
+    - Whitespace is automatically trimmed
+    
+    **Response:**
+    - Returns created doctor with generated ID
+    - Includes success message in English and Arabic
+    - Doctor will have source='reserve' to distinguish from hospital doctors
+    
+    **Example Request:**
+    ```json
+    {
+      "doctor_name": "Dr. Ahmed Al-Mansour",
+      "specialty": "Interventional Cardiology",
+      "is_active": true,
+      "source_system": "MANUAL"
+    }
+    ```
+    
+    **Example Success Response (201):**
+    ```json
+    {
+      "success": true,
+      "message": "Doctor 'Dr. Ahmed Al-Mansour' created successfully",
+      "message_ar": "تم إنشاء الطبيب 'Dr. Ahmed Al-Mansour' بنجاح",
+      "doctor": {
+        "id": 1,
+        "name_en": "Dr. Ahmed Al-Mansour",
+        "name_ar": "Dr. Ahmed Al-Mansour",
+        "specialty": "Interventional Cardiology",
+        "status": "active",
+        "source": "reserve",
+        "source_system": "MANUAL",
+        "last_synced_at": "2026-01-20 14:30:00"
+      }
+    }
+    ```
+    
+    **Error Response (409 - Duplicate):**
+    ```json
+    {
+      "error": "DUPLICATE_DOCTOR",
+      "message": "Doctor with name 'Dr. Ahmed Al-Mansour' already exists",
+      "message_ar": "الطبيب موجود بالفعل"
+    }
+    ```
+    
+    **Error Response (400 - Validation):**
+    ```json
+    {
+      "error": "VALIDATION_ERROR",
+      "message": "Doctor name must be at least 3 characters",
+      "message_ar": "خطأ في التحقق من الصحة"
+    }
+    ```
+    """
+    try:
+        result = DoctorService.create_doctor(
+            doctor_name=request.doctor_name,
+            specialty=request.specialty,
+            is_active=request.is_active,
+            source_system=request.source_system
+        )
+        return result
+        
+    except ValueError as ve:
+        # Validation errors or duplicates
+        error_msg = str(ve)
+        
+        if "already exists" in error_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "error": "DUPLICATE_DOCTOR",
+                    "message": error_msg,
+                    "message_ar": "الطبيب موجود بالفعل",
+                    "field": "doctor_name"
+                }
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "VALIDATION_ERROR",
+                    "message": error_msg,
+                    "message_ar": "خطأ في التحقق من الصحة"
+                }
+            )
+            
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "INTERNAL_ERROR",
+                "message": f"Failed to create doctor: {str(e)}",
+                "message_ar": "فشل في إنشاء الطبيب"
+            }
+        )
 
 
 # ==================== B.1: DOCTOR SEARCH / LIST ====================

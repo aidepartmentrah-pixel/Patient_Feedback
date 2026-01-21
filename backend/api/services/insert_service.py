@@ -32,19 +32,35 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
             'classification_id',
             'severity_id',
             'stage_id',
-            'harm_id'
+            'harm_id',
+            'requires_explanation',
+            'clinical_risk_type_id',
+            'feedback_intent_type_id',
+            'immediate_action',
+            'taken_action',
+            'patient_name',
+            'is_inpatient',
+            'source_id'
         ]
 
         for field in required_fields:
-            if field not in data or not data[field]:
+            if field not in data or data[field] is None or data[field] == '':
                 return {
                     "success": False,
                     "error": "VALIDATION_ERROR",
                     "message": f"{field.replace('_', ' ').title()} is required",
                     "message_ar": f"حقل {field} مطلوب",
                     "field": field
-                }
-
+                }        
+        # Building: Require either building_id or building_code
+        if not data.get('building_id') and not data.get('building_code'):
+            return {
+                "success": False,
+                "error": "VALIDATION_ERROR",
+                "message": "Either building_id or building_code is required",
+                "message_ar": "يجب توفير رقم المبنى أو رمز المبنى",
+                "field": "building_id"
+            }
         # -----------------------------
         # Validate foreign keys
         # -----------------------------
@@ -174,16 +190,23 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
         
         print(f"[DEBUG] is_inpatient raw: {data.get('is_inpatient')} (type: {type(raw).__name__}) -> stored: {is_inpatient_val}")
         
-        clinical_risk_type_id = data.get('clinical_risk_type_id') or 1
-        feedback_intent_type_id = data.get('feedback_intent_type_id') or 1
+        clinical_risk_type_id = data.get('clinical_risk_type_id')
+        feedback_intent_type_id = data.get('feedback_intent_type_id')
 
-        # Validate doctors exist (skip entries without IDs)
+        # Validate doctors exist (check both hospital and reserve tables)
         if data.get('doctors'):
             for doc in data['doctors']:
                 doc_id = doc.get('doctor_id')
                 if not doc_id:
                     continue
-                cursor.execute("SELECT COUNT(*) FROM APP_VIEWTABLE_VW_DOCTORS WHERE DoctorID = ?", (doc_id,))
+                # Use UNION to check both hospital (APP_LOOKUP_DOCTOR) and reserve (APP_RESERVE_DOCTOR) tables
+                cursor.execute("""
+                    SELECT COUNT(*) FROM (
+                        SELECT DoctorID FROM dbo.APP_LOOKUP_DOCTOR WHERE DoctorID = ?
+                        UNION ALL
+                        SELECT DoctorID FROM dbo.APP_RESERVE_DOCTOR WHERE DoctorID = ?
+                    ) AS combined
+                """, (doc_id, doc_id))
                 if cursor.fetchone()[0] == 0:
                     return {
                         "success": False,
@@ -223,7 +246,7 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
         
         is_red_flag = clinical_risk_type_id == 2
         is_never_event = clinical_risk_type_id == 3
-        requires_explanation = data.get('requires_explanation', False)
+        requires_explanation = data.get('requires_explanation')
         
         # Convert to BIT value (0 or 1)
         if isinstance(requires_explanation, bool):
@@ -383,8 +406,14 @@ def update_record(record_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
             'severity_id',
             'stage_id',
             'harm_id',
+            'requires_explanation',
             'clinical_risk_type_id',
-            'feedback_intent_type_id'
+            'feedback_intent_type_id',
+            'immediate_action',
+            'taken_action',
+            'patient_name',
+            'is_inpatient',
+            'source_id'
         ]
         
         # Load current FSM state + ClinicalRiskTypeID
@@ -410,6 +439,16 @@ def update_record(record_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
                     "message_ar": f"حقل {field} مطلوب",
                     "field": field
                 }
+        
+        # Building: Require either building_id or building_code
+        if not data.get('building_id') and not data.get('building_code'):
+            return {
+                "success": False,
+                "error": "VALIDATION_ERROR",
+                "message": "Either building_id or building_code is required",
+                "message_ar": "يجب توفير رقم المبنى أو رمز المبنى",
+                "field": "building_id"
+            }
         
         # Block changing Clinical Risk Type
         if data.get('clinical_risk_type_id') != current_clinical_risk_type_id:
@@ -563,8 +602,8 @@ def update_record(record_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
         
         print(f"[DEBUG] is_inpatient raw: {data.get('is_inpatient')} (type: {type(raw).__name__}) -> stored: {is_inpatient_val}")
         
-        clinical_risk_type_id = data.get('clinical_risk_type_id') or 1
-        feedback_intent_type_id = data.get('feedback_intent_type_id') or 1
+        clinical_risk_type_id = data.get('clinical_risk_type_id')
+        feedback_intent_type_id = data.get('feedback_intent_type_id')
 
         # -----------------------------
         # BUILDING RESOLUTION WITH FALLBACK

@@ -17,7 +17,9 @@ from api.routers.reports_router import router as reports_router
 from api.routers.settings_router import router as settings_router
 from api.routers.doctors_router import router as doctors_router
 from api.routers.follow_up_router import router as follow_up_router
-from api.routers.explanation_routes import router as explanation_router
+# UPDATED: Using refactored three-type explanation system
+from api.routers.explanation_routes_refactored import router as explanation_router
+from api.routers.seasonal_comparison_routes import router as seasonal_comparison_router
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Incident Manager API")
@@ -51,6 +53,7 @@ app.include_router(settings_router)
 app.include_router(doctors_router)
 app.include_router(follow_up_router)
 app.include_router(explanation_router)
+app.include_router(seasonal_comparison_router)
 
 @app.get("/")
 def health_check():
