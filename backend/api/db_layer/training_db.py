@@ -7,12 +7,24 @@ import sqlite3
 import os
 from datetime import datetime, date
 from typing import Dict, List, Any
+from pathlib import Path
+
+# Get workspace root (3 levels up from this file: db_layer -> api -> backend -> root)
+WORKSPACE_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 # Store training metadata in SQLite
 TRAINING_DB_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+    str(WORKSPACE_ROOT),
+    "backend",
     "data",
     "training_metadata.db"
+)
+
+# ML Database path
+ML_DB_PATH = os.path.join(
+    str(WORKSPACE_ROOT),
+    "models_directory",
+    "patient_feedback_ml.db"
 )
 
 # Ensure data directory exists
@@ -204,6 +216,10 @@ def record_ml_db_size(record_count: int, record_date: str = None):
     if record_date is None:
         record_date = date.today().isoformat()
     
+    if record_count < 0:
+        print(f"[ML DB SIZE] Warning: Invalid record count {record_count}, skipping")
+        return
+    
     _init_training_db()
     conn = _get_training_connection()
     cursor = conn.cursor()
@@ -214,6 +230,10 @@ def record_ml_db_size(record_count: int, record_date: str = None):
             VALUES (?, ?)
         """, (record_date, record_count))
         conn.commit()
+        print(f"[ML DB SIZE] Recorded {record_count} records for date {record_date}")
+    except Exception as e:
+        print(f"[ML DB SIZE ERROR] Failed to record: {str(e)}")
+        raise
     finally:
         conn.close()
 
@@ -252,25 +272,37 @@ def get_current_ml_db_size() -> int:
     Get current number of records in ML database.
     
     Returns:
-        Total record count
+        Total record count from patient_feedback_encoded table
     """
     try:
-        import sqlite3
-        ml_db_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            "models_directory",
-            "patient_feedback_ml.db"
-        )
-        
-        if not os.path.exists(ml_db_path):
+        if not os.path.exists(ML_DB_PATH):
+            print(f"[ML DB SIZE] Database not found at: {ML_DB_PATH}")
             return 0
         
-        conn = sqlite3.connect(ml_db_path)
+        conn = sqlite3.connect(ML_DB_PATH)
         cursor = conn.cursor()
+        
+        # Check if table exists
+        cursor.execute("""
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name='patient_feedback_encoded'
+        """)
+        
+        if not cursor.fetchone():
+            print(f"[ML DB SIZE] Table 'patient_feedback_encoded' not found")
+            conn.close()
+            return 0
+        
+        # Get count
         cursor.execute("SELECT COUNT(*) FROM patient_feedback_encoded")
         count = cursor.fetchone()[0]
         conn.close()
+        
+        print(f"[ML DB SIZE] Current size: {count} records")
         return count
+        
     except Exception as e:
-        print(f"Warning: Could not get ML DB size: {str(e)}")
+        print(f"[ML DB SIZE ERROR] Could not get ML DB size: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return 0

@@ -20,6 +20,9 @@ from api.routers.follow_up_router import router as follow_up_router
 # UPDATED: Using refactored three-type explanation system
 from api.routers.explanation_routes_refactored import router as explanation_router
 from api.routers.seasonal_comparison_routes import router as seasonal_comparison_router
+# NOTE: system_settings_router has a bug (uses 'any' instead of 'Any' in pydantic model)
+# from api.routers.system_settings_router import router as system_settings_router
+from api.routers.operators_router import router as operators_router
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Incident Manager API")
@@ -54,6 +57,9 @@ app.include_router(doctors_router)
 app.include_router(follow_up_router)
 app.include_router(explanation_router)
 app.include_router(seasonal_comparison_router)
+# NOTE: system_settings_router commented out due to pydantic validation error
+# app.include_router(system_settings_router)
+app.include_router(operators_router)
 
 @app.get("/")
 def health_check():

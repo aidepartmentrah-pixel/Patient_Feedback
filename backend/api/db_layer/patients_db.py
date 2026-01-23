@@ -212,6 +212,117 @@ def create_patient(
             conn.close()
 
 
+# ==================== GET ALL RESERVE PATIENTS ====================
+
+def get_all_reserve_patients(
+    limit: int = 100,
+    offset: int = 0,
+    order_by: str = 'SystemTime'
+) -> Dict[str, Any]:
+    """
+    Get all patients from the reserve table (APP_RESERVE_PATIENT).
+    
+    This function retrieves ONLY user-created patients from the reserve table,
+    not hospital patients.
+    
+    Args:
+        limit: Maximum number of records to return (default: 100)
+        offset: Number of records to skip for pagination (default: 0)
+        order_by: Field to order by - 'SystemTime' (newest first) or 'FullName' (alphabetical)
+    
+    Returns:
+        Dict with:
+            - patients: List of patient records
+            - total: Total count of reserve patients
+            - limit: Applied limit
+            - offset: Applied offset
+    
+    Raises:
+        Exception: If database operation fails
+    """
+    conn = None
+    cursor = None
+    
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Determine order clause
+        if order_by == 'FullName':
+            order_clause = "ORDER BY FullName ASC"
+        else:
+            order_clause = "ORDER BY SystemTime DESC"  # Default: newest first
+        
+        # Get total count first
+        cursor.execute("SELECT COUNT(*) FROM APP_RESERVE_PATIENT")
+        total_count = cursor.fetchone()[0]
+        
+        # Get paginated results
+        query = f"""
+            SELECT 
+                PatientAdmissionID,
+                FullName,
+                FirstName,
+                MiddleName,
+                LastName,
+                MotherName,
+                PhoneNumber1,
+                PhoneNumber2,
+                CONVERT(VARCHAR(10), BirthDate, 23) as BirthDate,
+                SEX,
+                DocumentNumber,
+                MedicalFileNumber,
+                Spouse,
+                AddressLine1,
+                AddressLine2,
+                CONVERT(VARCHAR(19), SystemTime, 121) as CreatedAt
+            FROM APP_RESERVE_PATIENT
+            {order_clause}
+            OFFSET ? ROWS
+            FETCH NEXT ? ROWS ONLY
+        """
+        
+        cursor.execute(query, (offset, limit))
+        
+        patients = []
+        for row in cursor.fetchall():
+            patients.append({
+                "patient_admission_id": row.PatientAdmissionID,
+                "full_name": row.FullName,
+                "first_name": row.FirstName,
+                "middle_name": row.MiddleName,
+                "last_name": row.LastName,
+                "mother_name": row.MotherName,
+                "phone_number": row.PhoneNumber1,
+                "phone_number2": row.PhoneNumber2,
+                "birth_date": row.BirthDate,
+                "sex": row.SEX,
+                "document_number": row.DocumentNumber,
+                "medical_file_number": row.MedicalFileNumber,
+                "spouse": row.Spouse,
+                "address_line1": row.AddressLine1,
+                "address_line2": row.AddressLine2,
+                "created_at": row.CreatedAt,
+                "source": "reserve"
+            })
+        
+        return {
+            "patients": patients,
+            "total": total_count,
+            "limit": limit,
+            "offset": offset,
+            "count": len(patients)
+        }
+        
+    except Exception as e:
+        raise Exception(f"Failed to retrieve reserve patients: {str(e)}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
 # ==================== SEARCH PATIENTS ====================
 
 def search_patients(

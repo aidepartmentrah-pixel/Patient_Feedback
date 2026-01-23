@@ -253,7 +253,8 @@ def get_seasonal_reports_needing_explanation(
                 s.SeasonName,
                 s.StartDate,
                 s.EndDate,
-                au.Name as OrgUnitName
+                au.Name as OrgUnitName,
+                au.NameAr as OrgUnitNameAr
             FROM dbo.APP_SeasonalOrgUnitReport sr
             LEFT JOIN dbo.Season s ON sr.SeasonID = s.UniqueID
             LEFT JOIN dbo.AdminsrationUnit au ON sr.OrgUnitID = au.UniqueID
@@ -275,8 +276,12 @@ def get_seasonal_reports_needing_explanation(
                     # If parsing fails, keep as empty list
                     violated_rules = []
             
-            # Safely access org unit name (might be NULL if unit not found)
-            org_unit_name = getattr(row, 'OrgUnitName', None)
+            # Safely access org unit names (might be NULL if unit not found)
+            org_unit_name_en = getattr(row, 'OrgUnitName', None)
+            org_unit_name_ar = getattr(row, 'OrgUnitNameAr', None)
+            
+            # Build display string for org unit type and name
+            org_unit_type_display = row.OrgUnitType or "Unit"
             
             reports.append({
                 "seasonal_report_id": row.SeasonalReportID,
@@ -286,7 +291,9 @@ def get_seasonal_reports_needing_explanation(
                 "season_end_date": row.EndDate.isoformat() if row.EndDate else None,
                 "org_unit_id": row.OrgUnitID,
                 "org_unit_type": row.OrgUnitType,
-                "org_unit_name": org_unit_name,
+                "org_unit_name": org_unit_name_en,  # Keep for backward compatibility
+                "org_unit_name_en": org_unit_name_en,
+                "org_unit_name_ar": org_unit_name_ar,
                 "total_cases": row.TotalCases,
                 "low_severity_count": row.LowSeverityCount,
                 "medium_severity_count": row.MediumSeverityCount,

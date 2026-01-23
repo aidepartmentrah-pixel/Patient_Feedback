@@ -124,7 +124,9 @@ def search_patients(search_text: str, limit: int = 20) -> Dict[str, Any]:
 def search_doctors(search_text: str, limit: int = 20) -> Dict[str, Any]:
     """
     Search for doctors by name.
-    Returns doctors with their speciality information.
+    
+    DUAL-SOURCE PATTERN: Merges results from both hospital view
+    (APP_VIEWTABLE_VW_DOCTORS) and reserve table (APP_RESERVE_DOCTOR).
     
     Args:
         search_text: Text to search for in doctor names
@@ -132,6 +134,7 @@ def search_doctors(search_text: str, limit: int = 20) -> Dict[str, Any]:
     
     Returns:
         Dictionary containing list of matching doctors with speciality
+        Each doctor includes a 'source' field ('hospital' or 'reserve')
     """
     conn = None
     cursor = None
@@ -142,21 +145,43 @@ def search_doctors(search_text: str, limit: int = 20) -> Dict[str, Any]:
         
         search_pattern = f"%{search_text}%"
         
+        # UNION query: Merge hospital + reserve doctors
         cursor.execute("""
-            SELECT TOP (?)
-                DoctorID,
-                Name,
-                SpecialityID,
-                SpecialityName,
-                IsActive,
-                IsAdmitted,
-                IsClinic
-            FROM APP_VIEWTABLE_VW_DOCTORS
-            WHERE 
-                Name LIKE ?
-                AND IsActive = 1
+            SELECT TOP (?) * FROM (
+                -- Hospital doctors
+                SELECT 
+                    DoctorID,
+                    Name,
+                    SpecialityID,
+                    SpecialityName,
+                    IsActive,
+                    IsAdmitted,
+                    IsClinic,
+                    'hospital' as Source
+                FROM APP_VIEWTABLE_VW_DOCTORS
+                WHERE 
+                    Name LIKE ?
+                    AND IsActive = 1
+                
+                UNION ALL
+                
+                -- Reserve doctors
+                SELECT 
+                    DoctorID,
+                    DoctorName as Name,
+                    NULL as SpecialityID,
+                    Specialty as SpecialityName,
+                    IsActive,
+                    0 as IsAdmitted,
+                    0 as IsClinic,
+                    'reserve' as Source
+                FROM APP_RESERVE_DOCTOR
+                WHERE 
+                    DoctorName LIKE ?
+                    AND IsActive = 1
+            ) AS CombinedDoctors
             ORDER BY Name
-        """, (limit, search_pattern))
+        """, (limit, search_pattern, search_pattern))
         
         doctors = []
         for row in cursor.fetchall():
@@ -167,7 +192,8 @@ def search_doctors(search_text: str, limit: int = 20) -> Dict[str, Any]:
                 "speciality_name": row.SpecialityName,
                 "is_active": bool(row.IsActive),
                 "is_admitted": bool(row.IsAdmitted) if row.IsAdmitted else False,
-                "is_clinic": bool(row.IsClinic) if row.IsClinic else False
+                "is_clinic": bool(row.IsClinic) if row.IsClinic else False,
+                "source": row.Source  # NEW: Indicates if from hospital or reserve
             })
         
         return {
@@ -370,11 +396,15 @@ def get_doctor_by_id(doctor_id: int) -> Dict[str, Any]:
     Get a specific doctor by DoctorID.
     Used to verify doctor selection.
     
+    DUAL-SOURCE PATTERN: Checks reserve table first, then hospital view.
+    This prioritizes user-created doctors.
+    
     Args:
         doctor_id: The doctor ID
     
     Returns:
         Dictionary containing doctor details or error
+        Includes 'source' field ('hospital' or 'reserve')
     """
     conn = None
     cursor = None
@@ -383,20 +413,42 @@ def get_doctor_by_id(doctor_id: int) -> Dict[str, Any]:
         conn = get_connection()
         cursor = conn.cursor()
         
+        # Check reserve table first
         cursor.execute("""
             SELECT 
                 DoctorID,
-                Name,
-                SpecialityID,
-                SpecialityName,
+                DoctorName as Name,
+                NULL as SpecialityID,
+                Specialty as SpecialityName,
                 IsActive,
-                IsAdmitted,
-                IsClinic
-            FROM APP_VIEWTABLE_VW_DOCTORS
+                0 as IsAdmitted,
+                0 as IsClinic,
+                'reserve' as Source
+            FROM APP_RESERVE_DOCTOR
             WHERE DoctorID = ?
         """, (doctor_id,))
         
         row = cursor.fetchone()
+        source = 'reserve'
+        
+        # If not found in reserve, check hospital view
+        if not row:
+            cursor.execute("""
+                SELECT 
+                    DoctorID,
+                    Name,
+                    SpecialityID,
+                    SpecialityName,
+                    IsActive,
+                    IsAdmitted,
+                    IsClinic,
+                    'hospital' as Source
+                FROM APP_VIEWTABLE_VW_DOCTORS
+                WHERE DoctorID = ?
+            """, (doctor_id,))
+            
+            row = cursor.fetchone()
+            source = 'hospital'
         
         if row:
             return {
@@ -408,7 +460,8 @@ def get_doctor_by_id(doctor_id: int) -> Dict[str, Any]:
                     "speciality_name": row.SpecialityName,
                     "is_active": bool(row.IsActive),
                     "is_admitted": bool(row.IsAdmitted) if row.IsAdmitted else False,
-                    "is_clinic": bool(row.IsClinic) if row.IsClinic else False
+                    "is_clinic": bool(row.IsClinic) if row.IsClinic else False,
+                    "source": row.Source  # NEW: Indicates if from hospital or reserve
                 }
             }
         else:

@@ -41,23 +41,24 @@ class CreateRecordRequest(BaseModel):
     harm_id: int = Field(..., gt=0, description="Harm level ID")
     clinical_risk_type_id: int = Field(..., ge=1, le=3, description="Clinical risk type (1=Standard, 2=Red Flag, 3=Never Event)")
     feedback_intent_type_id: int = Field(..., ge=1, description="Feedback intent type ID (required)")
+    requires_explanation: bool = Field(..., description="Whether the case requires explanation (required)")
+    immediate_action: str = Field(..., description="Immediate actions taken (required)")
+    taken_action: str = Field(..., description="Follow-up actions taken (required)")
+    patient_name: str = Field(..., description="Patient name (required)")
+    is_inpatient: bool = Field(..., description="Is inpatient (True) or outpatient (False) - required")
+    source_id: int = Field(..., gt=0, description="Feedback source ID (required)")
     
-    # Optional text fields
-    immediate_action: Optional[str] = Field(None, description="Immediate actions taken")
-    taken_action: Optional[str] = Field(None, description="Follow-up actions taken")
+    # Optional text fields - REMOVED (now required above)
     
     # Optional metadata
     target_department_ids: Optional[list[int]] = Field(None, description="List of target department IDs")
-    source_id: Optional[int] = Field(None, gt=0, description="Feedback source ID")
     building_id: Optional[int] = Field(None, gt=0, description="Building ID")
     building: Optional[str] = Field(None, description="Building code (alternative to building_id)")
     explanation_status_id: Optional[int] = Field(None, gt=0, description="Explanation status ID")
-    is_inpatient: Optional[bool] = Field(True, description="Is inpatient (True) or outpatient (False). Default: True")
     in_out: Optional[str] = Field(None, description="Alternative to is_inpatient: 'IN' or 'OUT'")
     worker_type: Optional[str] = Field(None, description="Worker type involved")
     
     # Optional entity data
-    patient_name: Optional[str] = Field(None, description="Patient name")
     doctors: Optional[list[dict]] = Field(None, description="List of doctors (doctor_id, doctor_name)")
     employees: Optional[list[dict]] = Field(None, description="List of employees (employee_id, employee_name)")
     

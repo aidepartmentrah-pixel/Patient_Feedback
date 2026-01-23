@@ -124,6 +124,57 @@ def search_doctors(
 
 
 # =============================================
+# GET RESERVE DOCTORS ONLY
+# =============================================
+
+def get_reserve_doctors(limit: int = 100) -> List[Dict[str, Any]]:
+    """
+    Get all doctors from the reserve table only.
+    
+    Returns only user-created doctors (not from hospital system).
+    
+    Args:
+        limit: Max results
+    
+    Returns:
+        List of reserve doctor records
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    query_sql = f"""
+        SELECT TOP {limit}
+            r.DoctorID as id,
+            r.DoctorName as name_en,
+            r.DoctorName as name_ar,
+            r.Specialty as specialty,
+            CASE WHEN r.IsActive = 1 THEN 'active' ELSE 'inactive' END as status,
+            'reserve' as source,
+            r.SourceSystem as source_system,
+            r.LastSyncedAt as last_synced_at
+        FROM dbo.APP_RESERVE_DOCTOR r
+        ORDER BY r.LastSyncedAt DESC, r.DoctorName ASC
+    """
+    
+    try:
+        cursor.execute(query_sql)
+        columns = [col[0] for col in cursor.description]
+        results = []
+        
+        for row in cursor.fetchall():
+            doctor = dict(zip(columns, row))
+            # Format datetime if present
+            if doctor.get('last_synced_at'):
+                doctor['last_synced_at'] = doctor['last_synced_at'].strftime('%Y-%m-%d %H:%M:%S')
+            results.append(doctor)
+        
+        return results
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# =============================================
 # DOCTOR PROFILE
 # =============================================
 

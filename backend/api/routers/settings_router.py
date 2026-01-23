@@ -425,3 +425,218 @@ async def get_snapshots():
             "message": str(e),
             "message_ar": f"فشل جلب اللقطات: {str(e)}"
         })
+
+
+# ==================== SYSTEM SETTINGS ====================
+
+class SystemSettingRequest(BaseModel):
+    """Request model for creating/updating system settings."""
+    setting_key: str
+    setting_value: str
+    label: Optional[str] = None
+    label_ar: Optional[str] = None
+    setting_type: str = "text"  # text, number, boolean, json
+    description: Optional[str] = None
+    description_ar: Optional[str] = None
+
+
+class SystemSettingUpdateRequest(BaseModel):
+    """Request model for updating a setting value only."""
+    setting_value: str
+
+
+@router.get("/system-settings")
+async def get_system_settings(
+    is_active: bool = Query(True, description="Filter by active status")
+):
+    """
+    Get all system settings.
+    
+    **Query Parameters:**
+    - `is_active`: true/false (default: true)
+    
+    **Example Response:**
+    ```json
+    {
+      "settings": [
+        {
+          "id": 1,
+          "setting_key": "max_file_size_mb",
+          "setting_value": "10",
+          "label": "Maximum File Size (MB)",
+          "label_ar": "الحد الأقصى لحجم الملف",
+          "setting_type": "number",
+          "description": "Maximum upload file size in megabytes",
+          "description_ar": "الحد الأقصى لحجم رفع الملف بالميغابايت",
+          "is_active": true,
+          "created_at": "2026-01-21 10:00:00",
+          "updated_at": "2026-01-21 10:00:00"
+        }
+      ],
+      "total": 4
+    }
+    ```
+    """
+    try:
+        result = SettingsService.get_system_settings(is_active=is_active)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=400, detail={
+            "error": "settings_fetch_failed",
+            "message": str(e),
+            "message_ar": f"فشل جلب الإعدادات: {str(e)}"
+        })
+
+
+@router.get("/system-settings/{setting_key}")
+async def get_system_setting(
+    setting_key: str = Path(..., description="Setting key to retrieve")
+):
+    """
+    Get a specific system setting by key.
+    
+    **Path Parameters:**
+    - `setting_key`: The unique key of the setting (e.g., "max_file_size_mb")
+    
+    **Example Response:**
+    ```json
+    {
+      "id": 1,
+      "setting_key": "max_file_size_mb",
+      "setting_value": "10",
+      "label": "Maximum File Size (MB)",
+      "label_ar": "الحد الأقصى لحجم الملف",
+      "setting_type": "number",
+      "is_active": true
+    }
+    ```
+    """
+    try:
+        result = SettingsService.get_setting(setting_key)
+        return result
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail={
+            "error": "setting_not_found",
+            "message": str(ve),
+            "message_ar": "الإعداد غير موجود"
+        })
+    except Exception as e:
+        raise HTTPException(status_code=400, detail={
+            "error": "setting_fetch_failed",
+            "message": str(e),
+            "message_ar": f"فشل جلب الإعداد: {str(e)}"
+        })
+
+
+@router.put("/system-settings/{setting_key}")
+async def update_system_setting(
+    setting_key: str = Path(..., description="Setting key to update"),
+    request: SystemSettingUpdateRequest = Body(...)
+):
+    """
+    Update a system setting value.
+    
+    **Path Parameters:**
+    - `setting_key`: The unique key of the setting
+    
+    **Request Body:**
+    ```json
+    {
+      "setting_value": "20"
+    }
+    ```
+    
+    **Example Response:**
+    ```json
+    {
+      "success": true,
+      "setting": {
+        "id": 1,
+        "setting_key": "max_file_size_mb",
+        "setting_value": "20",
+        "label": "Maximum File Size (MB)",
+        "updated_at": "2026-01-21 11:30:00"
+      },
+      "message": "Setting 'max_file_size_mb' updated successfully",
+      "message_ar": "تم تحديث الإعداد 'max_file_size_mb' بنجاح"
+    }
+    ```
+    """
+    try:
+        result = SettingsService.update_setting(
+            setting_key=setting_key,
+            setting_value=request.setting_value,
+            updated_by=None  # TODO: Get from auth context
+        )
+        return result
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail={
+            "error": "setting_not_found",
+            "message": str(ve),
+            "message_ar": "الإعداد غير موجود"
+        })
+    except Exception as e:
+        raise HTTPException(status_code=400, detail={
+            "error": "setting_update_failed",
+            "message": str(e),
+            "message_ar": f"فشل تحديث الإعداد: {str(e)}"
+        })
+
+
+@router.post("/system-settings")
+async def create_system_setting(request: SystemSettingRequest):
+    """
+    Create a new system setting.
+    
+    **Request Body:**
+    ```json
+    {
+      "setting_key": "new_parameter_name",
+      "setting_value": "default_value",
+      "label": "My New Parameter",
+      "label_ar": "المتغير الجديد",
+      "setting_type": "text",
+      "description": "Description of the parameter",
+      "description_ar": "وصف المتغير"
+    }
+    ```
+    
+    **Example Response:**
+    ```json
+    {
+      "success": true,
+      "setting": {
+        "id": 5,
+        "setting_key": "new_parameter_name",
+        "setting_value": "default_value",
+        "label": "My New Parameter"
+      },
+      "message": "Setting 'new_parameter_name' created successfully",
+      "message_ar": "تم إنشاء الإعداد 'new_parameter_name' بنجاح"
+    }
+    ```
+    """
+    try:
+        result = SettingsService.create_setting(
+            setting_key=request.setting_key,
+            setting_value=request.setting_value,
+            label=request.label,
+            label_ar=request.label_ar,
+            setting_type=request.setting_type,
+            description=request.description,
+            description_ar=request.description_ar,
+            created_by=None  # TODO: Get from auth context
+        )
+        return result
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail={
+            "error": "validation_error",
+            "message": str(ve),
+            "message_ar": "خطأ في التحقق من الصحة"
+        })
+    except Exception as e:
+        raise HTTPException(status_code=400, detail={
+            "error": "setting_create_failed",
+            "message": str(e),
+            "message_ar": f"فشل إنشاء الإعداد: {str(e)}"
+        })

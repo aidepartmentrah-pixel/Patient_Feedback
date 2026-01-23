@@ -25,8 +25,9 @@ UNIFIED ENDPOINTS:
 
 from typing import List, Dict, Any, Optional
 from datetime import date
-from fastapi import APIRouter, HTTPException, Path, Query, Body
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, Path, Query, Body, Request
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from api.services.explanation_service_refactored import (
     submit_red_flag_explanation,
@@ -148,8 +149,9 @@ router = APIRouter(prefix="/api/explanations", tags=["Explanations"])
 # ============================================================
 
 @router.post("/red-flag/{case_id}", response_model=Dict[str, Any], status_code=200)
-def submit_red_flag_explanation_endpoint(
+async def submit_red_flag_explanation_endpoint(
     case_id: int = Path(..., description="Incident Request Case ID"),
+    raw_request: Request = None,
     request: RedFlagExplanationRequest = Body(...)
 ):
     """
@@ -178,6 +180,14 @@ def submit_red_flag_explanation_endpoint(
     - `feedback_created`: True if new record created
     - `fsm_transition`: State transition description
     """
+    # DEBUG: Log incoming request
+    print(f"\n{'='*60}")
+    print(f"[RED FLAG ENDPOINT] Received request for case_id: {case_id}")
+    print(f"[RED FLAG ENDPOINT] explanation_text length: {len(request.explanation_text)}")
+    print(f"[RED FLAG ENDPOINT] user_id: {request.user_id}")
+    print(f"[RED FLAG ENDPOINT] action_items count: {len(request.action_items)}")
+    print(f"{'='*60}\n")
+    
     causes = {
         "staff": request.causes_staff.dict(),
         "process": request.causes_process.dict(),
@@ -195,7 +205,14 @@ def submit_red_flag_explanation_endpoint(
         user_id=request.user_id
     )
     
+    # DEBUG: Log result
+    print(f"\n[RED FLAG ENDPOINT] Service returned:")
+    print(f"  Success: {result.get('success')}")
+    print(f"  Error: {result.get('error', 'N/A')}")
+    print(f"  Message: {result.get('message', 'N/A')}\n")
+    
     if not result.get("success"):
+        print(f"[RED FLAG ENDPOINT] ❌ Raising 400 HTTPException with detail: {result}")
         raise HTTPException(status_code=400, detail=result)
     
     # Create action items if provided

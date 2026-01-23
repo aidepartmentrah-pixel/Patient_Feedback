@@ -82,11 +82,24 @@ def train_all():
 
     all_metrics = {}
     all_models = {}
+    
+    # Track step number for progress reporting
+    current_step = 0
 
     def run_training(model_name, func):
         """Train a model and collect standardized metrics."""
+        nonlocal current_step
+        current_step += 1
+        
+        # Report progress to training service
+        try:
+            from backend.api.services.training_service import update_training_progress
+            update_training_progress(model_name, current_step)
+        except Exception as e:
+            print(f"[WARNING] Could not update progress: {e}")
+        
         print(f"\n{'='*70}")
-        print(f"Training: {model_name}")
+        print(f"Training: {model_name} (Step {current_step}/18)")
         print(f"{'='*70}")
         model, metrics = func()
         
@@ -163,7 +176,25 @@ def train_all():
     avg_f1 = sum(m.get("f1", 0) for m in all_metrics.values()) / max(len(all_metrics), 1)
     print(f"Average F1-Score: {avg_f1:.6f}\n")
 
-    return all_models, all_metrics
+    # Convert metrics dict to list format expected by API
+    models_list = []
+    for model_name, metrics in all_metrics.items():
+        models_list.append({
+            "model_name": model_name,
+            "num_records": metrics.get("num_records", 0),
+            "accuracy": metrics.get("accuracy", 0.0),
+            "precision": metrics.get("precision", 0.0),
+            "recall": metrics.get("recall", 0.0),
+            "f1": metrics.get("f1", 0.0)
+        })
+    
+    return {
+        "models": models_list,
+        "summary": {
+            "total_models": len(all_metrics),
+            "average_f1": avg_f1
+        }
+    }
 
 
 

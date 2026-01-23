@@ -218,11 +218,12 @@ def get_cases_needing_explanation(
     Get all cases that need explanation but haven't received one yet.
     
     FIXED Criteria (matching FSM logic from insert_service.py):
+    - CaseStatusID = 1  
     - (ClinicalRiskTypeID IN (2, 3) OR RequiresExplanation = 1)
     - (ExplanationStatusID IS NULL OR ExplanationStatusID = 1)  -- 1 = 'Waiting'
-    - CaseStatusID IN (1, 2)  -- 1 = Open, 2 = In Progress
     
     This ensures Red Flag (2) and Never Event (3) cases appear even with NULL status.
+    Only Open cases are returned because explanations can only be submitted for Open cases.
     
     Args:
         department_id: Filter by target department (optional)
@@ -262,8 +263,9 @@ def get_cases_needing_explanation(
     """
     
     # Build WHERE clause - FIXED to match FSM logic
-    # Include closed cases if they still need explanations (removed CaseStatusID filter)
+    # Only include Open cases (CaseStatusID = 1) that need explanations
     conditions = [
+        "ic.CaseStatusID = 1", 
         "(ic.ClinicalRiskTypeID IN (2, 3) OR ic.RequiresExplanation = 1)",
         "(ic.ExplanationStatusID IS NULL OR ic.ExplanationStatusID = 1)"
     ]
@@ -305,9 +307,11 @@ def get_red_flag_never_event_cases_needing_explanation(
     Get Red Flag and Never Event cases that are Open and need explanation.
     
     FIXED Criteria:
+    - CaseStatusID = 1  -- Only Open cases
     - ClinicalRiskTypeID IN (2, 3)  -- 2 = Red Flag, 3 = Never Event
-    - CaseStatusID IN (1, 2)  -- 1 = Open, 2 = In Progress
     - (ExplanationStatusID IS NULL OR ExplanationStatusID = 1)  -- NULL or Waiting
+    
+    Only Open cases are returned because Red Flag explanations can only be submitted for Open cases.
     
     Args:
         department_id: Filter by target department (optional)
@@ -346,8 +350,9 @@ def get_red_flag_never_event_cases_needing_explanation(
     """
     
     # Build WHERE clause - FIXED to use numeric IDs
-    # Include closed cases if they still need explanations (removed CaseStatusID filter)
+    # Only include Open cases (CaseStatusID = 1) that need explanations
     conditions = [
+        "ic.CaseStatusID = 1", 
         "ic.ClinicalRiskTypeID IN (2, 3)",
         "(ic.ExplanationStatusID IS NULL OR ic.ExplanationStatusID = 1)"
     ]

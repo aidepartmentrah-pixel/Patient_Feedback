@@ -16,7 +16,8 @@ from ..services.patients_service import (
     get_incident_details_service,
     get_patient_full_history_service,
     export_patient_history_service,
-    create_patient_service
+    create_patient_service,
+    get_all_reserve_patients_service
 )
 
 
@@ -364,6 +365,155 @@ async def create_patient(request: CreatePatientRequest):
                 "error": "INTERNAL_ERROR",
                 "message": f"Failed to create patient: {str(e)}",
                 "message_ar": "خطأ داخلي في النظام"
+            }
+        )
+
+
+# ==================== GET ALL RESERVE PATIENTS ====================
+
+@router.get(
+    "/reserve",
+    summary="Get All Reserve Patients",
+    responses={
+        200: {
+            "description": "Successfully retrieved reserve patients",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "patients": [
+                            {
+                                "patient_admission_id": 100001,
+                                "full_name": "Ahmed Mohammed Al-Rashid",
+                                "first_name": "Ahmed",
+                                "middle_name": "Mohammed",
+                                "last_name": "Al-Rashid",
+                                "mother_name": "Fatima",
+                                "phone_number": "0501234567",
+                                "phone_number2": "0509876543",
+                                "birth_date": "1985-05-15",
+                                "sex": "M",
+                                "document_number": "1234567890",
+                                "medical_file_number": "MRN-2026-001234",
+                                "spouse": "Sara",
+                                "address_line1": "123 King Fahd Road",
+                                "address_line2": "Building 5, Apt 201",
+                                "created_at": "2026-01-21 10:30:00",
+                                "source": "reserve"
+                            }
+                        ],
+                        "total": 42,
+                        "count": 1,
+                        "limit": 100,
+                        "offset": 0
+                    }
+                }
+            }
+        },
+        500: {"description": "Internal server error"}
+    }
+)
+async def get_all_reserve_patients_endpoint(
+    limit: int = Query(100, ge=1, le=200, description="Maximum records per page (default: 100, max: 200)"),
+    offset: int = Query(0, ge=0, description="Number of records to skip for pagination (default: 0)"),
+    order_by: str = Query('created_at', description="Sort order: 'created_at' (newest first) or 'name' (alphabetical)")
+):
+    """
+    Get all patients from the reserve table (user-created patients only).
+    
+    This endpoint returns ONLY patients that were manually added through the 
+    create patient endpoint. It does NOT include hospital patients from the 
+    main database.
+    
+    **Query Parameters:**
+    - `limit`: Maximum number of records per page (default: 100, max: 200)
+    - `offset`: Number of records to skip for pagination (default: 0)
+    - `order_by`: Sort order
+        - `'created_at'` - Newest patients first (default)
+        - `'name'` - Alphabetical by full name
+    
+    **Use Cases:**
+    - Display list of all manually added patients
+    - Frontend patient management page
+    - Export/review user-created patients
+    - Pagination for large datasets
+    
+    **Pagination Example:**
+    ```
+    # First page (records 1-100)
+    GET /api/patients/reserve?limit=100&offset=0
+    
+    # Second page (records 101-200)
+    GET /api/patients/reserve?limit=100&offset=100
+    
+    # Third page (records 201-300)
+    GET /api/patients/reserve?limit=100&offset=200
+    ```
+    
+    **Response Structure:**
+    ```json
+    {
+      "patients": [
+        {
+          "patient_admission_id": 100001,
+          "full_name": "Ahmed Mohammed Al-Rashid",
+          "first_name": "Ahmed",
+          "middle_name": "Mohammed",
+          "last_name": "Al-Rashid",
+          "mother_name": "Fatima",
+          "phone_number": "0501234567",
+          "phone_number2": "0509876543",
+          "birth_date": "1985-05-15",
+          "sex": "M",
+          "document_number": "1234567890",
+          "medical_file_number": "MRN-2026-001234",
+          "spouse": "Sara",
+          "address_line1": "123 King Fahd Road",
+          "address_line2": "Building 5, Apt 201",
+          "created_at": "2026-01-21 10:30:00",
+          "source": "reserve"
+        }
+      ],
+      "total": 42,          // Total number of reserve patients in database
+      "count": 1,           // Number of patients in this response
+      "limit": 100,         // Applied limit
+      "offset": 0           // Applied offset
+    }
+    ```
+    
+    **Notes:**
+    - All patients will have `source: "reserve"`
+    - Patient IDs start at 100000 to distinguish from hospital patients
+    - Empty fields will be `null`
+    - `created_at` is when the patient was added to the system
+    - Total count is always returned for pagination logic
+    
+    **Example Requests:**
+    ```
+    # Get first 50 patients (newest first)
+    GET /api/patients/reserve?limit=50&order_by=created_at
+    
+    # Get patients alphabetically
+    GET /api/patients/reserve?order_by=name
+    
+    # Get second page of 100 patients
+    GET /api/patients/reserve?limit=100&offset=100
+    ```
+    """
+    try:
+        result = get_all_reserve_patients_service(
+            limit=limit,
+            offset=offset,
+            order_by=order_by
+        )
+        return result
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "INTERNAL_ERROR",
+                "message": f"Failed to retrieve reserve patients: {str(e)}",
+                "message_ar": "فشل في استرجاع المرضى المحفوظين"
             }
         )
 

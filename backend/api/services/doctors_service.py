@@ -127,6 +127,31 @@ class DoctorService:
             raise Exception(f"Doctor search failed: {str(e)}")
     
     @staticmethod
+    def get_reserve_doctors(limit: int = 100) -> Dict[str, Any]:
+        """
+        Get all doctors from reserve table only.
+        
+        Returns only user-created doctors (not from hospital system).
+        
+        Args:
+            limit: Max results
+        
+        Returns:
+            Dict with reserve doctors array and total count
+        """
+        try:
+            doctors = doctors_db.get_reserve_doctors(limit=limit)
+            
+            return {
+                'doctors': doctors,
+                'total': len(doctors),
+                'message': f"Found {len(doctors)} reserve doctor(s)",
+                'message_ar': f"تم العثور على {len(doctors)} طبيب في الجدول الاحتياطي"
+            }
+        except Exception as e:
+            raise Exception(f"Failed to fetch reserve doctors: {str(e)}")
+    
+    @staticmethod
     def get_doctor_profile(doctor_id: int) -> Dict[str, Any]:
         """
         Get full doctor profile.

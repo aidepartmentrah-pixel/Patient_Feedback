@@ -296,6 +296,115 @@ class SettingsService:
             'snapshots': snapshots,
             'total_snapshots': len(snapshots)
         }
+    
+    @staticmethod
+    def get_system_settings(is_active: bool = True) -> Dict[str, Any]:
+        """Get all system settings."""
+        try:
+            settings = settings_db.get_all_system_settings(is_active=is_active)
+            
+            return {
+                'settings': settings,
+                'total': len(settings),
+                'message': f'Retrieved {len(settings)} system setting(s)',
+                'message_ar': f'تم جلب {len(settings)} إعداد(ات) النظام'
+            }
+        except Exception as e:
+            raise Exception(f"Failed to fetch system settings: {str(e)}")
+    
+    @staticmethod
+    def get_setting(setting_key: str) -> Dict[str, Any]:
+        """Get a specific setting by key."""
+        try:
+            setting = settings_db.get_setting_by_key(setting_key)
+            
+            if not setting:
+                raise ValueError(f"Setting '{setting_key}' not found")
+            
+            return setting
+        except Exception as e:
+            raise Exception(f"Failed to fetch setting: {str(e)}")
+    
+    @staticmethod
+    def update_setting(
+        setting_key: str,
+        setting_value: str,
+        updated_by: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Update a system setting."""
+        try:
+            # Check if setting exists
+            setting = settings_db.get_setting_by_key(setting_key)
+            if not setting:
+                raise ValueError(f"Setting '{setting_key}' not found")
+            
+            # Update the setting
+            success = settings_db.update_setting(setting_key, setting_value, updated_by)
+            
+            if not success:
+                raise Exception("Failed to update setting")
+            
+            # Get updated setting
+            updated_setting = settings_db.get_setting_by_key(setting_key)
+            
+            return {
+                'success': True,
+                'setting': updated_setting,
+                'message': f"Setting '{setting_key}' updated successfully",
+                'message_ar': f"تم تحديث الإعداد '{setting_key}' بنجاح"
+            }
+        except ValueError as ve:
+            raise ValueError(str(ve))
+        except Exception as e:
+            raise Exception(f"Failed to update setting: {str(e)}")
+    
+    @staticmethod
+    def create_setting(
+        setting_key: str,
+        setting_value: str,
+        label: Optional[str] = None,
+        label_ar: Optional[str] = None,
+        setting_type: str = 'text',
+        description: Optional[str] = None,
+        description_ar: Optional[str] = None,
+        created_by: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Create a new system setting."""
+        try:
+            # Validate setting_key format (alphanumeric and underscores only)
+            if not re.match(r'^[a-zA-Z0-9_]+$', setting_key):
+                raise ValueError("Setting key must contain only letters, numbers, and underscores")
+            
+            # Check if setting already exists
+            existing = settings_db.get_setting_by_key(setting_key)
+            if existing:
+                raise ValueError(f"Setting '{setting_key}' already exists")
+            
+            # Create setting
+            setting_id = settings_db.create_setting(
+                setting_key=setting_key,
+                setting_value=setting_value,
+                label=label,
+                label_ar=label_ar,
+                setting_type=setting_type,
+                description=description,
+                description_ar=description_ar,
+                created_by=created_by
+            )
+            
+            # Get created setting
+            created_setting = settings_db.get_setting_by_key(setting_key)
+            
+            return {
+                'success': True,
+                'setting': created_setting,
+                'message': f"Setting '{setting_key}' created successfully",
+                'message_ar': f"تم إنشاء الإعداد '{setting_key}' بنجاح"
+            }
+        except ValueError as ve:
+            raise ValueError(str(ve))
+        except Exception as e:
+            raise Exception(f"Failed to create setting: {str(e)}")
 
 
 def _get_descendants(department_id: int, all_depts: List[Dict]) -> List[int]:

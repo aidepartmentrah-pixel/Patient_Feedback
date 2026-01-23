@@ -45,6 +45,8 @@ def create_incident_case(data: dict) -> int:
     conn = get_connection()
     cursor = conn.cursor()
 
+    print(f"[DB_LAYER] RequiresExplanation received: {data.get('RequiresExplanation')} (type: {type(data.get('RequiresExplanation')).__name__})")
+
     cursor.execute(
         """
         INSERT INTO dbo.APP_IncidentCase (

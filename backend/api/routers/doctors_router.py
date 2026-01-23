@@ -234,6 +234,92 @@ async def create_doctor(request: CreateDoctorRequest):
         )
 
 
+# ==================== A.2: GET RESERVE DOCTORS ====================
+
+@router.get(
+    "/reserve",
+    summary="Get all reserve doctors",
+    responses={
+        200: {
+            "description": "Successfully retrieved reserve doctors",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "doctors": [
+                            {
+                                "id": 1,
+                                "name_en": "Dr. Ahmed Al-Mansour",
+                                "name_ar": "Dr. Ahmed Al-Mansour",
+                                "specialty": "Interventional Cardiology",
+                                "status": "active",
+                                "source": "reserve",
+                                "source_system": "MANUAL",
+                                "last_synced_at": "2026-01-20 14:30:00"
+                            }
+                        ],
+                        "total": 1,
+                        "message": "Found 1 reserve doctor(s)",
+                        "message_ar": "تم العثور على 1 طبيب في الجدول الاحتياطي"
+                    }
+                }
+            }
+        },
+        500: {"description": "Internal server error"}
+    }
+)
+async def get_reserve_doctors(
+    limit: int = Query(100, ge=1, le=500, description="Max results to return")
+):
+    """
+    Get all doctors from the reserve table only.
+    
+    This endpoint returns ONLY user-created doctors (those added via POST /api/doctors).
+    Hospital doctors are NOT included in this list.
+    
+    **Query Parameters:**
+    - `limit`: Max results (default: 100, max: 500)
+    
+    **Response:**
+    - Returns array of reserve doctors with full details
+    - Each doctor has `source='reserve'` to indicate it's user-created
+    - Ordered by most recently created first
+    
+    **Example Response:**
+    ```json
+    {
+      "doctors": [
+        {
+          "id": 1,
+          "name_en": "Dr. Ahmed Al-Mansour",
+          "name_ar": "Dr. Ahmed Al-Mansour",
+          "specialty": "Interventional Cardiology",
+          "status": "active",
+          "source": "reserve",
+          "source_system": "MANUAL",
+          "last_synced_at": "2026-01-20 14:30:00"
+        }
+      ],
+      "total": 1,
+      "message": "Found 1 reserve doctor(s)",
+      "message_ar": "تم العثور على 1 طبيب في الجدول الاحتياطي"
+    }
+    ```
+    """
+    try:
+        result = DoctorService.get_reserve_doctors(limit=limit)
+        return result
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "FETCH_RESERVE_DOCTORS_FAILED",
+                "message": f"Failed to fetch reserve doctors: {str(e)}",
+                "message_ar": "فشل في جلب الأطباء من الجدول الاحتياطي"
+            }
+        )
+
+
 # ==================== B.1: DOCTOR SEARCH / LIST ====================
 
 @router.get("")

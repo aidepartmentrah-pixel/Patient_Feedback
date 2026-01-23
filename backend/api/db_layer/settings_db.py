@@ -633,3 +633,152 @@ def get_configuration_snapshots() -> List[Dict]:
     
     conn.close()
     return snapshots
+
+
+# =============================================
+# SYSTEM SETTINGS
+# =============================================
+
+def get_all_system_settings(is_active: bool = True) -> List[Dict[str, Any]]:
+    """Get all system settings."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    where_clause = "WHERE IsActive = 1" if is_active else ""
+    
+    query = f"""
+    SELECT 
+        SettingID as id,
+        SettingKey as setting_key,
+        SettingValue as setting_value,
+        SettingLabel as label,
+        SettingLabelAr as label_ar,
+        SettingType as setting_type,
+        Description as description,
+        DescriptionAr as description_ar,
+        IsActive as is_active,
+        CreatedAt as created_at,
+        UpdatedAt as updated_at,
+        UpdatedBy as updated_by
+    FROM dbo.APP_SystemSettings
+    {where_clause}
+    ORDER BY SettingKey
+    """
+    
+    try:
+        cursor.execute(query)
+        columns = [col[0] for col in cursor.description]
+        results = []
+        
+        for row in cursor.fetchall():
+            setting = dict(zip(columns, row))
+            # Format datetimes
+            if setting.get('created_at'):
+                setting['created_at'] = setting['created_at'].strftime('%Y-%m-%d %H:%M:%S')
+            if setting.get('updated_at'):
+                setting['updated_at'] = setting['updated_at'].strftime('%Y-%m-%d %H:%M:%S')
+            results.append(setting)
+        
+        return results
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_setting_by_key(setting_key: str) -> Optional[Dict[str, Any]]:
+    """Get a specific setting by key."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    query = """
+    SELECT 
+        SettingID as id,
+        SettingKey as setting_key,
+        SettingValue as setting_value,
+        SettingLabel as label,
+        SettingLabelAr as label_ar,
+        SettingType as setting_type,
+        Description as description,
+        DescriptionAr as description_ar,
+        IsActive as is_active,
+        CreatedAt as created_at,
+        UpdatedAt as updated_at,
+        UpdatedBy as updated_by
+    FROM dbo.APP_SystemSettings
+    WHERE SettingKey = ? AND IsActive = 1
+    """
+    
+    try:
+        cursor.execute(query, (setting_key,))
+        row = cursor.fetchone()
+        
+        if not row:
+            return None
+        
+        columns = [col[0] for col in cursor.description]
+        setting = dict(zip(columns, row))
+        
+        # Format datetimes
+        if setting.get('created_at'):
+            setting['created_at'] = setting['created_at'].strftime('%Y-%m-%d %H:%M:%S')
+        if setting.get('updated_at'):
+            setting['updated_at'] = setting['updated_at'].strftime('%Y-%m-%d %H:%M:%S')
+        
+        return setting
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def update_setting(setting_key: str, setting_value: str, updated_by: Optional[int] = None) -> bool:
+    """Update a setting value."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            UPDATE dbo.APP_SystemSettings
+            SET SettingValue = ?,
+                UpdatedAt = GETDATE(),
+                UpdatedBy = ?
+            WHERE SettingKey = ?
+        """, (setting_value, updated_by, setting_key))
+        
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def create_setting(
+    setting_key: str,
+    setting_value: str,
+    label: Optional[str] = None,
+    label_ar: Optional[str] = None,
+    setting_type: str = 'text',
+    description: Optional[str] = None,
+    description_ar: Optional[str] = None,
+    created_by: Optional[int] = None
+) -> int:
+    """Create a new system setting."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            INSERT INTO dbo.APP_SystemSettings 
+            (SettingKey, SettingValue, SettingLabel, SettingLabelAr, SettingType, 
+             Description, DescriptionAr, UpdatedBy)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            
+            SELECT SCOPE_IDENTITY()
+        """, (setting_key, setting_value, label, label_ar, setting_type, 
+              description, description_ar, created_by))
+        
+        setting_id = cursor.fetchone()[0]
+        conn.commit()
+        return int(setting_id)
+    finally:
+        cursor.close()
+        conn.close()

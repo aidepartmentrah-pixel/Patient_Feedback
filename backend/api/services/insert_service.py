@@ -248,6 +248,8 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
         is_never_event = clinical_risk_type_id == 3
         requires_explanation = data.get('requires_explanation')
         
+        print(f"[DEBUG] requires_explanation from frontend: {requires_explanation} (type: {type(requires_explanation).__name__})")
+        
         # Convert to BIT value (0 or 1)
         if isinstance(requires_explanation, bool):
             requires_explanation_bit = 1 if requires_explanation else 0
@@ -257,6 +259,8 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
             requires_explanation_bit = 1 if requires_explanation == 1 else 0
         else:
             requires_explanation_bit = 0
+        
+        print(f"[DEBUG] requires_explanation_bit to be stored: {requires_explanation_bit}")
         
         if is_red_flag or is_never_event or requires_explanation_bit:
             # Path 1 & 2: Open + Waiting (S0)

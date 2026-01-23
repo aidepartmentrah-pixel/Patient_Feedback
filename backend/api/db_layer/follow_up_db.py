@@ -32,7 +32,9 @@ def create_follow_up_action(
     created_by_user_id: int = None
 ) -> Optional[Dict[str, Any]]:
     """
-    Create a new follow-up action.
+    Create a new follow-up action using EXISTING schema.
+    Maps new parameters to existing columns: IsDone, DateSubmitted.
+    Ignores: department_id, assigned_to, priority, notes (not in schema).
     
     Returns:
         Created action dict with ID
@@ -41,13 +43,8 @@ def create_follow_up_action(
     cursor = conn.cursor()
     
     try:
-        # Generate initial notes entry
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
-        user_id = created_by_user_id or 0
-        initial_notes = f"[{timestamp}] (user_id={user_id}): Action created"
-        
-        if notes:
-            initial_notes += f"\n[{timestamp}] (user_id={user_id}): {notes}"
+        # Map status to IsDone (bit field)
+        is_done = 1 if status == 'completed' else 0
         
         query = """
             INSERT INTO dbo.APP_ActionItem (
@@ -55,19 +52,13 @@ def create_follow_up_action(
                 ActionDescription,
                 IncidentRequestCaseID,
                 SeasonalReportID,
-                DepartmentID,
-                AssignedTo,
-                Priority,
-                Status,
                 DueDate,
-                Notes,
+                IsDone,
                 CreatedAt,
-                CreatedByUserID,
-                LastUpdatedAt,
-                LastUpdatedByUserID
+                CreatedByUserID
             )
             OUTPUT INSERTED.ActionItemID
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """
         
         cursor.execute(query, (
@@ -75,16 +66,10 @@ def create_follow_up_action(
             action_description,
             incident_case_id,
             seasonal_report_id,
-            department_id,
-            assigned_to,
-            priority,
-            status,
             due_date,
-            initial_notes,
+            is_done,
             datetime.now(),
-            created_by_user_id,
-            datetime.now(),
-            created_by_user_id
+            created_by_user_id or 1
         ))
         
         # Get the inserted ID
@@ -112,7 +97,9 @@ def get_follow_up_actions(
     include_completed: bool = False
 ) -> Dict[str, Any]:
     """
-    Fetch filtered follow-up actions with derived fields and global statistics.
+    Fetch filtered follow-up actions using EXISTING schema.
+    Maps IsDone (bit) to status field.
+    Note: priority, department, assignedTo, notes not available in current schema.
     
     Returns:
         Dict with actions array and global statistics
@@ -125,23 +112,19 @@ def get_follow_up_actions(
         where_clauses = []
         params = []
         
-        # Status filter
+        # Status filter - map to IsDone
         if status and status != 'all':
-            where_clauses.append("a.Status = ?")
-            params.append(status)
+            if status == 'completed':
+                where_clauses.append("a.IsDone = 1")
+            elif status == 'pending':
+                where_clauses.append("a.IsDone = 0")
+            # 'delayed' not supported in current schema, treat as pending
         elif not include_completed:
             # Default: exclude completed unless explicitly included
-            where_clauses.append("a.Status != 'completed'")
+            where_clauses.append("a.IsDone = 0")
         
-        # Priority filter
-        if priority and priority != 'all':
-            where_clauses.append("a.Priority = ?")
-            params.append(priority)
-        
-        # Department filter
-        if department and department != 'all':
-            where_clauses.append("a.DepartmentID = ?")
-            params.append(department)
+        # Priority filter - not available in schema, ignore
+        # Department filter - not available in schema, ignore
         
         # Date range filter
         if from_date:
@@ -154,7 +137,7 @@ def get_follow_up_actions(
         
         where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
         
-        # Main query with derived fields
+        # Main query - using EXISTING columns only
         query = f"""
             SELECT
                 a.ActionItemID AS id,
@@ -167,28 +150,22 @@ def get_follow_up_actions(
                 END AS sourceType,
                 COALESCE(CAST(a.IncidentRequestCaseID AS NVARCHAR(50)), 
                          CAST(a.SeasonalReportID AS NVARCHAR(50)), '') AS sourceId,
-                a.DepartmentID AS departmentId,
-                a.AssignedTo AS assignedTo,
-                a.Priority AS priority,
-                a.Status AS status,
                 CAST(a.DueDate AS DATE) AS dueDate,
-                CAST(a.CompletedDate AS DATE) AS completedDate,
-                a.Notes AS notes,
+                CAST(a.DateSubmitted AS DATE) AS completedDate,
+                a.IsDone AS isDone,
                 a.CreatedAt AS createdAt,
                 a.CreatedByUserID AS createdByUserId,
-                a.LastUpdatedAt AS lastUpdatedAt,
-                a.LastUpdatedByUserID AS lastUpdatedByUserId,
                 -- Derived fields
                 CASE 
                     WHEN CAST(a.DueDate AS DATE) < CAST(GETDATE() AS DATE) 
-                         AND a.Status != 'completed' 
+                         AND a.IsDone = 0
                     THEN 1 
                     ELSE 0 
                 END AS isOverdue,
                 DATEDIFF(DAY, CAST(GETDATE() AS DATE), CAST(a.DueDate AS DATE)) AS daysRemaining,
                 CASE 
                     WHEN CAST(a.DueDate AS DATE) < CAST(GETDATE() AS DATE) 
-                         AND a.Status != 'completed'
+                         AND a.IsDone = 0
                     THEN DATEDIFF(DAY, CAST(a.DueDate AS DATE), CAST(GETDATE() AS DATE))
                     ELSE 0
                 END AS daysOverdue
@@ -201,36 +178,37 @@ def get_follow_up_actions(
         actions = []
         
         for row in cursor.fetchall():
+            is_done = bool(row[7])
             actions.append({
                 'id': row[0],
                 'actionTitle': row[1],
                 'actionDescription': row[2],
                 'sourceType': row[3],
                 'sourceId': row[4],
-                'departmentId': row[5],
-                'assignedTo': row[6],
-                'priority': row[7],
-                'status': row[8],
-                'dueDate': row[9].isoformat() if row[9] else None,
-                'completedDate': row[10].isoformat() if row[10] else None,
-                'notes': row[11],
-                'createdAt': row[12].isoformat() if row[12] else None,
-                'createdByUserId': row[13],
-                'lastUpdatedAt': row[14].isoformat() if row[14] else None,
-                'lastUpdatedByUserId': row[15],
-                'isOverdue': bool(row[16]),
-                'daysRemaining': row[17],
-                'daysOverdue': row[18]
+                'departmentId': None,  # Not in schema
+                'assignedTo': None,  # Not in schema
+                'priority': 'medium',  # Default, not in schema
+                'status': 'completed' if is_done else 'pending',
+                'dueDate': row[5].isoformat() if row[5] else None,
+                'completedDate': row[6].isoformat() if row[6] else None,
+                'notes': None,  # Not in schema
+                'createdAt': row[8].isoformat() if row[8] else None,
+                'createdByUserId': row[9],
+                'lastUpdatedAt': row[8].isoformat() if row[8] else None,  # Use CreatedAt
+                'lastUpdatedByUserId': row[9],  # Use CreatedByUserID
+                'isOverdue': bool(row[10]),
+                'daysRemaining': row[11],
+                'daysOverdue': row[12]
             })
         
-        # Get global statistics (not affected by filters)
+        # Get global statistics using IsDone
         stats_query = """
             SELECT
-                COUNT(CASE WHEN Status = 'pending' THEN 1 END) AS actionsToTake,
-                COUNT(CASE WHEN Status != 'completed' 
+                COUNT(CASE WHEN IsDone = 0 THEN 1 END) AS actionsToTake,
+                COUNT(CASE WHEN IsDone = 0 
                            AND CAST(DueDate AS DATE) < CAST(GETDATE() AS DATE) 
                       THEN 1 END) AS overdue,
-                COUNT(CASE WHEN Status = 'completed' THEN 1 END) AS completed
+                COUNT(CASE WHEN IsDone = 1 THEN 1 END) AS completed
             FROM dbo.APP_ActionItem
         """
         
@@ -256,7 +234,7 @@ def get_follow_up_actions(
 
 def get_follow_up_action_by_id(action_id: int) -> Optional[Dict[str, Any]]:
     """
-    Fetch single action by ID with derived fields.
+    Fetch single action by ID using EXISTING schema.
     
     Returns:
         Action dict or None if not found
@@ -277,28 +255,21 @@ def get_follow_up_action_by_id(action_id: int) -> Optional[Dict[str, Any]]:
                 END AS sourceType,
                 COALESCE(CAST(a.IncidentRequestCaseID AS NVARCHAR(50)), 
                          CAST(a.SeasonalReportID AS NVARCHAR(50)), '') AS sourceId,
-                a.DepartmentID AS departmentId,
-                a.AssignedTo AS assignedTo,
-                a.Priority AS priority,
-                a.Status AS status,
                 CAST(a.DueDate AS DATE) AS dueDate,
-                CAST(a.CompletedDate AS DATE) AS completedDate,
-                a.Notes AS notes,
+                CAST(a.DateSubmitted AS DATE) AS completedDate,
+                a.IsDone AS isDone,
                 a.CreatedAt AS createdAt,
                 a.CreatedByUserID AS createdByUserId,
-                a.LastUpdatedAt AS lastUpdatedAt,
-                a.LastUpdatedByUserID AS lastUpdatedByUserId,
-                -- Derived fields
                 CASE 
                     WHEN CAST(a.DueDate AS DATE) < CAST(GETDATE() AS DATE) 
-                         AND a.Status != 'completed' 
+                         AND a.IsDone = 0
                     THEN 1 
                     ELSE 0 
                 END AS isOverdue,
                 DATEDIFF(DAY, CAST(GETDATE() AS DATE), CAST(a.DueDate AS DATE)) AS daysRemaining,
                 CASE 
                     WHEN CAST(a.DueDate AS DATE) < CAST(GETDATE() AS DATE) 
-                         AND a.Status != 'completed'
+                         AND a.IsDone = 0
                     THEN DATEDIFF(DAY, CAST(a.DueDate AS DATE), CAST(GETDATE() AS DATE))
                     ELSE 0
                 END AS daysOverdue
@@ -312,26 +283,28 @@ def get_follow_up_action_by_id(action_id: int) -> Optional[Dict[str, Any]]:
         if not row:
             return None
         
+        is_done = bool(row[7])
+        
         return {
             'id': row[0],
             'actionTitle': row[1],
             'actionDescription': row[2],
             'sourceType': row[3],
             'sourceId': row[4],
-            'departmentId': row[5],
-            'assignedTo': row[6],
-            'priority': row[7],
-            'status': row[8],
-            'dueDate': row[9].isoformat() if row[9] else None,
-            'completedDate': row[10].isoformat() if row[10] else None,
-            'notes': row[11],
-            'createdAt': row[12].isoformat() if row[12] else None,
-            'createdByUserId': row[13],
-            'lastUpdatedAt': row[14].isoformat() if row[14] else None,
-            'lastUpdatedByUserId': row[15],
-            'isOverdue': bool(row[16]),
-            'daysRemaining': row[17],
-            'daysOverdue': row[18]
+            'departmentId': None,
+            'assignedTo': None,
+            'priority': 'medium',
+            'status': 'completed' if is_done else 'pending',
+            'dueDate': row[5].isoformat() if row[5] else None,
+            'completedDate': row[6].isoformat() if row[6] else None,
+            'notes': None,
+            'createdAt': row[8].isoformat() if row[8] else None,
+            'createdByUserId': row[9],
+            'lastUpdatedAt': row[8].isoformat() if row[8] else None,
+            'lastUpdatedByUserId': row[9],
+            'isOverdue': bool(row[10]),
+            'daysRemaining': row[11],
+            'daysOverdue': row[12]
         }
     
     finally:
@@ -349,7 +322,9 @@ def update_follow_up_action(
     last_updated_by_user_id: int = None
 ) -> Optional[Dict[str, Any]]:
     """
-    Update action fields with audit trail.
+    Update action fields using EXISTING schema.
+    Only DueDate and status->IsDone are updateable.
+    Ignores: assigned_to, priority, notes (not in schema).
     
     Returns:
         Updated action dict or None if not found
@@ -358,7 +333,7 @@ def update_follow_up_action(
     cursor = conn.cursor()
     
     try:
-        # Build UPDATE clause dynamically
+        # Build UPDATE clause dynamically using EXISTING columns only
         update_fields = []
         params = []
         
@@ -366,29 +341,16 @@ def update_follow_up_action(
             update_fields.append("DueDate = ?")
             params.append(due_date)
         
-        if assigned_to is not None:
-            update_fields.append("AssignedTo = ?")
-            params.append(assigned_to)
-        
-        if priority:
-            update_fields.append("Priority = ?")
-            params.append(priority)
-        
+        # Map status to IsDone
         if status:
-            update_fields.append("Status = ?")
-            params.append(status)
-        
-        if notes:
-            update_fields.append("Notes = ?")
-            params.append(notes)
-        
-        # Always update LastUpdatedAt and LastUpdatedByUserID
-        update_fields.append("LastUpdatedAt = ?")
-        params.append(datetime.now())
-        
-        if last_updated_by_user_id:
-            update_fields.append("LastUpdatedByUserID = ?")
-            params.append(last_updated_by_user_id)
+            is_done = 1 if status == 'completed' else 0
+            update_fields.append("IsDone = ?")
+            params.append(is_done)
+            
+            # If completing, set DateSubmitted
+            if status == 'completed':
+                update_fields.append("DateSubmitted = ?")
+                params.append(datetime.now().strftime('%Y-%m-%d'))
         
         if not update_fields:
             # No updates to make
@@ -422,7 +384,8 @@ def complete_follow_up_action(
     last_updated_by_user_id: int = None
 ) -> Optional[Dict[str, Any]]:
     """
-    Mark action as completed.
+    Mark action as completed using EXISTING schema.
+    Sets IsDone=1 and DateSubmitted.
     
     Returns:
         Updated action dict or None if not found
@@ -431,24 +394,10 @@ def complete_follow_up_action(
     cursor = conn.cursor()
     
     try:
-        # Get current notes to append
+        # Check if action exists
         current_action = get_follow_up_action_by_id(action_id)
         if not current_action:
             return None
-        
-        current_notes = current_action.get('notes', '')
-        
-        # Append completion notes
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
-        user_id = last_updated_by_user_id or 0
-        new_notes = current_notes or ''
-        
-        if completion_notes:
-            append_text = f"\n[{timestamp}] (user_id={user_id}): {completion_notes}"
-            new_notes = (new_notes + append_text).strip()
-        else:
-            append_text = f"\n[{timestamp}] (user_id={user_id}): Action marked complete"
-            new_notes = (new_notes + append_text).strip()
         
         # Set completed date
         comp_date = completed_date or datetime.now().strftime('%Y-%m-%d')
@@ -456,21 +405,12 @@ def complete_follow_up_action(
         query = """
             UPDATE dbo.APP_ActionItem
             SET
-                Status = 'completed',
-                CompletedDate = ?,
-                Notes = ?,
-                LastUpdatedAt = ?,
-                LastUpdatedByUserID = ?
+                IsDone = 1,
+                DateSubmitted = ?
             WHERE ActionItemID = ?
         """
         
-        cursor.execute(query, (
-            comp_date,
-            new_notes,
-            datetime.now(),
-            last_updated_by_user_id,
-            action_id
-        ))
+        cursor.execute(query, (comp_date, action_id))
         conn.commit()
         
         # Fetch updated action
@@ -488,7 +428,8 @@ def reopen_follow_up_action(
     last_updated_by_user_id: int = None
 ) -> Optional[Dict[str, Any]]:
     """
-    Reopen a completed action back to pending status.
+    Reopen a completed action using EXISTING schema.
+    Sets IsDone=0 and clears DateSubmitted.
     
     Returns:
         Updated action dict or None if not found
@@ -502,36 +443,19 @@ def reopen_follow_up_action(
         if not current_action:
             return None
         
-        # Append reopen notes
-        current_notes = current_action.get('notes', '')
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
-        user_id = last_updated_by_user_id or 0
-        
-        append_text = f"\n[{timestamp}] (user_id={user_id}): Reopened - {reopen_reason}"
-        new_notes = (current_notes + append_text).strip() if current_notes else append_text.strip()
-        
         # Determine new due date
         due_date = new_due_date or datetime.now().strftime('%Y-%m-%d')
         
         query = """
             UPDATE dbo.APP_ActionItem
             SET
-                Status = 'pending',
+                IsDone = 0,
                 DueDate = ?,
-                CompletedDate = NULL,
-                Notes = ?,
-                LastUpdatedAt = ?,
-                LastUpdatedByUserID = ?
+                DateSubmitted = NULL
             WHERE ActionItemID = ?
         """
         
-        cursor.execute(query, (
-            due_date,
-            new_notes,
-            datetime.now(),
-            last_updated_by_user_id,
-            action_id
-        ))
+        cursor.execute(query, (due_date, action_id))
         conn.commit()
         
         # Fetch updated action
@@ -544,9 +468,8 @@ def reopen_follow_up_action(
 
 def get_action_history(action_id: int) -> List[Dict[str, Any]]:
     """
-    Get change history for an action from notes field.
-    
-    Parses notes to extract timestamped changes.
+    Get change history for an action.
+    Note: Notes field not in current schema, returns basic history.
     
     Returns:
         List of history entries
@@ -559,23 +482,20 @@ def get_action_history(action_id: int) -> List[Dict[str, Any]]:
         if not action:
             return []
         
-        notes = action.get('notes', '')
-        if not notes:
-            return []
+        # Without Notes field, return basic creation info
+        history = [{
+            'timestamp': action['createdAt'],
+            'userId': action['createdByUserId'],
+            'action': 'Created',
+            'details': f"Action created: {action['actionTitle']}"
+        }]
         
-        # Parse notes for history entries
-        # Format: [YYYY-MM-DD HH:MM] (user_id=X): message
-        import re
-        pattern = r'\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\] \(user_id=(\d+)\): (.+)'
-        
-        history = []
-        for match in re.finditer(pattern, notes):
-            timestamp_str, user_id_str, message = match.groups()
+        if action['status'] == 'completed' and action['completedDate']:
             history.append({
-                'timestamp': timestamp_str,
-                'userId': int(user_id_str),
-                'action': message.split(' - ')[0] if ' - ' in message else message.split(':')[0] if ':' in message else 'Updated',
-                'details': message
+                'timestamp': action['completedDate'],
+                'userId': action['createdByUserId'],
+                'action': 'Completed',
+                'details': 'Action marked as completed'
             })
         
         return history
@@ -592,7 +512,7 @@ def get_calendar_actions(
     status: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Get actions grouped by date for calendar view.
+    Get actions grouped by date for calendar view using EXISTING schema.
     
     Returns:
         Dict with actions grouped by date
@@ -609,17 +529,16 @@ def get_calendar_actions(
         where_clauses.append("YEAR(a.DueDate) = ? AND MONTH(a.DueDate) = ?")
         params.extend([year, month])
         
-        # Status filter (default: exclude completed)
+        # Status filter using IsDone
         if status and status != 'all':
-            where_clauses.append("a.Status = ?")
-            params.append(status)
+            if status == 'completed':
+                where_clauses.append("a.IsDone = 1")
+            elif status == 'pending':
+                where_clauses.append("a.IsDone = 0")
         else:
-            where_clauses.append("a.Status != 'completed'")
+            where_clauses.append("a.IsDone = 0")  # Default: exclude completed
         
-        # Department filter
-        if department and department != 'all':
-            where_clauses.append("a.DepartmentID = ?")
-            params.append(department)
+        # Department filter not available in schema
         
         where_sql = " AND ".join(where_clauses)
         
@@ -628,19 +547,16 @@ def get_calendar_actions(
                 CAST(a.DueDate AS DATE) AS dueDate,
                 a.ActionItemID AS id,
                 a.ActionTitle AS actionTitle,
-                a.Priority AS priority,
-                a.Status AS status,
-                a.DepartmentID AS departmentId,
-                a.AssignedTo AS assignedTo,
+                a.IsDone AS isDone,
                 CASE 
                     WHEN CAST(a.DueDate AS DATE) < CAST(GETDATE() AS DATE) 
-                         AND a.Status != 'completed' 
+                         AND a.IsDone = 0
                     THEN 1 
                     ELSE 0 
                 END AS isOverdue
             FROM dbo.APP_ActionItem a
             WHERE {where_sql}
-            ORDER BY a.DueDate ASC, a.Priority DESC
+            ORDER BY a.DueDate ASC
         """
         
         cursor.execute(query, params)
@@ -654,14 +570,15 @@ def get_calendar_actions(
             if date_str not in calendar_data:
                 calendar_data[date_str] = []
             
+            is_done = bool(row[3])
             calendar_data[date_str].append({
                 'id': row[1],
                 'actionTitle': row[2],
-                'priority': row[3],
-                'status': row[4],
-                'departmentId': row[5],
-                'assignedTo': row[6],
-                'isOverdue': bool(row[7])
+                'priority': 'medium',
+                'status': 'completed' if is_done else 'pending',
+                'departmentId': None,
+                'assignedTo': None,
+                'isOverdue': bool(row[4])
             })
         
         return {
@@ -707,39 +624,18 @@ def bulk_complete_actions(
                     failed_ids.append({'id': action_id, 'reason': 'Already completed'})
                     continue
                 
-                # Append completion notes
-                current_notes = current_action.get('notes', '')
-                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
-                user_id = last_updated_by_user_id or 0
-                
-                if completion_notes:
-                    append_text = f"\n[{timestamp}] (user_id={user_id}): {completion_notes}"
-                else:
-                    append_text = f"\n[{timestamp}] (user_id={user_id}): Bulk completed"
-                
-                new_notes = (current_notes + append_text).strip() if current_notes else append_text.strip()
-                
                 # Set completed date
                 comp_date = completed_date or datetime.now().strftime('%Y-%m-%d')
                 
                 query = """
                     UPDATE dbo.APP_ActionItem
                     SET
-                        Status = 'completed',
-                        CompletedDate = ?,
-                        Notes = ?,
-                        LastUpdatedAt = ?,
-                        LastUpdatedByUserID = ?
+                        IsDone = 1,
+                        DateSubmitted = ?
                     WHERE ActionItemID = ?
                 """
                 
-                cursor.execute(query, (
-                    comp_date,
-                    new_notes,
-                    datetime.now(),
-                    last_updated_by_user_id,
-                    action_id
-                ))
+                cursor.execute(query, (comp_date, action_id))
                 
                 completed_count += 1
             
@@ -797,36 +693,13 @@ def bulk_delay_actions(
                 due_date = datetime.fromisoformat(current_action['dueDate'])
                 new_due_date = (due_date + timedelta(days=delay_days)).strftime('%Y-%m-%d')
                 
-                # Append delay notes
-                current_notes = current_action.get('notes', '')
-                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
-                user_id = last_updated_by_user_id or 0
-                
-                delay_text = f"Bulk delayed {delay_days} days"
-                if reason:
-                    delay_text += f" - {reason}"
-                
-                append_text = f"\n[{timestamp}] (user_id={user_id}): {delay_text}"
-                new_notes = (current_notes + append_text).strip() if current_notes else append_text.strip()
-                
                 query = """
                     UPDATE dbo.APP_ActionItem
-                    SET
-                        DueDate = ?,
-                        Status = 'pending',
-                        Notes = ?,
-                        LastUpdatedAt = ?,
-                        LastUpdatedByUserID = ?
+                    SET DueDate = ?
                     WHERE ActionItemID = ?
                 """
                 
-                cursor.execute(query, (
-                    new_due_date,
-                    new_notes,
-                    datetime.now(),
-                    last_updated_by_user_id,
-                    action_id
-                ))
+                cursor.execute(query, (new_due_date, action_id))
                 
                 delayed_count += 1
             
@@ -855,85 +728,17 @@ def bulk_update_actions(
 ) -> Dict[str, Any]:
     """
     Update multiple actions with same values.
+    NOTE: assigned_to, priority, department_id not in current schema - operation not supported.
     
     Returns:
         Dict with success count and failed IDs
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    try:
-        updated_count = 0
-        failed_ids = []
-        
-        for action_id in action_ids:
-            try:
-                # Get current action
-                current_action = get_follow_up_action_by_id(action_id)
-                if not current_action:
-                    failed_ids.append({'id': action_id, 'reason': 'Action not found'})
-                    continue
-                
-                # Skip if completed
-                if current_action['status'] == 'completed':
-                    failed_ids.append({'id': action_id, 'reason': 'Cannot update completed action'})
-                    continue
-                
-                # Build update clause
-                update_fields = []
-                params = []
-                
-                if assigned_to is not None:
-                    update_fields.append("AssignedTo = ?")
-                    params.append(assigned_to)
-                
-                if priority:
-                    update_fields.append("Priority = ?")
-                    params.append(priority)
-                
-                if department_id is not None:
-                    update_fields.append("DepartmentID = ?")
-                    params.append(department_id)
-                
-                if not update_fields:
-                    failed_ids.append({'id': action_id, 'reason': 'No fields to update'})
-                    continue
-                
-                # Always update audit fields
-                update_fields.append("LastUpdatedAt = ?")
-                params.append(datetime.now())
-                
-                if last_updated_by_user_id:
-                    update_fields.append("LastUpdatedByUserID = ?")
-                    params.append(last_updated_by_user_id)
-                
-                params.append(action_id)
-                
-                update_sql = ", ".join(update_fields)
-                
-                query = f"""
-                    UPDATE dbo.APP_ActionItem
-                    SET {update_sql}
-                    WHERE ActionItemID = ?
-                """
-                
-                cursor.execute(query, params)
-                updated_count += 1
-            
-            except Exception as e:
-                failed_ids.append({'id': action_id, 'reason': str(e)})
-        
-        conn.commit()
-        
-        return {
-            'successCount': updated_count,
-            'failedCount': len(failed_ids),
-            'failedIds': failed_ids
-        }
-    
-    finally:
-        cursor.close()
-        conn.close()
+    # These fields don't exist in current schema
+    return {
+        'successCount': 0,
+        'failedCount': len(action_ids),
+        'failedIds': [{'id': aid, 'reason': 'Bulk update not supported with current schema'} for aid in action_ids]
+    }
 
 
 def delay_follow_up_action(
@@ -943,7 +748,7 @@ def delay_follow_up_action(
     last_updated_by_user_id: int = None
 ) -> Optional[Dict[str, Any]]:
     """
-    Delay action by specified days.
+    Delay action by specified days using EXISTING schema.
     
     Returns:
         Updated action dict or None if not found
@@ -958,40 +763,17 @@ def delay_follow_up_action(
             return None
         
         # Parse current due date
-        from datetime import datetime, timedelta
+        from datetime import timedelta
         due_date = datetime.fromisoformat(current_action['dueDate'])
         new_due_date = (due_date + timedelta(days=delay_days)).strftime('%Y-%m-%d')
         
-        # Append delay notes
-        current_notes = current_action.get('notes', '')
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
-        user_id = last_updated_by_user_id or 0
-        
-        delay_text = f"Delayed {delay_days} days"
-        if reason:
-            delay_text += f" - {reason}"
-        
-        append_text = f"\n[{timestamp}] (user_id={user_id}): {delay_text}"
-        new_notes = (current_notes + append_text).strip() if current_notes else append_text.strip()
-        
         query = """
             UPDATE dbo.APP_ActionItem
-            SET
-                DueDate = ?,
-                Status = 'pending',
-                Notes = ?,
-                LastUpdatedAt = ?,
-                LastUpdatedByUserID = ?
+            SET DueDate = ?
             WHERE ActionItemID = ?
         """
         
-        cursor.execute(query, (
-            new_due_date,
-            new_notes,
-            datetime.now(),
-            last_updated_by_user_id,
-            action_id
-        ))
+        cursor.execute(query, (new_due_date, action_id))
         conn.commit()
         
         # Fetch updated action

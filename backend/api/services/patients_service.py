@@ -15,7 +15,8 @@ from ..db_layer.patients_db import (
     get_patient_incidents,
     get_incident_details,
     get_patient_incidents_for_export,
-    create_patient
+    create_patient,
+    get_all_reserve_patients
 )
 
 
@@ -303,6 +304,51 @@ def search_patients_service(
     
     except Exception as e:
         raise Exception(f"Patient search failed: {str(e)}")
+
+
+# ==================== GET ALL RESERVE PATIENTS ====================
+
+def get_all_reserve_patients_service(
+    limit: int = 100,
+    offset: int = 0,
+    order_by: str = 'created_at'
+) -> Dict[str, Any]:
+    """
+    Get all reserve patients (user-created patients only).
+    
+    Args:
+        limit: Maximum number of records per page (default: 100, max: 200)
+        offset: Number of records to skip (default: 0)
+        order_by: Sort field - 'created_at' (newest first) or 'name' (alphabetical)
+    
+    Returns:
+        Dict with patients list, total count, and pagination info
+    
+    Raises:
+        Exception: If retrieval fails
+    """
+    # Validation
+    if limit > 200:
+        limit = 200  # Cap at 200
+    if limit < 1:
+        limit = 100
+    if offset < 0:
+        offset = 0
+    
+    # Map order_by parameter
+    db_order_by = 'SystemTime' if order_by == 'created_at' else 'FullName'
+    
+    try:
+        result = get_all_reserve_patients(
+            limit=limit,
+            offset=offset,
+            order_by=db_order_by
+        )
+        
+        return result
+    
+    except Exception as e:
+        raise Exception(f"Failed to retrieve reserve patients: {str(e)}")
 
 
 # ==================== GET PATIENT PROFILE ====================
