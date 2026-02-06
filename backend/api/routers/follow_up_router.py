@@ -1,12 +1,37 @@
 """
 Follow-Up Actions Router
 API endpoints for follow-up action management.
+
+⚠️ DEPRECATION WARNING — API v1 LEGACY ENDPOINT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+This router is DEPRECATED and should NOT be used for new frontend development.
+
+API v2 Replacement:
+- Use /api/v2/follow-up/action-items endpoints instead
+- API v2 provides proper role-based access control and scope enforcement
+- This router lacks security guards and should be considered INTERNAL only
+
+Status:
+- Maintained for backward compatibility with existing integrations
+- Will be removed or disabled after Phase 4 frontend migration
+- Contains 12+ endpoints that duplicate API v2 functionality
+
+Security Risk:
+- No role guards (any authenticated user can access)
+- No scope enforcement (can access any action item)
+- No ownership validation (can modify any action)
+
+TODO: Remove or disable after Phase 4 migration
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
-from fastapi import APIRouter, Query, Path, HTTPException
+from fastapi import APIRouter, Query, Path, HTTPException, Depends
 from typing import Optional
 from pydantic import BaseModel
 
+from ..dependencies.user_context import get_current_user
+from ..schemas.auth_models import CurrentUser
+from ..utils.guards import require_logged_in
 from ..services.follow_up_service import FollowUpService
 
 
@@ -98,7 +123,8 @@ class BulkUpdateRequest(BaseModel):
 
 @router.post("/actions")
 async def create_follow_up_action(
-    request: CreateActionRequest
+    request: CreateActionRequest,
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Create a new follow-up action.
@@ -126,6 +152,8 @@ async def create_follow_up_action(
     
     **Response:** Created action with generated ID
     """
+    require_logged_in(current_user)
+    
     try:
         # Extract user ID from context
         user_id = 1  # TODO: Get from authenticated request
@@ -167,7 +195,8 @@ async def get_follow_up_actions(
     department: Optional[str] = Query(None, description="Filter by department ID or 'all'"),
     from_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     to_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
-    include_completed: bool = Query(False, description="Include completed actions (default: false)")
+    include_completed: bool = Query(False, description="Include completed actions (default: false)"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Get follow-up actions with optional filtering and sorting.
@@ -209,6 +238,8 @@ async def get_follow_up_actions(
     }
     ```
     """
+    require_logged_in(current_user)
+    
     try:
         result = FollowUpService.get_follow_up_actions(
             status=status,
@@ -238,7 +269,8 @@ async def get_follow_up_actions(
 
 @router.get("/actions/{action_id}")
 async def get_follow_up_action_by_id(
-    action_id: int = Path(..., gt=0, description="Action ID")
+    action_id: int = Path(..., gt=0, description="Action ID"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Get detailed information for a specific follow-up action.
@@ -271,6 +303,8 @@ async def get_follow_up_action_by_id(
     }
     ```
     """
+    require_logged_in(current_user)
+    
     try:
         action = FollowUpService.get_follow_up_action_by_id(action_id)
         return action
@@ -294,7 +328,8 @@ async def get_follow_up_action_by_id(
 @router.patch("/actions/{action_id}")
 async def update_follow_up_action(
     action_id: int = Path(..., gt=0, description="Action ID"),
-    request: UpdateActionRequest = None
+    request: UpdateActionRequest = None,
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Update follow-up action (partial update with status validation).
@@ -336,6 +371,8 @@ async def update_follow_up_action(
     
     **Response:** Updated action object (same as GET /actions/{id})
     """
+    require_logged_in(current_user)
+    
     try:
         # Extract user ID from context (would come from auth middleware)
         user_id = 1  # TODO: Get from authenticated request
@@ -372,7 +409,8 @@ async def update_follow_up_action(
 @router.post("/actions/{action_id}/complete")
 async def complete_follow_up_action(
     action_id: int = Path(..., gt=0, description="Action ID"),
-    request: CompleteActionRequest = None
+    request: CompleteActionRequest = None,
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Mark follow-up action as completed.
@@ -393,6 +431,8 @@ async def complete_follow_up_action(
     
     **Response:** Updated action with status='completed'
     """
+    require_logged_in(current_user)
+    
     try:
         # Extract user ID from context
         user_id = 1  # TODO: Get from authenticated request
@@ -428,7 +468,8 @@ async def complete_follow_up_action(
 @router.post("/actions/{action_id}/delay")
 async def delay_follow_up_action(
     action_id: int = Path(..., gt=0, description="Action ID"),
-    request: DelayActionRequest = None
+    request: DelayActionRequest = None,
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Delay follow-up action by specified number of days.
@@ -449,6 +490,8 @@ async def delay_follow_up_action(
     
     **Response:** Updated action with new dueDate
     """
+    require_logged_in(current_user)
+    
     try:
         # Extract user ID from context
         user_id = 1  # TODO: Get from authenticated request
@@ -491,7 +534,8 @@ class ReopenActionRequest(BaseModel):
 @router.post("/actions/{action_id}/reopen")
 async def reopen_follow_up_action(
     action_id: int = Path(..., gt=0, description="Action ID"),
-    request: ReopenActionRequest = None
+    request: ReopenActionRequest = None,
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Reopen a completed action back to pending status.
@@ -518,6 +562,8 @@ async def reopen_follow_up_action(
     - If newDueDate not provided, defaults to today
     - CompletedDate is cleared
     """
+    require_logged_in(current_user)
+    
     try:
         # Extract user ID from context
         user_id = 1  # TODO: Get from authenticated request
@@ -553,7 +599,8 @@ async def reopen_follow_up_action(
 
 @router.get("/actions/{action_id}/history")
 async def get_action_history(
-    action_id: int = Path(..., gt=0, description="Action ID")
+    action_id: int = Path(..., gt=0, description="Action ID"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Get change history for a follow-up action.
@@ -596,6 +643,8 @@ async def get_action_history(
     - Chronological order (oldest first)
     - Only includes properly formatted entries
     """
+    require_logged_in(current_user)
+    
     try:
         result = FollowUpService.get_action_history(action_id)
         return result
@@ -621,7 +670,8 @@ async def get_calendar_actions(
     year: int = Query(..., ge=2000, le=2100, description="Year (2000-2100)"),
     month: int = Query(..., ge=1, le=12, description="Month (1-12)"),
     department: Optional[str] = Query(None, description="Filter by department ID or 'all'"),
-    status: Optional[str] = Query(None, description="Filter by status or 'all' (default: pending+delayed only)")
+    status: Optional[str] = Query(None, description="Filter by status or 'all' (default: pending+delayed only)"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Get actions grouped by date for calendar visualization.
@@ -672,6 +722,8 @@ async def get_calendar_actions(
     - Only pending/delayed actions shown by default
     - Perfect for calendar/timeline UI components
     """
+    require_logged_in(current_user)
+    
     try:
         result = FollowUpService.get_calendar_actions(
             year=year,
@@ -699,7 +751,8 @@ async def get_calendar_actions(
 
 @router.post("/actions/bulk-complete")
 async def bulk_complete_actions(
-    request: BulkCompleteRequest
+    request: BulkCompleteRequest,
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Mark multiple actions as completed in one operation.
@@ -732,6 +785,8 @@ async def bulk_complete_actions(
     - Returns detailed results for each action
     - All successful updates committed as single transaction
     """
+    require_logged_in(current_user)
+    
     try:
         # Extract user ID from context
         user_id = 1  # TODO: Get from authenticated request
@@ -762,7 +817,8 @@ async def bulk_complete_actions(
 
 @router.post("/actions/bulk-delay")
 async def bulk_delay_actions(
-    request: BulkDelayRequest
+    request: BulkDelayRequest,
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Delay multiple actions by specified days in one operation.
@@ -795,6 +851,8 @@ async def bulk_delay_actions(
     - All actions delayed by same number of days
     - Same reason appended to all notes
     """
+    require_logged_in(current_user)
+    
     try:
         # Extract user ID from context
         user_id = 1  # TODO: Get from authenticated request
@@ -825,7 +883,8 @@ async def bulk_delay_actions(
 
 @router.post("/actions/bulk-update")
 async def bulk_update_actions(
-    request: BulkUpdateRequest
+    request: BulkUpdateRequest,
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Update multiple actions with same values in one operation.
@@ -875,6 +934,8 @@ async def bulk_update_actions(
     - At least one field must be provided
     - Only provided fields are updated
     """
+    require_logged_in(current_user)
+    
     try:
         # Extract user ID from context
         user_id = 1  # TODO: Get from authenticated request

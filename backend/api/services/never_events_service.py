@@ -92,27 +92,25 @@ def get_never_events_list(
         # Query for never events list
         query = f"""
         SELECT 
-            tbl_main.ID as never_event_id,
+            tbl_main.ID as id,
             CONCAT('NE-', YEAR(tbl_main.FeedbackReceivedDate), '-', 
                    FORMAT(ROW_NUMBER() OVER (PARTITION BY YEAR(tbl_main.FeedbackReceivedDate) 
-                                             ORDER BY tbl_main.FeedbackReceivedDate), '000')) as recordID,
-            CONVERT(VARCHAR(10), tbl_main.FeedbackReceivedDate, 23) as date,
-            tbl_main.PatientName as patient_name,
-            tbl_main.PatientID as patient_id,
-            domain.NameEN as never_event_type,
-            domain.NameAR as never_event_type_ar,
-            ISNULL(domain.NameEN, N'') as never_event_category,
+                                             ORDER BY tbl_main.FeedbackReceivedDate), '000')) as case_id,
+            domain.NameEN as title,
+            tbl_main.ComplaintContent as description,
             CASE 
                 WHEN tbl_main.CaseStatusID = 1 THEN 'OPEN'
                 WHEN tbl_main.CaseStatusID = 2 THEN 'UNDER_REVIEW'
                 WHEN tbl_main.CaseStatusID = 3 THEN 'FINISHED'
                 ELSE 'OPEN'
             END as status,
-            ISNULL(severity.NameEN, 'HIGH') as severity,
-            ISNULL(dept.NameEN, N'') as department,
-            ISNULL(dept.NameAR, N'') as qism,
-            CONCAT('INC-', YEAR(tbl_main.FeedbackReceivedDate), '-', 
-                   FORMAT(tbl_main.ID, '0000')) as incident_id
+            ISNULL(dept.NameEN, '') as department,
+            ISNULL(domain.NameEN, '') as category,
+            CONVERT(VARCHAR(10), tbl_main.FeedbackReceivedDate, 23) as date,
+            ISNULL(severity.NameEN, 'Critical') as severity,
+            tbl_main.ResponsiblePerson as assigned_to,
+            tbl_main.FeedbackReceivedDate as created_at,
+            tbl_main.UpdatedAt as updated_at
         FROM IncidentManager.dbo.MAIN_COMPLAINT_ADVERSE_EVENTS_FORMS tbl_main
         LEFT JOIN IncidentManager.dbo.AdministrationUnit dept 
             ON tbl_main.IssuerDepartment = dept.AdministrationUnit_ID
@@ -147,19 +145,18 @@ def get_never_events_list(
         never_events = []
         for row in rows:
             never_events.append({
-                "id": row.never_event_id,
-                "recordID": row.recordID,
-                "date": row.date,
-                "patientName": row.patient_name or "",
-                "patientID": row.patient_id or "",
-                "neverEventType": row.never_event_type or "",
-                "neverEventTypeAr": row.never_event_type_ar or "",
-                "neverEventCategory": row.never_event_category or "",
-                "status": row.status,
-                "severity": row.severity,
-                "department": row.department,
-                "qism": row.qism,
-                "incidentID": row.incident_id
+                "id": row[0],
+                "case_id": row[1],
+                "title": row[2] or "",
+                "description": row[3] or "",
+                "status": row[4],
+                "department": row[5],
+                "category": row[6],
+                "date": row[7],
+                "severity": row[8],
+                "assigned_to": row[9] or "",
+                "created_at": row[10].strftime('%Y-%m-%d') if row[10] else "",
+                "updated_at": row[11].strftime('%Y-%m-%d') if row[11] else ""
             })
         
         return {
@@ -314,19 +311,25 @@ def get_never_events_statistics(
             "month": previous_month_row.month
         }
         
+        # Calculate change percentage
+        if previous_month["count"] > 0:
+            change_percentage = ((current_month["count"] - previous_month["count"]) / previous_month["count"]) * 100
+        else:
+            change_percentage = 0
+        
+        # Map to UI-expected field names
         return {
-            "total_never_events": total_never_events,
-            "unfinished_count": unfinished_count,
-            "finished_count": finished_count,
-            "by_status": by_status,
-            "by_category": by_category,
-            "by_severity": by_severity,
-            "current_month": current_month,
-            "previous_month": previous_month,
-            "period": {
-                "from": from_date,
-                "to": to_date
-            }
+            "total": total_never_events,
+            "under_investigation": by_status.get("UNDER_REVIEW", 0) + by_status.get("OPEN", 0),
+            "resolved": by_status.get("FINISHED", 0),
+            "surgical_events": by_category.get("Surgical Events", 0),
+            "medication_events": by_category.get("Medication Events", 0),
+            "patient_protection": by_category.get("Patient Protection Events", 0),
+            "current_month_count": current_month["count"],
+            "previous_month_count": previous_month["count"],
+            "change_percentage": round(change_percentage, 1),
+            "from_date": from_date,
+            "to_date": to_date
         }
         
     finally:
@@ -394,20 +397,17 @@ def get_never_events_trends(
             cursor.execute(query)
             rows = cursor.fetchall()
             
-            trends = []
+            data = []
             for row in rows:
-                trends.append({
+                data.append({
                     "period": row.period,
-                    "count": row.count
+                    "date": row.period,  # Use period as date
+                    "count": row.count,
+                    "category": "None"
                 })
             
             return {
-                "granularity": granularity,
-                "period": {
-                    "from": from_date,
-                    "to": to_date
-                },
-                "data": trends
+                "data": data
             }
         
         # Query with grouping
@@ -429,26 +429,18 @@ def get_never_events_trends(
             cursor.execute(query)
             rows = cursor.fetchall()
             
-            # Group by period
-            trends_dict = {}
+            # Format for UI
+            data = []
             for row in rows:
-                if row.period not in trends_dict:
-                    trends_dict[row.period] = {"breakdown": {}, "total": 0}
-                trends_dict[row.period]["breakdown"][row.category] = row.count
-                trends_dict[row.period]["total"] += row.count
-            
-            trends = []
-            for period, data in trends_dict.items():
-                trends.append({
-                    "period": period,
-                    "total": data["total"],
-                    "breakdown": data["breakdown"]
+                data.append({
+                    "period": row.period,
+                    "date": row.period,
+                    "count": row.count,
+                    "category": row.category
                 })
             
             return {
-                "granularity": granularity,
-                "group_by": "category",
-                "data": trends
+                "data": data
             }
         
         elif group_by == "department":
@@ -470,26 +462,18 @@ def get_never_events_trends(
             cursor.execute(query)
             rows = cursor.fetchall()
             
-            # Group by period
-            trends_dict = {}
+            # Format for UI
+            data = []
             for row in rows:
-                if row.period not in trends_dict:
-                    trends_dict[row.period] = {"breakdown": {}, "total": 0}
-                trends_dict[row.period]["breakdown"][row.department] = row.count
-                trends_dict[row.period]["total"] += row.count
-            
-            trends = []
-            for period, data in trends_dict.items():
-                trends.append({
-                    "period": period,
-                    "total": data["total"],
-                    "breakdown": data["breakdown"]
+                data.append({
+                    "period": row.period,
+                    "date": row.period,
+                    "count": row.count,
+                    "category": row.department  # Use department as category for grouping
                 })
             
             return {
-                "granularity": granularity,
-                "group_by": "department",
-                "data": trends
+                "data": data
             }
         
         else:
@@ -519,48 +503,35 @@ def get_never_event_details(never_event_id: int) -> Optional[Dict[str, Any]]:
         # Query for never event details
         query = f"""
         SELECT 
-            tbl_main.ID as never_event_id,
+            tbl_main.ID as id,
             CONCAT('NE-', YEAR(tbl_main.FeedbackReceivedDate), '-', 
                    FORMAT(ROW_NUMBER() OVER (PARTITION BY YEAR(tbl_main.FeedbackReceivedDate) 
-                                             ORDER BY tbl_main.FeedbackReceivedDate), '000')) as recordID,
-            CONVERT(VARCHAR(10), tbl_main.FeedbackReceivedDate, 23) as date,
-            tbl_main.PatientName as patient_name,
-            tbl_main.PatientID as patient_id,
-            domain.NameEN as never_event_type,
-            domain.NameAR as never_event_type_ar,
-            ISNULL(domain.NameEN, N'') as never_event_category,
+                                             ORDER BY tbl_main.FeedbackReceivedDate), '000')) as case_id,
+            domain.NameEN as title,
+            tbl_main.ComplaintContent as description,
             CASE 
                 WHEN tbl_main.CaseStatusID = 1 THEN 'OPEN'
                 WHEN tbl_main.CaseStatusID = 2 THEN 'UNDER_REVIEW'
                 WHEN tbl_main.CaseStatusID = 3 THEN 'FINISHED'
                 ELSE 'OPEN'
             END as status,
-            ISNULL(severity.NameEN, 'HIGH') as severity,
-            ISNULL(dept.NameEN, N'') as department,
-            ISNULL(dept.NameAR, N'') as qism,
-            CONCAT('INC-', YEAR(tbl_main.FeedbackReceivedDate), '-', 
-                   FORMAT(tbl_main.ID, '0000')) as incident_id,
-            tbl_main.ComplaintContent as complaint_text,
-            tbl_main.ImmediateAction as immediate_action,
-            tbl_main.ActionsTaken as corrective_actions,
-            tbl_main.RootCause as root_cause,
-            tbl_main.ResponsiblePerson as responsible_person,
-            target_dept.NameEN as target_department,
-            CONVERT(VARCHAR(10), tbl_main.FeedbackReceivedDate, 23) as feedback_received_date,
-            CONCAT(ISNULL(domain.NameEN, ''), ' > ', 
-                   ISNULL(cat.NameEN, ''), ' > ',
-                   ISNULL(subcat.NameEN, '')) as classification
+            ISNULL(dept.NameEN, '') as department,
+            ISNULL(dept.AdministrationUnit_ID, 0) as department_id,
+            ISNULL(domain.NameEN, '') as category,
+            ISNULL(domain.ID, 0) as category_id,
+            CONVERT(VARCHAR(10), tbl_main.FeedbackReceivedDate, 23) as date,
+            ISNULL(severity.NameEN, 'Critical') as severity,
+            tbl_main.ReporterName as reported_by,
+            tbl_main.ResponsiblePerson as assigned_to,
+            tbl_main.RootCause as root_cause_analysis,
+            tbl_main.ActionsTaken as corrective_action_plan,
+            tbl_main.FeedbackReceivedDate as created_at,
+            tbl_main.UpdatedAt as updated_at
         FROM IncidentManager.dbo.MAIN_COMPLAINT_ADVERSE_EVENTS_FORMS tbl_main
         LEFT JOIN IncidentManager.dbo.AdministrationUnit dept 
             ON tbl_main.IssuerDepartment = dept.AdministrationUnit_ID
-        LEFT JOIN IncidentManager.dbo.AdministrationUnit target_dept 
-            ON tbl_main.TargetDepartment = target_dept.AdministrationUnit_ID
         LEFT JOIN IncidentManager.dbo.APP_LOOKUP_DOMAIN domain 
             ON tbl_main.Domain = domain.ID
-        LEFT JOIN IncidentManager.dbo.APP_LOOKUP_CATEGORY cat 
-            ON tbl_main.Category = cat.ID
-        LEFT JOIN IncidentManager.dbo.APP_LOOKUP_SUBCATEGORY subcat 
-            ON tbl_main.SubCategory = subcat.ID
         LEFT JOIN IncidentManager.dbo.APP_LOOKUP_SEVERITY severity 
             ON tbl_main.SeverityLevel = severity.ID
         WHERE tbl_main.ID = ? AND tbl_main.ClinicalRiskTypeID = {NEVER_EVENT}
@@ -572,65 +543,37 @@ def get_never_event_details(never_event_id: int) -> Optional[Dict[str, Any]]:
         if not row:
             return None
         
-        # Format never event basic info
-        never_event = {
-            "id": row.never_event_id,
-            "recordID": row.recordID,
-            "date": row.date,
-            "patientName": row.patient_name or "",
-            "patientID": row.patient_id or "",
-            "neverEventType": row.never_event_type or "",
-            "neverEventTypeAr": row.never_event_type_ar or "",
-            "neverEventCategory": row.never_event_category or "",
-            "status": row.status,
-            "severity": row.severity,
-            "department": row.department,
-            "qism": row.qism,
-            "incidentID": row.incident_id
-        }
-        
-        # Format incident details
-        incident_details = {
-            "incidentID": row.incident_id,
-            "complaintText": row.complaint_text or "",
-            "immediateAction": row.immediate_action or "",
-            "corrective_actions": row.corrective_actions or "",
-            "rootCause": row.root_cause or "",
-            "responsiblePerson": row.responsible_person or "",
-            "targetDepartment": row.target_department or "",
-            "feedbackReceivedDate": row.feedback_received_date,
-            "classification": row.classification
-        }
-        
-        # Mock timeline (in production, this would come from audit log)
+        # Build timeline
         timeline = [
             {
-                "date": f"{row.date}T08:30:00Z",
-                "event": "تم الإبلاغ عن الحدث",
-                "user": "نظام الإبلاغ"
-            },
-            {
-                "date": f"{row.date}T09:00:00Z",
-                "event": "بدء التحقيق",
-                "user": "فريق الجودة"
+                "date": row[16].strftime('%Y-%m-%dT%H:%M:%S') if row[16] else "",
+                "action": "Reported",
+                "user": row[12] or "System",
+                "notes": "Never event reported"
             }
         ]
         
-        # Mock related actions (in production, this would come from actions table)
-        related_actions = [
-            {
-                "action_id": "ACT-2024-001",
-                "description": "مراجعة البروتوكولات",
-                "status": "in_progress",
-                "due_date": datetime.now().strftime('%Y-%m-%d')
-            }
-        ]
-        
+        # Return flat structure matching UI expectations
         return {
-            "never_event": never_event,
-            "incident_details": incident_details,
+            "id": row[0],
+            "case_id": row[1],
+            "title": row[2] or "",
+            "description": row[3] or "",
+            "status": row[4],
+            "department": row[5],
+            "department_id": row[6],
+            "category": row[7],
+            "category_id": row[8],
+            "date": row[9],
+            "severity": row[10],
+            "reported_by": row[11] or "",
+            "assigned_to": row[12] or "",
+            "root_cause_analysis": row[13] or "",
+            "corrective_action_plan": row[14] or "",
             "timeline": timeline,
-            "related_actions": related_actions
+            "attachments": [],
+            "created_at": row[15].strftime('%Y-%m-%d') if row[15] else "",
+            "updated_at": row[16].strftime('%Y-%m-%d') if row[16] else ""
         }
         
     finally:
@@ -701,48 +644,20 @@ def get_never_events_category_breakdown(
         cursor.execute(query)
         category_rows = cursor.fetchall()
         
-        categories = []
+        breakdown = []
         for cat_row in category_rows:
             percentage = (cat_row.count / total * 100) if total > 0 else 0
             
-            # Get types for this category
-            types_query = f"""
-            SELECT 
-                ISNULL(d.NameEN, 'Unknown') as type,
-                ISNULL(d.NameAR, 'غير محدد') as type_ar,
-                COUNT(*) as count
-            FROM IncidentManager.dbo.MAIN_COMPLAINT_ADVERSE_EVENTS_FORMS tbl
-            LEFT JOIN IncidentManager.dbo.APP_LOOKUP_DOMAIN d ON tbl.Domain = d.ID
-            WHERE {date_filter}
-                AND ISNULL(d.NameEN, 'Unknown') = ?
-            GROUP BY d.NameEN, d.NameAR
-            ORDER BY count DESC
-            """
-            
-            cursor.execute(types_query, (cat_row.category_name,))
-            type_rows = cursor.fetchall()
-            
-            types = []
-            for type_row in type_rows:
-                types.append({
-                    "type": type_row.type,
-                    "type_ar": type_row.type_ar,
-                    "count": type_row.count
-                })
-            
-            categories.append({
-                "category_name": cat_row.category_name,
-                "category_name_ar": cat_row.category_name_ar,
+            breakdown.append({
+                "category": cat_row.category_name,
+                "category_id": 0,
                 "count": cat_row.count,
-                "percentage": round(percentage, 1),
-                "types": types
+                "percentage": round(percentage, 1)
             })
         
         return {
-            "total": total,
-            "goal": 0,
-            "period": period_display,
-            "categories": categories
+            "breakdown": breakdown,
+            "total": total
         }
         
     finally:
@@ -873,28 +788,18 @@ def get_never_events_timeline_comparison(
         avg_per_month = ytd_count / months_elapsed if months_elapsed > 0 else 0
         
         return {
-            "goal": 0,
             "current": {
                 "period": current_period,
-                "period_ar": current_period_ar,
-                "count": current_count,
                 "start_date": current_start.strftime('%Y-%m-%d'),
-                "end_date": current_end.strftime('%Y-%m-%d')
+                "end_date": current_end.strftime('%Y-%m-%d'),
+                "count": current_count
             },
             "previous": {
                 "period": prev_period,
-                "period_ar": prev_period_ar,
                 "count": prev_count
             },
-            "change": {
-                "absolute": absolute_change,
-                "percentage": round(percentage_change, 1),
-                "trend": trend
-            },
-            "year_to_date": {
-                "count": ytd_count,
-                "average_per_month": round(avg_per_month, 1)
-            }
+            "change": round(percentage_change, 1),
+            "trend": trend
         }
         
     finally:

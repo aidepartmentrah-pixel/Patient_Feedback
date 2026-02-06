@@ -103,25 +103,21 @@ def get_red_flags_list(
         SELECT 
             c.IncidentRequestCaseID as id,
             CONCAT('RF-', YEAR(c.FeedbackRecievedDate), '-', 
-                   RIGHT('000' + CAST(c.IncidentRequestCaseID AS VARCHAR), 3)) as recordID,
-            c.FeedbackRecievedDate as date,
-            c.PatientName as patientName,
-            c.PatientName as patientID,
+                   RIGHT('000' + CAST(c.IncidentRequestCaseID AS VARCHAR), 3)) as case_id,
             CASE 
                 WHEN c.ClinicalRiskTypeID = 2 THEN risk_type.Name
                 ELSE 'High Risk Incident'
-            END as redFlagType,
-            CASE 
-                WHEN c.ClinicalRiskTypeID = 2 THEN risk_type.Name
-                ELSE N'حادثة عالية الخطورة'
-            END as redFlagTypeAr,
-            domain.DomainName as redFlagCategory,
-            status.Name as status,
+            END as title,
+            c.ComplaintText as description,
             severity.SeverityName as severity,
+            status.Name as status,
             org_unit.Name as department,
-            org_unit.Name as qism,
-            c.IncidentRequestCaseID as incidentID,
-            CASE WHEN c.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END as isNeverEvent
+            domain.DomainName as category,
+            c.FeedbackRecievedDate as date,
+            CASE WHEN c.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END as is_never_event,
+            c.CreatedByUser as assigned_to,
+            c.CreatedAt as created_at,
+            c.UpdatedAt as updated_at
         FROM dbo.APP_IncidentCase c
         LEFT JOIN AdminsrationUnit org_unit ON c.IssuingOrgUnitID = org_unit.UniqueID
         LEFT JOIN APP_LOOKUP_DOMAIN domain ON c.DomainID = domain.DomainID
@@ -154,8 +150,10 @@ def get_red_flags_list(
                 value = row[idx]
                 if isinstance(value, (datetime, date)):
                     record[col_name] = value.strftime('%Y-%m-%d')
+                elif col_name == 'is_never_event':
+                    record[col_name] = bool(value)
                 else:
-                    record[col_name] = value
+                    record[col_name] = value if value is not None else ""
             red_flags.append(record)
         
         return {
@@ -287,35 +285,19 @@ def get_red_flags_statistics(
         never_events_only = total_never_events - red_flags_also_never_events
         red_flags_only = totals_row.total_red_flags - red_flags_also_never_events
         
+        # Map to UI-expected field names
         return {
-            "total_red_flags": totals_row.total_red_flags,
-            "unfinished_count": totals_row.unfinished_count,
-            "finished_count": totals_row.finished_count,
-            "by_status": {
-                "OPEN": totals_row.open_count,
-                "UNDER_REVIEW": totals_row.under_review_count,
-                "FINISHED": totals_row.finished_count
-            },
-            "by_category": by_category,
-            "by_severity": by_severity,
-            "current_month": {
-                "count": current_month_count,
-                "month": datetime.now().strftime("%B %Y")
-            },
-            "previous_month": {
-                "count": previous_month_count,
-                "month": (datetime.now() - relativedelta(months=1)).strftime("%B %Y")
-            },
-            "never_event_overlap": {
-                "total_never_events": total_never_events,
-                "red_flags_also_never_events": red_flags_also_never_events,
-                "never_events_only": never_events_only,
-                "red_flags_only": red_flags_only
-            },
-            "period": {
-                "from": from_date or "all-time",
-                "to": to_date or datetime.now().strftime("%Y-%m-%d")
-            }
+            "total": totals_row.total_red_flags,
+            "open": totals_row.open_count,
+            "in_progress": totals_row.under_review_count,
+            "resolved": totals_row.finished_count,
+            "high_severity": by_severity.get('HIGH', 0),
+            "medium_severity": by_severity.get('MEDIUM', 0),
+            "low_severity": by_severity.get('LOW', 0),
+            "never_events_count": red_flags_also_never_events,
+            "average_resolution_days": 0,  # TODO: Calculate from actual resolution times
+            "from_date": from_date or "all-time",
+            "to_date": to_date or datetime.now().strftime("%Y-%m-%d")
         }
         
     finally:
@@ -422,32 +404,55 @@ def get_red_flags_trends(
         cursor.execute(query, [from_date, to_date])
         rows = cursor.fetchall()
         
+        trends = []
+        
         if group_by == "none":
-            data = [{"period": row[0], "count": row[1]} for row in rows]
+            # Get severity breakdown for each period
+            severity_query = f"""
+                SELECT 
+                    {date_format} as period,
+                    COUNT(*) as total,
+                    SUM(CASE WHEN severity.SeverityName = 'HIGH' THEN 1 ELSE 0 END) as high,
+                    SUM(CASE WHEN severity.SeverityName = 'MEDIUM' THEN 1 ELSE 0 END) as medium,
+                    SUM(CASE WHEN severity.SeverityName = 'LOW' THEN 1 ELSE 0 END) as low,
+                    MIN(c.FeedbackRecievedDate) as date
+                FROM dbo.APP_IncidentCase c
+                LEFT JOIN APP_LOOKUP_SEVERITY severity ON c.SeverityID = severity.SeverityID
+                WHERE c.ClinicalRiskTypeID = 2
+                AND c.FeedbackRecievedDate >= ?
+                AND c.FeedbackRecievedDate <= ?
+                GROUP BY {date_group}
+                ORDER BY {date_group}
+            """
+            cursor.execute(severity_query, [from_date, to_date])
+            rows = cursor.fetchall()
+            
+            for row in rows:
+                date_val = row[5] if len(row) > 5 else None
+                trends.append({
+                    "period": row[0],
+                    "date": date_val.strftime('%Y-%m-%d') if date_val else row[0],
+                    "total": row[1],
+                    "high": row[2],
+                    "medium": row[3],
+                    "low": row[4]
+                })
         else:
-            # Group by period
-            period_data = {}
+            # Group by period and category/severity/department
             for row in rows:
                 period = row[0]
-                group_name = row[1]
+                group_name = row[1] if row[1] else "Unknown"
                 count = row[2]
                 
-                if period not in period_data:
-                    period_data[period] = {"period": period, "total": 0, "breakdown": {}}
-                
-                period_data[period]["breakdown"][group_name or "Unknown"] = count
-                period_data[period]["total"] += count
-            
-            data = list(period_data.values())
+                trends.append({
+                    "period": period,
+                    "date": period,  # Use period as date for grouped data
+                    "group_label": group_name,
+                    "count": count
+                })
         
         return {
-            "granularity": granularity,
-            "group_by": group_by if group_by != "none" else None,
-            "period": {
-                "from": from_date,
-                "to": to_date
-            },
-            "data": data
+            "trends": trends
         }
         
     finally:
@@ -464,31 +469,29 @@ def get_red_flag_details(red_flag_id: int) -> Dict[str, Any]:
     
     query = """
         SELECT 
-            -- Red flag basic info
             c.IncidentRequestCaseID as id,
             CONCAT('RF-', YEAR(c.FeedbackRecievedDate), '-', 
-                   RIGHT('000' + CAST(c.IncidentRequestCaseID AS VARCHAR), 3)) as recordID,
-            c.FeedbackRecievedDate as date,
-            c.PatientName as patientName,
-            c.PatientName as patientID,
-            risk_type.Name as redFlagType,
-            risk_type.Name as redFlagTypeAr,
-            domain.DomainName as redFlagCategory,
-            status.Name as status,
+                   RIGHT('000' + CAST(c.IncidentRequestCaseID AS VARCHAR), 3)) as case_id,
+            CASE 
+                WHEN c.ClinicalRiskTypeID = 2 THEN risk_type.Name
+                ELSE 'High Risk Incident'
+            END as title,
+            c.ComplaintText as description,
             severity.SeverityName as severity,
+            status.Name as status,
             org_unit.Name as department,
-            org_unit.Name as qism,
-            c.IncidentRequestCaseID as incidentID,
-            CASE WHEN c.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END as isNeverEvent,
-            
-            -- Incident details
-            c.ComplaintText,
-            c.ImmediateAction,
-            c.TakenAction,
-            c.FeedbackRecievedDate as feedbackReceivedDate,
-            harm.HarmLevel as harmLevel,
-            stage.StageName as stage,
-            c.CreatedAt as createdAt
+            org_unit.UniqueID as department_id,
+            domain.DomainName as category,
+            domain.DomainID as category_id,
+            domain.SubDomainName as subcategory,
+            c.FeedbackRecievedDate as date,
+            c.ReportingPerson as reported_by,
+            c.CreatedByUser as assigned_to,
+            CASE WHEN c.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END as is_never_event,
+            c.ImmediateAction as root_cause,
+            c.TakenAction as corrective_action,
+            c.CreatedAt as created_at,
+            c.UpdatedAt as updated_at
             
         FROM dbo.APP_IncidentCase c
         LEFT JOIN AdminsrationUnit org_unit ON c.IssuingOrgUnitID = org_unit.UniqueID
@@ -496,8 +499,6 @@ def get_red_flag_details(red_flag_id: int) -> Dict[str, Any]:
         LEFT JOIN APP_LOOKUP_SEVERITY severity ON c.SeverityID = severity.SeverityID
         LEFT JOIN APP_LOOKUP_CASE_STATUS status ON c.CaseStatusID = status.CaseStatusID
         LEFT JOIN APP_LOOKUP_CLINICAL_RISK_TYPE risk_type ON c.ClinicalRiskTypeID = risk_type.ClinicalRiskTypeID
-        LEFT JOIN APP_LOOKUP_HARM_LEVEL harm ON c.HarmLevelID = harm.HarmID
-        LEFT JOIN APP_LOOKUP_CASE_STAGE stage ON c.StageID = stage.StageID
         
         WHERE c.IncidentRequestCaseID = ?
         AND c.ClinicalRiskTypeID = 2
@@ -517,40 +518,38 @@ def get_red_flag_details(red_flag_id: int) -> Dict[str, Any]:
         
         # Build red flag object
         red_flag = {}
-        incident_details = {}
-        
-        red_flag_fields = ["id", "recordID", "date", "patientName", "patientID", "redFlagType", 
-                          "redFlagTypeAr", "redFlagCategory", "status", "severity", "department", 
-                          "qism", "incidentID", "isNeverEvent"]
         
         for idx, col_name in enumerate(columns):
             value = row[idx]
             if isinstance(value, (datetime, date)):
                 value = value.strftime('%Y-%m-%d')
-            
-            if col_name in red_flag_fields:
-                red_flag[col_name] = value
-            else:
-                incident_details[col_name] = value
+            elif col_name == 'is_never_event':
+                value = bool(value)
+            red_flag[col_name] = value if value is not None else ""
         
-        # Mock timeline (in production, query audit log)
+        # Build timeline (in production, query audit log)
         timeline = [
             {
-                "date": red_flag.get("date", ""),
-                "event": "Red flag reported",
-                "user": "System"
+                "date": red_flag.get("created_at", ""),
+                "action": "Reported",
+                "user": red_flag.get("reported_by", "System"),
+                "notes": "Red flag reported"
             }
         ]
+        if red_flag.get("status") == "FINISHED":
+            timeline.append({
+                "date": red_flag.get("updated_at", ""),
+                "action": "Resolved",
+                "user": red_flag.get("assigned_to", "System"),
+                "notes": "Red flag resolved"
+            })
         
-        # Mock related actions (in production, query actions table)
-        related_actions = []
+        # Add mock fields expected by UI
+        red_flag["timeline"] = timeline
+        red_flag["attachments"] = []  # TODO: Query attachments table
+        red_flag["related_cases"] = []  # TODO: Query related cases
         
-        return {
-            "red_flag": red_flag,
-            "incident_details": incident_details,
-            "timeline": timeline,
-            "related_actions": related_actions
-        }
+        return red_flag
         
     finally:
         cursor.close()
@@ -571,7 +570,7 @@ def get_red_flags_category_breakdown(
         to_date: Filter to date (optional)
     
     Returns:
-        Dictionary with category breakdown including severity distribution
+        Dictionary with category breakdown including counts and percentages
     """
     
     conn = get_connection()
@@ -579,68 +578,55 @@ def get_red_flags_category_breakdown(
     
     try:
         # Build date filter
-        date_filter = f"ClinicalRiskTypeID = {REDFLAG}"
-        period_display = "All time"
+        date_filter = "c.ClinicalRiskTypeID = 2"
+        params = []
         
         if from_date:
-            date_filter += f" AND FeedbackReceivedDate >= '{from_date}'"
-            period_display = f"{from_date} to "
+            date_filter += " AND c.FeedbackRecievedDate >= ?"
+            params.append(from_date)
         if to_date:
-            date_filter += f" AND FeedbackReceivedDate <= '{to_date}'"
-            if from_date:
-                period_display += to_date
-            else:
-                period_display = f"Until {to_date}"
-        elif from_date:
-            period_display += datetime.now().strftime('%Y-%m-%d')
+            date_filter += " AND c.FeedbackRecievedDate <= ?"
+            params.append(to_date)
         
         # Get total count
         total_query = f"""
         SELECT COUNT(*) as total
-        FROM IncidentManager.dbo.MAIN_COMPLAINT_ADVERSE_EVENTS_FORMS
+        FROM dbo.APP_IncidentCase c
         WHERE {date_filter}
         """
         
-        cursor.execute(total_query)
+        cursor.execute(total_query, params)
         total = cursor.fetchone()[0]
         
-        # Get category breakdown with severity
+        # Get category breakdown
         query = f"""
         SELECT 
-            ISNULL(d.NameEN, 'Unknown') as category_name,
-            ISNULL(d.NameAR, 'غير محدد') as category_name_ar,
-            COUNT(*) as count,
-            SUM(CASE WHEN s.NameEN = 'CRITICAL' THEN 1 ELSE 0 END) as critical_count,
-            SUM(CASE WHEN s.NameEN = 'HIGH' THEN 1 ELSE 0 END) as high_count
-        FROM IncidentManager.dbo.MAIN_COMPLAINT_ADVERSE_EVENTS_FORMS tbl
-        LEFT JOIN IncidentManager.dbo.APP_LOOKUP_DOMAIN d ON tbl.Domain = d.ID
-        LEFT JOIN IncidentManager.dbo.APP_LOOKUP_SEVERITY s ON tbl.SeverityLevel = s.ID
+            domain.DomainName as category,
+            domain.DomainID as category_id,
+            COUNT(*) as count
+        FROM dbo.APP_IncidentCase c
+        LEFT JOIN APP_LOOKUP_DOMAIN domain ON c.DomainID = domain.DomainID
         WHERE {date_filter}
-        GROUP BY d.NameEN, d.NameAR
+        GROUP BY domain.DomainName, domain.DomainID
         ORDER BY count DESC
         """
         
-        cursor.execute(query)
+        cursor.execute(query, params)
         rows = cursor.fetchall()
         
-        categories = []
+        breakdown = []
         for row in rows:
-            percentage = (row.count / total * 100) if total > 0 else 0
-            categories.append({
-                "category_name": row.category_name,
-                "category_name_ar": row.category_name_ar,
-                "count": row.count,
-                "percentage": round(percentage, 1),
-                "severity_breakdown": {
-                    "CRITICAL": row.critical_count,
-                    "HIGH": row.high_count
-                }
+            percentage = (row[2] / total * 100) if total > 0 else 0
+            breakdown.append({
+                "category": row[0] if row[0] else "Unknown",
+                "category_id": row[1] if row[1] else 0,
+                "count": row[2],
+                "percentage": round(percentage, 1)
             })
         
         return {
-            "total": total,
-            "period": period_display,
-            "categories": categories
+            "breakdown": breakdown,
+            "total": total
         }
         
     finally:
@@ -662,7 +648,7 @@ def get_red_flags_department_breakdown(
         limit: Max number of departments to return (default: 10)
     
     Returns:
-        Dictionary with department breakdown including status distribution
+        Dictionary with department breakdown including counts and percentages
     """
     
     conn = get_connection()
@@ -670,70 +656,55 @@ def get_red_flags_department_breakdown(
     
     try:
         # Build date filter
-        date_filter = f"tbl.ClinicalRiskTypeID = {REDFLAG}"
-        period_display = "All time"
+        date_filter = "c.ClinicalRiskTypeID = 2"
+        params = []
         
         if from_date:
-            date_filter += f" AND tbl.FeedbackReceivedDate >= '{from_date}'"
-            period_display = f"{from_date} to "
+            date_filter += " AND c.FeedbackRecievedDate >= ?"
+            params.append(from_date)
         if to_date:
-            date_filter += f" AND tbl.FeedbackReceivedDate <= '{to_date}'"
-            if from_date:
-                period_display += to_date
-            else:
-                period_display = f"Until {to_date}"
-        elif from_date:
-            period_display += datetime.now().strftime('%Y-%m-%d')
+            date_filter += " AND c.FeedbackRecievedDate <= ?"
+            params.append(to_date)
         
         # Get total count
         total_query = f"""
         SELECT COUNT(*) as total
-        FROM IncidentManager.dbo.MAIN_COMPLAINT_ADVERSE_EVENTS_FORMS tbl
+        FROM dbo.APP_IncidentCase c
         WHERE {date_filter}
         """
         
-        cursor.execute(total_query)
+        cursor.execute(total_query, params)
         total = cursor.fetchone()[0]
         
-        # Get department breakdown with status
+        # Get department breakdown
         query = f"""
         SELECT TOP {limit}
-            ISNULL(dept.NameAR, 'غير محدد') as department,
-            ISNULL(dept.NameEN, 'Unknown') as department_en,
-            COUNT(*) as count,
-            SUM(CASE WHEN tbl.CaseStatusID = 1 THEN 1 ELSE 0 END) as open_count,
-            SUM(CASE WHEN tbl.CaseStatusID = 2 THEN 1 ELSE 0 END) as under_review_count,
-            SUM(CASE WHEN tbl.CaseStatusID = 3 THEN 1 ELSE 0 END) as finished_count
-        FROM IncidentManager.dbo.MAIN_COMPLAINT_ADVERSE_EVENTS_FORMS tbl
-        LEFT JOIN IncidentManager.dbo.AdministrationUnit dept 
-            ON tbl.IssuerDepartment = dept.AdministrationUnit_ID
+            org_unit.Name as department,
+            org_unit.UniqueID as department_id,
+            COUNT(*) as count
+        FROM dbo.APP_IncidentCase c
+        LEFT JOIN AdminsrationUnit org_unit ON c.IssuingOrgUnitID = org_unit.UniqueID
         WHERE {date_filter}
-        GROUP BY dept.NameAR, dept.NameEN
+        GROUP BY org_unit.Name, org_unit.UniqueID
         ORDER BY count DESC
         """
         
-        cursor.execute(query)
+        cursor.execute(query, params)
         rows = cursor.fetchall()
         
-        departments = []
+        breakdown = []
         for row in rows:
-            percentage = (row.count / total * 100) if total > 0 else 0
-            departments.append({
-                "department": row.department,
-                "department_en": row.department_en,
-                "count": row.count,
-                "percentage": round(percentage, 1),
-                "status_breakdown": {
-                    "OPEN": row.open_count,
-                    "UNDER_REVIEW": row.under_review_count,
-                    "FINISHED": row.finished_count
-                }
+            percentage = (row[2] / total * 100) if total > 0 else 0
+            breakdown.append({
+                "department": row[0] if row[0] else "Unknown",
+                "department_id": row[1] if row[1] else 0,
+                "count": row[2],
+                "percentage": round(percentage, 1)
             })
         
         return {
-            "total": total,
-            "period": period_display,
-            "departments": departments
+            "breakdown": breakdown,
+            "total": total
         }
         
     finally:

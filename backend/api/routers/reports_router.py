@@ -12,9 +12,17 @@ import traceback
 from io import BytesIO
 
 # FastAPI imports
-from fastapi import APIRouter, Query, HTTPException, Response
+from fastapi import APIRouter, Query, HTTPException, Response, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+
+from ..dependencies.user_context import get_current_user
+from ..schemas.auth_models import CurrentUser
+from ..utils.guards import require_logged_in, require_unit_in_scope, require_any_unit_in_scope
+
+# Phase 4: API v2 Guards for seasonal report generation
+from backend.api_v2.guards.role_guards import require_administrator
+from backend.api_v2.guards.scoping import can_generate_seasonal_report
 
 # Import for emergency fallback
 try:
@@ -130,8 +138,21 @@ EXPORT_STORAGE: Dict[str, Dict[str, Any]] = {}
 # ============================================================
 
 @router.post("/seasonal/view", response_model=Dict[str, Any])
-def view_seasonal_report(request: SeasonalViewRequestV2):
+def view_seasonal_report(
+    request: SeasonalViewRequestV2,
+    current_user: CurrentUser = Depends(require_administrator)
+):
     """View a seasonal report (generates if needed)."""
+    
+    # Phase 4: Policy gate - only admins who pass policy can generate
+    if not can_generate_seasonal_report(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail="User does not have permission to generate seasonal reports"
+        )
+    
+    # Phase 2.5.7: Validate org unit is in scope
+    require_unit_in_scope(current_user, request.orgunit_id)
     from backend.api.db_layer.seasonal_report import resolve_season_id_from_year_trimester
     
     # 🔍 DEBUG: Log incoming request
@@ -179,10 +200,16 @@ def view_seasonal_report(request: SeasonalViewRequestV2):
 
 
 @router.post("/monthly/view", response_model=Dict[str, Any])
-def view_monthly_report(request: MonthlyViewRequest):
+def view_monthly_report(
+    request: MonthlyViewRequest,
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """View a monthly report."""
+    require_logged_in(current_user)
+    
     try:
         result = monthly_report_service.generate_monthly_report(
+            current_user=current_user,
             year=request.year,
             month=request.month,
             start_date=request.start_date,
@@ -199,8 +226,14 @@ def view_monthly_report(request: MonthlyViewRequest):
 
 
 @router.post("/seasonal/{report_id}/explanation", response_model=ExplanationResponse)
-def submit_explanation(report_id: int, request: SubmitExplanationRequest):
+def submit_explanation(
+    report_id: int,
+    request: SubmitExplanationRequest,
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """Submit an explanation for a seasonal report."""
+    require_logged_in(current_user)
+    
     try:
         explanation_service = SeasonalReportExplanationService()
         explanation_service.submit_explanation(
@@ -222,8 +255,14 @@ def submit_explanation(report_id: int, request: SubmitExplanationRequest):
 
 
 @router.put("/seasonal/{report_id}/explanation", response_model=ExplanationResponse)
-def update_explanation(report_id: int, request: SubmitExplanationRequest):
+def update_explanation(
+    report_id: int,
+    request: SubmitExplanationRequest,
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """Update an existing explanation for a seasonal report."""
+    require_logged_in(current_user)
+    
     try:
         explanation_service = SeasonalReportExplanationService()
         explanation_service.update_explanation(
@@ -247,14 +286,21 @@ def update_explanation(report_id: int, request: SubmitExplanationRequest):
 # ============================================================
 
 @router.post("/export")
-async def export_report(request: ExportRequest, format: Literal["pdf", "csv", "xlsx", "docx"] = Query(..., description="Export format")):
+async def export_report(
+    request: ExportRequest,
+    format: Literal["pdf", "csv", "xlsx", "docx"] = Query(..., description="Export format"),
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """
     Export a report in the specified format.
     
     Unified endpoint for all export formats (PDF, CSV, Excel, Word).
     """
+    require_logged_in(current_user)
+    
     try:
         result = report_export_service.generate_export(
+            current_user=current_user,
             report_type=request.report_type,
             display_mode=request.display_mode,
             file_format=format,
@@ -296,7 +342,10 @@ async def export_report(request: ExportRequest, format: Literal["pdf", "csv", "x
 
 
 @router.post("/seasonal/export")
-async def export_seasonal_report(request: SeasonalExportRequest):
+async def export_seasonal_report(
+    request: SeasonalExportRequest,
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """
     Export a seasonal report.
     
@@ -306,12 +355,19 @@ async def export_seasonal_report(request: SeasonalExportRequest):
     
     Supports: pdf, csv, xlsx (Excel), docx (Word).
     """
+    require_logged_in(current_user)
+    
     year = request.year
     period = request.period
     orgunit_id = request.orgunit_id
     orgunit_type = request.orgunit_type
     format = request.format
     language = request.language
+    
+    # Phase 2.5.7: Validate org unit is in scope
+    # For multi-export (orgunit_id=1), validation happens per-unit in service
+    if orgunit_id != 1:
+        require_unit_in_scope(current_user, orgunit_id)
     
     print("\n" + "="*100)
     print(f"[ROUTER] ⚡ SEASONAL EXPORT ENDPOINT CALLED ⚡")
@@ -352,6 +408,7 @@ async def export_seasonal_report(request: SeasonalExportRequest):
         # MULTI-FILE EXPORT PATH (ZIP)
         if is_multi_export:
             result = multi_seasonal_export_service.generate_multi_seasonal_export(
+                current_user=current_user,
                 season_id=season_id,
                 year=year,
                 period=period,
@@ -388,6 +445,7 @@ async def export_seasonal_report(request: SeasonalExportRequest):
         # Generate export
         # Note: Seasonal reports don't use display_mode (pass None)
         result = report_export_service.generate_export(
+            current_user=current_user,
             report_type="seasonal",
             display_mode=None,
             file_format=format,
@@ -442,7 +500,8 @@ async def export_monthly_report(
     department_ids: Optional[str] = Query(None, description="Department IDs (comma-separated or 'all')"),
     section_ids: Optional[str] = Query(None, description="Section IDs (comma-separated or 'all')"),
     include_charts: bool = Query(default=True, description="Include charts in export"),
-    language: Literal["en", "ar"] = Query(default="en", description="Export language")
+    language: Literal["en", "ar"] = Query(default="en", description="Export language"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Export a monthly report (or custom date range).
@@ -457,6 +516,8 @@ async def export_monthly_report(
     Supports: pdf, csv, xlsx (Excel), docx (Word).
     Can use month parameter OR start_date/end_date for custom ranges.
     """
+    require_logged_in(current_user)
+    
     print("\n" + "="*100)
     print(f"[ROUTER] ⚡ EXPORT ENDPOINT CALLED ⚡")
     print(f"[ROUTER] Params: year={year}, month={month}, format={format}, display_mode={display_mode}")
@@ -541,6 +602,7 @@ async def export_monthly_report(
             print(f"[ROUTER] Multi-file export detected: {report_level} level, IDs: {selected_ids}")
             
             result = multi_report_export_service.generate_multi_export(
+                current_user=current_user,
                 year=year,
                 month=month,
                 start_date=start_date,
@@ -605,6 +667,7 @@ async def export_monthly_report(
         
         # Force report_type to monthly
         result = report_export_service.generate_export(
+            current_user=current_user,
             report_type="monthly",
             display_mode=display_mode,
             file_format=format,

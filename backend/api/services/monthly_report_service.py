@@ -1,4 +1,4 @@
-"""
+"""  
 Monthly Report Service
 Handles all business logic for monthly reports (detailed & numeric).
 """
@@ -6,6 +6,8 @@ Handles all business logic for monthly reports (detailed & numeric).
 from datetime import date, timedelta
 from typing import Dict, Any, Optional, Literal
 
+from ..schemas.auth_models import CurrentUser
+from ..utils.guards import require_any_unit_in_scope
 from ..db_layer.reports_db import get_filtered_complaints, get_monthly_statistics
 
 
@@ -17,6 +19,7 @@ class MonthlyReportService:
 
     def generate_monthly_report(
         self,
+        current_user: CurrentUser,
         year: int,
         month: Optional[int],
         start_date: Optional[str],
@@ -32,20 +35,24 @@ class MonthlyReportService:
         """
         Generate a monthly report (dispatcher method).
         
+        Phase 2.5.7: Enforces organizational scope using current_user.allowed_unit_ids.
+        Client-provided org unit IDs are validated but data is filtered by allowed scope.
+        
         This method acts as a unified entry point for monthly reports, converting
         router parameters into the internal filter format and routing to the
         appropriate report generation method.
         
         Args:
+            current_user: Authenticated user with allowed org units
             year: Report year (required)
             month: Report month (1-12), required if start_date/end_date not provided
             start_date: Custom range start date (ISO format string)
             end_date: Custom range end date (ISO format string)
             mode: Report mode - "detailed" for paginated cases or "numeric" for aggregated stats
             scope: Organizational scope filter (optional)
-            administration_ids: Comma-separated administration IDs (optional)
-            department_ids: Comma-separated department IDs (optional)
-            section_ids: Comma-separated section IDs (optional)
+            administration_ids: Comma-separated administration IDs (optional, validated)
+            department_ids: Comma-separated department IDs (optional, validated)
+            section_ids: Comma-separated section IDs (optional, validated)
             page: Page number for pagination (default 1)
             page_size: Number of records per page (default 50, use 9999 for exports)
         
@@ -54,6 +61,7 @@ class MonthlyReportService:
         
         Raises:
             ValueError: If year is missing, mode is invalid, or date logic is inconsistent
+            HTTPException: If user requests data outside their scope (403)
         """
         # Validate required parameters
         if not year:
@@ -88,27 +96,30 @@ class MonthlyReportService:
             except (ValueError, TypeError) as e:
                 raise ValueError(f"Invalid date format: {e}. Use ISO format (YYYY-MM-DD)")
         
-        # Map organizational unit filters - UNION logic (OR)
-        # Multiple selections are combined with OR logic:
-        # Example: Administration 3 OR Administration 1 → Get cases from BOTH
+        # Phase 2.5.7: Validate any client-provided org unit IDs are in scope
+        # Collect all requested unit IDs for validation
+        requested_unit_ids = []
         
         if administration_ids:
-            # Parse ALL IDs and pass them as list for UNION (OR) filtering
             admin_id_list = [int(x.strip()) for x in administration_ids.split(",") if x.strip()]
-            if admin_id_list:
-                filters["idara_id"] = admin_id_list if len(admin_id_list) > 1 else admin_id_list[0]
+            requested_unit_ids.extend(admin_id_list)
         
         if department_ids:
-            # Parse ALL IDs and pass them as list for UNION (OR) filtering
             dept_id_list = [int(x.strip()) for x in department_ids.split(",") if x.strip()]
-            if dept_id_list:
-                filters["dayra_id"] = dept_id_list if len(dept_id_list) > 1 else dept_id_list[0]
+            requested_unit_ids.extend(dept_id_list)
         
         if section_ids:
-            # Parse ALL IDs and pass them as list for UNION (OR) filtering
             section_id_list = [int(x.strip()) for x in section_ids.split(",") if x.strip()]
-            if section_id_list:
-                filters["qism_id"] = section_id_list if len(section_id_list) > 1 else section_id_list[0]
+            requested_unit_ids.extend(section_id_list)
+        
+        # Validate: All requested units must be in user's scope
+        if requested_unit_ids:
+            require_any_unit_in_scope(current_user, requested_unit_ids)
+        
+        # Phase 2.5.7: CRITICAL - Filter by allowed_unit_ids (server authority)
+        # Instead of using client-provided IDs directly, we filter by allowed scope
+        # This makes it impossible to access data outside scope
+        filters["allowed_unit_ids"] = list(current_user.allowed_unit_ids)
         
         # Handle scope parameter (if needed for future enhancements)
         if scope:
@@ -156,10 +167,7 @@ class MonthlyReportService:
         month = filters.get("month")
         start_date = filters.get("start_date")
         end_date = filters.get("end_date")
-        building_id = filters.get("building_id")
-        idara_id = filters.get("idara_id")
-        dayra_id = filters.get("dayra_id")
-        qism_id = filters.get("qism_id")
+        allowed_unit_ids = filters.get("allowed_unit_ids", [])
         domain_id = filters.get("domain_id")
         category_id = filters.get("category_id")
         severity_id = filters.get("severity_id")
@@ -209,10 +217,7 @@ class MonthlyReportService:
             month=month,
             start_date=period_start,
             end_date=period_end,
-            building_id=building_id,
-            idara_id=idara_id,
-            dayra_id=dayra_id,
-            qism_id=qism_id,
+            allowed_unit_ids=allowed_unit_ids,
             domain_id=domain_id,
             category_id=category_id,
             severity_id=severity_id,
@@ -272,10 +277,7 @@ class MonthlyReportService:
         month = filters.get("month")
         start_date = filters.get("start_date")
         end_date = filters.get("end_date")
-        building_id = filters.get("building_id")
-        idara_id = filters.get("idara_id")
-        dayra_id = filters.get("dayra_id")
-        qism_id = filters.get("qism_id")
+        allowed_unit_ids = filters.get("allowed_unit_ids", [])
         
         # Calculate period dates
         if start_date and end_date:
@@ -319,10 +321,7 @@ class MonthlyReportService:
             month=month,
             start_date=period_start,
             end_date=period_end,
-            building_id=building_id,
-            idara_id=idara_id,
-            dayra_id=dayra_id,
-            qism_id=qism_id
+            allowed_unit_ids=allowed_unit_ids
         )
         
         return {

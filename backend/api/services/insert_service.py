@@ -345,6 +345,21 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
 
         # db_layer functions commit internally; nothing to commit here
 
+        # -------------------------------------------
+        # API V2 ADAPTER HOOK (SAFE / NON-BLOCKING)
+        # Automatically create subcases for this incident
+        # -------------------------------------------
+        try:
+            from backend.api_v2.services.case_creation_service import create_subcases_for_incident
+            # Note: current_user is not available in this legacy code context
+            # We'll pass None and the service will handle it gracefully
+            create_subcases_for_incident(new_id, current_user=None)
+        except Exception as e:
+            # Log only — never interrupt main flow
+            print(f"[API V2 ADAPTER WARNING] Failed to create subcases for incident {new_id}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
         record_id = f"REC-{datetime.now().year}-{str(new_id).zfill(4)}"
 
         return {

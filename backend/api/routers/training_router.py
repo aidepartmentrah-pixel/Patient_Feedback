@@ -3,9 +3,12 @@ Training Router
 API endpoints for the Settings > Training Tab
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, Any, List
 
+from ..dependencies.user_context import get_current_user
+from ..schemas.auth_models import CurrentUser
+from ..utils.guards import require_logged_in, require_software_admin
 from ..services.training_service import (
     run_training_pipeline,
     get_training_status,
@@ -27,7 +30,9 @@ router = APIRouter(prefix="/api/settings/training", tags=["Settings - Training"]
 # ==================== ENDPOINTS ====================
 
 @router.get("/status")
-async def get_training_status_endpoint() -> Dict[str, Any]:
+async def get_training_status_endpoint(
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
     """
     Get current model performance metrics.
     
@@ -55,6 +60,9 @@ async def get_training_status_endpoint() -> Dict[str, Any]:
     }
     ```
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     try:
         return get_training_status()
     except Exception as e:
@@ -63,7 +71,9 @@ async def get_training_status_endpoint() -> Dict[str, Any]:
 
 
 @router.get("/progress")
-async def get_training_progress_endpoint() -> Dict[str, Any]:
+async def get_training_progress_endpoint(
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
     """
     Get real-time training progress (for polling during training).
     
@@ -114,6 +124,9 @@ async def get_training_progress_endpoint() -> Dict[str, Any]:
     - Use progress_percentage for progress bar
     - Display current_model and estimated_remaining_seconds to user
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     try:
         return get_training_progress()
     except Exception as e:
@@ -122,7 +135,9 @@ async def get_training_progress_endpoint() -> Dict[str, Any]:
 
 
 @router.get("/grouped-status")
-async def get_grouped_training_status_endpoint() -> Dict[str, Any]:
+async def get_grouped_training_status_endpoint(
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
     """
     Get training status with models grouped by family and performance alerts.
     
@@ -217,6 +232,9 @@ async def get_grouped_training_status_endpoint() -> Dict[str, Any]:
     - Identify models needing attention
     - Compare family-level performance
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     try:
         return get_grouped_training_status()
     except Exception as e:
@@ -225,7 +243,9 @@ async def get_grouped_training_status_endpoint() -> Dict[str, Any]:
 
 
 @router.get("/history")
-async def get_training_history_endpoint() -> Dict[str, List[Dict[str, Any]]]:
+async def get_training_history_endpoint(
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, List[Dict[str, Any]]]:
     """
     Get historical training runs.
     
@@ -247,6 +267,9 @@ async def get_training_history_endpoint() -> Dict[str, List[Dict[str, Any]]]:
     }
     ```
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     try:
         return get_training_history_list()
     except Exception as e:
@@ -255,7 +278,9 @@ async def get_training_history_endpoint() -> Dict[str, List[Dict[str, Any]]]:
 
 
 @router.get("/db-size")
-async def get_ml_database_size_endpoint() -> Dict[str, List[Dict[str, Any]]]:
+async def get_ml_database_size_endpoint(
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, List[Dict[str, Any]]]:
     """
     Get ML database size growth over time for graphing.
     
@@ -273,6 +298,9 @@ async def get_ml_database_size_endpoint() -> Dict[str, List[Dict[str, Any]]]:
     }
     ```
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     try:
         return get_ml_database_size_history()
     except Exception as e:
@@ -281,7 +309,9 @@ async def get_ml_database_size_endpoint() -> Dict[str, List[Dict[str, Any]]]:
 
 
 @router.post("/run")
-async def trigger_training_endpoint() -> Dict[str, Any]:
+async def trigger_training_endpoint(
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
     """
     Trigger full model retraining pipeline.
     
@@ -307,6 +337,9 @@ async def trigger_training_endpoint() -> Dict[str, Any]:
     - Check GET /status to monitor progress
     - Multiple concurrent runs are prevented
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     try:
         # Check if training already running
         if is_training_running():
@@ -329,7 +362,10 @@ async def trigger_training_endpoint() -> Dict[str, Any]:
 # ==================== CHART ENDPOINTS (PHASE 4) ====================
 
 @router.get("/charts/db-growth")
-async def get_db_growth_chart_endpoint(days: int = 30) -> Dict[str, Any]:
+async def get_db_growth_chart_endpoint(
+    days: int = 30,
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
     """
     Get ML database growth chart data (Phase 4).
     
@@ -363,11 +399,16 @@ async def get_db_growth_chart_endpoint(days: int = 30) -> Dict[str, Any]:
             }
         }
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     return get_db_growth_chart_data(days=days)
 
 
 @router.get("/charts/performance-trends")
-async def get_performance_trends_chart_endpoint() -> Dict[str, Any]:
+async def get_performance_trends_chart_endpoint(
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
     """
     Get model performance trends chart data (Phase 4).
     
@@ -397,11 +438,17 @@ async def get_performance_trends_chart_endpoint() -> Dict[str, Any]:
             "metadata": {"total_runs": 10, "families": 4}
         }
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     return get_performance_trends_chart_data()
 
 
 @router.get("/charts/training-timeline")
-async def get_training_timeline_chart_endpoint(limit: int = 20) -> Dict[str, Any]:
+async def get_training_timeline_chart_endpoint(
+    limit: int = 20,
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
     """
     Get training timeline chart data (Phase 4).
     
@@ -435,11 +482,16 @@ async def get_training_timeline_chart_endpoint(limit: int = 20) -> Dict[str, Any
             }
         }
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     return get_training_timeline_chart_data(limit=limit)
 
 
 @router.get("/charts/family-comparison")
-async def get_family_comparison_chart_endpoint() -> Dict[str, Any]:
+async def get_family_comparison_chart_endpoint(
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
     """
     Get family comparison chart data (Phase 4).
     
@@ -473,4 +525,7 @@ async def get_family_comparison_chart_endpoint() -> Dict[str, Any]:
             }
         }
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     return get_family_comparison_chart_data()

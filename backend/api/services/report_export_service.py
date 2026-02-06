@@ -1,4 +1,4 @@
-"""
+"""  
 Report Export Service
 Handles export logic for monthly and seasonal reports.
 """
@@ -6,6 +6,7 @@ Handles export logic for monthly and seasonal reports.
 from typing import Dict, Any, Literal, Optional, List
 import traceback
 from io import BytesIO
+from ..schemas.auth_models import CurrentUser
 from .monthly_report_service import monthly_report_service
 from .reports_service import reports_service
 
@@ -26,6 +27,7 @@ class ReportExportService:
     def generate_export(
         self,
         *,
+        current_user: CurrentUser,
         report_type: Literal["monthly", "seasonal"],
         display_mode: Optional[Literal["detailed", "numeric", "hcat"]],
         file_format: Literal["pdf", "csv", "xlsx", "docx"],
@@ -42,7 +44,10 @@ class ReportExportService:
         """
         Generate an export file for a report.
         
+        Phase 2.5.7: Accepts current_user to enforce organizational scope.
+        
         Args:
+            current_user: Authenticated user with allowed org units
             report_type: Type of report (monthly or seasonal)
             display_mode: Display mode (detailed, numeric, hcat)
             file_format: Output format (pdf, csv, xlsx, docx)
@@ -82,6 +87,7 @@ class ReportExportService:
             # Step 1: Fetch data based on report type and display mode
             if report_type == "monthly":
                 report_data = self._fetch_monthly_data(
+                    current_user=current_user,
                     display_mode=display_mode,
                     year=year,
                     month=month,
@@ -452,6 +458,7 @@ class ReportExportService:
     
     def _fetch_monthly_data(
         self,
+        current_user: CurrentUser,
         display_mode: str,
         year: int,
         month: Optional[int],
@@ -462,6 +469,8 @@ class ReportExportService:
         """
         Fetch monthly report data based on display mode.
         
+        Phase 2.5.7: Passes current_user for scope enforcement.
+        
         IMPORTANT: Uses the EXACT same logic as the view endpoint to ensure
         export data matches what the user sees in the Generate button.
         
@@ -470,6 +479,7 @@ class ReportExportService:
         # Use the same unified entry point as the view endpoint
         # This ensures 100% consistency between view and export data
         result = monthly_report_service.generate_monthly_report(
+            current_user=current_user,
             year=year,
             month=month,
             start_date=start_date,

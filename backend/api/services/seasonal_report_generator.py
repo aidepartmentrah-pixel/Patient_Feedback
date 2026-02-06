@@ -174,6 +174,21 @@ class SeasonalReportGenerator:
             )
         
         # -----------------------------
+        # STEP 6.5: API V2 ADAPTER HOOK (SAFE / NON-BLOCKING)
+        # Automatically create subcases for this seasonal report
+        # -----------------------------
+        try:
+            from backend.api_v2.services.case_creation_service import create_subcases_for_seasonal_report
+            # Note: current_user is not available in this legacy code context
+            # We'll pass None and the service will handle it gracefully
+            create_subcases_for_seasonal_report(seasonal_report_id, current_user=None)
+        except Exception as e:
+            # Log only — never interrupt main flow
+            print(f"[API V2 ADAPTER WARNING] Failed to create subcases for seasonal report {seasonal_report_id}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+        
+        # -----------------------------
         # STEP 7: Return Summary
         # -----------------------------
         return {

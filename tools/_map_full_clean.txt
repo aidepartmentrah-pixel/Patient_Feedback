@@ -1,6 +1,6 @@
 # 🗺️ Backend Architecture (Exclude Mode)
 
-_Generated on: 2026-01-20 12:54_
+_Generated on: 2026-02-05 15:46_
 
 
 ---
@@ -98,6 +98,267 @@ _No functions found_
 ### 📄 backend\api\__init__.py
 _No functions found_
 
+### 📄 backend\api\dependencies\__init__.py
+_No functions found_
+
+### 📄 backend\api\dependencies\user_context.py
+**Routes:**
+- `GET /protected`
+- `GET /api/protected-endpoint`
+**Functions:**
+- `get_current_user()`
+- `protected_endpoint()`
+- `my_endpoint()`
+
+### 📄 backend\api\schemas\auth_models.py
+_No functions found_
+
+### 📄 backend\api\schemas\operators\__init__.py
+_No functions found_
+
+### 📄 backend\api\schemas\operators\base.py
+**Functions:**
+- `validate_year()`
+- `get_label()`
+- `validate_season()`
+- `get_label()`
+- `validate_month()`
+- `get_label()`
+- `validate_date_range()`
+- `get_label()`
+
+### 📄 backend\api\schemas\operators\distribution.py
+**Functions:**
+- `validate_time_configuration()`
+- `validate_time_windows_consistency()`
+- `validate_percent()`
+- `validate_bucket_consistency()`
+- `validate_status()`
+- `validate_buckets_not_empty()`
+
+### 📄 backend\api\schemas\settings_users_models.py
+_No functions found_
+
+### 📄 backend\api\utils\__init__.py
+_No functions found_
+
+### 📄 backend\api\utils\guards.py
+**Routes:**
+- `POST /admin-only-endpoint`
+- `GET /optional-auth`
+- `DELETE /users/{user_id}`
+- `POST /complaints/{id}/update`
+- `POST /complaints/{id}/approve`
+- `GET /sections/{id}/reports`
+- `POST /departments/{id}/settings`
+- `GET /organization/statistics`
+- `GET /admin/dashboard`
+- `GET /complaints/pending-approval`
+- `GET /data`
+- `GET /reports`
+- `GET /department/{dept_id}/data`
+- `GET /multi-unit-report`
+**Functions:**
+- `admin_endpoint()`
+- `require_logged_in()`
+- `endpoint()`
+- `require_role()`
+- `require_software_admin()`
+- `delete_user()`
+- `require_worker()`
+- `update_complaint()`
+- `require_complaint_supervisor()`
+- `approve_complaint()`
+- `require_section_admin()`
+- `get_section_reports()`
+- `require_department_admin()`
+- `update_department_settings()`
+- `require_administration_admin()`
+- `get_org_statistics()`
+- `require_any_admin()`
+- `admin_dashboard()`
+- `require_any_supervisor()`
+- `get_pending_complaints()`
+- `has_role()`
+- `get_data()`
+- `has_any_role()`
+- `get_reports()`
+- `get_user_roles()`
+- `require_unit_in_scope()`
+- `get_dept_data()`
+- `require_any_unit_in_scope()`
+- `get_report()`
+
+### 📄 backend\api_v2\db_layer\action_item_subcase_db.py
+**Functions:**
+- `get_db_connection()`
+- `create_action_item()`
+- `get_action_item_by_id()`
+- `get_action_items_by_subcase()`
+- `get_action_items_by_status()`
+- `get_action_items_by_assigned_user()`
+- `get_overdue_action_items()`
+- `update_action_item_status()`
+- `set_action_item_started()`
+- `set_action_item_completed()`
+- `set_action_item_verified()`
+- `reassign_action_item()`
+- `delete_action_item()`
+
+### 📄 backend\api_v2\db_layer\administrative_subcase_db.py
+**Functions:**
+- `get_db_connection()`
+- `create_subcase()`
+- `get_subcase_by_id()`
+- `get_all_subcases()`
+- `get_subcases_by_incident()`
+- `get_subcases_by_seasonal_report()`
+- `get_subcases_by_target_orgunit()`
+- `get_subcases_by_status()`
+- `get_subcases_by_case_type()`
+- `get_subcases_pending_for_section()`
+- `get_subcases_pending_for_department()`
+- `get_subcases_pending_for_administration()`
+- `update_subcase_status()`
+- `update_section_explanation()`
+- `update_section_rejection()`
+- `update_department_explanation()`
+- `update_department_rejection()`
+- `update_administration_explanation()`
+- `update_administration_rejection()`
+- `get_full_subcases_by_incident()`
+- `get_full_subcases_by_seasonal_report()`
+
+### 📄 backend\api_v2\db_layer\insight_db.py
+**Functions:**
+- `get_db_connection()`
+- `get_subcase_status_counts()`
+- `get_action_item_counts()`
+- `get_stuck_subcases()`
+- `get_subcase_created_time_buckets()`
+- `get_subcase_org_unit_counts()`
+
+### 📄 backend\api_v2\db_layer\orgunit_db.py
+**Functions:**
+- `get_db_connection()`
+- `get_all_orgunits()`
+- `get_descendant_orgunit_ids()`
+- `collect_descendants()`
+
+### 📄 backend\api_v2\db_layer\seasonal_report_db.py
+**Functions:**
+- `get_db_connection()`
+- `get_target_orgunits_for_seasonal_report()`
+
+### 📄 backend\api_v2\guards\high_level_guards.py
+**Routes:**
+- `POST /subcase/{subcase_id}/section-response`
+**Functions:**
+- `submit_section_response()`
+- `require_section_admin_on_subcase()`
+- `require_dept_admin_on_subcase()`
+- `require_admin_on_subcase()`
+- `require_worker_or_supervisor_on_subcase()`
+
+### 📄 backend\api_v2\guards\role_guards.py
+**Routes:**
+- `GET /endpoint`
+**Functions:**
+- `endpoint()`
+- `require_supervisor_or_worker()`
+- `require_section_admin()`
+- `require_dept_admin()`
+- `require_admin_level()`
+- `require_administrator()`
+
+### 📄 backend\api_v2\guards\scoping.py
+**Functions:**
+- `validate_case_access()`
+- `validate_action_item_access()`
+- `can_generate_seasonal_report()`
+
+### 📄 backend\api_v2\routers\__init__.py
+_No functions found_
+
+### 📄 backend\api_v2\routers\insight_router.py
+**Routes:**
+- `GET /kpi-summary`
+- `POST /distribution`
+- `POST /trend`
+- `GET /stuck`
+**Functions:**
+- `get_kpi_summary_endpoint()`
+- `get_distribution_endpoint()`
+- `get_trend_endpoint()`
+- `get_stuck_endpoint()`
+
+### 📄 backend\api_v2\routers\workflow_router.py
+**Routes:**
+- `GET /inbox`
+- `GET /follow-up`
+- `POST /follow-up/{action_item_id}/start`
+- `POST /follow-up/{action_item_id}/complete`
+- `POST /follow-up/{action_item_id}/delay`
+- `POST /case/{subcase_id}/act`
+**Functions:**
+- `get_inbox()`
+- `get_follow_up_items()`
+- `start_action_item()`
+- `complete_action_item()`
+- `delay_action_item()`
+- `act_on_case()`
+
+### 📄 backend\api_v2\schemas\insight_schemas.py
+_No functions found_
+
+### 📄 backend\api_v2\services\case_creation_service.py
+**Functions:**
+- `get_db_connection()`
+- `_create_subcase()`
+- `create_subcases_for_incident()`
+- `create_subcases_for_seasonal_report()`
+
+### 📄 backend\api_v2\services\case_response_service.py
+**Functions:**
+- `_load_subcase_or_fail()`
+- `_assert_status()`
+- `_replace_action_items()`
+- `submit_section_response()`
+- `reject_responsibility()`
+- `approve_department()`
+- `reject_department()`
+- `override_department()`
+- `approve_administration()`
+- `reject_administration()`
+- `override_administration()`
+- `force_close_subcase()`
+
+### 📄 backend\api_v2\services\follow_up_service.py
+**Functions:**
+- `_assert_user_can_modify()`
+- `get_action_items_for_user()`
+- `start_action_item()`
+- `complete_action_item()`
+- `delay_action_item()`
+
+### 📄 backend\api_v2\services\inbox_service.py
+**Functions:**
+- `get_inbox()`
+- `get_section_inbox()`
+- `get_department_inbox()`
+- `get_administration_inbox()`
+- `_apply_scope_filter()`
+- `_compute_allowed_actions()`
+- `_build_inbox_item()`
+
+### 📄 backend\api_v2\services\insight_service.py
+**Functions:**
+- `get_db_connection()`
+- `get_kpi_summary()`
+- `get_distribution()`
+- `get_trend()`
+- `get_stuck_cases()`
+
 ### 📄 backend\check_all_columns.py
 _No functions found_
 
@@ -108,6 +369,12 @@ _No functions found_
 **Functions:**
 - `check_incident_data()`
 
+### 📄 backend\check_org_structure.py
+_No functions found_
+
+### 📄 backend\check_table_schema.py
+_No functions found_
+
 ### 📄 backend\check_tables.py
 _No functions found_
 
@@ -117,6 +384,12 @@ _No functions found_
 ### 📄 backend\check_target_depts.py
 _No functions found_
 
+### 📄 backend\check_triggers.py
+_No functions found_
+
+### 📄 backend\check_users.py
+_No functions found_
+
 ### 📄 backend\config\ml_encoding_mapper.py
 **Functions:**
 - `_get_mapping_file_path()`
@@ -124,11 +397,27 @@ _No functions found_
 - `map_db_to_ml()`
 - `get_all_mapped_fields()`
 
+### 📄 backend\example_system_settings_usage.py
+**Functions:**
+- `check_complaint_delay()`
+- `get_max_upload_size()`
+- `is_feature_enabled()`
+- `get_escalation_rules()`
+- `auto_adjust_delay_threshold()`
+- `get_cached_setting()`
+- `clear_cache()`
+- `process_complaint()`
+- `get_settings_for_admin_page()`
+- `safe_get_setting()`
+
 ### 📄 backend\final_verification.py
 **Functions:**
 - `main()`
 
 ### 📄 backend\find_data_months.py
+_No functions found_
+
+### 📄 backend\get_login_credentials.py
 _No functions found_
 
 ### 📄 backend\investigate_missing.py
@@ -155,6 +444,21 @@ _No functions found_
 ### 📄 backend\query_lookup_tables.py
 _No functions found_
 
+### 📄 backend\test_dashboard_scope_fix.py
+**Functions:**
+- `login()`
+- `get_dashboard_stats()`
+- `logout()`
+- `test_software_admin_scope_filtering()`
+- `test_admin_admin_scope_filtering()`
+- `test_department_admin_scope_filtering()`
+- `test_network_verification()`
+- `test_rbac_safety_preserved()`
+- `run_all_tests()`
+
+### 📄 backend\test_direct_insert.py
+_No functions found_
+
 ### 📄 backend\test_embedding_wrapper.py
 **Functions:**
 - `test_embedding_imports()`
@@ -172,6 +476,108 @@ _No functions found_
 ### 📄 backend\test_frozen_filter.py
 _No functions found_
 
+### 📄 backend\test_insight_action_item_counts.py
+_No functions found_
+
+### 📄 backend\test_insight_db_layer_structure.py
+_No functions found_
+
+### 📄 backend\test_insight_distribution.py
+_No functions found_
+
+### 📄 backend\test_insight_distribution_endpoint.py
+**Functions:**
+- `get_real_org_units()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+
+### 📄 backend\test_insight_kpi_summary.py
+_No functions found_
+
+### 📄 backend\test_insight_kpi_summary_endpoint.py
+**Functions:**
+- `get_real_org_units()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+
+### 📄 backend\test_insight_router_structure.py
+_No functions found_
+
+### 📄 backend\test_insight_scope_enforcement.py
+**Functions:**
+- `get_real_org_units()`
+
+### 📄 backend\test_insight_service_structure.py
+_No functions found_
+
+### 📄 backend\test_insight_stuck_cases.py
+_No functions found_
+
+### 📄 backend\test_insight_stuck_endpoint.py
+**Functions:**
+- `get_real_org_units()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+
+### 📄 backend\test_insight_stuck_subcases.py
+_No functions found_
+
+### 📄 backend\test_insight_subcase_status_counts.py
+_No functions found_
+
+### 📄 backend\test_insight_time_buckets.py
+_No functions found_
+
+### 📄 backend\test_insight_trend.py
+_No functions found_
+
+### 📄 backend\test_insight_trend_endpoint.py
+**Functions:**
+- `get_real_org_units()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+- `mock_current_user()`
+
 ### 📄 backend\test_investigation.py
 **Functions:**
 - `test_seasons()`
@@ -186,6 +592,94 @@ _No functions found_
 - `test_3_return_value_unchanged()`
 - `main()`
 
+### 📄 backend\test_module5_1_user_inventory.py
+**Functions:**
+- `clear_sessions()`
+- `login_as_admin()`
+- `test_user_inventory_without_login()`
+- `test_user_inventory_with_admin()`
+- `test_missing_users_endpoint()`
+- `test_inventory_summary()`
+- `test_non_admin_access()`
+- `run_all_tests()`
+
+### 📄 backend\test_module5_3_create_section.py
+**Functions:**
+- `clear_sessions()`
+- `login_as_admin()`
+- `test_create_section_without_login()`
+- `test_create_section_with_admin()`
+- `test_create_section_login_with_new_admin()`
+- `test_non_admin_access()`
+- `test_duplicate_username_handling()`
+- `run_all_tests()`
+
+### 📄 backend\test_module5_4_user_credentials.py
+**Functions:**
+- `clear_sessions()`
+- `login_as_admin()`
+- `test_credentials_without_login()`
+- `test_credentials_with_admin()`
+- `test_credentials_verify_specific_user()`
+- `test_non_admin_access()`
+- `test_password_derivation_logic()`
+- `run_all_tests()`
+
+### 📄 backend\test_module5_5_backend_login_verification.py
+**Functions:**
+- `clear_sessions()`
+- `get_user_active_status()`
+- `set_user_active_status()`
+- `get_section_admin_username()`
+- `test_1_software_admin_login_works()`
+- `test_2_wrong_password_fails()`
+- `test_3_unknown_user_fails()`
+- `test_4_login_then_me_works()`
+- `test_5_me_without_session_fails()`
+- `test_6_inactive_user_blocked()`
+- `test_7_section_admin_login_works()`
+- `test_8_role_guard_enforcement()`
+- `run_all_tests()`
+
+### 📄 backend\test_module5_7_markdown_export.py
+**Functions:**
+- `clear_sessions()`
+- `login_as_admin()`
+- `test_markdown_without_login()`
+- `test_markdown_with_admin()`
+- `test_markdown_contains_test_users()`
+- `test_non_admin_access()`
+- `test_markdown_format_valid()`
+- `run_all_tests()`
+
+### 📄 backend\test_module5_8_delete_user.py
+**Functions:**
+- `clear_sessions()`
+- `login_as_admin()`
+- `create_test_section()`
+- `test_delete_without_login()`
+- `test_delete_nonexistent_user()`
+- `test_delete_protected_software_admin()`
+- `test_delete_user_with_software_admin_role()`
+- `test_delete_regular_user_success()`
+- `test_non_admin_access()`
+- `test_transaction_rollback()`
+- `run_all_tests()`
+
+### 📄 backend\test_module5_9_recreate_section_admin.py
+**Functions:**
+- `clear_sessions()`
+- `login_as_admin()`
+- `create_test_section()`
+- `test_recreate_without_login()`
+- `test_recreate_nonexistent_section()`
+- `test_recreate_for_non_section_unit()`
+- `test_recreate_section_admin_first_time()`
+- `test_recreate_multiple_times()`
+- `test_recreated_admin_can_login()`
+- `test_non_admin_access()`
+- `run_all_tests()`
+
 ### 📄 backend\test_phase0_schema_changes.py
 **Functions:**
 - `test_column_exists()`
@@ -195,12 +689,669 @@ _No functions found_
 - `test_sample_insert()`
 - `run_all_tests()`
 
+### 📄 backend\test_phase1_reserve_doctor_identical.py
+**Functions:**
+- `get_connection()`
+- `test_table_exists()`
+- `test_table_structure_identical()`
+- `test_select_data()`
+- `test_insert_operation()`
+- `test_auto_increment()`
+- `run_all_tests()`
+
+### 📄 backend\test_phase1_reserve_doctor_table.py
+**Functions:**
+- `get_connection()`
+- `test_table_exists()`
+- `test_table_structure()`
+- `test_select_data()`
+- `test_insert_operation()`
+- `test_unique_constraint()`
+- `test_auto_increment()`
+- `run_all_tests()`
+
+### 📄 backend\test_phase2_add_doctor_db_layer.py
+**Functions:**
+- `test_create_doctor_valid()`
+- `test_create_doctor_minimal_fields()`
+- `test_duplicate_employee_id_reserve()`
+- `test_duplicate_employee_id_hospital()`
+- `test_created_doctor_searchable()`
+- `test_get_profile_reserve_doctor()`
+- `run_all_tests()`
+
+### 📄 backend\test_phase2_add_doctor_identical.py
+**Functions:**
+- `test_create_doctor_valid()`
+- `test_create_doctor_minimal_fields()`
+- `test_duplicate_doctor_name()`
+- `test_inactive_doctor()`
+- `test_custom_source_system()`
+- `test_specialty_optional()`
+- `run_all_tests()`
+
+### 📄 backend\test_phase2_auth_db_layer.py
+**Functions:**
+- `__init__()`
+- `add_pass()`
+- `add_fail()`
+- `summary()`
+- `assert_dict_has_keys()`
+- `test_get_user_by_id()`
+- `test_get_user_by_username()`
+- `test_get_user_with_scopes()`
+- `test_validate_user_credentials()`
+- `test_password_utilities()`
+- `run_all_tests()`
+
+### 📄 backend\test_phase2_auth_router.py
+**Functions:**
+- `clear_all_sessions()`
+- `login_user()`
+- `logout_user()`
+- `get_current_user()`
+- `test_login_success_software_admin()`
+- `test_login_success_worker()`
+- `test_login_success_complaint_supervisor()`
+- `test_login_success_section_admin()`
+- `test_login_success_department_admin()`
+- `test_login_success_administration_admin()`
+- `test_login_failure_invalid_username()`
+- `test_login_failure_invalid_password()`
+- `test_login_failure_empty_username()`
+- `test_login_failure_empty_password()`
+- `test_login_session_persistence()`
+- `test_login_case_sensitivity()`
+- `test_logout_success_after_login()`
+- `test_logout_without_login()`
+- `test_logout_multiple_times()`
+- `test_me_success_after_login()`
+- `test_me_failure_without_login()`
+- `test_me_failure_after_logout()`
+- `test_me_returns_correct_user()`
+- `test_multiple_users_independent_sessions()`
+- `test_login_switches_user()`
+- `test_login_missing_username()`
+- `test_login_missing_password()`
+- `test_login_invalid_json()`
+- `test_login_response_structure()`
+- `test_me_response_structure()`
+- `test_logout_response_structure()`
+- `test_error_response_structure()`
+- `run_all_tests()`
+
+### 📄 backend\test_phase2_auth_service.py
+**Functions:**
+- `test_login_endpoint()`
+- `test_logout_endpoint()`
+- `test_get_current_user_endpoint()`
+- `__init__()`
+- `add_pass()`
+- `add_fail()`
+- `summary()`
+- `test_login_valid_credentials()`
+- `test_login_invalid_credentials()`
+- `test_session_persistence()`
+- `test_get_current_user_without_session()`
+- `test_logout()`
+- `test_multiple_users()`
+- `test_all_users_login()`
+- `run_all_tests()`
+
+### 📄 backend\test_phase2_guards.py
+**Functions:**
+- `create_user()`
+- `create_multi_role_user()`
+- `test_require_logged_in_with_user()`
+- `test_require_logged_in_with_none()`
+- `test_require_role_with_matching_role()`
+- `test_require_role_with_multiple_allowed()`
+- `test_require_role_with_non_matching_role()`
+- `test_require_role_with_multi_role_user()`
+- `test_require_software_admin_success()`
+- `test_require_software_admin_failure()`
+- `test_require_worker_success()`
+- `test_require_worker_failure()`
+- `test_require_complaint_supervisor_success()`
+- `test_require_complaint_supervisor_failure()`
+- `test_require_section_admin_success()`
+- `test_require_section_admin_failure()`
+- `test_require_department_admin_success()`
+- `test_require_department_admin_failure()`
+- `test_require_administration_admin_success()`
+- `test_require_administration_admin_failure()`
+- `test_require_any_admin_with_software_admin()`
+- `test_require_any_admin_with_section_admin()`
+- `test_require_any_admin_with_worker()`
+- `test_require_any_supervisor_with_supervisor()`
+- `test_require_any_supervisor_with_admin()`
+- `test_require_any_supervisor_with_worker()`
+- `test_has_role_true()`
+- `test_has_role_false()`
+- `test_has_any_role_true()`
+- `test_has_any_role_false()`
+- `test_get_user_roles()`
+- `test_get_user_roles_multi()`
+- `test_forbidden_error_format()`
+- `test_unauthorized_error_format()`
+- `run_all_tests()`
+
+### 📄 backend\test_phase2_integration_complete.py
+**Functions:**
+- `test_complete_authentication_flow()`
+- `test_multiple_users_workflow()`
+- `test_dependency_vs_direct_calls()`
+
+### 📄 backend\test_phase2_rbac_tables.py
+**Functions:**
+- `execute_sql_file()`
+- `verify_tables()`
+- `verify_roles()`
+- `verify_users()`
+- `verify_role_scopes()`
+- `verify_constraints()`
+- `run_comprehensive_test()`
+
+### 📄 backend\test_phase2_user_context_dependency.py
+**Functions:**
+- `test_login()`
+- `test_protected_endpoint()`
+- `test_optional_endpoint()`
+- `clear_sessions()`
+- `login_as()`
+- `call_protected_endpoint()`
+- `test_dependency_with_valid_session()`
+- `test_dependency_with_no_session()`
+- `test_dependency_with_different_users()`
+- `test_dependency_after_logout()`
+- `test_dependency_session_persistence()`
+- `test_dependency_with_all_test_users()`
+- `test_dependency_switches_users()`
+- `test_dependency_returns_current_user_model()`
+- `test_dependency_loads_fresh_data()`
+- `test_dependency_with_invalid_session()`
+- `test_dependency_error_response_format()`
+- `test_integration_dependency_with_auth_api()`
+- `test_integration_dependency_with_me_endpoint()`
+- `run_all_tests()`
+
+### 📄 backend\test_phase3_union_reads.py
+**Functions:**
+- `test_search_returns_both_sources()`
+- `test_search_filters_by_name()`
+- `test_get_profile_reserve_doctor()`
+- `test_get_profile_hospital_doctor()`
+- `test_source_field_present()`
+- `test_status_filter()`
+- `run_all_tests()`
+
+### 📄 backend\test_phase4_auth_me_upgrade.py
+**Functions:**
+- `clear_sessions()`
+- `login_user()`
+- `get_me()`
+- `test_me_keeps_existing_fields()`
+- `test_me_adds_roles_field()`
+- `test_me_adds_primary_unit_fields()`
+- `test_roles_derived_from_scopes()`
+- `test_primary_unit_null_for_software_admin()`
+- `test_primary_unit_set_for_worker()`
+- `test_complete_contract_shape()`
+
+### 📄 backend\test_phase4_service_layer.py
+**Functions:**
+- `test_create_doctor_valid()`
+- `test_validation_empty_name()`
+- `test_validation_short_name()`
+- `test_validation_long_name()`
+- `test_validation_duplicate_name()`
+- `test_validation_long_specialty()`
+- `test_optional_fields()`
+- `test_whitespace_trimming()`
+- `test_response_structure()`
+- `run_all_tests()`
+
+### 📄 backend\test_phase5_api_endpoint.py
+**Functions:**
+- `test_create_doctor_success()`
+- `test_create_doctor_minimal()`
+- `test_validation_empty_name()`
+- `test_validation_short_name()`
+- `test_duplicate_doctor()`
+- `test_response_structure()`
+- `test_created_doctor_searchable()`
+- `run_all_tests()`
+
+### 📄 backend\test_phase5_comprehensive.py
+**Functions:**
+- `clear_sessions()`
+- `login_as_admin()`
+- `record_test_result()`
+- `print_test_header()`
+- `print_section_header()`
+- `get_valid_department_id()`
+- `test_login_software_admin()`
+- `test_login_and_me()`
+- `test_login_wrong_password()`
+- `test_user_inventory_full()`
+- `test_user_inventory_missing()`
+- `test_user_inventory_summary()`
+- `test_create_section_with_admin()`
+- `test_list_user_credentials()`
+- `test_list_credentials_non_admin()`
+- `test_markdown_credential_export()`
+- `test_recreate_section_admin()`
+- `test_recreate_admin_nonexistent_section()`
+- `test_delete_user()`
+- `test_delete_protected_user()`
+- `test_verify_bulk_users_exist()`
+- `run_all_tests()`
+
+### 📄 backend\test_phase5_manual.py
+**Functions:**
+- `main()`
+
+### 📄 backend\test_phase_a_adj1_naming_safety.py
+**Functions:**
+- `get_connection()`
+- `test_find_org_unit_tables()`
+- `test_analyze_adminsration_unit_table()`
+- `test_check_department_section_types()`
+- `test_verify_app_users_columns()`
+- `test_check_app_userrolescope_table()`
+- `test_verify_naming_conflict_risk()`
+- `generate_safety_report()`
+- `run_all_tests()`
+
+### 📄 backend\test_phase_a_adj2_update_functions.py
+**Functions:**
+- `get_connection()`
+- `cleanup_test_users()`
+- `get_user_profile()`
+- `test_update_both_fields()`
+- `test_update_display_name_only()`
+- `test_update_department_name_only()`
+- `test_update_with_null_values()`
+- `test_update_nonexistent_user()`
+- `test_multiple_sequential_updates()`
+- `test_coalesce_preserves_null()`
+- `run_all_tests()`
+
+### 📄 backend\test_phase_a_adj3_serialization_safety.py
+**Functions:**
+- `test_session_stores_only_user_id()`
+- `test_currentuser_not_serialized()`
+- `test_new_fields_optional()`
+- `test_no_jwt_tokens()`
+- `test_middleware_standard()`
+- `test_model_dict_serialization()`
+- `test_model_json_serialization()`
+- `run_all_tests()`
+
+### 📄 backend\test_phase_a_adj4_endpoint_authority.py
+**Routes:**
+- `GET /me`
+- `GET /me`
+- `GET /me`
+**Functions:**
+- `test_only_one_auth_me_endpoint()`
+- `test_no_api_v2_auth_endpoint()`
+- `test_endpoint_returns_currentuser()`
+- `test_currentuser_has_display_fields()`
+- `test_endpoint_dependency_uses_auth_service()`
+- `test_pydantic_serialization_automatic()`
+- `test_no_competing_endpoints()`
+- `run_all_tests()`
+
+### 📄 backend\test_phase_a_step1_schema.py
+**Functions:**
+- `get_connection()`
+- `test_displayname_column_exists()`
+- `test_departmentdisplayname_column_exists()`
+- `test_no_constraints_on_new_columns()`
+- `test_existing_users_still_work()`
+- `test_can_insert_with_new_columns()`
+- `run_all_tests()`
+
+### 📄 backend\test_phase_a_step2_insert_functions.py
+**Functions:**
+- `get_connection()`
+- `cleanup_test_users()`
+- `test_creator_insert_with_all_params()`
+- `test_creator_insert_with_display_name_only()`
+- `test_creator_insert_with_defaults()`
+- `test_recreate_insert_with_all_params()`
+- `test_recreate_insert_with_display_name_only()`
+- `test_recreate_insert_with_defaults()`
+- `test_backward_compatibility()`
+- `run_all_tests()`
+
+### 📄 backend\test_phase_a_step3_currentuser_model.py
+**Functions:**
+- `test_fields_exist()`
+- `test_fields_are_optional()`
+- `test_fields_accept_string_values()`
+- `test_fields_accept_none_explicitly()`
+- `test_partial_display_fields()`
+- `test_model_serialization()`
+- `test_backward_compatibility()`
+- `test_complete_user_with_scopes()`
+- `test_empty_string_values()`
+- `test_field_types()`
+- `run_all_tests()`
+
+### 📄 backend\test_phase_a_step4_auth_load_logic.py
+**Functions:**
+- `get_connection()`
+- `cleanup_test_users()`
+- `test_get_user_with_scopes_includes_display_fields()`
+- `test_get_user_with_scopes_null_display_fields()`
+- `test_auth_service_currentuser_construction()`
+- `test_fallback_display_name_to_username()`
+- `test_end_to_end_flow()`
+- `test_existing_users_compatibility()`
+- `test_dict_structure_backward_compatible()`
+- `run_all_tests()`
+
+### 📄 backend\test_phase_a_step5_auth_me_response.py
+**Functions:**
+- `get_connection()`
+- `cleanup_test_users()`
+- `assign_user_scope()`
+- `test_auth_me_response_schema()`
+- `test_auth_me_display_field_values()`
+- `test_auth_me_null_display_fields()`
+- `test_auth_me_backward_compatibility()`
+- `test_auth_me_json_serialization()`
+- `test_existing_user_compatibility()`
+- `run_all_tests()`
+
+### 📄 backend\test_phase_a_step6_backfill.py
+**Functions:**
+- `get_connection()`
+- `read_sql_script()`
+- `execute_backfill_script()`
+- `cleanup_test_users()`
+- `test_backfill_displayname()`
+- `test_backfill_department_displayname()`
+- `test_backfill_both_null()`
+- `test_idempotency()`
+- `test_no_modification_of_existing_values()`
+- `test_no_modification_of_other_columns()`
+- `main()`
+
 ### 📄 backend\test_search_endpoints.py
 **Functions:**
 - `test_search_patients()`
 - `test_search_doctors()`
 - `test_search_employees()`
 - `test_health()`
+
+### 📄 backend\test_settings_users_list_service.py
+**Functions:**
+- `cleanup_test_users()`
+- `test_returns_flat_structure()`
+- `test_excludes_null_usernames()`
+- `test_returns_correct_user_id()`
+- `test_returns_display_fields()`
+- `test_null_display_fields()`
+- `test_multiple_roles_multiple_rows()`
+- `test_is_active_field()`
+- `run_all_tests()`
+
+### 📄 backend\test_settings_users_router.py
+**Functions:**
+- `clear_sessions()`
+- `login_as_software_admin()`
+- `login_as_regular_user()`
+- `cleanup_test_users()`
+- `test_get_users_list()`
+- `test_create_user()`
+- `test_update_user_identity()`
+- `test_reset_user_password()`
+- `test_delete_user()`
+- `test_guard_create_without_admin()`
+- `test_guard_password_reset_without_admin()`
+- `run_all_tests()`
+
+### 📄 backend\test_user_create_db.py
+**Functions:**
+- `cleanup_test_users()`
+- `test_insert_user_basic()`
+- `test_insert_user_with_username_trimming()`
+- `test_insert_user_with_null_display_fields()`
+- `test_insert_user_empty_username_raises_error()`
+- `test_transaction_rollback()`
+- `run_all_tests()`
+
+### 📄 backend\test_user_create_service.py
+**Functions:**
+- `cleanup_test_users()`
+- `get_test_role_id()`
+- `get_test_org_unit_id()`
+- `test_create_user_with_all_fields()`
+- `test_create_user_with_null_display_fields()`
+- `test_duplicate_username_raises_error()`
+- `test_empty_username_raises_error()`
+- `test_empty_password_raises_error()`
+- `test_invalid_role_id_raises_error()`
+- `test_invalid_org_unit_id_raises_error()`
+- `test_password_is_hashed()`
+- `run_all_tests()`
+
+### 📄 backend\test_user_identity_service.py
+**Functions:**
+- `cleanup_test_users()`
+- `test_update_both_fields()`
+- `test_partial_update_display_name_only()`
+- `test_partial_update_department_only()`
+- `test_whitespace_trimming()`
+- `test_both_fields_none_raises_error()`
+- `test_invalid_user_id_raises_error()`
+- `test_user_not_found_raises_error()`
+- `test_transaction_rollback_on_error()`
+- `run_all_tests()`
+
+### 📄 backend\test_user_identity_update_db.py
+**Functions:**
+- `cleanup_test_users()`
+- `test_update_both_fields()`
+- `test_partial_update_display_name_only()`
+- `test_partial_update_department_only()`
+- `test_multiple_updates()`
+- `test_user_not_found_raises_error()`
+- `test_invalid_user_id_raises_error()`
+- `test_username_unchanged()`
+- `test_password_hash_unchanged()`
+- `run_all_tests()`
+
+### 📄 backend\test_user_role_scope_db.py
+**Functions:**
+- `cleanup_test_data()`
+- `get_test_role_id()`
+- `get_test_org_unit_id()`
+- `test_basic_role_scope_assignment()`
+- `test_duplicate_assignment_prevention()`
+- `test_multiple_roles_for_same_user()`
+- `test_invalid_user_id_raises_error()`
+- `test_invalid_role_id_raises_error()`
+- `test_invalid_org_unit_id_raises_error()`
+- `run_all_tests()`
+
+### 📄 backend\tests\db_layer\__init__.py
+_No functions found_
+
+### 📄 backend\tests\db_layer\operators\__init__.py
+_No functions found_
+
+### 📄 backend\tests\db_layer\operators\test_distribution_db.py
+**Functions:**
+- `test_year_conversion()`
+- `test_year_conversion_edge_years()`
+- `test_quarter_conversions()`
+- `test_trimester_conversions()`
+- `test_month_conversions()`
+- `test_range_conversion()`
+- `test_invalid_season_format_raises_error()`
+- `test_dimension_column_mapping()`
+- `test_invalid_dimension_raises_error()`
+- `test_query_single_window_with_year()`
+- `test_query_with_organizational_filters()`
+- `test_query_with_dimension_filters()`
+- `test_query_with_combined_filters()`
+- `test_query_date_range_with_none_dates()`
+- `test_query_date_range_with_from_date_only()`
+- `test_query_converts_decimal_to_int()`
+- `test_connection_cleanup()`
+- `test_reused_connection_not_closed()`
+- `test_sql_includes_group_by_and_order()`
+- `test_all_dimensions_work()`
+
+### 📄 backend\tests\routers\__init__.py
+_No functions found_
+
+### 📄 backend\tests\routers\test_operators_router.py
+**Functions:**
+- `test_single_mode_year_request()`
+- `test_single_mode_season_request()`
+- `test_multi_mode_request()`
+- `test_binary_split_request()`
+- `test_request_with_filters()`
+- `test_missing_dimension()`
+- `test_invalid_dimension_value()`
+- `test_missing_time_mode()`
+- `test_invalid_time_mode()`
+- `test_single_mode_without_time_window()`
+- `test_single_mode_with_time_windows_array()`
+- `test_multi_mode_without_time_windows()`
+- `test_multi_mode_with_single_time_window()`
+- `test_binary_split_without_split_date()`
+- `test_invalid_year_value()`
+- `test_invalid_year_value_future()`
+- `test_invalid_season_format()`
+- `test_invalid_month_format()`
+- `test_missing_time_window_type()`
+- `test_service_raises_value_error()`
+- `test_service_raises_unexpected_error()`
+- `test_domain_dimension()`
+- `test_category_dimension()`
+- `test_severity_dimension()`
+- `test_empty_request_body()`
+- `test_request_with_extra_fields()`
+- `test_multi_mode_with_single_window()`
+- `test_filters_with_null_values()`
+
+### 📄 backend\tests\schemas\__init__.py
+_No functions found_
+
+### 📄 backend\tests\schemas\operators\__init__.py
+_No functions found_
+
+### 📄 backend\tests\schemas\operators\test_base.py
+**Functions:**
+- `test_all_dimension_values()`
+- `test_dimension_count()`
+- `test_all_time_modes()`
+- `test_time_mode_count()`
+- `test_all_window_types()`
+- `test_window_type_count()`
+- `test_valid_year()`
+- `test_year_boundaries()`
+- `test_valid_quarters()`
+- `test_valid_trimesters()`
+- `test_invalid_season_formats()`
+- `test_valid_months()`
+- `test_invalid_month_formats()`
+- `test_valid_range()`
+- `test_same_date_range()`
+- `test_invalid_range_reversed()`
+- `test_empty_filters()`
+- `test_organizational_filters()`
+- `test_dimension_filters()`
+- `test_mixed_filters()`
+- `test_reject_extra_fields()`
+- `test_all_filter_fields_optional()`
+
+### 📄 backend\tests\schemas\operators\test_distribution.py
+**Functions:**
+- `test_valid_single_mode_year()`
+- `test_valid_single_mode_season()`
+- `test_valid_single_mode_month()`
+- `test_valid_single_mode_range()`
+- `test_single_mode_missing_time_window()`
+- `test_single_mode_rejects_multiple_configs()`
+- `test_single_mode_with_filters()`
+- `test_valid_multi_mode_years()`
+- `test_valid_multi_mode_seasons()`
+- `test_valid_multi_mode_months()`
+- `test_multi_mode_minimum_windows()`
+- `test_multi_mode_missing_time_windows()`
+- `test_multi_mode_rejects_mixed_window_types()`
+- `test_multi_mode_rejects_multiple_configs()`
+- `test_valid_binary_split()`
+- `test_binary_split_missing_split_date()`
+- `test_binary_split_invalid_date_format()`
+- `test_binary_split_semantically_invalid_dates()`
+- `test_binary_split_rejects_multiple_configs()`
+- `test_all_dimension_types_supported()`
+- `test_reject_extra_fields()`
+- `test_default_empty_filters()`
+- `test_valid_value()`
+- `test_percent_boundaries()`
+- `test_percent_precision()`
+- `test_negative_count_rejected()`
+- `test_valid_bucket_with_data()`
+- `test_valid_bucket_zero_with_no_data_status()`
+- `test_valid_bucket_zero_without_status()`
+- `test_bucket_rejects_total_mismatch()`
+- `test_bucket_rejects_percent_mismatch()`
+- `test_bucket_allows_small_floating_point_error()`
+- `test_bucket_rejects_empty_values_when_total_positive()`
+- `test_bucket_rejects_values_when_total_zero()`
+- `test_bucket_rejects_invalid_status()`
+- `test_valid_single_bucket_response()`
+- `test_valid_multi_bucket_response()`
+- `test_valid_binary_split_response()`
+- `test_response_rejects_empty_buckets()`
+
+### 📄 backend\tests\services\__init__.py
+_No functions found_
+
+### 📄 backend\tests\services\operators\__init__.py
+_No functions found_
+
+### 📄 backend\tests\services\operators\test_distribution_service.py
+**Functions:**
+- `test_execute_single_mode_with_data()`
+- `test_execute_single_mode_with_no_data()`
+- `test_execute_single_mode_with_season()`
+- `test_execute_multi_mode_with_years()`
+- `test_execute_multi_mode_with_quarters()`
+- `test_execute_multi_mode_mixed_empty_and_data()`
+- `test_execute_binary_split()`
+- `test_execute_binary_split_both_empty()`
+- `test_percentage_calculation()`
+- `test_handles_none_dimension_value()`
+- `test_single_value_gets_100_percent()`
+- `test_empty_data_returns_no_data_status()`
+- `test_invalid_time_mode_raises_error()`
+- `test_service_works_without_explicit_db()`
+- `test_service_uses_provided_db()`
+- `test_filters_passed_to_db()`
+
+### 📄 backend\tests\test_insight_endpoints.py
+**Functions:**
+- `authenticated_client()`
+- `test_kpi_summary_smoke()`
+- `test_distribution_status_smoke()`
+- `test_distribution_org_unit_smoke()`
+- `test_trend_month_smoke()`
+- `test_trend_year_smoke()`
+- `test_trend_day_smoke()`
+- `test_stuck_smoke()`
+- `test_stuck_low_threshold_smoke()`
+- `test_stuck_custom_threshold_smoke()`
+- `test_all_endpoints_require_authentication()`
 
 ### 📄 backend\tests\test_phase1_explanation_db.py
 **Functions:**
@@ -224,6 +1375,77 @@ _No functions found_
 - `test_close_after_action_items()`
 - `test_fsm_validation()`
 - `run_all_tests()`
+
+### 📄 backend\tests\test_phase3_action_item_subcase_db.py
+**Functions:**
+- `test()`
+- `decorator()`
+- `wrapper()`
+- `test_create_action_item()`
+- `test_get_action_item_by_id()`
+- `test_create_second_action_item()`
+- `test_get_action_items_by_subcase()`
+- `test_get_action_items_by_status_draft()`
+- `test_get_action_items_by_status_submitted()`
+- `test_get_by_assigned_user_empty()`
+- `test_reassign_action_item()`
+- `test_get_by_assigned_user_after_assignment()`
+- `test_get_overdue_empty()`
+- `test_update_status()`
+- `test_set_started()`
+- `test_set_completed()`
+- `test_set_verified()`
+- `test_get_nonexistent()`
+- `test_update_nonexistent()`
+- `test_reassign_nonexistent()`
+- `test_delete_nonexistent()`
+- `test_delete_action_item()`
+- `test_verify_count_after_deletion()`
+
+### 📄 backend\tests\test_phase3_administrative_subcase_db.py
+**Functions:**
+- `test()`
+- `decorator()`
+- `wrapper()`
+- `test_create_incident_subcase()`
+- `test_get_subcase_by_id()`
+- `test_get_subcases_by_incident()`
+- `test_get_subcases_by_seasonal_empty()`
+- `test_get_subcases_by_target_orgunit()`
+- `test_get_subcases_by_status()`
+- `test_get_subcases_by_case_type()`
+- `test_get_pending_section()`
+- `test_get_pending_department_empty()`
+- `test_get_pending_administration_empty()`
+- `test_update_status()`
+- `test_update_section_explanation()`
+- `test_update_section_rejection()`
+- `test_update_department_explanation()`
+- `test_update_department_rejection()`
+- `test_update_administration_explanation()`
+- `test_update_administration_rejection()`
+- `test_get_full_incident()`
+- `test_get_full_seasonal()`
+- `test_get_nonexistent()`
+- `test_update_nonexistent()`
+- `test_create_seasonal_subcase()`
+- `test_nullable_text_fields()`
+
+### 📄 backend\tests\test_phase3_case_creation_service.py
+**Functions:**
+- `test()`
+- `decorator()`
+- `wrapper()`
+- `__init__()`
+- `test_internal_create_subcase()`
+- `test_incident_has_targets()`
+- `test_create_subcases_for_incident_first()`
+- `test_create_subcases_for_incident_idempotent()`
+- `test_seasonal_has_targets()`
+- `test_create_subcases_for_seasonal_first()`
+- `test_create_subcases_for_seasonal_idempotent()`
+- `test_create_for_nonexistent_incident()`
+- `test_create_for_nonexistent_seasonal()`
 
 ### 📄 backend\tests\test_phase3_explanation_service.py
 **Functions:**
@@ -290,6 +1512,9 @@ _No functions found_
 - `test_statistics_and_dashboard()`
 - `run_all_tests()`
 
+### 📄 backend\verify_bulk_users.py
+_No functions found_
+
 ### 📄 backend\verify_implementation.py
 **Functions:**
 - `main()`
@@ -297,6 +1522,30 @@ _No functions found_
 ### 📄 backend\verify_ml_integration.py
 **Functions:**
 - `test_imports()`
+
+### 📄 backend\verify_phase4_contract.py
+_No functions found_
+
+### 📄 check_action_item_columns.py
+_No functions found_
+
+### 📄 check_action_table.py
+_No functions found_
+
+### 📄 check_actual_schema.py
+_No functions found_
+
+### 📄 check_attributes.py
+_No functions found_
+
+### 📄 check_doctor_view.py
+_No functions found_
+
+### 📄 check_incident_required_fields.py
+_No functions found_
+
+### 📄 check_patient_tables.py
+_No functions found_
 
 ### 📄 check_policy_tables.py
 _No functions found_
@@ -307,16 +1556,96 @@ _No functions found_
 ### 📄 check_season_table_name.py
 _No functions found_
 
+### 📄 check_statuses.py
+_No functions found_
+
+### 📄 check_users.py
+_No functions found_
+
+### 📄 compare_columns.py
+_No functions found_
+
+### 📄 create_settings_table.py
+_No functions found_
+
 ### 📄 debug_seasonal_empty.py
+_No functions found_
+
+### 📄 debug_test_a2.py
+**Functions:**
+- `debug_reject_responsibility()`
+
+### 📄 demo_strict_verification.py
+**Functions:**
+- `__init__()`
+
+### 📄 diagnose_phase3_stack.py
+_No functions found_
+
+### 📄 execute_action_migration.py
+_No functions found_
+
+### 📄 execute_check_fk.py
+_No functions found_
+
+### 📄 execute_create_table.py
 _No functions found_
 
 ### 📄 get_valid_ids.py
 _No functions found_
 
+### 📄 get_valid_test_data.py
+_No functions found_
+
+### 📄 list_all_users.py
+**Functions:**
+- `get_connection()`
+- `list_all_users()`
+
 ### 📄 project_paths.py
 **Functions:**
 - `get_project_root()`
 - `get_db_path()`
+
+### 📄 query_org_structure.py
+**Functions:**
+- `get_connection()`
+- `main()`
+
+### 📄 query_org_units.py
+**Functions:**
+- `get_connection()`
+- `main()`
+
+### 📄 query_rbac_data.py
+**Functions:**
+- `get_connection()`
+- `main()`
+
+### 📄 scope_guards_usage_examples.py
+**Routes:**
+- `GET /department/{dept_id}/stats`
+- `POST /reports/multi-unit`
+- `GET /dashboard`
+- `GET /incidents/{incident_id}`
+- `POST /incidents/batch-update`
+**Functions:**
+- `get_department_stats()`
+- `generate_multi_unit_report()`
+- `get_dashboard()`
+- `get_incident()`
+- `batch_update_incidents()`
+
+### 📄 setup_test_data_step3_15.py
+**Functions:**
+- `get_db_cursor()`
+- `check_existing_data()`
+- `create_test_hierarchy()`
+- `create_test_subcases()`
+- `create_test_action_items()`
+- `verify_test_data()`
+- `cleanup_test_data()`
+- `main()`
 
 ### 📄 test_2quarter_comparison_update.py
 **Functions:**
@@ -330,11 +1659,53 @@ _No functions found_
 **Functions:**
 - `test_4quarter_comparison()`
 
+### 📄 test_admin_final_verification.py
+**Functions:**
+- `extract_function_info()`
+- `verify_router()`
+- `main()`
+
+### 📄 test_admin_protection.py
+_No functions found_
+
+### 📄 test_admin_quick.py
+**Functions:**
+- `check_endpoint_protection()`
+
+### 📄 test_all_modes.py
+_No functions found_
+
+### 📄 test_auth_comprehensive.py
+_No functions found_
+
+### 📄 test_auth_protection.py
+**Functions:**
+- `test_endpoint()`
+
+### 📄 test_auth_with_login.py
+**Functions:**
+- `test_authenticated()`
+
 ### 📄 test_auto_create_seasons.py
 **Functions:**
 - `check_seasons_before()`
 - `test_auto_create()`
 - `check_seasons_after()`
+
+### 📄 test_currentuser_upgrade.py
+_No functions found_
+
+### 📄 test_dashboard_scope_engine.py
+_No functions found_
+
+### 📄 test_direct_vs_router.py
+_No functions found_
+
+### 📄 test_distribution_endpoint.py
+_No functions found_
+
+### 📄 test_endpoint_output.py
+_No functions found_
 
 ### 📄 test_explanation_action_items.py
 **Functions:**
@@ -349,21 +1720,348 @@ _No functions found_
 - `test_delay_action()`
 - `main()`
 
+### 📄 test_final_validation.py
+_No functions found_
+
+### 📄 test_follow_up_endpoint.py
+_No functions found_
+
+### 📄 test_incident_integration.py
+**Functions:**
+- `cleanup_test_doctor()`
+- `cleanup_test_case()`
+- `test_incident_with_reserve_doctor()`
+- `test_incident_validation_rejects_invalid_doctor()`
+- `main()`
+
+### 📄 test_insert_doctor_search_fix.py
+**Functions:**
+- `test_reserve_doctor_in_insert_search()`
+
+### 📄 test_insight_response_schemas.py
+**Functions:**
+- `test_valid_kpi_status_count()`
+- `test_kpi_status_count_fields_exist()`
+- `test_kpi_status_count_rejects_missing_status()`
+- `test_kpi_status_count_rejects_missing_count()`
+- `test_kpi_status_count_rejects_invalid_count()`
+- `test_valid_action_item_summary()`
+- `test_action_item_summary_all_fields_exist()`
+- `test_action_item_summary_rejects_missing_field()`
+- `test_action_item_summary_rejects_invalid_types()`
+- `test_valid_kpi_summary_response()`
+- `test_kpi_summary_response_nested_models()`
+- `test_kpi_summary_response_empty_status_list()`
+- `test_kpi_summary_response_rejects_missing_field()`
+- `test_kpi_summary_response_accepts_dict_input()`
+- `test_valid_distribution_item_with_string_key()`
+- `test_valid_distribution_item_with_int_key()`
+- `test_distribution_item_union_type_str()`
+- `test_distribution_item_union_type_int()`
+- `test_distribution_item_rejects_invalid_count()`
+- `test_valid_trend_item()`
+- `test_trend_item_fields_exist()`
+- `test_trend_item_accepts_day_bucket()`
+- `test_trend_item_accepts_week_bucket()`
+- `test_trend_item_accepts_month_bucket()`
+- `test_trend_item_rejects_missing_bucket()`
+- `test_valid_stuck_item()`
+- `test_stuck_item_all_fields_exist()`
+- `test_stuck_item_datetime_field()`
+- `test_stuck_item_rejects_invalid_datetime()`
+- `test_stuck_item_rejects_missing_field()`
+- `test_all_models_importable()`
+- `test_models_are_pydantic_base_models()`
+- `test_kpi_summary_response_json_serialization()`
+- `test_stuck_item_json_serialization_with_datetime()`
+- `test_distribution_list_serialization()`
+- `test_trend_list_serialization()`
+- `test_no_validators_on_models()`
+- `test_kpi_summary_response_with_many_statuses()`
+- `test_distribution_item_key_coercion()`
+- `test_stuck_item_accepts_iso_datetime_string()`
+
+### 📄 test_insight_router_registration.py
+**Functions:**
+- `client()`
+- `test_app_imports_successfully()`
+- `test_app_has_insight_router()`
+- `test_kpi_summary_endpoint_exists()`
+- `test_distribution_endpoint_exists()`
+- `test_trend_endpoint_exists()`
+- `test_stuck_endpoint_exists()`
+- `test_openapi_includes_insight_endpoints()`
+- `test_insight_endpoints_have_correct_tags()`
+- `test_insight_endpoints_require_authentication()`
+- `test_router_prefix_is_correct()`
+- `test_router_registration_order()`
+- `test_no_duplicate_routes()`
+- `test_kpi_summary_openapi_spec()`
+- `test_distribution_openapi_spec()`
+- `test_trend_openapi_spec()`
+- `test_stuck_openapi_spec()`
+- `test_insight_router_methods()`
+- `test_main_py_has_insight_import()`
+- `test_main_py_insight_comment()`
+- `test_app_startup_succeeds()`
+
+### 📄 test_payload.py
+_No functions found_
+
+### 📄 test_pending_seasonal.py
+_No functions found_
+
+### 📄 test_phase1_api_integration.py
+**Functions:**
+- `test_api()`
+- `test_progress_endpoint_exists()`
+- `test_progress_not_running()`
+- `test_trigger_training_and_monitor()`
+- `test_status_after_training()`
+
+### 📄 test_phase1_comprehensive.py
+_No functions found_
+
 ### 📄 test_phase1_foundation.py
 **Functions:**
 - `test_phase1_foundation()`
+
+### 📄 test_phase1_progress_tracking.py
+**Functions:**
+- `test_case()`
+- `decorator()`
+- `wrapper()`
+- `test_initialize_progress()`
+- `test_update_progress_first_step()`
+- `test_update_progress_multiple_steps()`
+- `test_progress_percentage()`
+- `test_elapsed_time()`
+- `test_remaining_time_estimation()`
+- `test_last_completed()`
+- `test_progress_not_running()`
+- `test_reset_progress()`
+- `test_full_completion()`
+- `test_progress_response_structure()`
+
+### 📄 test_phase1_reserve_patient.py
+**Functions:**
+- `get_connection()`
+- `test_1_table_exists()`
+- `test_2_column_count()`
+- `test_3_primary_key()`
+- `test_4_insert_record()`
+- `test_5_read_record()`
+- `test_6_search_by_name()`
+- `test_7_indexes_exist()`
+- `test_8_cleanup()`
+- `run_all_tests()`
 
 ### 📄 test_phase1_single_seasonal_export.py
 **Functions:**
 - `test_phase1_single_unit_export()`
 
+### 📄 test_phase2_5_3_integration.py
+_No functions found_
+
+### 📄 test_phase2_api_integration.py
+**Functions:**
+- `test_api()`
+- `test_db_size_endpoint_exists()`
+- `test_db_size_response_structure()`
+- `test_db_size_has_data()`
+- `test_db_size_after_training()`
+- `test_db_size_chronological_order()`
+- `test_db_size_growth_trend()`
+- `test_trigger_training_and_verify_recording()`
+
+### 📄 test_phase2_guarded_endpoints.py
+**Functions:**
+- `login()`
+- `logout()`
+- `test_public_endpoint_no_auth()`
+- `test_authenticated_endpoint_requires_login()`
+- `test_admin_only_endpoint()`
+- `test_worker_only_endpoint()`
+- `test_any_admin_endpoint()`
+- `test_any_supervisor_endpoint()`
+- `test_conditional_access()`
+- `test_dangerous_operation_multi_level_check()`
+- `test_my_permissions_endpoint()`
+- `test_session_persistence_across_requests()`
+- `test_unauthenticated_access_to_protected_endpoints()`
+- `run_all_tests()`
+
+### 📄 test_phase2_ml_db_growth.py
+**Functions:**
+- `test_case()`
+- `decorator()`
+- `wrapper()`
+- `test_ml_db_path()`
+- `test_get_current_size()`
+- `test_ml_db_table()`
+- `test_record_size_single()`
+- `test_record_size_multiple()`
+- `test_record_size_replace()`
+- `test_get_size_history()`
+- `test_history_structure()`
+- `test_service_layer()`
+- `test_record_current_size()`
+- `test_negative_count()`
+- `test_history_limit()`
+- `test_zero_count()`
+
 ### 📄 test_phase2_multi_seasonal_export.py
 **Functions:**
 - `test_phase2_multi_unit_export()`
 
+### 📄 test_phase2_standalone.py
+_No functions found_
+
+### 📄 test_phase2_union_search.py
+**Functions:**
+- `get_connection()`
+- `setup_test_data()`
+- `test_1_search_reserve_patients()`
+- `test_2_search_has_source_field()`
+- `test_3_get_by_id_reserve()`
+- `test_4_get_by_id_hospital()`
+- `test_5_search_by_firstname()`
+- `test_6_search_by_document_number()`
+- `test_7_search_by_medical_file()`
+- `test_8_limit_parameter()`
+- `test_9_union_merging()`
+- `cleanup_test_data()`
+- `run_all_tests()`
+
+### 📄 test_phase3_5_integration.py
+**Functions:**
+- `test()`
+- `decorator()`
+- `wrapper()`
+- `get_db_cursor()`
+- `create_test_user()`
+- `step1_create_subcase()`
+- `step2_test_inbox()`
+- `step3_submit_response()`
+- `step4_test_follow_up()`
+- `step5_department_approve()`
+- `step6_administration_approve()`
+- `step7_cleanup()`
+
+### 📄 test_phase3_api_integration.py
+**Functions:**
+- `test_grouped_status_endpoint()`
+
+### 📄 test_phase3_db_layer_write.py
+**Functions:**
+- `get_connection()`
+- `cleanup_test_data()`
+- `test_1_create_minimal_patient()`
+- `test_2_create_full_patient()`
+- `test_3_duplicate_fullname()`
+- `test_4_duplicate_document_number()`
+- `test_5_duplicate_medical_file()`
+- `test_6_fullname_building()`
+- `test_7_retrieve_created_patient()`
+- `test_8_search_finds_created_patient()`
+- `test_9_verify_database_record()`
+- `test_10_empty_firstname_error()`
+- `final_cleanup()`
+- `run_all_tests()`
+
+### 📄 test_phase3_grouping.py
+**Functions:**
+- `test_case()`
+- `decorator()`
+- `wrapper()`
+- `test_family_definitions()`
+- `test_family_structure()`
+- `test_model_count()`
+- `test_metrics_empty()`
+- `test_metrics_single()`
+- `test_metrics_multiple()`
+- `test_alert_critical_f1()`
+- `test_alert_warning_f1()`
+- `test_alert_insufficient_data()`
+- `test_alert_no_data()`
+- `test_alert_multiple()`
+- `test_alert_sorting()`
+- `test_grouped_status_structure()`
+- `test_grouped_status_families()`
+- `test_grouped_status_alerts()`
+- `test_grouped_status_summary()`
+- `test_bilingual()`
+
+### 📄 test_phase4_api_integration.py
+**Functions:**
+- `test_chart_endpoint()`
+- `test_db_growth_chart()`
+- `test_performance_trends_chart()`
+- `test_training_timeline_chart()`
+- `test_family_comparison_chart()`
+- `test_chart_with_different_params()`
+- `test_json_serialization()`
+
 ### 📄 test_phase4_comprehensive_export.py
 **Functions:**
 - `test_export()`
+- `run_all_tests()`
+
+### 📄 test_phase4_service_validation.py
+**Functions:**
+- `get_connection()`
+- `cleanup_test_data()`
+- `test_1_valid_full_patient()`
+- `test_2_valid_minimal_patient()`
+- `test_3_firstname_required()`
+- `test_4_firstname_length()`
+- `test_5_firstname_characters()`
+- `test_6_phone_validation()`
+- `test_7_birthdate_validation()`
+- `test_8_sex_validation()`
+- `test_9_whitespace_trimming()`
+- `test_10_document_validation()`
+- `test_11_duplicate_passthrough()`
+- `run_all_tests()`
+
+### 📄 test_phase4_visual_charts.py
+**Functions:**
+- `test_case()`
+- `decorator()`
+- `wrapper()`
+- `test_db_growth_structure()`
+- `test_db_growth_data_types()`
+- `test_db_growth_bilingual()`
+- `test_db_growth_calculation()`
+- `test_performance_trends_structure()`
+- `test_performance_trends_families()`
+- `test_performance_trends_consistency()`
+- `test_training_timeline_structure()`
+- `test_training_timeline_metadata()`
+- `test_training_timeline_durations()`
+- `test_family_comparison_structure()`
+- `test_family_comparison_metrics()`
+- `test_family_comparison_consistency()`
+- `test_family_comparison_ranges()`
+- `test_family_comparison_metadata()`
+- `test_chart_colors()`
+- `test_chart_borders()`
+- `test_all_charts_return_data()`
+- `test_json_serializable()`
+
+### 📄 test_phase5_api_endpoint.py
+**Functions:**
+- `get_connection()`
+- `cleanup_test_data()`
+- `test_1_valid_full_patient()`
+- `test_2_valid_minimal_patient()`
+- `test_3_missing_firstname()`
+- `test_4_invalid_field_types()`
+- `test_5_service_validation_errors()`
+- `test_6_duplicate_patient()`
+- `test_7_response_format()`
+- `test_8_patient_searchable()`
+- `check_server()`
 - `run_all_tests()`
 
 ### 📄 test_phase5_api_endpoints.py
@@ -379,9 +2077,53 @@ _No functions found_
 - `test_error_handling()`
 - `run_all_tests()`
 
+### 📄 test_phase6_integration.py
+**Functions:**
+- `cleanup_test_doctor()`
+- `test_1_end_to_end_workflow()`
+- `test_2_dual_source_search()`
+- `test_3_reserve_doctor_in_view()`
+- `test_4_incident_validation_compatibility()`
+- `test_5_service_layer_validation()`
+- `test_6_search_filtering()`
+- `main()`
+
 ### 📄 test_phase6_remove_auto_comparison.py
 **Functions:**
 - `test_phase6_single_season_export()`
+
+### 📄 test_phase6_union_verification.py
+**Functions:**
+- `get_connection()`
+- `cleanup_test_data()`
+- `get_hospital_patient_id()`
+- `test_1_create_reserve_patient()`
+- `test_2_search_finds_reserve()`
+- `test_3_search_finds_hospital()`
+- `test_4_union_query_structure()`
+- `test_5_doctor_union_validation()`
+- `test_6_no_orphaned_queries()`
+- `check_server()`
+- `run_all_tests()`
+
+### 📄 test_phase7_integration.py
+**Functions:**
+- `get_connection()`
+- `cleanup_test_data()`
+- `verify_patient_in_db()`
+- `test_1_create_and_search()`
+- `test_2_duplicate_prevention()`
+- `test_3_full_patient_data()`
+- `test_4_search_criteria()`
+- `test_5_arabic_unicode_support()`
+- `test_6_boundary_conditions()`
+- `test_7_data_persistence()`
+- `test_8_concurrent_operations()`
+- `create_patient()`
+- `test_9_source_segregation()`
+- `test_10_validation_consistency()`
+- `check_server()`
+- `run_all_tests()`
 
 ### 📄 test_phase8_comprehensive_backend.py
 **Functions:**
@@ -400,6 +2142,58 @@ _No functions found_
 - `generate_test_report()`
 - `main()`
 
+### 📄 test_phase_2_5_runtime_security.py
+_No functions found_
+
+### 📄 test_phase_4_5_a1_section_submission.py
+**Functions:**
+- `get_db_cursor()`
+- `create_test_user()`
+- `create_test_subcase()`
+- `delete_test_subcase()`
+- `get_subcase_status()`
+- `get_section_explanation()`
+- `get_action_items_by_subcase()`
+- `run_test()`
+
+### 📄 test_phase_4_5_a2_department_reject_loop.py
+**Functions:**
+- `get_db_cursor()`
+- `create_test_user()`
+- `create_test_subcase()`
+- `delete_test_subcase()`
+- `get_subcase_status()`
+- `get_action_items_by_subcase()`
+- `run_test()`
+
+### 📄 test_phase_4_5_a3_department_override.py
+**Functions:**
+- `get_db_cursor()`
+- `create_test_user()`
+- `create_test_subcase()`
+- `delete_test_subcase()`
+- `get_subcase_status()`
+- `get_action_items_by_subcase()`
+- `run_test()`
+
+### 📄 test_phase_4_5_a4_admin_approval_execution.py
+**Functions:**
+- `get_db_cursor()`
+- `create_test_user()`
+- `create_test_subcase()`
+- `delete_test_subcase()`
+- `get_subcase_status()`
+- `get_action_item_details()`
+- `get_action_items_by_subcase()`
+- `run_test()`
+
+### 📄 test_prompt3_verification.py
+**Functions:**
+- `extract_function_info()`
+- `verify_explanation_routes()`
+- `verify_reports_router()`
+- `main()`
+
 ### 📄 test_quick_explanation.py
 **Functions:**
 - `get_db_connection()`
@@ -408,6 +2202,9 @@ _No functions found_
 - `test_seasonal_with_actions()`
 - `verify_in_followup()`
 - `main()`
+
+### 📄 test_rejection_text.py
+_No functions found_
 
 ### 📄 test_report_id_stability.py
 _No functions found_
@@ -424,6 +2221,41 @@ _No functions found_
 - `test_download_export()`
 - `test_bulk_export()`
 - `run_all_tests()`
+
+### 📄 test_reports_scope_engine.py
+_No functions found_
+
+### 📄 test_reserve_patients_endpoint.py
+**Functions:**
+- `get_connection()`
+- `get_reserve_patient_count()`
+- `create_test_patient()`
+- `test_1_default_settings()`
+- `test_2_pagination()`
+- `test_3_sort_by_name()`
+- `test_4_sort_by_created()`
+- `test_5_limit_validation()`
+- `test_6_database_consistency()`
+- `test_7_response_structure()`
+- `check_server()`
+- `run_all_tests()`
+
+### 📄 test_rework_loop.py
+**Functions:**
+- `get_db_cursor()`
+- `create_test_user()`
+- `create_test_subcase()`
+- `cleanup_test_subcase()`
+- `get_subcase_status()`
+- `get_action_item_count()`
+- `test_complete_rework_loop()`
+
+### 📄 test_sanity_check.py
+_No functions found_
+
+### 📄 test_scope_guards.py
+**Functions:**
+- `__init__()`
 
 ### 📄 test_seasonal_administration_fix.py
 _No functions found_
@@ -455,7 +2287,284 @@ _No functions found_
 - `test_invalid_formats()`
 - `test_database_match()`
 
+### 📄 test_step3_10_adapter_integration.py
+**Functions:**
+- `test()`
+- `decorator()`
+- `wrapper()`
+- `get_db_cursor()`
+- `test_incident_adapter()`
+- `test_seasonal_report_adapter()`
+- `test_case_creation_service_exists()`
+- `test_adapter_code_in_insert_service()`
+- `test_adapter_code_in_seasonal_generator()`
+
+### 📄 test_step3_12_inbox_service.py
+**Functions:**
+- `test()`
+- `decorator()`
+- `wrapper()`
+- `__init__()`
+- `__init__()`
+- `test_import_inbox_service()`
+- `test_public_functions_exist()`
+- `test_helper_functions_exist()`
+- `test_function_signatures()`
+- `test_section_role_validation()`
+- `test_department_role_validation()`
+- `test_administration_role_validation()`
+- `test_scope_filter_section()`
+- `test_scope_filter_department()`
+- `test_scope_filter_administration()`
+- `test_compute_allowed_actions_section()`
+- `test_compute_allowed_actions_department()`
+- `test_compute_allowed_actions_administration()`
+- `test_compute_allowed_actions_wrong_status()`
+- `test_build_inbox_item()`
+- `test_db_layer_functions_available()`
+- `test_check_test_data_exists()`
+- `test_get_section_inbox_integration()`
+- `test_get_department_inbox_integration()`
+- `test_get_administration_inbox_integration()`
+
+### 📄 test_step3_12_prompt2_scope_engine.py
+**Functions:**
+- `test()`
+- `decorator()`
+- `wrapper()`
+- `__init__()`
+- `__init__()`
+- `cleanup_test_data()`
+- `create_test_subcase()`
+- `test_no_section_id_usage()`
+- `test_no_department_id_usage()`
+- `test_uses_allowed_unit_ids()`
+- `test_no_role_based_filtering()`
+- `test_scope_filter_single_unit()`
+- `test_scope_filter_multiple_units()`
+- `test_scope_filter_empty_allowed()`
+- `test_scope_filter_none_allowed()`
+- `test_role_does_not_grant_access()`
+- `test_create_test_subcases()`
+- `test_section_inbox_scope_filter()`
+- `test_section_inbox_different_scope()`
+- `test_section_inbox_multiple_scopes()`
+- `test_department_inbox_scope_filter()`
+- `test_administration_inbox_scope_filter()`
+- `test_empty_scope_sees_nothing()`
+- `test_no_cross_contamination()`
+
+### 📄 test_step3_13_integration_full.py
+**Functions:**
+- `test()`
+- `decorator()`
+- `wrapper()`
+- `__init__()`
+- `create_test_incident()`
+- `create_test_subcase()`
+- `create_test_action_item()`
+- `cleanup_test_data()`
+- `test_happy_path_assigned_user()`
+- `test_privileged_role_override()`
+- `test_scope_violation()`
+- `test_permission_violation()`
+- `test_workflow_lifecycle()`
+- `test_delay_action_item()`
+
+### 📄 test_step3_13_prompt1_follow_up_service.py
+**Functions:**
+- `test()`
+- `decorator()`
+- `wrapper()`
+- `__init__()`
+- `test_module_import()`
+- `test_auth_none_user()`
+- `test_auth_no_user_id()`
+- `test_empty_scope()`
+- `test_real_user_integration()`
+- `test_function_signature()`
+- `test_docstring()`
+
+### 📄 test_step3_13_prompt2_follow_up_execution.py
+**Functions:**
+- `test()`
+- `decorator()`
+- `wrapper()`
+- `__init__()`
+- `get_db_cursor()`
+- `test_module_import()`
+- `test_start_auth_none_user()`
+- `test_complete_auth_none_user()`
+- `test_not_found()`
+- `test_function_signatures()`
+- `test_full_integration()`
+- `test_db_layer_integration()`
+- `test_return_types()`
+
+### 📄 test_step3_13_prompt3_permission_guard.py
+**Functions:**
+- `test()`
+- `decorator()`
+- `wrapper()`
+- `__init__()`
+- `test_module_import()`
+- `test_function_signatures()`
+- `test_permission_scope_first()`
+- `test_permission_assigned_user()`
+- `test_permission_privileged_role()`
+- `test_permission_forbidden()`
+- `test_permission_none_user()`
+- `test_permission_none_action_item()`
+- `test_delay_auth()`
+- `test_delay_not_found()`
+- `test_db_layer_update_status()`
+- `test_functions_use_guard()`
+
+### 📄 test_step3_14_master.py
+**Functions:**
+- `run_test_file()`
+
+### 📄 test_step3_14_prompt1_section_workflow.py
+**Functions:**
+- `test()`
+- `decorator()`
+- `wrapper()`
+- `__init__()`
+- `create_test_incident()`
+- `create_test_subcase()`
+- `cleanup_test_incident()`
+- `test_section_accept_happy_path()`
+- `test_section_reject_happy_path()`
+- `test_section_accept_wrong_status()`
+- `test_section_reject_wrong_status()`
+- `test_section_accept_none_user()`
+- `test_section_reject_none_user()`
+- `test_section_accept_invalid_subcase()`
+- `test_section_reject_invalid_subcase()`
+
+### 📄 test_step3_14_prompt2_dept_admin_workflow.py
+**Functions:**
+- `test()`
+- `decorator()`
+- `wrapper()`
+- `__init__()`
+- `create_test_incident()`
+- `create_test_subcase()`
+- `cleanup_test_incident()`
+- `test_department_approve_happy_path()`
+- `test_department_reject_happy_path()`
+- `test_department_override_action_items()`
+- `test_department_wrong_status()`
+- `test_administration_approve_happy_path()`
+- `test_administration_reject_happy_path()`
+- `test_administration_override_after_department()`
+- `test_administration_wrong_status()`
+
+### 📄 test_step3_14_prompt3_force_close_lifecycle.py
+**Functions:**
+- `test()`
+- `decorator()`
+- `wrapper()`
+- `__init__()`
+- `create_test_incident()`
+- `create_test_subcase()`
+- `cleanup_test_incident()`
+- `test_force_close_from_initial()`
+- `test_force_close_from_mid_workflow()`
+- `test_force_close_already_closed()`
+- `test_force_close_already_force_closed()`
+- `test_force_close_from_rejection_states()`
+- `test_full_approval_chain()`
+- `test_early_rejection_section()`
+- `test_early_rejection_department()`
+- `test_early_rejection_administration()`
+- `test_complete_override_chain()`
+
+### 📄 test_step3_15_insight_service.py
+**Functions:**
+- `test()`
+- `decorator()`
+- `wrapper()`
+- `get_db_cursor()`
+- `__init__()`
+- `test_module_structure()`
+- `test_is_subcase_open_helper()`
+- `test_hierarchy_scoping()`
+- `test_get_open_subcases()`
+- `test_get_open_cases_with_subcases()`
+- `test_get_overdue_action_items()`
+- `test_get_bottlenecks()`
+- `test_read_only_verification()`
+
+### 📄 test_step3_5_2_inbox_endpoint.py
+_No functions found_
+
+### 📄 test_step3_5_3_follow_up_endpoints.py
+**Routes:**
+- `GET /follow-up`
+- `POST /follow-up`
+
+### 📄 test_step3_5_4_case_action_endpoint.py
+_No functions found_
+
+### 📄 test_step3_5_5_insight_delay.py
+**Functions:**
+- `test()`
+- `decorator()`
+- `wrapper()`
+- `test_no_insight_router()`
+- `test_no_insight_service()`
+- `test_no_insight_endpoints()`
+- `test_api_v2_surface()`
+- `test_documentation_exists()`
+- `test_stop_conditions()`
+
+### 📄 test_step3_5_6_contract_freeze.py
+**Functions:**
+- `test()`
+- `decorator()`
+- `wrapper()`
+- `test_endpoint_count()`
+- `test_endpoint_paths()`
+- `test_http_methods()`
+- `test_authentication_required()`
+- `test_no_insight_endpoints()`
+- `test_router_is_thin()`
+- `test_contract_documentation()`
+- `test_freeze_date()`
+- `test_contract_completeness()`
+- `test_stop_condition()`
+
+### 📄 test_suite_b_action_items.py
+**Functions:**
+- `get_db_cursor()`
+- `create_test_user()`
+- `create_test_subcase()`
+- `cleanup_test_subcase()`
+- `get_subcase_status()`
+- `get_action_item_count()`
+- `get_action_items_by_status()`
+- `test_decorator()`
+- `decorator()`
+- `wrapper()`
+- `test_b1_action_items_on_department_rejection()`
+- `test_b2_action_items_on_force_close()`
+- `test_b3_action_item_delay()`
+- `test_b4_submit_with_zero_items()`
+- `test_b5_override_with_zero_items()`
+- `test_b6_override_with_items_in_progress()`
+- `run_all_tests()`
+
+### 📄 test_sync_mechanism.py
+_No functions found_
+
+### 📄 test_system_settings_api.py
+_No functions found_
+
 ### 📄 test_three_type_explanation_system.py
+_No functions found_
+
+### 📄 test_trends_scope_engine.py
 _No functions found_
 
 ### 📄 test_validation_debug.py
@@ -464,12 +2573,34 @@ _No functions found_
 ### 📄 test_violated_rules.py
 _No functions found_
 
+### 📄 test_workflow_comprehensive.py
+**Functions:**
+- `get_db_cursor()`
+- `create_test_user()`
+- `create_test_subcase()`
+- `cleanup_test_subcase()`
+- `get_subcase_status()`
+- `get_action_item_count()`
+- `test_decorator()`
+- `decorator()`
+- `wrapper()`
+- `test_a1_happy_path()`
+- `test_a2_section_rejects()`
+- `test_a3_department_rejects()`
+- `test_a4_department_override()`
+- `test_a5_administration_override()`
+- `test_a6_force_close()`
+- `run_all_tests()`
+
 ### 📄 use_ai_models.py
 _No functions found_
 
 ### 📄 verify_seasonal_data.py
 **Functions:**
 - `verify_season_data()`
+
+### 📄 verify_step3_10.py
+_No functions found_
 
 
 ---
@@ -501,6 +2632,17 @@ _No functions found_
 - `get_active_admin_units()`
 - `get_units_by_type()`
 
+### 📄 backend\api\db_layer\auth_db.py
+**Functions:**
+- `get_connection()`
+- `get_user_by_id()`
+- `get_user_by_username()`
+- `get_user_with_scopes()`
+- `validate_user_credentials()`
+- `hash_password()`
+- `update_user_password()`
+- `update_user_profile()`
+
 ### 📄 backend\api\db_layer\custom_views.py
 **Functions:**
 - `get_connection()`
@@ -519,11 +2661,13 @@ _No functions found_
 **Functions:**
 - `get_connection()`
 - `search_doctors()`
+- `get_reserve_doctors()`
 - `get_doctor_profile()`
 - `get_doctor_statistics()`
 - `get_doctor_category_breakdown()`
 - `get_doctor_monthly_trend()`
 - `get_doctor_incidents()`
+- `create_doctor()`
 
 ### 📄 backend\api\db_layer\explanation_db.py
 **Functions:**
@@ -584,6 +2728,7 @@ _No functions found_
 - `create_incident_case()`
 - `get_incident_case_by_id()`
 - `list_incident_cases()`
+- `list_incident_cases_filtered()`
 - `update_incident_case()`
 - `soft_delete_incident_case()`
 - `hard_delete_incident_case()`
@@ -628,6 +2773,24 @@ _No functions found_
 - `get_buildings()`
 - `get_doctors()`
 
+### 📄 backend\api\db_layer\operators\__init__.py
+_No functions found_
+
+### 📄 backend\api\db_layer\operators\distribution_db.py
+**Functions:**
+- `get_connection()`
+- `to_date_range()`
+- `_year_to_range()`
+- `_season_to_range()`
+- `_month_to_range()`
+- `_range_to_range()`
+- `__init__()`
+- `_get_conn()`
+- `_close_conn()`
+- `query_single_window()`
+- `query_date_range()`
+- `_execute_distribution_query()`
+
 ### 📄 backend\api\db_layer\org_unit_policy.py
 **Functions:**
 - `get_connection()`
@@ -641,6 +2804,8 @@ _No functions found_
 ### 📄 backend\api\db_layer\patients_db.py
 **Functions:**
 - `get_connection()`
+- `create_patient()`
+- `get_all_reserve_patients()`
 - `search_patients()`
 - `get_patient_profile()`
 - `get_patient_incidents()`
@@ -693,6 +2858,19 @@ _No functions found_
 - `get_seasonal_domain_totals()`
 - `get_orgunit_policy_row()`
 
+### 📄 backend\api\db_layer\section_admin_creator_db.py
+**Functions:**
+- `insert_section()`
+- `insert_user()`
+- `insert_user_scope()`
+
+### 📄 backend\api\db_layer\section_admin_recreate_db.py
+**Functions:**
+- `get_section()`
+- `username_exists()`
+- `insert_user()`
+- `insert_user_scope()`
+
 ### 📄 backend\api\db_layer\settings_db.py
 **Functions:**
 - `get_connection()`
@@ -710,6 +2888,19 @@ _No functions found_
 - `export_full_configuration()`
 - `save_configuration_snapshot()`
 - `get_configuration_snapshots()`
+- `get_all_system_settings()`
+- `get_setting_by_key()`
+- `update_setting()`
+- `create_setting()`
+
+### 📄 backend\api\db_layer\system_settings_db.py
+**Functions:**
+- `get_connection()`
+- `get_all_system_settings()`
+- `get_system_setting()`
+- `update_system_setting()`
+- `create_system_setting()`
+- `delete_system_setting()`
 
 ### 📄 backend\api\db_layer\training_db.py
 **Functions:**
@@ -721,6 +2912,26 @@ _No functions found_
 - `record_ml_db_size()`
 - `get_ml_db_size_history()`
 - `get_current_ml_db_size()`
+
+### 📄 backend\api\db_layer\user_credentials_db.py
+**Functions:**
+- `get_all_user_credentials()`
+
+### 📄 backend\api\db_layer\user_inventory_db.py
+**Functions:**
+- `get_org_unit_user_inventory()`
+- `get_org_units_without_users()`
+- `get_inventory_summary()`
+
+### 📄 backend\api\db_layer\user_management_db.py
+**Functions:**
+- `get_user_by_id()`
+- `user_has_software_admin_role()`
+- `delete_user_scopes()`
+- `delete_user()`
+- `insert_user_record()`
+- `insert_user_role_scope()`
+- `update_user_identity_fields()`
 
 
 ---
@@ -742,6 +2953,46 @@ _No functions found_
 - `get_action_items_by_seasonal_report()`
 - `get_action_items_by_season()`
 - `mark_action_item_done()`
+
+### 📄 backend\api\routers\admin_section_admin_recreate_router.py
+**Routes:**
+- `POST /{section_id}/recreate-admin`
+**Functions:**
+- `recreate_section_admin_endpoint()`
+
+### 📄 backend\api\routers\admin_section_router.py
+**Routes:**
+- `POST /create-section-with-admin`
+**Functions:**
+- `create_section_with_admin_endpoint()`
+
+### 📄 backend\api\routers\admin_user_credentials_router.py
+**Routes:**
+- `GET /user-credentials`
+**Functions:**
+- `list_all_user_credentials()`
+
+### 📄 backend\api\routers\admin_user_management_router.py
+**Routes:**
+- `DELETE /users/{user_id}`
+**Functions:**
+- `delete_user_endpoint()`
+
+### 📄 backend\api\routers\admin_user_markdown_router.py
+**Routes:**
+- `GET /user-credentials-markdown`
+**Functions:**
+- `export_user_credentials_as_markdown()`
+
+### 📄 backend\api\routers\auth_router.py
+**Routes:**
+- `POST /login`
+- `POST /logout`
+- `GET /me`
+**Functions:**
+- `login()`
+- `logout()`
+- `get_current_user()`
 
 ### 📄 backend\api\routers\classification_router.py
 **Routes:**
@@ -779,6 +3030,7 @@ _No functions found_
 
 ### 📄 backend\api\routers\doctors_router.py
 **Routes:**
+- `GET /reserve`
 - `GET /{doctor_id}/profile`
 - `GET /{doctor_id}/statistics`
 - `GET /{doctor_id}/analytics`
@@ -786,6 +3038,8 @@ _No functions found_
 - `GET /{doctor_id}/full-report`
 - `GET /health-check/check`
 **Functions:**
+- `create_doctor()`
+- `get_reserve_doctors()`
 - `search_doctors()`
 - `get_doctor_profile()`
 - `get_doctor_statistics()`
@@ -793,6 +3047,40 @@ _No functions found_
 - `get_doctor_incidents()`
 - `get_doctor_full_report()`
 - `health_check()`
+
+### 📄 backend\api\routers\example_guarded_router.py
+**Routes:**
+- `GET /public`
+- `GET /authenticated-only`
+- `GET /admin-only`
+- `GET /worker-only`
+- `GET /any-admin`
+- `GET /any-supervisor`
+- `POST /conditional-access`
+- `DELETE /dangerous-operation/{resource_id}`
+- `GET /my-permissions`
+**Functions:**
+- `public_endpoint()`
+- `authenticated_endpoint()`
+- `admin_only_endpoint()`
+- `worker_only_endpoint()`
+- `any_admin_endpoint()`
+- `any_supervisor_endpoint()`
+- `conditional_access_endpoint()`
+- `dangerous_operation()`
+- `get_my_permissions()`
+
+### 📄 backend\api\routers\example_protected_router.py
+**Routes:**
+- `GET /public`
+- `GET /protected`
+- `GET /user-info`
+- `GET /check-role/{role_code}`
+**Functions:**
+- `public_endpoint()`
+- `protected_endpoint()`
+- `get_user_info()`
+- `check_user_role()`
 
 ### 📄 backend\api\routers\explanation_routes.py
 **Routes:**
@@ -929,8 +3217,16 @@ _No functions found_
 - `get_single_never_event()`
 - `test_never_events()`
 
+### 📄 backend\api\routers\operators_router.py
+**Routes:**
+- `POST /distribution`
+**Functions:**
+- `distribution_operator()`
+
 ### 📄 backend\api\routers\patients_router.py
 **Routes:**
+- `POST /create`
+- `GET /reserve`
 - `GET /search`
 - `GET /{patient_id}/profile`
 - `GET /{patient_id}/incidents`
@@ -938,6 +3234,8 @@ _No functions found_
 - `GET /{patient_id}/full-history`
 - `GET /{patient_id}/export`
 **Functions:**
+- `create_patient()`
+- `get_all_reserve_patients_endpoint()`
 - `search_patients_endpoint()`
 - `get_patient_profile_endpoint()`
 - `get_patient_incidents_endpoint()`
@@ -1047,6 +3345,10 @@ _No functions found_
 - `GET /export`
 - `POST /save-snapshot`
 - `GET /snapshots`
+- `GET /system-settings`
+- `GET /system-settings/{setting_key}`
+- `PUT /system-settings/{setting_key}`
+- `POST /system-settings`
 **Functions:**
 - `get_departments()`
 - `create_department()`
@@ -1059,6 +3361,24 @@ _No functions found_
 - `export_configuration()`
 - `save_snapshot()`
 - `get_snapshots()`
+- `get_system_settings()`
+- `get_system_setting()`
+- `update_system_setting()`
+- `create_system_setting()`
+
+### 📄 backend\api\routers\settings_users_router.py
+**Routes:**
+- `GET /`
+- `POST /`
+- `PATCH /{user_id}/identity`
+- `PATCH /{user_id}/password`
+- `DELETE /{user_id}`
+**Functions:**
+- `list_users()`
+- `create_user()`
+- `update_user_identity()`
+- `reset_user_password()`
+- `delete_user()`
 
 ### 📄 backend\api\routers\stt_router.py
 **Routes:**
@@ -1069,6 +3389,18 @@ _No functions found_
 - `transcribe_audio()`
 - `transcribe_audio_from_path()`
 - `test_stt()`
+
+### 📄 backend\api\routers\system_settings_router.py
+**Routes:**
+- `GET /{key}`
+- `PUT /{key}`
+- `DELETE /{key}`
+**Functions:**
+- `get_all_settings()`
+- `get_setting()`
+- `update_setting()`
+- `create_setting()`
+- `delete_setting()`
 
 ### 📄 backend\api\routers\table_view_router.py
 **Routes:**
@@ -1096,14 +3428,26 @@ _No functions found_
 ### 📄 backend\api\routers\training_router.py
 **Routes:**
 - `GET /status`
+- `GET /progress`
+- `GET /grouped-status`
 - `GET /history`
 - `GET /db-size`
 - `POST /run`
+- `GET /charts/db-growth`
+- `GET /charts/performance-trends`
+- `GET /charts/training-timeline`
+- `GET /charts/family-comparison`
 **Functions:**
 - `get_training_status_endpoint()`
+- `get_training_progress_endpoint()`
+- `get_grouped_training_status_endpoint()`
 - `get_training_history_endpoint()`
 - `get_ml_database_size_endpoint()`
 - `trigger_training_endpoint()`
+- `get_db_growth_chart_endpoint()`
+- `get_performance_trends_chart_endpoint()`
+- `get_training_timeline_chart_endpoint()`
+- `get_family_comparison_chart_endpoint()`
 
 ### 📄 backend\api\routers\trend_router.py
 **Routes:**
@@ -1116,6 +3460,15 @@ _No functions found_
 - `fetch_category_trends()`
 - `fetch_time_periods()`
 - `fetch_trends_analysis()`
+
+### 📄 backend\api\routers\user_inventory_router.py
+**Routes:**
+- `GET /missing`
+- `GET /summary`
+**Functions:**
+- `get_user_inventory()`
+- `get_org_units_without_users()`
+- `get_inventory_summary()`
 
 
 ---
@@ -1134,6 +3487,18 @@ _No functions found_
 - `get_action_items_for_seasonal_report()`
 - `get_action_items_for_season()`
 - `mark_action_done()`
+
+### 📄 backend\api\services\auth_service.py
+**Routes:**
+- `GET /protected`
+**Functions:**
+- `_select_primary_scope()`
+- `login()`
+- `logout()`
+- `get_current_user_from_session()`
+- `require_authentication()`
+- `protected_route()`
+- `get_current_user_optional()`
 
 ### 📄 backend\api\services\classification_service.py
 **Functions:**
@@ -1161,8 +3526,6 @@ _No functions found_
 - `_row_to_dict()`
 - `get_dashboard_stats()`
 - `get_dashboard_hierarchy()`
-- `_resolve_scope()`
-- `_collect_descendants()`
 - `_fetch_incidents_in_scope()`
 - `_compute_metrics()`
 - `_build_charts()`
@@ -1178,7 +3541,9 @@ _No functions found_
 
 ### 📄 backend\api\services\doctors_service.py
 **Functions:**
+- `create_doctor()`
 - `search_doctors()`
+- `get_reserve_doctors()`
 - `get_doctor_profile()`
 - `get_doctor_statistics()`
 - `get_doctor_analytics()`
@@ -1304,9 +3669,34 @@ _No functions found_
 - `get_never_events_category_breakdown()`
 - `get_never_events_timeline_comparison()`
 
+### 📄 backend\api\services\operators\__init__.py
+_No functions found_
+
+### 📄 backend\api\services\operators\distribution_service.py
+**Functions:**
+- `__init__()`
+- `execute()`
+- `_execute_single()`
+- `_execute_multi()`
+- `_execute_binary()`
+- `_raw_data_to_bucket()`
+
+### 📄 backend\api\services\org_tree_service.py
+**Functions:**
+- `_row_to_dict()`
+- `_load_tree()`
+- `_get_tree()`
+- `get_full_tree()`
+- `get_descendants()`
+- `get_ancestors()`
+- `is_ancestor()`
+- `clear_cache()`
+
 ### 📄 backend\api\services\patients_service.py
 **Functions:**
+- `create_patient_service()`
 - `search_patients_service()`
+- `get_all_reserve_patients_service()`
 - `get_patient_profile_service()`
 - `get_patient_incidents_service()`
 - `get_incident_details_service()`
@@ -1378,6 +3768,11 @@ _No functions found_
 - `_safe()`
 - `sanitize_value()`
 - `normalize_text()`
+
+### 📄 backend\api\services\scope_resolver.py
+**Functions:**
+- `resolve_user_scope()`
+- `is_allowed_unit()`
 
 ### 📄 backend\api\services\search_service.py
 **Functions:**
@@ -1459,6 +3854,14 @@ _No functions found_
 - `get_by_season_orgunit()`
 - `get_by_id()`
 
+### 📄 backend\api\services\section_admin_creator_service.py
+**Functions:**
+- `create_section_with_admin()`
+
+### 📄 backend\api\services\section_admin_recreate_service.py
+**Functions:**
+- `recreate_section_admin_service()`
+
 ### 📄 backend\api\services\settings_service.py
 **Functions:**
 - `get_departments()`
@@ -1472,12 +3875,27 @@ _No functions found_
 - `export_configuration()`
 - `save_snapshot()`
 - `get_snapshots()`
+- `get_system_settings()`
+- `get_setting()`
+- `update_setting()`
+- `create_setting()`
 - `_get_descendants()`
 
 ### 📄 backend\api\services\stt_service.py
 **Functions:**
 - `transcribe_audio_to_text()`
 - `transcribe_audio_bytes()`
+
+### 📄 backend\api\services\system_settings_service.py
+**Functions:**
+- `parse_setting_value()`
+- `validate_setting_value()`
+- `get_all_settings()`
+- `get_setting()`
+- `get_setting_value()`
+- `update_setting()`
+- `create_setting()`
+- `delete_setting()`
 
 ### 📄 backend\api\services\table_view_service.py
 **Functions:**
@@ -1513,6 +3931,18 @@ _No functions found_
 - `get_training_history_list()`
 - `get_ml_database_size_history()`
 - `is_training_running()`
+- `update_training_progress()`
+- `get_training_progress()`
+- `reset_training_progress()`
+- `initialize_training_progress()`
+- `_calculate_family_metrics()`
+- `_detect_performance_alerts()`
+- `get_grouped_training_status()`
+- `get_db_growth_chart_data()`
+- `get_performance_trends_chart_data()`
+- `_get_training_connection()`
+- `get_training_timeline_chart_data()`
+- `get_family_comparison_chart_data()`
 
 ### 📄 backend\api\services\trend_service.py
 **Functions:**
@@ -1534,12 +3964,40 @@ _No functions found_
 - `_build_category_trends()`
 - `_build_classification_trends()`
 
+### 📄 backend\api\services\user_credentials_service.py
+**Functions:**
+- `get_all_user_credentials_service()`
+
+### 📄 backend\api\services\user_inventory_service.py
+**Functions:**
+- `get_org_unit_user_inventory_service()`
+- `get_org_units_without_users_service()`
+- `get_inventory_summary_service()`
+
+### 📄 backend\api\services\user_management_service.py
+**Functions:**
+- `delete_user_service()`
+- `create_user_with_role_scope()`
+- `update_user_identity_service()`
+- `list_users_for_settings_service()`
+- `admin_reset_user_password_service()`
+
 
 ---
 ## 📦 Core
 
 ### 📄 backend\core\__init__.py
 _No functions found_
+
+### 📄 backend\core\constants\__init__.py
+_No functions found_
+
+### 📄 backend\core\constants\roles.py
+**Functions:**
+- `is_valid_role()`
+- `is_admin_role()`
+- `is_supervisor_role()`
+- `get_role_display_name()`
 
 ### 📄 backend\core\database.py
 **Functions:**

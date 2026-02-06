@@ -1,5 +1,5 @@
 from datetime import date, timedelta
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
 import traceback
 from dateutil.relativedelta import relativedelta
 from ..services.trend_service import (
@@ -7,6 +7,9 @@ from ..services.trend_service import (
     get_category_trends,
     get_time_periods,
 )
+from ..dependencies.user_context import get_current_user
+from ..schemas.auth_models import CurrentUser
+from ..utils.guards import require_unit_in_scope
 
 router = APIRouter(
     prefix="/api/trends",
@@ -20,6 +23,7 @@ router = APIRouter(
 
 @router.get("/domains")
 def fetch_domain_trends(
+    current_user: CurrentUser = Depends(get_current_user),
     start_date: str | None = Query(
         None,
         description="Start month in YYYY-MM format (defaults to 12 months ago)",
@@ -125,6 +129,7 @@ def fetch_domain_trends(
     # -------------------------
     try:
         return get_domain_trends(
+            current_user=current_user,
             start_date=start_date_obj,
             end_date=end_date_obj,
             include_zero_months=include_zero_months,
@@ -150,6 +155,7 @@ def fetch_domain_trends(
 
 @router.get("/categories")
 def fetch_category_trends(
+    current_user: CurrentUser = Depends(get_current_user),
     start_date: str | None = Query(
         None,
         description="Start month in YYYY-MM format (defaults to 12 months ago)",
@@ -270,6 +276,7 @@ def fetch_category_trends(
     # -------------------------
     try:
         return get_category_trends(
+            current_user=current_user,
             start_date=start_date_obj,
             end_date=end_date_obj,
             domain_id=domain_id,
@@ -299,6 +306,7 @@ def fetch_category_trends(
 
 @router.get("/periods")
 def fetch_time_periods(
+    current_user: CurrentUser = Depends(get_current_user),
     start_date: str | None = Query(
         None,
         description="Filter periods from this month (YYYY-MM format)",
@@ -378,6 +386,7 @@ def fetch_time_periods(
     # -------------------------
     try:
         return get_time_periods(
+            current_user=current_user,
             start_date=start_date_obj,
             end_date=end_date_obj,
         )
@@ -399,6 +408,7 @@ def fetch_time_periods(
 
 @router.get("/analysis")
 def fetch_trends_analysis(
+    current_user: CurrentUser = Depends(get_current_user),
     scope: str = Query("hospital", description="hospital | administration | department | section"),
     administration_id: int | None = Query(None),
     department_id: int | None = Query(None),
@@ -447,6 +457,19 @@ def fetch_trends_analysis(
     if scope == "section" and section_id is None:
         raise HTTPException(status_code=400, detail="section_id required for section scope")
     
+    # -------------------------
+    # Enforce organizational scope (Phase 2.5)
+    # Validate client-provided org unit IDs against user's allowed scope
+    # -------------------------
+    if scope == "administration" and administration_id is not None:
+        require_unit_in_scope(current_user, administration_id)
+    
+    if scope == "department" and department_id is not None:
+        require_unit_in_scope(current_user, department_id)
+    
+    if scope == "section" and section_id is not None:
+        require_unit_in_scope(current_user, section_id)
+    
     # Parse dates
     try:
         start_date_obj = None
@@ -466,6 +489,7 @@ def fetch_trends_analysis(
         from ..services.trend_service import get_trends_analysis
         
         return get_trends_analysis(
+            current_user=current_user,
             scope=scope,
             administration_id=administration_id,
             department_id=department_id,

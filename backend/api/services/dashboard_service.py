@@ -1,6 +1,8 @@
 from datetime import date, timedelta
 from collections import Counter, defaultdict
-from ..db_layer import incident_case, admin_units,lookups
+from ..db_layer import incident_case, admin_units, lookups
+from ..schemas.auth_models import CurrentUser
+from . import org_tree_service
 
 # =========================================================
 # PUBLIC SERVICE FUNCTIONS
@@ -23,6 +25,7 @@ def _row_to_dict(u):
 
 def get_dashboard_stats(
     *,
+    current_user: CurrentUser,
     scope: str,
     administration_id: int | None,
     department_id: int | None,
@@ -36,14 +39,43 @@ def get_dashboard_stats(
     """
     Core dashboard service.
     Returns metrics, trends, charts, recent activity.
+    
+    Dashboard Scope Filtering (Fixed):
+    - Respects client-requested scope parameters (section/department/administration/hospital)
+    - Expands hierarchical scopes using org_tree_service.get_descendants()
+    - Intersects requested scope with current_user.allowed_unit_ids for RBAC safety
+    - Router guards have already validated that requested IDs are accessible
     """
 
-    scope_unit_ids, include_issuing_dept = _resolve_scope(
-        scope,
-        administration_id,
-        department_id,
-        section_id,
-    )
+    # -------------------------
+    # Determine Requested Scope
+    # -------------------------
+    # Build the set of org unit IDs based on what the client requested
+    if scope == "section" and section_id is not None:
+        # Section scope: just the single section
+        requested_unit_ids = {section_id}
+    
+    elif scope == "department" and department_id is not None:
+        # Department scope: department + all descendant sections
+        requested_unit_ids = org_tree_service.get_descendants(department_id)
+    
+    elif scope == "administration" and administration_id is not None:
+        # Administration scope: administration + all departments + all sections
+        requested_unit_ids = org_tree_service.get_descendants(administration_id)
+    
+    else:
+        # Hospital scope (or fallback): use user's full allowed scope
+        requested_unit_ids = current_user.allowed_unit_ids
+    
+    # -------------------------
+    # RBAC Safety: Intersect with allowed scope
+    # -------------------------
+    # Only include units the user is actually allowed to access
+    scope_unit_ids = list(requested_unit_ids & current_user.allowed_unit_ids)
+    
+    # Determine if we should include issuing department chart
+    # Show department breakdown for hospital/administration/department scopes
+    include_issuing_dept = scope in ("hospital", "administration", "department")
 
     incidents = _fetch_incidents_in_scope(scope_unit_ids, start_date, end_date)
 
@@ -79,10 +111,12 @@ def get_dashboard_stats(
     }
 
 
-def get_dashboard_hierarchy() -> dict:
+def get_dashboard_hierarchy(current_user: CurrentUser) -> dict:
     """
     Returns organizational hierarchy for dashboard selectors
-    based on the REAL AdminsrationUnit structure.
+    filtered by user's allowed organizational scope.
+    
+    Phase 2.5: Only returns org units within current_user.allowed_unit_ids.
 
     Hierarchy rules (as implemented in DB):
     - Administration: ParentID == UniqueID
@@ -92,6 +126,10 @@ def get_dashboard_hierarchy() -> dict:
 
     raw_units = admin_units.get_admin_unit_tree()
     units = [_row_to_dict(u) for u in raw_units]
+    
+    # Filter to only units in user's allowed scope
+    allowed_unit_ids = current_user.allowed_unit_ids
+    units = [u for u in units if u["UniqueID"] in allowed_unit_ids]
 
     Administration = []
     Department = defaultdict(list)
@@ -140,75 +178,24 @@ def get_dashboard_hierarchy() -> dict:
         "Section": dict(Section),
     }
 
-def _resolve_scope(scope, admin_id, dept_id, section_id):
-    raw_units = admin_units.get_admin_unit_tree()
-    units = [_row_to_dict(u) for u in raw_units]
-
-    if scope == "hospital":
-        return [u["UniqueID"] for u in units], True
-
-    if scope == "administration":
-        if admin_id is None:
-            raise ValueError("administration_id cannot be None for administration scope")
-        descendants = _collect_descendants(units, admin_id)
-        if not descendants:
-            raise ValueError(f"No units found for administration_id: {admin_id}")
-        return descendants, True
-
-    if scope == "department":
-        if dept_id is None:
-            raise ValueError("department_id cannot be None for department scope")
-        descendants = _collect_descendants(units, dept_id)
-        if not descendants:
-            raise ValueError(f"No units found for department_id: {dept_id}")
-        return descendants, True
-
-    if scope == "section":
-        if section_id is None:
-            raise ValueError("section_id cannot be None for section scope")
-        return [section_id], False
-
-    raise ValueError("Invalid scope")
-
-
-
-def _collect_descendants(units, root_id):
-    """
-    Collect root_id and all its descendants using iterative traversal.
-    """
-    result = set()
-    stack = [root_id]
-    visited = set()
-
-    while stack:
-        current = stack.pop()
-        
-        # Avoid infinite loops
-        if current in visited:
-            continue
-        
-        visited.add(current)
-        result.add(current)
-        
-        # Find all children where ParentID == current AND UniqueID != current
-        for u in units:
-            child_id = u["UniqueID"]
-            parent_id = u["ParentID"]
-            
-            # A child is where ParentID matches current and it's not the same as current
-            if parent_id == current and child_id != current and child_id not in visited:
-                stack.append(child_id)
-    
-    return list(result)
-
+# =========================================================
+# REMOVED: Old scope resolution and tree traversal logic
+# Phase 2.5: Scoping is now handled by the central scope engine
+# All scope computation happens in scope_resolver.py
+# Dashboard only uses current_user.allowed_unit_ids
+# =========================================================
 
 def _fetch_incidents_in_scope(unit_ids, start_date, end_date):
-    all_incidents = incident_case.list_incident_cases()
-    return [
-        i for i in all_incidents
-        if i["IssuingOrgUnitID"] in unit_ids
-        and start_date <= i["CreatedAt"].date() <= end_date
-    ]
+    """
+    Fetch incidents filtered by organizational scope and date range.
+    
+    Uses database-level filtering for performance (no in-memory filtering).
+    """
+    return incident_case.list_incident_cases_filtered(
+        unit_ids=unit_ids,
+        start_date=start_date,
+        end_date=end_date
+    )
 
 
 def _compute_metrics(incidents):

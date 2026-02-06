@@ -1,4 +1,4 @@
-"""
+"""  
 Multi-Seasonal Export Service
 Generates multiple seasonal report files (one per organizational unit) and packages them in a ZIP.
 """
@@ -10,6 +10,8 @@ from datetime import datetime
 from docx import Document
 from docx.shared import Pt
 
+from ..schemas.auth_models import CurrentUser
+from ..utils.guards import require_unit_in_scope
 from .seasonal_report_orchestrator import (
     get_or_generate_seasonal_report,
     get_or_generate_comparative_seasonal_reports
@@ -32,6 +34,7 @@ class MultiSeasonalExportService:
     def generate_multi_seasonal_export(
         self,
         *,
+        current_user: CurrentUser,
         season_id: int,
         year: int,
         period: str,
@@ -43,7 +46,11 @@ class MultiSeasonalExportService:
         """
         Generate multiple seasonal reports (one per unit) and package in ZIP.
         
+        Phase 2.5.7: CRITICAL SECURITY - Each unit validated against current_user.allowed_unit_ids.
+        If ANY unit is out of scope, entire request fails with 403.
+        
         Args:
+            current_user: Authenticated user with allowed org units
             season_id: Season ID for reports
             year: Year for reports
             period: Period string (Q1, Q2, Q3, Q4, Trim1, Trim2, Trim3)
@@ -54,6 +61,9 @@ class MultiSeasonalExportService:
             
         Returns:
             Dict with filename (ZIP) and content (bytes)
+            
+        Raises:
+            HTTPException: 403 if any requested unit is outside user's scope
         """
         # Map report level to Type values in database
         # Based on actual database values: 323=Administration, 324=Section, 325=Department
@@ -74,6 +84,14 @@ class MultiSeasonalExportService:
         unit_type = type_mapping[report_level]
         orgunit_type = orgunit_type_mapping[report_level]
         
+        # Phase 2.5.8: CRITICAL - Validate requested IDs BEFORE filtering
+        # This ensures fail-fast behavior: if user requests [29, 6] and 6 is out of scope,
+        # the entire request fails with 403, not just silently omitting unit 6
+        if selected_unit_ids:
+            # Validate ALL requested unit IDs before processing
+            for unit_id in selected_unit_ids:
+                require_unit_in_scope(current_user, unit_id)
+        
         # Get units to process
         if selected_unit_ids:
             # Get specific units by ID
@@ -82,8 +100,12 @@ class MultiSeasonalExportService:
         else:
             # Get all units of this type
             units = get_units_by_type(unit_type)
+            # Validate all units when processing "all"
+            for unit in units:
+                require_unit_in_scope(current_user, unit["id"])
         
         print(f"[MULTI-SEASONAL] Generating {len(units)} seasonal reports for {report_level} level")
+        print(f"[MULTI-SEASONAL] All {len(units)} units validated against user scope")
         print(f"[MULTI-SEASONAL] Season: {period} {year} (season_id={season_id})")
         print(f"[MULTI-SEASONAL] Mode: PHASE 2 - Generating 2 files per unit (Regular + Comparison with Charts)")
         

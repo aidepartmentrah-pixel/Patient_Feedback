@@ -1,0 +1,118 @@
+"""
+Case Creation Service (API V2)
+Orchestrates subcase creation for incidents and seasonal reports.
+
+Pure orchestration layer - no business logic, validation, or permission checks.
+"""
+
+from typing import Optional
+import pyodbc
+from api_v2.db_layer import administrative_subcase_db
+from api_v2.db_layer import seasonal_report_db
+
+
+def get_db_connection():
+    """Get database connection using project standard."""
+    conn = pyodbc.connect(
+        "DRIVER={ODBC Driver 17 for SQL Server};"
+        "SERVER=SOCIALMEDIA;"
+        "DATABASE=IncidentManager;"
+        "Trusted_Connection=yes;"
+        "TrustServerCertificate=yes;"
+    )
+    return conn
+
+
+def _create_subcase(
+    case_type: str,
+    incident_id: Optional[int],
+    seasonal_report_id: Optional[int],
+    target_org_unit_id: int,
+    created_by_user_id: int,
+    initial_status: str
+) -> Optional[int]:
+    """
+    Internal helper to create a subcase.
+    Thin adapter to DB layer.
+    """
+    return administrative_subcase_db.create_subcase(
+        case_type=case_type,
+        incident_id=incident_id,
+        seasonal_report_id=seasonal_report_id,
+        target_org_unit_id=target_org_unit_id,
+        created_by_user_id=created_by_user_id,
+        initial_status=initial_status
+    )
+
+
+def create_subcases_for_incident(incident_id: int, current_user) -> None:
+    """
+    Create subcases for an incident.
+    Idempotent - does nothing if subcases already exist.
+    
+    Args:
+        incident_id: The incident ID
+        current_user: Current user object (must have user_id attribute) or None for system user
+    """
+    existing = administrative_subcase_db.get_subcases_by_incident(incident_id)
+    if existing:
+        return
+    
+    # Handle None current_user (legacy adapter calls)
+    user_id = current_user.user_id if current_user else 1  # Default to system user
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        query = """
+            SELECT DepartmentID
+            FROM dbo.APP_IncidentCaseTargetDepartment
+            WHERE IncidentRequestCaseID = ?
+        """
+        
+        cursor.execute(query, (incident_id,))
+        rows = cursor.fetchall()
+        
+        for row in rows:
+            _create_subcase(
+                case_type='INCIDENT_RESPONSE',
+                incident_id=incident_id,
+                seasonal_report_id=None,
+                target_org_unit_id=row.DepartmentID,
+                created_by_user_id=user_id,
+                initial_status='SUBMITTED_TO_SECTION'
+            )
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def create_subcases_for_seasonal_report(seasonal_report_id: int, current_user) -> None:
+    """
+    Create subcases for a seasonal report.
+    Idempotent - does nothing if subcases already exist.
+    
+    Args:
+        seasonal_report_id: The seasonal report ID
+        current_user: Current user object (must have user_id attribute) or None for system user
+    """
+    existing = administrative_subcase_db.get_subcases_by_seasonal_report(seasonal_report_id)
+    if existing:
+        return
+    
+    # Handle None current_user (legacy adapter calls)
+    user_id = current_user.user_id if current_user else 1  # Default to system user
+    
+    org_units = seasonal_report_db.get_target_orgunits_for_seasonal_report(seasonal_report_id)
+    
+    for org_unit_id in org_units:
+        _create_subcase(
+            case_type='SEASONAL_REPORT_RESPONSE',
+            incident_id=None,
+            seasonal_report_id=seasonal_report_id,
+            target_org_unit_id=org_unit_id,
+            created_by_user_id=user_id,
+            initial_status='SUBMITTED_TO_SECTION'
+        )

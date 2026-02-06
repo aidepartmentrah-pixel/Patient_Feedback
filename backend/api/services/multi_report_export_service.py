@@ -1,4 +1,4 @@
-"""
+"""  
 Multi-Report Export Service
 Generates multiple report files (one per organizational unit) and packages them in a ZIP.
 """
@@ -10,6 +10,8 @@ from datetime import datetime
 from docx import Document
 from docx.shared import Pt
 
+from ..schemas.auth_models import CurrentUser
+from ..utils.guards import require_unit_in_scope
 from .monthly_report_service import monthly_report_service
 from .reports_service import reports_service
 from ..db_layer.admin_units import get_units_by_type
@@ -24,6 +26,7 @@ class MultiReportExportService:
     def generate_multi_export(
         self,
         *,
+        current_user: CurrentUser,
         year: int,
         month: int = None,
         start_date: str = None,
@@ -37,7 +40,11 @@ class MultiReportExportService:
         """
         Generate multiple reports (one per unit) and package in ZIP.
         
+        Phase 2.5.7: CRITICAL SECURITY - Each unit validated against current_user.allowed_unit_ids.
+        If ANY unit is out of scope, entire request fails with 403.
+        
         Args:
+            current_user: Authenticated user with allowed org units
             year: Year for reports
             month: Month for reports (or None if using date range)
             start_date: Custom range start date (YYYY-MM-DD) (optional)
@@ -50,6 +57,9 @@ class MultiReportExportService:
             
         Returns:
             Dict with filename (ZIP) and content (bytes)
+            
+        Raises:
+            HTTPException: 403 if any requested unit is outside user's scope
         """
         # Map report level to Type values in database
         # Based on actual database values: 323=Administration, 324=Section, 325=Department
@@ -61,6 +71,14 @@ class MultiReportExportService:
         
         unit_type = type_mapping[report_level]
         
+        # Phase 2.5.8: CRITICAL - Validate requested IDs BEFORE filtering
+        # This ensures fail-fast behavior: if user requests [29, 6] and 6 is out of scope,
+        # the entire request fails with 403, not just silently omitting unit 6
+        if selected_unit_ids:
+            # Validate ALL requested unit IDs before processing
+            for unit_id in selected_unit_ids:
+                require_unit_in_scope(current_user, unit_id)
+        
         # Get units to process
         if selected_unit_ids:
             # Get specific units by ID
@@ -69,8 +87,12 @@ class MultiReportExportService:
         else:
             # Get all units of this type
             units = get_units_by_type(unit_type)
+            # Validate all units when processing "all"
+            for unit in units:
+                require_unit_in_scope(current_user, unit["id"])
         
         print(f"[MULTI-EXPORT] Generating {len(units)} reports for {report_level} level")
+        print(f"[MULTI-EXPORT] All {len(units)} units validated against user scope")
         
         # Track results for summary
         successful_units = []
@@ -90,6 +112,7 @@ class MultiReportExportService:
                 try:
                     # Generate report for this specific unit
                     report_data = self._generate_unit_report(
+                        current_user=current_user,
                         year=year,
                         month=month,
                         start_date=start_date,
@@ -186,6 +209,7 @@ class MultiReportExportService:
     
     def _generate_unit_report(
         self,
+        current_user: CurrentUser,
         year: int,
         month: Optional[int],
         start_date: Optional[str],
@@ -194,7 +218,11 @@ class MultiReportExportService:
         report_level: str,
         unit_id: int
     ) -> Dict[str, Any]:
-        """Generate report data for a specific organizational unit."""
+        """
+        Generate report data for a specific organizational unit.
+        
+        Phase 2.5.7: Passes current_user for scope enforcement at service layer.
+        """
         
         # Map report level to filter parameter
         filter_param_map = {
@@ -210,6 +238,7 @@ class MultiReportExportService:
         
         # Use the same service as normal export
         result = monthly_report_service.generate_monthly_report(
+            current_user=current_user,
             year=year,
             month=month,
             start_date=start_date,

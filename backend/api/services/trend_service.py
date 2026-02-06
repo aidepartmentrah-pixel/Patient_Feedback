@@ -4,7 +4,9 @@ from collections import defaultdict, Counter
 from typing import Literal
 import calendar
 from ..db_layer.database import get_connection
-from ..db_layer import lookups
+from ..db_layer import lookups, incident_case
+from ..schemas.auth_models import CurrentUser
+from . import org_tree_service
 
 
 # =========================================================
@@ -67,6 +69,7 @@ TREND_THRESHOLD = 0.10  # 10% threshold for stable vs increasing/decreasing
 
 def get_trends_analysis(
     *,
+    current_user: CurrentUser,
     scope: str,
     administration_id: int | None = None,
     department_id: int | None = None,
@@ -79,9 +82,14 @@ def get_trends_analysis(
     Get unified trends analysis for domain, category, and classification
     with scope filtering (hospital, administration, department, section).
     
+    Trend Scope Filtering (Fixed):
+    - Respects client-requested scope parameters (section/department/administration/hospital)
+    - Expands hierarchical scopes using org_tree_service.get_descendants()
+    - Intersects requested scope with current_user.allowed_unit_ids for RBAC safety
+    - Router guards have already validated that requested IDs are accessible
+    
     Returns all three trend views with table and chart data.
     """
-    from .dashboard_service import _resolve_scope, _fetch_incidents_in_scope
     
     # Date range defaults
     if end_date is None:
@@ -94,14 +102,27 @@ def get_trends_analysis(
     start_date_normalized = date(start_date.year, start_date.month, 1)
     end_date_normalized = date(end_date.year, end_date.month, 1) + relativedelta(months=1) - timedelta(days=1)
     
-    # Get scope unit IDs
-    try:
-        scope_unit_ids, _ = _resolve_scope(scope, administration_id, department_id, section_id)
-    except ValueError as e:
-        raise ValueError(f"Invalid scope: {str(e)}")
+    # -------------------------
+    # Determine Requested Scope
+    # -------------------------
+    if scope == "section" and section_id is not None:
+        requested_unit_ids = {section_id}
+    elif scope == "department" and department_id is not None:
+        requested_unit_ids = org_tree_service.get_descendants(department_id)
+    elif scope == "administration" and administration_id is not None:
+        requested_unit_ids = org_tree_service.get_descendants(administration_id)
+    else:
+        requested_unit_ids = current_user.allowed_unit_ids
     
-    # Fetch incidents in scope
-    incidents = _fetch_incidents_in_scope(scope_unit_ids, start_date_normalized, end_date_normalized)
+    # RBAC Safety: Intersect with allowed scope
+    scope_unit_ids = list(requested_unit_ids & current_user.allowed_unit_ids)
+    
+    # Fetch incidents using database-level filtering
+    incidents = incident_case.list_incident_cases_filtered(
+        unit_ids=scope_unit_ids,
+        start_date=start_date_normalized,
+        end_date=end_date_normalized
+    )
     
     # Build trends for each view (use normalized dates for grouping)
     domain_data = _build_domain_trends(incidents, start_date_normalized, end_date_normalized, include_zero_months)
@@ -122,6 +143,7 @@ def get_trends_analysis(
 
 def get_domain_trends(
     *,
+    current_user: CurrentUser,
     start_date: date | None = None,
     end_date: date | None = None,
     include_zero_months: bool = True,
@@ -131,7 +153,10 @@ def get_domain_trends(
     """
     Get monthly incident trends aggregated by domain.
     
+    Uses current_user.allowed_unit_ids for filtering (no client scope params in this function).
+    
     Args:
+        current_user: Authenticated user with allowed org units
         start_date: Start month (YYYY-MM format or date object)
         end_date: End month (YYYY-MM format or date object)
         include_zero_months: Include months with zero incidents
@@ -155,9 +180,10 @@ def get_domain_trends(
     end_date = date(end_date.year, end_date.month, 1)
     
     # -------------------------
-    # Fetch raw incident data
+    # Use full allowed scope (no client params in this function)
     # -------------------------
-    raw_data = _fetch_incidents_by_domain_and_month(start_date, end_date)
+    scope_unit_ids = list(current_user.allowed_unit_ids)
+    raw_data = _fetch_incidents_by_domain_and_month(start_date, end_date, scope_unit_ids)
     
     # -------------------------
     # Get domain metadata
@@ -323,6 +349,7 @@ def get_domain_trends(
 
 def get_category_trends(
     *,
+    current_user: CurrentUser,
     start_date: date | None = None,
     end_date: date | None = None,
     domain_id: int | None = None,
@@ -334,7 +361,10 @@ def get_category_trends(
     """
     Get monthly incident trends aggregated by category.
     
+    Uses current_user.allowed_unit_ids for filtering (no client scope params in this function).
+    
     Args:
+        current_user: Authenticated user with allowed org units
         start_date: Start month (YYYY-MM format or date object)
         end_date: End month (YYYY-MM format or date object)
         domain_id: Filter categories by parent domain
@@ -360,9 +390,10 @@ def get_category_trends(
     end_date = date(end_date.year, end_date.month, 1)
     
     # -------------------------
-    # Fetch raw incident data
+    # Use full allowed scope (no client params in this function)
     # -------------------------
-    raw_data = _fetch_incidents_by_category_and_month(start_date, end_date, domain_id)
+    scope_unit_ids = list(current_user.allowed_unit_ids)
+    raw_data = _fetch_incidents_by_category_and_month(start_date, end_date, domain_id, scope_unit_ids)
     
     # -------------------------
     # Get category and domain metadata
@@ -554,13 +585,17 @@ def get_category_trends(
 
 def get_time_periods(
     *,
+    current_user: CurrentUser,
     start_date: date | None = None,
     end_date: date | None = None,
 ) -> dict:
     """
     Get list of available time periods (months) with incident data.
     
+    Uses current_user.allowed_unit_ids for filtering (no client scope params in this function).
+    
     Args:
+        current_user: Authenticated user with allowed org units
         start_date: Filter periods from this month
         end_date: Filter periods to this month
         
@@ -581,9 +616,10 @@ def get_time_periods(
     end_date = date(end_date.year, end_date.month, 1)
     
     # -------------------------
-    # Fetch incident counts per month
+    # Use full allowed scope (no client params in this function)
     # -------------------------
-    raw_data = _fetch_incidents_per_month(start_date, end_date)
+    scope_unit_ids = list(current_user.allowed_unit_ids)
+    raw_data = _fetch_incidents_per_month(start_date, end_date, scope_unit_ids)
     
     month_counts = {row["Period"]: row["IncidentCount"] for row in raw_data}
     
@@ -616,11 +652,16 @@ def get_time_periods(
             "has_data": total_incidents > 0,
         })
     
+    periods_with_data = len([p for p in periods_result if p["has_data"]])
+    
     return {
         "periods": periods_result,
-        "total_periods": len(periods_result),
-        "earliest_period": periods_result[0]["period"] if periods_result else None,
-        "latest_period": periods_result[-1]["period"] if periods_result else None,
+        "summary": {
+            "total_periods": len(periods_result),
+            "periods_with_data": periods_with_data,
+            "earliest_period": periods_result[0]["period"] if periods_result else None,
+            "latest_period": periods_result[-1]["period"] if periods_result else None,
+        }
     }
 
 
@@ -628,14 +669,24 @@ def get_time_periods(
 # PRIVATE HELPER FUNCTIONS
 # =========================================================
 
-def _fetch_incidents_by_domain_and_month(start_date: date, end_date: date) -> list[dict]:
+def _fetch_incidents_by_domain_and_month(start_date: date, end_date: date, org_unit_ids: list[int]) -> list[dict]:
     """
     Fetch raw incident counts grouped by domain and month.
+    
+    Phase 2.5: Filtered by organizational units.
     """
     conn = get_connection()
     cursor = conn.cursor()
     
-    query = """
+    # Build org unit filter
+    if not org_unit_ids:
+        # No allowed units - return empty result
+        conn.close()
+        return []
+    
+    placeholders = ','.join('?' * len(org_unit_ids))
+    
+    query = f"""
     SELECT 
         DomainID,
         FORMAT(FeedbackRecievedDate, 'yyyy-MM') AS Period,
@@ -644,11 +695,13 @@ def _fetch_incidents_by_domain_and_month(start_date: date, end_date: date) -> li
     WHERE FeedbackRecievedDate >= ?
       AND FeedbackRecievedDate < DATEADD(MONTH, 1, ?)
       AND DomainID IS NOT NULL
+      AND IssuingOrgUnitID IN ({placeholders})
     GROUP BY DomainID, FORMAT(FeedbackRecievedDate, 'yyyy-MM')
     ORDER BY DomainID, Period
     """
     
-    cursor.execute(query, start_date, end_date)
+    params = [start_date, end_date] + org_unit_ids
+    cursor.execute(query, params)
     
     rows = cursor.fetchall()
     columns = [col[0] for col in cursor.description]
@@ -661,15 +714,26 @@ def _fetch_incidents_by_domain_and_month(start_date: date, end_date: date) -> li
 def _fetch_incidents_by_category_and_month(
     start_date: date,
     end_date: date,
-    domain_id: int | None = None
+    domain_id: int | None = None,
+    org_unit_ids: list[int] = None
 ) -> list[dict]:
     """
     Fetch raw incident counts grouped by category and month.
+    
+    Phase 2.5: Filtered by organizational units.
     """
     conn = get_connection()
     cursor = conn.cursor()
     
-    query = """
+    # Build org unit filter
+    if not org_unit_ids:
+        # No allowed units - return empty result
+        conn.close()
+        return []
+    
+    placeholders = ','.join('?' * len(org_unit_ids))
+    
+    query = f"""
     SELECT 
         CategoryID,
         FORMAT(FeedbackRecievedDate, 'yyyy-MM') AS Period,
@@ -678,9 +742,10 @@ def _fetch_incidents_by_category_and_month(
     WHERE FeedbackRecievedDate >= ?
       AND FeedbackRecievedDate < DATEADD(MONTH, 1, ?)
       AND CategoryID IS NOT NULL
+      AND IssuingOrgUnitID IN ({placeholders})
     """
     
-    params = [start_date, end_date]
+    params = [start_date, end_date] + org_unit_ids
     
     if domain_id is not None:
         query += " AND DomainID = ?"
@@ -701,25 +766,37 @@ def _fetch_incidents_by_category_and_month(
     return [dict(zip(columns, row)) for row in rows]
 
 
-def _fetch_incidents_per_month(start_date: date, end_date: date) -> list[dict]:
+def _fetch_incidents_per_month(start_date: date, end_date: date, org_unit_ids: list[int]) -> list[dict]:
     """
     Fetch total incident counts per month.
+    
+    Phase 2.5: Filtered by organizational units.
     """
     conn = get_connection()
     cursor = conn.cursor()
     
-    query = """
+    # Build org unit filter
+    if not org_unit_ids:
+        # No allowed units - return empty result
+        conn.close()
+        return []
+    
+    placeholders = ','.join('?' * len(org_unit_ids))
+    
+    query = f"""
     SELECT 
         FORMAT(FeedbackRecievedDate, 'yyyy-MM') AS Period,
         COUNT(*) AS IncidentCount
     FROM dbo.APP_IncidentCase
     WHERE FeedbackRecievedDate >= ?
       AND FeedbackRecievedDate < DATEADD(MONTH, 1, ?)
+      AND IssuingOrgUnitID IN ({placeholders})
     GROUP BY FORMAT(FeedbackRecievedDate, 'yyyy-MM')
     ORDER BY Period
     """
     
-    cursor.execute(query, start_date, end_date)
+    params = [start_date, end_date] + org_unit_ids
+    cursor.execute(query, params)
     
     rows = cursor.fetchall()
     columns = [col[0] for col in cursor.description]

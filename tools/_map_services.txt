@@ -1,6 +1,6 @@
 # 🗺️ Services Layer — Subtree Map
 
-_Generated on: 2026-01-20 12:54_
+_Generated on: 2026-02-05 15:46_
 
 
 ---
@@ -19,6 +19,18 @@ _No functions found_
 - `get_action_items_for_seasonal_report()`
 - `get_action_items_for_season()`
 - `mark_action_done()`
+
+### 📄 backend\api\services\auth_service.py
+**Routes:**
+- `GET /protected`
+**Functions:**
+- `_select_primary_scope()`
+- `login()`
+- `logout()`
+- `get_current_user_from_session()`
+- `require_authentication()`
+- `protected_route()`
+- `get_current_user_optional()`
 
 ### 📄 backend\api\services\classification_service.py
 **Functions:**
@@ -46,8 +58,6 @@ _No functions found_
 - `_row_to_dict()`
 - `get_dashboard_stats()`
 - `get_dashboard_hierarchy()`
-- `_resolve_scope()`
-- `_collect_descendants()`
 - `_fetch_incidents_in_scope()`
 - `_compute_metrics()`
 - `_build_charts()`
@@ -63,7 +73,9 @@ _No functions found_
 
 ### 📄 backend\api\services\doctors_service.py
 **Functions:**
+- `create_doctor()`
 - `search_doctors()`
+- `get_reserve_doctors()`
 - `get_doctor_profile()`
 - `get_doctor_statistics()`
 - `get_doctor_analytics()`
@@ -189,9 +201,34 @@ _No functions found_
 - `get_never_events_category_breakdown()`
 - `get_never_events_timeline_comparison()`
 
+### 📄 backend\api\services\operators\__init__.py
+_No functions found_
+
+### 📄 backend\api\services\operators\distribution_service.py
+**Functions:**
+- `__init__()`
+- `execute()`
+- `_execute_single()`
+- `_execute_multi()`
+- `_execute_binary()`
+- `_raw_data_to_bucket()`
+
+### 📄 backend\api\services\org_tree_service.py
+**Functions:**
+- `_row_to_dict()`
+- `_load_tree()`
+- `_get_tree()`
+- `get_full_tree()`
+- `get_descendants()`
+- `get_ancestors()`
+- `is_ancestor()`
+- `clear_cache()`
+
 ### 📄 backend\api\services\patients_service.py
 **Functions:**
+- `create_patient_service()`
 - `search_patients_service()`
+- `get_all_reserve_patients_service()`
 - `get_patient_profile_service()`
 - `get_patient_incidents_service()`
 - `get_incident_details_service()`
@@ -263,6 +300,11 @@ _No functions found_
 - `_safe()`
 - `sanitize_value()`
 - `normalize_text()`
+
+### 📄 backend\api\services\scope_resolver.py
+**Functions:**
+- `resolve_user_scope()`
+- `is_allowed_unit()`
 
 ### 📄 backend\api\services\search_service.py
 **Functions:**
@@ -344,6 +386,14 @@ _No functions found_
 - `get_by_season_orgunit()`
 - `get_by_id()`
 
+### 📄 backend\api\services\section_admin_creator_service.py
+**Functions:**
+- `create_section_with_admin()`
+
+### 📄 backend\api\services\section_admin_recreate_service.py
+**Functions:**
+- `recreate_section_admin_service()`
+
 ### 📄 backend\api\services\settings_service.py
 **Functions:**
 - `get_departments()`
@@ -357,12 +407,27 @@ _No functions found_
 - `export_configuration()`
 - `save_snapshot()`
 - `get_snapshots()`
+- `get_system_settings()`
+- `get_setting()`
+- `update_setting()`
+- `create_setting()`
 - `_get_descendants()`
 
 ### 📄 backend\api\services\stt_service.py
 **Functions:**
 - `transcribe_audio_to_text()`
 - `transcribe_audio_bytes()`
+
+### 📄 backend\api\services\system_settings_service.py
+**Functions:**
+- `parse_setting_value()`
+- `validate_setting_value()`
+- `get_all_settings()`
+- `get_setting()`
+- `get_setting_value()`
+- `update_setting()`
+- `create_setting()`
+- `delete_setting()`
 
 ### 📄 backend\api\services\table_view_service.py
 **Functions:**
@@ -398,6 +463,18 @@ _No functions found_
 - `get_training_history_list()`
 - `get_ml_database_size_history()`
 - `is_training_running()`
+- `update_training_progress()`
+- `get_training_progress()`
+- `reset_training_progress()`
+- `initialize_training_progress()`
+- `_calculate_family_metrics()`
+- `_detect_performance_alerts()`
+- `get_grouped_training_status()`
+- `get_db_growth_chart_data()`
+- `get_performance_trends_chart_data()`
+- `_get_training_connection()`
+- `get_training_timeline_chart_data()`
+- `get_family_comparison_chart_data()`
 
 ### 📄 backend\api\services\trend_service.py
 **Functions:**
@@ -418,4 +495,22 @@ _No functions found_
 - `_build_domain_trends()`
 - `_build_category_trends()`
 - `_build_classification_trends()`
+
+### 📄 backend\api\services\user_credentials_service.py
+**Functions:**
+- `get_all_user_credentials_service()`
+
+### 📄 backend\api\services\user_inventory_service.py
+**Functions:**
+- `get_org_unit_user_inventory_service()`
+- `get_org_units_without_users_service()`
+- `get_inventory_summary_service()`
+
+### 📄 backend\api\services\user_management_service.py
+**Functions:**
+- `delete_user_service()`
+- `create_user_with_role_scope()`
+- `update_user_identity_service()`
+- `list_users_for_settings_service()`
+- `admin_reset_user_password_service()`
 

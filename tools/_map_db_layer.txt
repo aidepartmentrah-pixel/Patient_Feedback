@@ -1,6 +1,6 @@
 # 🗺️ DB Layer — Subtree Map
 
-_Generated on: 2026-01-20 12:54_
+_Generated on: 2026-02-05 15:46_
 
 
 ---
@@ -32,6 +32,17 @@ _No functions found_
 - `get_active_admin_units()`
 - `get_units_by_type()`
 
+### 📄 backend\api\db_layer\auth_db.py
+**Functions:**
+- `get_connection()`
+- `get_user_by_id()`
+- `get_user_by_username()`
+- `get_user_with_scopes()`
+- `validate_user_credentials()`
+- `hash_password()`
+- `update_user_password()`
+- `update_user_profile()`
+
 ### 📄 backend\api\db_layer\custom_views.py
 **Functions:**
 - `get_connection()`
@@ -50,11 +61,13 @@ _No functions found_
 **Functions:**
 - `get_connection()`
 - `search_doctors()`
+- `get_reserve_doctors()`
 - `get_doctor_profile()`
 - `get_doctor_statistics()`
 - `get_doctor_category_breakdown()`
 - `get_doctor_monthly_trend()`
 - `get_doctor_incidents()`
+- `create_doctor()`
 
 ### 📄 backend\api\db_layer\explanation_db.py
 **Functions:**
@@ -115,6 +128,7 @@ _No functions found_
 - `create_incident_case()`
 - `get_incident_case_by_id()`
 - `list_incident_cases()`
+- `list_incident_cases_filtered()`
 - `update_incident_case()`
 - `soft_delete_incident_case()`
 - `hard_delete_incident_case()`
@@ -159,6 +173,24 @@ _No functions found_
 - `get_buildings()`
 - `get_doctors()`
 
+### 📄 backend\api\db_layer\operators\__init__.py
+_No functions found_
+
+### 📄 backend\api\db_layer\operators\distribution_db.py
+**Functions:**
+- `get_connection()`
+- `to_date_range()`
+- `_year_to_range()`
+- `_season_to_range()`
+- `_month_to_range()`
+- `_range_to_range()`
+- `__init__()`
+- `_get_conn()`
+- `_close_conn()`
+- `query_single_window()`
+- `query_date_range()`
+- `_execute_distribution_query()`
+
 ### 📄 backend\api\db_layer\org_unit_policy.py
 **Functions:**
 - `get_connection()`
@@ -172,6 +204,8 @@ _No functions found_
 ### 📄 backend\api\db_layer\patients_db.py
 **Functions:**
 - `get_connection()`
+- `create_patient()`
+- `get_all_reserve_patients()`
 - `search_patients()`
 - `get_patient_profile()`
 - `get_patient_incidents()`
@@ -224,6 +258,19 @@ _No functions found_
 - `get_seasonal_domain_totals()`
 - `get_orgunit_policy_row()`
 
+### 📄 backend\api\db_layer\section_admin_creator_db.py
+**Functions:**
+- `insert_section()`
+- `insert_user()`
+- `insert_user_scope()`
+
+### 📄 backend\api\db_layer\section_admin_recreate_db.py
+**Functions:**
+- `get_section()`
+- `username_exists()`
+- `insert_user()`
+- `insert_user_scope()`
+
 ### 📄 backend\api\db_layer\settings_db.py
 **Functions:**
 - `get_connection()`
@@ -241,6 +288,19 @@ _No functions found_
 - `export_full_configuration()`
 - `save_configuration_snapshot()`
 - `get_configuration_snapshots()`
+- `get_all_system_settings()`
+- `get_setting_by_key()`
+- `update_setting()`
+- `create_setting()`
+
+### 📄 backend\api\db_layer\system_settings_db.py
+**Functions:**
+- `get_connection()`
+- `get_all_system_settings()`
+- `get_system_setting()`
+- `update_system_setting()`
+- `create_system_setting()`
+- `delete_system_setting()`
 
 ### 📄 backend\api\db_layer\training_db.py
 **Functions:**
@@ -252,4 +312,24 @@ _No functions found_
 - `record_ml_db_size()`
 - `get_ml_db_size_history()`
 - `get_current_ml_db_size()`
+
+### 📄 backend\api\db_layer\user_credentials_db.py
+**Functions:**
+- `get_all_user_credentials()`
+
+### 📄 backend\api\db_layer\user_inventory_db.py
+**Functions:**
+- `get_org_unit_user_inventory()`
+- `get_org_units_without_users()`
+- `get_inventory_summary()`
+
+### 📄 backend\api\db_layer\user_management_db.py
+**Functions:**
+- `get_user_by_id()`
+- `user_has_software_admin_role()`
+- `delete_user_scopes()`
+- `delete_user()`
+- `insert_user_record()`
+- `insert_user_role_scope()`
+- `update_user_identity_fields()`
 

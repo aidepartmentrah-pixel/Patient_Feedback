@@ -185,10 +185,7 @@ def get_filtered_complaints(
     month: Optional[int] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
-    building_id: Optional[int] = None,
-    idara_id: Optional[int] = None,
-    dayra_id: Optional[int] = None,
-    qism_id: Optional[int] = None,
+    allowed_unit_ids: Optional[List[int]] = None,
     domain_id: Optional[int] = None,
     category_id: Optional[int] = None,
     severity_id: Optional[int] = None,
@@ -199,6 +196,12 @@ def get_filtered_complaints(
     """
     Fetch paginated filtered complaints with all detail fields.
     
+    Phase 2.5.7: Uses allowed_unit_ids from scope engine (server authority).
+    Old tree expansion logic removed.
+    
+    Args:
+        allowed_unit_ids: List of org unit IDs from current_user.allowed_unit_ids
+        
     Returns:
         Tuple of (complaints_list, total_record_count)
     """
@@ -216,14 +219,14 @@ def get_filtered_complaints(
     # Build WHERE clause
     where_parts = [date_filter]
     
-    if building_id:
-        where_parts.append(f"AND ic.BuildingID = {building_id}")
-    
-    # Tree-aware organizational filtering (Administration → Department → Section)
-    # This automatically expands selected units to include all descendants
-    org_filter = build_org_filter_condition(building_id, idara_id, dayra_id, qism_id)
-    if org_filter and org_filter != "1=1":
-        where_parts.append(f"AND {org_filter}")
+    # Phase 2.5.7: Filter by allowed_unit_ids (scope engine authority)
+    if allowed_unit_ids:
+        # Filter by IssuingOrgUnitID directly - no tree expansion
+        placeholders = ','.join(str(uid) for uid in allowed_unit_ids)
+        where_parts.append(f"AND ic.IssuingOrgUnitID IN ({placeholders})")
+    else:
+        # No allowed units - return empty result (fail-safe)
+        where_parts.append("AND 1=0")
     
     if domain_id:
         where_parts.append(f"AND ic.DomainID = {domain_id}")
@@ -422,12 +425,14 @@ def get_monthly_statistics(
     month: Optional[int] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
-    building_id: Optional[int] = None,
-    idara_id: Optional[int] = None,
-    dayra_id: Optional[int] = None,
-    qism_id: Optional[int] = None
+    allowed_unit_ids: Optional[List[int]] = None
 ) -> Dict[str, Any]:
-    """Fetch aggregated monthly statistics."""
+    """
+    Fetch aggregated monthly statistics.
+    
+    Phase 2.5.7: Uses allowed_unit_ids from scope engine (server authority).
+    Old tree expansion logic removed.
+    """
     conn = get_connection()
     cursor = conn.cursor()
     
@@ -439,19 +444,13 @@ def get_monthly_statistics(
     else:
         date_filter = f"WHERE YEAR(ic.FeedbackRecievedDate) = {year}"
     
-    # Build additional filters
-    filter_parts = []
-    if building_id:
-        filter_parts.append(f"ic.BuildingID = {building_id}")
-    
-    # Generic tree-aware organizational filtering
-    org_filter = build_org_filter_condition(building_id, idara_id, dayra_id, qism_id)
-    if org_filter and org_filter != "1=1":
-        filter_parts.append(org_filter)
-    
-    additional_filter = " AND ".join(filter_parts)
-    if additional_filter:
-        date_filter += f" AND {additional_filter}"
+    # Phase 2.5.7: Filter by allowed_unit_ids
+    if allowed_unit_ids:
+        placeholders = ','.join(str(uid) for uid in allowed_unit_ids)
+        date_filter += f" AND ic.IssuingOrgUnitID IN ({placeholders})"
+    else:
+        # No allowed units - return empty result (fail-safe)
+        date_filter += " AND 1=0"
     
     # Summary stats
     summary_query = f"""

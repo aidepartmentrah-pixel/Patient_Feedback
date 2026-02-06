@@ -60,13 +60,17 @@ def get_complaints_paginated(
     # Validate sort parameters
     valid_sort_fields = [
         "FeedbackRecievedDate", "IncidentRequestCaseID", "SeverityID", 
-        "CreatedAt", "PatientName"
+        "CreatedAt", "PatientName", "id"
     ]
     if sort_by not in valid_sort_fields:
         sort_by = "FeedbackRecievedDate"
     
     if sort_order.lower() not in ["asc", "desc"]:
         sort_order = "desc"
+    
+    # Map 'id' to actual database column
+    if sort_by == "id":
+        sort_by = "IncidentRequestCaseID"
     
     # Build WHERE clause dynamically
     where_conditions = []
@@ -143,8 +147,11 @@ def get_complaints_paginated(
     # Calculate offset for pagination
     offset = (page - 1) * page_size
     
-    # Build ORDER BY clause
-    order_by_clause = f"ORDER BY c.{sort_by} {sort_order.upper()}"
+    # Build ORDER BY clause with CAST for numeric sorting on ID field
+    if sort_by == "IncidentRequestCaseID":
+        order_by_clause = f"ORDER BY CAST(c.{sort_by} AS INT) {sort_order.upper()}"
+    else:
+        order_by_clause = f"ORDER BY c.{sort_by} {sort_order.upper()}"
     
     # SQL query for fetching records
     query = f"""

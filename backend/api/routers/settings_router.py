@@ -4,10 +4,13 @@ FastAPI endpoints for the Settings Page.
 """
 
 from datetime import datetime
-from fastapi import APIRouter, Query, HTTPException, Body, Path
+from fastapi import APIRouter, Query, HTTPException, Body, Path, Depends
 from typing import Optional, List, Dict, Any, Literal
 from pydantic import BaseModel
 
+from ..dependencies.user_context import get_current_user
+from ..schemas.auth_models import CurrentUser
+from ..utils.guards import require_logged_in, require_software_admin
 from ..services.settings_service import SettingsService
 
 
@@ -74,7 +77,8 @@ async def get_departments(
     mapping_mode: Optional[str] = Query(None, description="Filter by 'internal' or 'external'"),
     is_active: Optional[bool] = Query(True, description="Filter by active status"),
     include_children: bool = Query(True, description="Include nested children"),
-    flat: bool = Query(False, description="Return flat array instead of tree")
+    flat: bool = Query(False, description="Return flat array instead of tree"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Fetch all departments with optional hierarchical structure.
@@ -84,6 +88,9 @@ async def get_departments(
     - `is_active`: true/false (default: true)
     - `flat`: true for flat array, false for tree (default: false)
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     try:
         result = SettingsService.get_departments(
             mapping_mode=mapping_mode,
@@ -103,7 +110,10 @@ async def get_departments(
 # ==================== B2: DEPARTMENTS - CREATE ====================
 
 @router.post("/departments")
-async def create_department(request: DepartmentCreateRequest):
+async def create_department(
+    request: DepartmentCreateRequest,
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """
     Create a new department.
     
@@ -120,6 +130,9 @@ async def create_department(request: DepartmentCreateRequest):
     }
     ```
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     try:
         result = SettingsService.create_department(
             name=request.name,
@@ -151,7 +164,8 @@ async def create_department(request: DepartmentCreateRequest):
 @router.put("/departments/{department_id}")
 async def update_department(
     department_id: int = Path(..., gt=0),
-    request: DepartmentUpdateRequest = Body(...)
+    request: DepartmentUpdateRequest = Body(...),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Update an existing department.
@@ -159,6 +173,9 @@ async def update_department(
     **Path Parameter:**
     - `department_id`: Department ID to update
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     try:
         result = SettingsService.update_department(
             department_id=department_id,
@@ -190,7 +207,8 @@ async def update_department(
 @router.delete("/departments/{department_id}")
 async def delete_department(
     department_id: int = Path(..., gt=0),
-    force: bool = Query(False, description="Force delete/deactivate")
+    force: bool = Query(False, description="Force delete/deactivate"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Delete or deactivate a department.
@@ -198,6 +216,9 @@ async def delete_department(
     Soft deletes department (sets is_active=false). Returns error if department
     has associated incidents unless force=true.
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     try:
         result = SettingsService.delete_department(
             department_id=department_id,
@@ -225,7 +246,8 @@ async def delete_department(
 @router.get("/attributes")
 async def get_attributes(
     attribute_type: Optional[str] = Query(None, description="Filter by specific attribute type"),
-    is_active: bool = Query(True, description="Filter by active status")
+    is_active: bool = Query(True, description="Filter by active status"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Fetch all variable attributes.
@@ -234,6 +256,9 @@ async def get_attributes(
     - `attribute_type`: "severity", "domain", "category", etc. (optional)
     - `is_active`: true/false (default: true)
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     try:
         result = SettingsService.get_attributes(
             attribute_type=attribute_type,
@@ -251,7 +276,10 @@ async def get_attributes(
 # ==================== B10: ATTRIBUTES - UPDATE ====================
 
 @router.put("/attributes")
-async def update_attributes(request: AttributeUpdateRequest):
+async def update_attributes(
+    request: AttributeUpdateRequest,
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """
     Update variable attribute values.
     
@@ -275,6 +303,9 @@ async def update_attributes(request: AttributeUpdateRequest):
     }
     ```
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     try:
         result = SettingsService.update_attributes(
             attribute_type=request.attribute_type,
@@ -295,7 +326,8 @@ async def update_attributes(request: AttributeUpdateRequest):
 async def get_policies(
     category: Optional[str] = Query(None, description="Filter by category"),
     scope: Optional[str] = Query(None, description="Filter by 'global' or 'department'"),
-    department_id: Optional[int] = Query(None, description="Filter by department")
+    department_id: Optional[int] = Query(None, description="Filter by department"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Fetch all policy configurations.
@@ -305,6 +337,9 @@ async def get_policies(
     - `scope`: "global" or "department" (optional)
     - `department_id`: Department ID if scope=department (optional)
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     try:
         result = SettingsService.get_policies(
             category=category,
@@ -323,7 +358,10 @@ async def get_policies(
 # ==================== B12: POLICIES - UPDATE ====================
 
 @router.put("/policies")
-async def update_policies(request: Dict[str, Any] = Body(...)):
+async def update_policies(
+    request: Dict[str, Any] = Body(...),
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """
     Update one or more policy values.
     
@@ -339,6 +377,9 @@ async def update_policies(request: Dict[str, Any] = Body(...)):
     }
     ```
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     try:
         policies = request.get('policies', [])
         result = SettingsService.update_policies(policies)
@@ -356,7 +397,8 @@ async def update_policies(request: Dict[str, Any] = Body(...)):
 @router.get("/export")
 async def export_configuration(
     format: Literal['json', 'csv'] = Query('json', description="Export format"),
-    include_inactive: bool = Query(False, description="Include inactive items")
+    include_inactive: bool = Query(False, description="Include inactive items"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Export entire system configuration as JSON or CSV.
@@ -365,6 +407,9 @@ async def export_configuration(
     - `format`: "json" or "csv" (default: json)
     - `include_inactive`: true/false (default: false)
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     try:
         result = SettingsService.export_configuration(
             include_inactive=include_inactive,
@@ -382,7 +427,10 @@ async def export_configuration(
 # ==================== B15: SAVE SNAPSHOT ====================
 
 @router.post("/save-snapshot")
-async def save_snapshot(request: SnapshotCreateRequest):
+async def save_snapshot(
+    request: SnapshotCreateRequest,
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """
     Save current configuration state as a versioned snapshot for rollback.
     
@@ -395,6 +443,9 @@ async def save_snapshot(request: SnapshotCreateRequest):
     }
     ```
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     try:
         result = SettingsService.save_snapshot(
             snapshot_name=request.snapshot_name,
@@ -414,8 +465,11 @@ async def save_snapshot(request: SnapshotCreateRequest):
 # ==================== SNAPSHOTS - LIST ====================
 
 @router.get("/snapshots")
-async def get_snapshots():
+async def get_snapshots(current_user: CurrentUser = Depends(get_current_user)):
     """Get list of all saved configuration snapshots."""
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     try:
         result = SettingsService.get_snapshots()
         return result
@@ -447,7 +501,8 @@ class SystemSettingUpdateRequest(BaseModel):
 
 @router.get("/system-settings")
 async def get_system_settings(
-    is_active: bool = Query(True, description="Filter by active status")
+    is_active: bool = Query(True, description="Filter by active status"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Get all system settings.
@@ -477,6 +532,9 @@ async def get_system_settings(
     }
     ```
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     try:
         result = SettingsService.get_system_settings(is_active=is_active)
         return result
@@ -490,7 +548,8 @@ async def get_system_settings(
 
 @router.get("/system-settings/{setting_key}")
 async def get_system_setting(
-    setting_key: str = Path(..., description="Setting key to retrieve")
+    setting_key: str = Path(..., description="Setting key to retrieve"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Get a specific system setting by key.
@@ -511,6 +570,9 @@ async def get_system_setting(
     }
     ```
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     try:
         result = SettingsService.get_setting(setting_key)
         return result
@@ -531,7 +593,8 @@ async def get_system_setting(
 @router.put("/system-settings/{setting_key}")
 async def update_system_setting(
     setting_key: str = Path(..., description="Setting key to update"),
-    request: SystemSettingUpdateRequest = Body(...)
+    request: SystemSettingUpdateRequest = Body(...),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Update a system setting value.
@@ -562,6 +625,9 @@ async def update_system_setting(
     }
     ```
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     try:
         result = SettingsService.update_setting(
             setting_key=setting_key,
@@ -584,7 +650,10 @@ async def update_system_setting(
 
 
 @router.post("/system-settings")
-async def create_system_setting(request: SystemSettingRequest):
+async def create_system_setting(
+    request: SystemSettingRequest,
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """
     Create a new system setting.
     
@@ -616,6 +685,9 @@ async def create_system_setting(request: SystemSettingRequest):
     }
     ```
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     try:
         result = SettingsService.create_setting(
             setting_key=request.setting_key,

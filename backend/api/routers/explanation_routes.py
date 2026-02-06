@@ -11,9 +11,13 @@ Handles:
 """
 
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, HTTPException, Path, Query, Body
+from fastapi import APIRouter, HTTPException, Path, Query, Body, Depends
 from pydantic import BaseModel, Field
 from datetime import date
+
+from ..dependencies.user_context import get_current_user
+from ..schemas.auth_models import CurrentUser
+from ..utils.guards import require_logged_in, require_software_admin
 
 from backend.api.services.explanation_service import (
     get_pending_explanations,
@@ -82,7 +86,8 @@ def get_pending_explanations_endpoint(
     start_date: Optional[str] = Query(None, description="Start date filter (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date filter (YYYY-MM-DD)"),
     case_type: Optional[str] = Query(None, description="Filter by case type"),
-    include_red_flags_only: bool = Query(False, description="Only return Red Flag/Never Event cases")
+    include_red_flags_only: bool = Query(False, description="Only return Red Flag/Never Event cases"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Get all cases that are pending explanation submission.
@@ -101,6 +106,8 @@ def get_pending_explanations_endpoint(
     
     **FSM State:** Cases with ExplanationStatus = 'Waiting'
     """
+    require_logged_in(current_user)
+    
     result = get_pending_explanations(
         department_id=dept_id,
         start_date=start_date,
@@ -119,7 +126,9 @@ def get_pending_explanations_endpoint(
 
 
 @router.get("/statistics", response_model=Dict[str, Any], status_code=200)
-def get_explanation_statistics():
+def get_explanation_statistics(
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """
     Get dashboard statistics for explanation workflow.
     
@@ -130,6 +139,8 @@ def get_explanation_statistics():
     
     **Use Case:** Dashboard widgets and management reporting
     """
+    require_logged_in(current_user)
+    
     result = get_explanation_dashboard_statistics()
     
     if not result['success']:
@@ -143,7 +154,8 @@ def get_explanation_statistics():
 
 @router.get("/{case_id}", response_model=Dict[str, Any], status_code=200)
 def get_case_explanation_details_endpoint(
-    case_id: int = Path(..., description="Incident case ID")
+    case_id: int = Path(..., description="Incident case ID"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Get detailed explanation information for a specific case.
@@ -159,6 +171,8 @@ def get_case_explanation_details_endpoint(
     **Errors:**
     - `404`: Case not found
     """
+    require_logged_in(current_user)
+    
     result = get_case_explanation_details(case_id)
     
     if not result['success']:
@@ -172,7 +186,8 @@ def get_case_explanation_details_endpoint(
 
 @router.get("/{case_id}/completion-status", response_model=Dict[str, Any], status_code=200)
 def get_case_completion_status_endpoint(
-    case_id: int = Path(..., description="Incident case ID")
+    case_id: int = Path(..., description="Incident case ID"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Get completion status including action items progress.
@@ -187,6 +202,8 @@ def get_case_completion_status_endpoint(
     
     **Use Case:** Progress tracking UI
     """
+    require_logged_in(current_user)
+    
     result = get_case_completion_status(case_id)
     
     if not result['success']:
@@ -205,7 +222,8 @@ def get_case_completion_status_endpoint(
 @router.post("/{case_id}", response_model=Dict[str, Any], status_code=200)
 def submit_explanation_endpoint(
     case_id: int = Path(..., description="Incident case ID"),
-    request: SubmitExplanationRequest = Body(...)
+    request: SubmitExplanationRequest = Body(...),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Submit an explanation for a case with optional action items.
@@ -229,6 +247,8 @@ def submit_explanation_endpoint(
     - `400`: Validation failed (case doesn't require explanation, is closed, etc.)
     - `404`: Case not found
     """
+    require_logged_in(current_user)
+    
     # Convert action items to dict format
     action_items_data = None
     if request.action_items:
@@ -260,7 +280,8 @@ def submit_explanation_endpoint(
 @router.put("/{case_id}/requires-explanation", response_model=Dict[str, Any], status_code=200)
 def update_requires_explanation_flag(
     case_id: int = Path(..., description="Incident case ID"),
-    request: UpdateRequiresExplanationRequest = Body(...)
+    request: UpdateRequiresExplanationRequest = Body(...),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Toggle the RequiresExplanation flag for a case.
@@ -282,6 +303,8 @@ def update_requires_explanation_flag(
     **Errors:**
     - `404`: Case not found
     """
+    require_logged_in(current_user)
+    
     result = toggle_requires_explanation(
         case_id=case_id,
         requires_explanation=request.requires_explanation,
@@ -301,7 +324,8 @@ def update_requires_explanation_flag(
 @router.post("/{case_id}/force-close", response_model=Dict[str, Any], status_code=200)
 def admin_force_close_case_endpoint(
     case_id: int = Path(..., description="Incident case ID"),
-    request: ForceCloseRequest = Body(...)
+    request: ForceCloseRequest = Body(...),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Admin endpoint to force close a case without completing action items.
@@ -325,6 +349,9 @@ def admin_force_close_case_endpoint(
     - `400`: Validation failed (reason too short, etc.)
     - `404`: Case not found
     """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
     result = admin_force_close_case(
         case_id=case_id,
         user_id=request.user_id,
@@ -343,7 +370,8 @@ def admin_force_close_case_endpoint(
 @router.post("/{case_id}/check-closure", response_model=Dict[str, Any], status_code=200)
 def check_case_for_automatic_closure(
     case_id: int = Path(..., description="Incident case ID"),
-    user_id: int = Query(..., description="User ID performing the check")
+    user_id: int = Query(..., description="User ID performing the check"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Check if all action items are complete and close case if so.
@@ -370,6 +398,8 @@ def check_case_for_automatic_closure(
     **Errors:**
     - `404`: Case not found
     """
+    require_logged_in(current_user)
+    
     result = check_and_close_case_if_complete(
         case_id=case_id,
         user_id=user_id
@@ -387,7 +417,8 @@ def check_case_for_automatic_closure(
 @router.post("/{case_id}/mark-action-complete", response_model=Dict[str, Any], status_code=200)
 def mark_action_item_complete_endpoint(
     case_id: int = Path(..., description="Incident case ID"),
-    request: MarkActionCompleteRequest = Body(...)
+    request: MarkActionCompleteRequest = Body(...),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Mark an action item as complete and check if case can be closed.
@@ -413,6 +444,8 @@ def mark_action_item_complete_endpoint(
     - `400`: Action item not found or already complete
     - `404`: Case not found
     """
+    require_logged_in(current_user)
+    
     result = mark_action_item_complete_and_check_case(
         action_item_id=request.action_item_id,
         case_id=case_id,
@@ -436,7 +469,8 @@ def mark_action_item_complete_endpoint(
 def validate_explanation_endpoint(
     case_id: int = Path(..., description="Incident case ID"),
     explanation_text: str = Body(..., embed=True),
-    action_items: Optional[List[ActionItemCreate]] = Body(default=[], embed=True)
+    action_items: Optional[List[ActionItemCreate]] = Body(default=[], embed=True),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Validate an explanation submission without actually submitting it.
@@ -455,6 +489,7 @@ def validate_explanation_endpoint(
     
     **Use Case:** Frontend validation before actual submission
     """
+    require_logged_in(current_user)
     # Convert action items to dict format
     action_items_data = None
     if action_items:

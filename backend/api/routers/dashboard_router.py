@@ -1,7 +1,10 @@
 from datetime import date, timedelta
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
 import traceback
 from ..services.dashboard_service import get_dashboard_stats, get_dashboard_hierarchy
+from ..dependencies.user_context import get_current_user
+from ..schemas.auth_models import CurrentUser
+from ..utils.guards import require_unit_in_scope
 
 router = APIRouter(
     prefix="/api/dashboard",
@@ -14,6 +17,7 @@ router = APIRouter(
 
 @router.get("/stats")
 def dashboard_stats(
+    current_user: CurrentUser = Depends(get_current_user),
     scope: str = Query(..., description="hospital | administration | department | section"),
     administration_id: int | None = Query(None),
     department_id: int | None = Query(None),
@@ -53,6 +57,19 @@ def dashboard_stats(
     if scope == "section" and section_id is None:
         print(f"ERROR: section_id required for section scope")
         raise HTTPException(status_code=400, detail="section_id required")
+    
+    # -------------------------
+    # Enforce organizational scope (Phase 2.5)
+    # Validate client-provided org unit IDs against user's allowed scope
+    # -------------------------
+    if scope == "administration" and administration_id is not None:
+        require_unit_in_scope(current_user, administration_id)
+    
+    if scope == "department" and department_id is not None:
+        require_unit_in_scope(current_user, department_id)
+    
+    if scope == "section" and section_id is not None:
+        require_unit_in_scope(current_user, section_id)
 
     # -------------------------
     # Default date handling
@@ -68,6 +85,7 @@ def dashboard_stats(
     # -------------------------
     try:
         return get_dashboard_stats(
+            current_user=current_user,
             scope=scope,
             administration_id=administration_id,
             department_id=department_id,
@@ -92,8 +110,11 @@ def dashboard_stats(
 
 # This Works here
 @router.get("/hierarchy")
-def dashboard_hierarchy():
-    return get_dashboard_hierarchy()
+def dashboard_hierarchy(
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """Get organizational hierarchy filtered by user's scope."""
+    return get_dashboard_hierarchy(current_user)
 
 # =========================================================
 # DEBUG ENDPOINT: Check classifications mapping

@@ -3,11 +3,14 @@ Insert Router
 API endpoints for creating new incident/feedback records.
 """
 
-from fastapi import APIRouter, HTTPException, Body, Query, Path
+from fastapi import APIRouter, HTTPException, Body, Query, Path, Depends
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import date, datetime
 
+from ..dependencies.user_context import get_current_user
+from ..schemas.auth_models import CurrentUser
+from ..utils.guards import require_logged_in
 from ..services.insert_service import create_record
 from ..services.table_view_service import get_complaint_by_id
 from ..services.search_service import (
@@ -81,7 +84,10 @@ class CreateRecordRequest(BaseModel):
 # ==================== ENDPOINTS ====================
 
 @router.post("/add")
-async def add_record(request: CreateRecordRequest = Body(...)):
+async def add_record(
+    request: CreateRecordRequest = Body(...),
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """
     Create a new incident/feedback record.
     
@@ -171,6 +177,7 @@ async def add_record(request: CreateRecordRequest = Body(...)):
     }
     ```
     """
+    require_logged_in(current_user)
     
     try:
         # Convert request to dictionary
@@ -215,7 +222,8 @@ async def add_record(request: CreateRecordRequest = Body(...)):
 
 @router.get("/{record_id}")
 async def get_record(
-    record_id: int = Path(..., gt=0, description="Record ID to retrieve")
+    record_id: int = Path(..., gt=0, description="Record ID to retrieve"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Get record details for editing.
@@ -232,6 +240,8 @@ async def get_record(
     - With database IDs and names
     - Formatted dates
     """
+    require_logged_in(current_user)
+    
     try:
         result = get_complaint_by_id(record_id)
         
@@ -266,7 +276,8 @@ async def get_record(
 @router.put("/{record_id}")
 async def update_record(
     record_id: int = Path(..., gt=0, description="Record ID to update"),
-    request: CreateRecordRequest = Body(...)
+    request: CreateRecordRequest = Body(...),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Update an existing record.
@@ -291,6 +302,8 @@ async def update_record(
     - record_id: Updated record ID
     - updated_at: Update timestamp
     """
+    require_logged_in(current_user)
+    
     try:
         # Get existing record first
         existing_record = get_complaint_by_id(record_id)
@@ -354,10 +367,14 @@ async def update_record(
 
 
 @router.get("/test")
-async def test_records_endpoint():
+async def test_records_endpoint(
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """
     Test endpoint to verify records service is operational.
     """
+    require_logged_in(current_user)
+    
     return {
         "status": "operational",
         "service": "records",
@@ -370,7 +387,8 @@ async def test_records_endpoint():
 @router.get("/search/patients")
 async def search_patients_endpoint(
     q: str = Query(..., min_length=1, description="Search query (patient name, document number, or medical file number)"),
-    limit: int = Query(20, ge=1, le=100, description="Maximum number of results (1-100)")
+    limit: int = Query(20, ge=1, le=100, description="Maximum number of results (1-100)"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Search for patients by name, document number, or medical file number.
@@ -406,6 +424,8 @@ async def search_patients_endpoint(
     }
     ```
     """
+    require_logged_in(current_user)
+    
     result = search_patients(q, limit)
     
     if not result.get("success", False):
@@ -423,7 +443,8 @@ async def search_patients_endpoint(
 @router.get("/search/doctors")
 async def search_doctors_endpoint(
     q: str = Query(..., min_length=1, description="Search query (doctor name)"),
-    limit: int = Query(20, ge=1, le=100, description="Maximum number of results (1-100)")
+    limit: int = Query(20, ge=1, le=100, description="Maximum number of results (1-100)"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Search for active doctors by name.
@@ -457,6 +478,8 @@ async def search_doctors_endpoint(
     }
     ```
     """
+    require_logged_in(current_user)
+    
     result = search_doctors(q, limit)
     
     if not result.get("success", False):
@@ -474,7 +497,8 @@ async def search_doctors_endpoint(
 @router.get("/search/employees")
 async def search_employees_endpoint(
     q: str = Query(..., min_length=1, description="Search query (employee name)"),
-    limit: int = Query(20, ge=1, le=100, description="Maximum number of results (1-100)")
+    limit: int = Query(20, ge=1, le=100, description="Maximum number of results (1-100)"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Search for active employees by name.
@@ -510,6 +534,8 @@ async def search_employees_endpoint(
     }
     ```
     """
+    require_logged_in(current_user)
+    
     result = search_employees(q, limit)
     
     if not result.get("success", False):
@@ -525,7 +551,10 @@ async def search_employees_endpoint(
 
 
 @router.get("/patient/{patient_admission_id}")
-async def get_patient_endpoint(patient_admission_id: int):
+async def get_patient_endpoint(
+    patient_admission_id: int,
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """
     Get a specific patient by PatientAdmissionID.
     Used to verify patient selection.
@@ -546,6 +575,8 @@ async def get_patient_endpoint(patient_admission_id: int):
     }
     ```
     """
+    require_logged_in(current_user)
+    
     result = get_patient_by_id(patient_admission_id)
     
     if not result.get("success", False):
@@ -561,7 +592,10 @@ async def get_patient_endpoint(patient_admission_id: int):
 
 
 @router.get("/doctor/{doctor_id}")
-async def get_doctor_endpoint(doctor_id: int):
+async def get_doctor_endpoint(
+    doctor_id: int,
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """
     Get a specific doctor by DoctorID.
     Used to verify doctor selection.
@@ -582,6 +616,8 @@ async def get_doctor_endpoint(doctor_id: int):
     }
     ```
     """
+    require_logged_in(current_user)
+    
     result = get_doctor_by_id(doctor_id)
     
     if not result.get("success", False):
@@ -597,7 +633,10 @@ async def get_doctor_endpoint(doctor_id: int):
 
 
 @router.get("/employee/{employee_id}")
-async def get_employee_endpoint(employee_id: int):
+async def get_employee_endpoint(
+    employee_id: int,
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """
     Get a specific employee by EmployeeID.
     Used to verify employee selection.
@@ -618,6 +657,8 @@ async def get_employee_endpoint(employee_id: int):
     }
     ```
     """
+    require_logged_in(current_user)
+    
     result = get_employee_by_id(employee_id)
     
     if not result.get("success", False):

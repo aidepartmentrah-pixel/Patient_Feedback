@@ -1,4 +1,5 @@
 import pyodbc
+from datetime import date
 
 def get_connection():
     conn = pyodbc.connect(
@@ -140,6 +141,58 @@ def list_incident_cases() -> list[dict]:
 
     conn.close()
 
+    return [dict(zip(columns, row)) for row in rows]
+
+
+def list_incident_cases_filtered(
+    unit_ids: list[int] | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None
+) -> list[dict]:
+    """
+    List incident cases with optional scope and date filtering.
+    
+    Filters are applied at the SQL level for performance.
+    
+    Args:
+        unit_ids: List of org unit IDs to filter by (IssuingOrgUnitID)
+        start_date: Filter incidents created on or after this date
+        end_date: Filter incidents created on or before this date
+    
+    Returns:
+        List of incident case dictionaries matching the filters
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Build WHERE clause dynamically
+    where_parts = []
+    params = []
+    
+    if unit_ids:
+        placeholders = ','.join('?' * len(unit_ids))
+        where_parts.append(f"IssuingOrgUnitID IN ({placeholders})")
+        params.extend(unit_ids)
+    
+    if start_date:
+        where_parts.append("CAST(CreatedAt AS DATE) >= ?")
+        params.append(start_date)
+    
+    if end_date:
+        where_parts.append("CAST(CreatedAt AS DATE) <= ?")
+        params.append(end_date)
+    
+    # Build final query
+    where_clause = " AND ".join(where_parts) if where_parts else "1=1"
+    query = f"SELECT * FROM dbo.APP_IncidentCase WHERE {where_clause} ORDER BY CreatedAt DESC"
+    
+    cursor.execute(query, params)
+    
+    rows = cursor.fetchall()
+    columns = [col[0] for col in cursor.description]
+    
+    conn.close()
+    
     return [dict(zip(columns, row)) for row in rows]
 
 

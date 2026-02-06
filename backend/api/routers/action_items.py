@@ -1,11 +1,30 @@
 """
 Action Items Router
 Exposes API endpoints for querying and managing action items.
+
+⚠️ DEPRECATION WARNING — API v1 LEGACY ENDPOINT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+This router is DEPRECATED and should NOT be used for new frontend development.
+
+API v2 Replacement:
+- Use /api/v2/follow-up/action-items endpoints instead
+- API v2 provides proper role-based access control and scope enforcement
+- This router lacks security guards and should be considered INTERNAL only
+
+Status:
+- Maintained for backward compatibility with existing integrations
+- Will be removed or disabled after Phase 4 frontend migration
+
+TODO: Remove or disable after Phase 4 migration
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
 from typing import List, Dict, Any
-from fastapi import APIRouter, HTTPException, Path
+from fastapi import APIRouter, HTTPException, Path, Depends
 
+from ..dependencies.user_context import get_current_user
+from ..schemas.auth_models import CurrentUser
+from ..utils.guards import require_logged_in
 from backend.api.services.action_item_service import (
     get_action_item,
     get_action_items_for_incident,
@@ -18,7 +37,7 @@ from backend.api.services.action_item_service import (
 
 
 # ============================================================
-# ROUTER
+# ROUTER (LEGACY — DO NOT USE FOR FRONTEND)
 # ============================================================
 router = APIRouter(prefix="/api/action-items", tags=["Action Items"])
 
@@ -29,7 +48,8 @@ router = APIRouter(prefix="/api/action-items", tags=["Action Items"])
 
 @router.get("/{action_item_id}", response_model=Dict[str, Any], status_code=200)
 def get_action_item_by_id(
-    action_item_id: int = Path(..., description="Primary key of the action item")
+    action_item_id: int = Path(..., description="Primary key of the action item"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Retrieve a single action item by ID.
@@ -43,6 +63,8 @@ def get_action_item_by_id(
     **Errors:**
     - `404`: Action item not found
     """
+    require_logged_in(current_user)
+    
     action_item = get_action_item(action_item_id)
     
     if not action_item:
@@ -56,7 +78,8 @@ def get_action_item_by_id(
 
 @router.get("/by-incident/{incident_case_id}", response_model=List[Dict[str, Any]], status_code=200)
 def get_action_items_by_incident(
-    incident_case_id: int = Path(..., description="IncidentRequestCaseID")
+    incident_case_id: int = Path(..., description="IncidentRequestCaseID"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     List all action items for a specific incident case.
@@ -68,12 +91,15 @@ def get_action_items_by_incident(
     - List of action items ordered by CreatedAt DESC
     - Empty list if no action items found (not an error)
     """
+    require_logged_in(current_user)
+    
     return get_action_items_for_incident(incident_case_id)
 
 
 @router.get("/by-seasonal-report/{seasonal_report_id}", response_model=List[Dict[str, Any]], status_code=200)
 def get_action_items_by_seasonal_report(
-    seasonal_report_id: int = Path(..., description="SeasonalReportID")
+    seasonal_report_id: int = Path(..., description="SeasonalReportID"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     List all action items for a specific seasonal report.
@@ -89,12 +115,15 @@ def get_action_items_by_seasonal_report(
     - Display action items assigned to a seasonal organizational report
     - Track compliance-related action items for a specific season
     """
+    require_logged_in(current_user)
+    
     return get_action_items_for_seasonal_report(seasonal_report_id)
 
 
 @router.get("/by-season/{season_case_id}", response_model=List[Dict[str, Any]], status_code=200)
 def get_action_items_by_season(
-    season_case_id: int = Path(..., description="SeasonCaseID")
+    season_case_id: int = Path(..., description="SeasonCaseID"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     List all action items for a specific season case.
@@ -106,6 +135,8 @@ def get_action_items_by_season(
     - List of action items ordered by CreatedAt DESC
     - Empty list if no action items found (not an error)
     """
+    require_logged_in(current_user)
+    
     return get_action_items_for_season(season_case_id)
 
 
@@ -115,7 +146,8 @@ def get_action_items_by_season(
 
 @router.post("/{action_item_id}/mark-done", status_code=200)
 def mark_action_item_done(
-    action_item_id: int = Path(..., description="Primary key of the action item")
+    action_item_id: int = Path(..., description="Primary key of the action item"),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Mark an action item as completed.
@@ -133,6 +165,8 @@ def mark_action_item_done(
     **Errors:**
     - `404`: Action item not found (database will fail silently)
     """
+    require_logged_in(current_user)
+    
     try:
         mark_action_done(action_item_id)
         return {"status": "ok"}

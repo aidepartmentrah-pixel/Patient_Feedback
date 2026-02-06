@@ -1,6 +1,6 @@
 # 🗺️ Routers — Subtree Map
 
-_Generated on: 2026-01-20 12:54_
+_Generated on: 2026-02-05 15:46_
 
 
 ---
@@ -22,6 +22,46 @@ _No functions found_
 - `get_action_items_by_seasonal_report()`
 - `get_action_items_by_season()`
 - `mark_action_item_done()`
+
+### 📄 backend\api\routers\admin_section_admin_recreate_router.py
+**Routes:**
+- `POST /{section_id}/recreate-admin`
+**Functions:**
+- `recreate_section_admin_endpoint()`
+
+### 📄 backend\api\routers\admin_section_router.py
+**Routes:**
+- `POST /create-section-with-admin`
+**Functions:**
+- `create_section_with_admin_endpoint()`
+
+### 📄 backend\api\routers\admin_user_credentials_router.py
+**Routes:**
+- `GET /user-credentials`
+**Functions:**
+- `list_all_user_credentials()`
+
+### 📄 backend\api\routers\admin_user_management_router.py
+**Routes:**
+- `DELETE /users/{user_id}`
+**Functions:**
+- `delete_user_endpoint()`
+
+### 📄 backend\api\routers\admin_user_markdown_router.py
+**Routes:**
+- `GET /user-credentials-markdown`
+**Functions:**
+- `export_user_credentials_as_markdown()`
+
+### 📄 backend\api\routers\auth_router.py
+**Routes:**
+- `POST /login`
+- `POST /logout`
+- `GET /me`
+**Functions:**
+- `login()`
+- `logout()`
+- `get_current_user()`
 
 ### 📄 backend\api\routers\classification_router.py
 **Routes:**
@@ -59,6 +99,7 @@ _No functions found_
 
 ### 📄 backend\api\routers\doctors_router.py
 **Routes:**
+- `GET /reserve`
 - `GET /{doctor_id}/profile`
 - `GET /{doctor_id}/statistics`
 - `GET /{doctor_id}/analytics`
@@ -66,6 +107,8 @@ _No functions found_
 - `GET /{doctor_id}/full-report`
 - `GET /health-check/check`
 **Functions:**
+- `create_doctor()`
+- `get_reserve_doctors()`
 - `search_doctors()`
 - `get_doctor_profile()`
 - `get_doctor_statistics()`
@@ -73,6 +116,40 @@ _No functions found_
 - `get_doctor_incidents()`
 - `get_doctor_full_report()`
 - `health_check()`
+
+### 📄 backend\api\routers\example_guarded_router.py
+**Routes:**
+- `GET /public`
+- `GET /authenticated-only`
+- `GET /admin-only`
+- `GET /worker-only`
+- `GET /any-admin`
+- `GET /any-supervisor`
+- `POST /conditional-access`
+- `DELETE /dangerous-operation/{resource_id}`
+- `GET /my-permissions`
+**Functions:**
+- `public_endpoint()`
+- `authenticated_endpoint()`
+- `admin_only_endpoint()`
+- `worker_only_endpoint()`
+- `any_admin_endpoint()`
+- `any_supervisor_endpoint()`
+- `conditional_access_endpoint()`
+- `dangerous_operation()`
+- `get_my_permissions()`
+
+### 📄 backend\api\routers\example_protected_router.py
+**Routes:**
+- `GET /public`
+- `GET /protected`
+- `GET /user-info`
+- `GET /check-role/{role_code}`
+**Functions:**
+- `public_endpoint()`
+- `protected_endpoint()`
+- `get_user_info()`
+- `check_user_role()`
 
 ### 📄 backend\api\routers\explanation_routes.py
 **Routes:**
@@ -209,8 +286,16 @@ _No functions found_
 - `get_single_never_event()`
 - `test_never_events()`
 
+### 📄 backend\api\routers\operators_router.py
+**Routes:**
+- `POST /distribution`
+**Functions:**
+- `distribution_operator()`
+
 ### 📄 backend\api\routers\patients_router.py
 **Routes:**
+- `POST /create`
+- `GET /reserve`
 - `GET /search`
 - `GET /{patient_id}/profile`
 - `GET /{patient_id}/incidents`
@@ -218,6 +303,8 @@ _No functions found_
 - `GET /{patient_id}/full-history`
 - `GET /{patient_id}/export`
 **Functions:**
+- `create_patient()`
+- `get_all_reserve_patients_endpoint()`
 - `search_patients_endpoint()`
 - `get_patient_profile_endpoint()`
 - `get_patient_incidents_endpoint()`
@@ -327,6 +414,10 @@ _No functions found_
 - `GET /export`
 - `POST /save-snapshot`
 - `GET /snapshots`
+- `GET /system-settings`
+- `GET /system-settings/{setting_key}`
+- `PUT /system-settings/{setting_key}`
+- `POST /system-settings`
 **Functions:**
 - `get_departments()`
 - `create_department()`
@@ -339,6 +430,24 @@ _No functions found_
 - `export_configuration()`
 - `save_snapshot()`
 - `get_snapshots()`
+- `get_system_settings()`
+- `get_system_setting()`
+- `update_system_setting()`
+- `create_system_setting()`
+
+### 📄 backend\api\routers\settings_users_router.py
+**Routes:**
+- `GET /`
+- `POST /`
+- `PATCH /{user_id}/identity`
+- `PATCH /{user_id}/password`
+- `DELETE /{user_id}`
+**Functions:**
+- `list_users()`
+- `create_user()`
+- `update_user_identity()`
+- `reset_user_password()`
+- `delete_user()`
 
 ### 📄 backend\api\routers\stt_router.py
 **Routes:**
@@ -349,6 +458,18 @@ _No functions found_
 - `transcribe_audio()`
 - `transcribe_audio_from_path()`
 - `test_stt()`
+
+### 📄 backend\api\routers\system_settings_router.py
+**Routes:**
+- `GET /{key}`
+- `PUT /{key}`
+- `DELETE /{key}`
+**Functions:**
+- `get_all_settings()`
+- `get_setting()`
+- `update_setting()`
+- `create_setting()`
+- `delete_setting()`
 
 ### 📄 backend\api\routers\table_view_router.py
 **Routes:**
@@ -376,14 +497,26 @@ _No functions found_
 ### 📄 backend\api\routers\training_router.py
 **Routes:**
 - `GET /status`
+- `GET /progress`
+- `GET /grouped-status`
 - `GET /history`
 - `GET /db-size`
 - `POST /run`
+- `GET /charts/db-growth`
+- `GET /charts/performance-trends`
+- `GET /charts/training-timeline`
+- `GET /charts/family-comparison`
 **Functions:**
 - `get_training_status_endpoint()`
+- `get_training_progress_endpoint()`
+- `get_grouped_training_status_endpoint()`
 - `get_training_history_endpoint()`
 - `get_ml_database_size_endpoint()`
 - `trigger_training_endpoint()`
+- `get_db_growth_chart_endpoint()`
+- `get_performance_trends_chart_endpoint()`
+- `get_training_timeline_chart_endpoint()`
+- `get_family_comparison_chart_endpoint()`
 
 ### 📄 backend\api\routers\trend_router.py
 **Routes:**
@@ -396,4 +529,13 @@ _No functions found_
 - `fetch_category_trends()`
 - `fetch_time_periods()`
 - `fetch_trends_analysis()`
+
+### 📄 backend\api\routers\user_inventory_router.py
+**Routes:**
+- `GET /missing`
+- `GET /summary`
+**Functions:**
+- `get_user_inventory()`
+- `get_org_units_without_users()`
+- `get_inventory_summary()`
 
