@@ -389,12 +389,17 @@ class ReportExportService:
             List of dicts with organizational unit name and statistics
         """
         from ..db_layer.admin_units import get_units_by_type
+        from ..constants.org_unit_types import (
+            ORG_TYPE_ADMINISTRATION,
+            ORG_TYPE_DEPARTMENT,
+            ORG_TYPE_SECTION
+        )
         
         # Map entity type to organizational unit type
         type_mapping = {
-            "all_administrations": 323,  # Type for Administration
-            "all_departments": 325,      # Type for Department
-            "all_sections": 324           # Type for Section
+            "all_administrations": ORG_TYPE_ADMINISTRATION,
+            "all_departments": ORG_TYPE_DEPARTMENT,
+            "all_sections": ORG_TYPE_SECTION
         }
         
         unit_type = type_mapping.get(report_entity_type)

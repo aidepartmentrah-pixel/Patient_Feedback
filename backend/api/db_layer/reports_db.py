@@ -3,21 +3,9 @@ Database layer for reporting queries.
 Handles all SQL queries for complaint aggregation, filtering, and statistics.
 """
 
-import pyodbc
 from datetime import datetime, date
 from typing import Dict, List, Any, Optional, Tuple
-
-def get_connection():
-    """Get database connection."""
-    conn = pyodbc.connect(
-        "DRIVER={ODBC Driver 17 for SQL Server};"
-        "SERVER=SOCIALMEDIA;"
-        "DATABASE=IncidentManager;"
-        "Trusted_Connection=yes;"
-        "TrustServerCertificate=yes;"
-    )
-    return conn
-
+from core.database import get_connection
 
 def get_org_unit_descendants(unit_id: int) -> List[int]:
     """
@@ -186,6 +174,7 @@ def get_filtered_complaints(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     allowed_unit_ids: Optional[List[int]] = None,
+    target_unit_ids: Optional[List[int]] = None,
     domain_id: Optional[int] = None,
     category_id: Optional[int] = None,
     severity_id: Optional[int] = None,
@@ -197,10 +186,13 @@ def get_filtered_complaints(
     Fetch paginated filtered complaints with all detail fields.
     
     Phase 2.5.7: Uses allowed_unit_ids from scope engine (server authority).
-    Old tree expansion logic removed.
     
     Args:
-        allowed_unit_ids: List of org unit IDs from current_user.allowed_unit_ids
+        allowed_unit_ids: List of org unit IDs from current_user.allowed_unit_ids (security boundary)
+        target_unit_ids: Optional list of target department IDs to filter by.
+                         When set, only returns cases that TARGET these sections
+                         (via APP_IncidentCaseTargetDepartment). Used by multi-export
+                         to generate per-section files.
         
     Returns:
         Tuple of (complaints_list, total_record_count)
@@ -219,14 +211,23 @@ def get_filtered_complaints(
     # Build WHERE clause
     where_parts = [date_filter]
     
-    # Phase 2.5.7: Filter by allowed_unit_ids (scope engine authority)
+    # Phase 2.5.7: Security boundary — filter by allowed_unit_ids (scope engine authority)
     if allowed_unit_ids:
-        # Filter by IssuingOrgUnitID directly - no tree expansion
         placeholders = ','.join(str(uid) for uid in allowed_unit_ids)
         where_parts.append(f"AND ic.IssuingOrgUnitID IN ({placeholders})")
     else:
         # No allowed units - return empty result (fail-safe)
         where_parts.append("AND 1=0")
+    
+    # Target department filter — narrows to cases TARGETING specific sections
+    # Used by multi-export to isolate per-section data
+    if target_unit_ids:
+        target_placeholders = ','.join(str(uid) for uid in target_unit_ids)
+        where_parts.append(f"""AND EXISTS (
+            SELECT 1 FROM dbo.APP_IncidentCaseTargetDepartment td_filter
+            WHERE td_filter.IncidentRequestCaseID = ic.IncidentRequestCaseID
+            AND td_filter.DepartmentID IN ({target_placeholders})
+        )""")
     
     if domain_id:
         where_parts.append(f"AND ic.DomainID = {domain_id}")
@@ -425,13 +426,22 @@ def get_monthly_statistics(
     month: Optional[int] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
-    allowed_unit_ids: Optional[List[int]] = None
+    allowed_unit_ids: Optional[List[int]] = None,
+    target_unit_ids: Optional[List[int]] = None,
+    group_by: str = "section"
 ) -> Dict[str, Any]:
     """
     Fetch aggregated monthly statistics.
     
     Phase 2.5.7: Uses allowed_unit_ids from scope engine (server authority).
-    Old tree expansion logic removed.
+    
+    Args:
+        allowed_unit_ids: Security boundary (IssuingOrgUnitID filter)
+        target_unit_ids: Optional target department filter (via APP_IncidentCaseTargetDepartment)
+        group_by: Aggregation level for by_department breakdown.
+                  "section" (default) - group by target department (section level)
+                  "department" - roll up to parent department (Type=325)
+                  "administration" - roll up to grandparent administration (Type=323)
     """
     conn = get_connection()
     cursor = conn.cursor()
@@ -444,13 +454,22 @@ def get_monthly_statistics(
     else:
         date_filter = f"WHERE YEAR(ic.FeedbackRecievedDate) = {year}"
     
-    # Phase 2.5.7: Filter by allowed_unit_ids
+    # Phase 2.5.7: Security boundary — filter by allowed_unit_ids
     if allowed_unit_ids:
         placeholders = ','.join(str(uid) for uid in allowed_unit_ids)
         date_filter += f" AND ic.IssuingOrgUnitID IN ({placeholders})"
     else:
         # No allowed units - return empty result (fail-safe)
         date_filter += " AND 1=0"
+    
+    # Target department filter — narrows to cases TARGETING specific sections
+    if target_unit_ids:
+        target_placeholders = ','.join(str(uid) for uid in target_unit_ids)
+        date_filter += f""" AND EXISTS (
+            SELECT 1 FROM dbo.APP_IncidentCaseTargetDepartment td_filter
+            WHERE td_filter.IncidentRequestCaseID = ic.IncidentRequestCaseID
+            AND td_filter.DepartmentID IN ({target_placeholders})
+        )"""
     
     # Summary stats
     summary_query = f"""
@@ -533,19 +552,70 @@ def get_monthly_statistics(
             "count": row[1]
         })
     
-    # By target department (count target department records, not distinct complaints)
-    dept_query = f"""
-    SELECT 
-        td.DepartmentID,
-        COALESCE(ou.Name, 'Unknown') as dept_name,
-        COUNT(td.IncidentRequestCaseID) as count
-    FROM dbo.APP_IncidentCase ic
-    INNER JOIN dbo.APP_IncidentCaseTargetDepartment td ON ic.IncidentRequestCaseID = td.IncidentRequestCaseID
-    LEFT JOIN dbo.AdminsrationUnit ou ON td.DepartmentID = ou.UniqueID
-    {date_filter}
-    GROUP BY td.DepartmentID, ou.Name
-    ORDER BY count DESC
-    """
+    # By target department - with group_by level support
+    # Hierarchy: Section (Type=324) → Department (Type=325) → Administration (Type=323)
+    # Some sections parent directly to an Administration (no intermediate Department)
+    if group_by == "administration":
+        # Roll up to the administration level (grandparent or parent if section→admin directly)
+        # Walk up the tree: target dept → parent → grandparent, pick the first Type=323 node
+        dept_query = f"""
+        SELECT 
+            admin_unit.UniqueID as GroupID,
+            COALESCE(admin_unit.Name, 'Unknown') as group_name,
+            COUNT(td.IncidentRequestCaseID) as count
+        FROM dbo.APP_IncidentCase ic
+        INNER JOIN dbo.APP_IncidentCaseTargetDepartment td ON ic.IncidentRequestCaseID = td.IncidentRequestCaseID
+        LEFT JOIN dbo.AdminsrationUnit sec_unit ON td.DepartmentID = sec_unit.UniqueID
+        LEFT JOIN dbo.AdminsrationUnit dept_unit ON sec_unit.ParentID = dept_unit.UniqueID
+        LEFT JOIN dbo.AdminsrationUnit admin_from_dept ON dept_unit.ParentID = admin_from_dept.UniqueID
+        CROSS APPLY (
+            SELECT CASE 
+                WHEN sec_unit.Type = 323 THEN sec_unit.UniqueID
+                WHEN dept_unit.Type = 323 THEN dept_unit.UniqueID
+                WHEN admin_from_dept.Type = 323 THEN admin_from_dept.UniqueID
+                ELSE COALESCE(dept_unit.UniqueID, sec_unit.UniqueID)
+            END AS UniqueID,
+            CASE 
+                WHEN sec_unit.Type = 323 THEN sec_unit.Name
+                WHEN dept_unit.Type = 323 THEN dept_unit.Name
+                WHEN admin_from_dept.Type = 323 THEN admin_from_dept.Name
+                ELSE COALESCE(dept_unit.Name, sec_unit.Name)
+            END AS Name
+        ) admin_unit
+        {date_filter}
+        GROUP BY admin_unit.UniqueID, admin_unit.Name
+        ORDER BY count DESC
+        """
+    elif group_by == "department":
+        # Roll up to the department level (parent of section)
+        # If parent is an Administration (Type=323), use it as the "department" level
+        dept_query = f"""
+        SELECT 
+            parent_unit.UniqueID as GroupID,
+            COALESCE(parent_unit.Name, 'Unknown') as group_name,
+            COUNT(td.IncidentRequestCaseID) as count
+        FROM dbo.APP_IncidentCase ic
+        INNER JOIN dbo.APP_IncidentCaseTargetDepartment td ON ic.IncidentRequestCaseID = td.IncidentRequestCaseID
+        LEFT JOIN dbo.AdminsrationUnit sec_unit ON td.DepartmentID = sec_unit.UniqueID
+        LEFT JOIN dbo.AdminsrationUnit parent_unit ON sec_unit.ParentID = parent_unit.UniqueID
+        {date_filter}
+        GROUP BY parent_unit.UniqueID, parent_unit.Name
+        ORDER BY count DESC
+        """
+    else:
+        # Default: group by section (target department directly)
+        dept_query = f"""
+        SELECT 
+            td.DepartmentID,
+            COALESCE(ou.Name, 'Unknown') as dept_name,
+            COUNT(td.IncidentRequestCaseID) as count
+        FROM dbo.APP_IncidentCase ic
+        INNER JOIN dbo.APP_IncidentCaseTargetDepartment td ON ic.IncidentRequestCaseID = td.IncidentRequestCaseID
+        LEFT JOIN dbo.AdminsrationUnit ou ON td.DepartmentID = ou.UniqueID
+        {date_filter}
+        GROUP BY td.DepartmentID, ou.Name
+        ORDER BY count DESC
+        """
     
     cursor.execute(dept_query)
     dept_rows = cursor.fetchall()

@@ -51,6 +51,7 @@ def get_all_user_credentials_service() -> List[Dict[str, Any]]:
             credential = {
                 "user_id": row.UserID,
                 "username": row.Username,
+                "display_name": row.DisplayName if hasattr(row, 'DisplayName') and row.DisplayName else None,
                 "role": row.RoleCode if hasattr(row, 'RoleCode') and row.RoleCode else None,
                 "org_unit": row.org_unit_name if hasattr(row, 'org_unit_name') and row.org_unit_name else None,
                 "org_unit_id": row.OrgUnitID if hasattr(row, 'OrgUnitID') and row.OrgUnitID else None,

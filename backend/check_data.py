@@ -5,7 +5,7 @@ Check which seasons have incident data.
 import sys
 sys.path.insert(0, ".")
 
-from api.db_layer.database import get_connection
+from core.database import get_connection
 
 def check_incident_data():
     """Check incident data distribution."""

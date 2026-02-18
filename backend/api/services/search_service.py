@@ -6,6 +6,7 @@ Used by the insert page to search and select entities from the database.
 
 from typing import List, Dict, Any
 from core.database import get_connection
+from core.table_config import PATIENT_ADMISSION_TABLE, DOCTORS_TABLE, HR_EMPLOYEES_TABLE
 
 
 def search_patients(search_text: str, limit: int = 20) -> Dict[str, Any]:
@@ -34,7 +35,7 @@ def search_patients(search_text: str, limit: int = 20) -> Dict[str, Any]:
         search_pattern = f"%{search_text}%"
         
         # UNION query: Merge hospital + reserve patients
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT TOP (?) * FROM (
                 -- Hospital patients
                 SELECT 
@@ -49,7 +50,7 @@ def search_patients(search_text: str, limit: int = 20) -> Dict[str, Any]:
                     MedicalFileNumber,
                     AdmissionDate,
                     'hospital' as Source
-                FROM APP_VIEWTABLE_PATIENT_ADMISSION
+                FROM {PATIENT_ADMISSION_TABLE}
                 WHERE 
                     FullName LIKE ? 
                     OR FirstName LIKE ? 
@@ -146,7 +147,7 @@ def search_doctors(search_text: str, limit: int = 20) -> Dict[str, Any]:
         search_pattern = f"%{search_text}%"
         
         # UNION query: Merge hospital + reserve doctors
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT TOP (?) * FROM (
                 -- Hospital doctors
                 SELECT 
@@ -158,7 +159,7 @@ def search_doctors(search_text: str, limit: int = 20) -> Dict[str, Any]:
                     IsAdmitted,
                     IsClinic,
                     'hospital' as Source
-                FROM APP_VIEWTABLE_VW_DOCTORS
+                FROM {DOCTORS_TABLE}
                 WHERE 
                     Name LIKE ?
                     AND IsActive = 1
@@ -237,7 +238,7 @@ def search_employees(search_text: str, limit: int = 20) -> Dict[str, Any]:
         
         search_pattern = f"%{search_text}%"
         
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT TOP (?)
                 EmployeeID,
                 FullName,
@@ -248,7 +249,7 @@ def search_employees(search_text: str, limit: int = 20) -> Dict[str, Any]:
                 AdministrationID,
                 IsManager,
                 IsActive
-            FROM APP_VIEWTABLE_HR_EMPLOYEES
+            FROM {HR_EMPLOYEES_TABLE}
             WHERE 
                 FullName LIKE ?
                 AND IsActive = 1
@@ -334,7 +335,7 @@ def get_patient_by_id(patient_admission_id: int) -> Dict[str, Any]:
         
         # If not found in reserve, check hospital table
         if not row:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT 
                     PatientAdmissionID,
                     FullName,
@@ -347,7 +348,7 @@ def get_patient_by_id(patient_admission_id: int) -> Dict[str, Any]:
                     MedicalFileNumber,
                     AdmissionDate,
                     'hospital' as Source
-                FROM APP_VIEWTABLE_PATIENT_ADMISSION
+                FROM {PATIENT_ADMISSION_TABLE}
                 WHERE PatientAdmissionID = ?
             """, (patient_admission_id,))
             
@@ -433,7 +434,7 @@ def get_doctor_by_id(doctor_id: int) -> Dict[str, Any]:
         
         # If not found in reserve, check hospital view
         if not row:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT 
                     DoctorID,
                     Name,
@@ -443,7 +444,7 @@ def get_doctor_by_id(doctor_id: int) -> Dict[str, Any]:
                     IsAdmitted,
                     IsClinic,
                     'hospital' as Source
-                FROM APP_VIEWTABLE_VW_DOCTORS
+                FROM {DOCTORS_TABLE}
                 WHERE DoctorID = ?
             """, (doctor_id,))
             
@@ -502,7 +503,7 @@ def get_employee_by_id(employee_id: int) -> Dict[str, Any]:
         conn = get_connection()
         cursor = conn.cursor()
         
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT 
                 EmployeeID,
                 FullName,
@@ -513,7 +514,7 @@ def get_employee_by_id(employee_id: int) -> Dict[str, Any]:
                 AdministrationID,
                 IsManager,
                 IsActive
-            FROM APP_VIEWTABLE_HR_EMPLOYEES
+            FROM {HR_EMPLOYEES_TABLE}
             WHERE EmployeeID = ?
         """, (employee_id,))
         

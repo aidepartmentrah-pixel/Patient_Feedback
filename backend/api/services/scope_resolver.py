@@ -24,11 +24,14 @@ from . import org_tree_service
 # =========================================================
 
 SOFTWARE_ADMIN = "SOFTWARE_ADMIN"
+COMPLAINT_SUPERVISOR = "COMPLAINT_SUPERVISOR"
+WORKER = "WORKER"
 
 # Org unit types
 ORG_TYPE_SECTION = "SECTION"
 ORG_TYPE_DEPARTMENT = "DEPARTMENT"
 ORG_TYPE_ADMINISTRATION = "ADMINISTRATION"
+ORG_TYPE_COMPLAINT = "COMPLAINT"
 
 
 # =========================================================
@@ -40,12 +43,18 @@ def resolve_user_scope(current_user: CurrentUser) -> Set[int]:
     Return the set of org unit IDs this user is allowed to access.
     
     Algorithm:
-    1. If user has SOFTWARE_ADMIN role in any scope → return ALL org units
+    1. If user has full-access role (SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR, WORKER) → return ALL org units
     2. Otherwise, user must have exactly ONE scope (else raise exception)
     3. Expand based on org_unit_type:
        - SECTION → only that section ID
        - DEPARTMENT → department + all descendants
        - ADMINISTRATION → administration + all descendants
+       - COMPLAINT → special handling (typically full access, but falls back to single unit)
+    
+    Full-Access Roles:
+    - SOFTWARE_ADMIN: System administrator
+    - COMPLAINT_SUPERVISOR: Supervises all complaints hospital-wide
+    - WORKER: Handles complaints from any organizational unit
     
     Args:
         current_user: The authenticated user with role-scope assignments
@@ -58,11 +67,16 @@ def resolve_user_scope(current_user: CurrentUser) -> Set[int]:
     """
     
     # =====================================================
-    # Step 1: Check for SOFTWARE_ADMIN
+    # Step 1: Check for full-access roles
     # =====================================================
+    # These roles should have access to ALL organizational units:
+    # - SOFTWARE_ADMIN: Full system access
+    # - COMPLAINT_SUPERVISOR: Oversees all complaints across the hospital
+    # - WORKER: Can handle complaints from any organizational unit
+    
     for scope in current_user.scopes:
-        if scope.role_code == SOFTWARE_ADMIN:
-            # SOFTWARE_ADMIN gets access to ALL org units
+        if scope.role_code in [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR, WORKER]:
+            # Full-access roles get access to ALL org units
             full_tree = org_tree_service.get_full_tree()
             all_unit_ids = {unit["UniqueID"] for unit in full_tree}
             return all_unit_ids

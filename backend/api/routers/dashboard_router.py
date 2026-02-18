@@ -116,6 +116,94 @@ def dashboard_hierarchy(
     """Get organizational hierarchy filtered by user's scope."""
     return get_dashboard_hierarchy(current_user)
 
+
+# =========================================================
+# DASHBOARD DATE BOUNDS ENDPOINT (PHASE DR-B)
+# =========================================================
+
+@router.get("/date-bounds")
+def dashboard_date_bounds(
+    current_user: CurrentUser = Depends(get_current_user),
+    scope: str = Query(..., description="hospital | administration | department | section"),
+    administration_id: int | None = Query(None),
+    department_id: int | None = Query(None),
+    section_id: int | None = Query(None),
+):
+    """
+    Get minimum and maximum incident CreatedAt dates within dashboard scope.
+    
+    Returns DATE only (YYYY-MM-DD), not datetime.
+    Uses identical scope resolution and RBAC filtering as dashboard stats.
+    """
+    
+    # -------------------------
+    # Validate scope logic (same as stats endpoint)
+    # -------------------------
+    if scope not in {"hospital", "administration", "department", "section"}:
+        raise HTTPException(status_code=400, detail="Invalid scope")
+
+    if scope == "administration" and administration_id is None:
+        raise HTTPException(status_code=400, detail="administration_id required")
+
+    if scope == "department" and department_id is None:
+        raise HTTPException(status_code=400, detail="department_id required")
+
+    if scope == "section" and section_id is None:
+        raise HTTPException(status_code=400, detail="section_id required")
+    
+    # -------------------------
+    # Enforce organizational scope (same as stats endpoint)
+    # -------------------------
+    if scope == "administration" and administration_id is not None:
+        require_unit_in_scope(current_user, administration_id)
+    
+    if scope == "department" and department_id is not None:
+        require_unit_in_scope(current_user, department_id)
+    
+    if scope == "section" and section_id is not None:
+        require_unit_in_scope(current_user, section_id)
+
+    # -------------------------
+    # Determine Requested Scope (INLINE - copied from get_dashboard_stats logic)
+    # -------------------------
+    from ..services import org_tree_service
+    
+    if scope == "section" and section_id is not None:
+        requested_unit_ids = {section_id}
+    
+    elif scope == "department" and department_id is not None:
+        requested_unit_ids = org_tree_service.get_descendants(department_id)
+    
+    elif scope == "administration" and administration_id is not None:
+        requested_unit_ids = org_tree_service.get_descendants(administration_id)
+    
+    else:
+        requested_unit_ids = current_user.allowed_unit_ids
+    
+    # -------------------------
+    # RBAC Safety: Intersect with allowed scope
+    # -------------------------
+    scope_unit_ids = list(requested_unit_ids & current_user.allowed_unit_ids)
+
+    # -------------------------
+    # Call service
+    # -------------------------
+    try:
+        from ..services.dashboard_service import get_dashboard_date_bounds_for_units
+        result = get_dashboard_date_bounds_for_units(scope_unit_ids)
+        
+        # Convert date objects to ISO strings for JSON response
+        return {
+            "min_date": result["min_date"].isoformat() if result["min_date"] else None,
+            "max_date": result["max_date"].isoformat() if result["max_date"] else None,
+        }
+    except Exception as e:
+        print(f"Dashboard date bounds error - scope: {scope}, admin: {administration_id}, dept: {department_id}, section: {section_id}")
+        print(f"Error: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
 # =========================================================
 # DEBUG ENDPOINT: Check classifications mapping
 # =========================================================

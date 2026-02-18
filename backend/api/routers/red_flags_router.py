@@ -32,6 +32,8 @@ async def get_red_flags(
     category: Optional[str] = Query(None, description="Filter by red flag category"),
     severity: Optional[str] = Query(None, description="Filter by severity: HIGH, CRITICAL"),
     is_never_event: Optional[bool] = Query(None, description="Filter red flags that are also Never Events"),
+    sort_by: str = Query("date", description="Sort by: date, severity, department, status, created_at, patient_name"),
+    sort_order: str = Query("desc", description="Sort order: asc or desc"),
     limit: int = Query(100, ge=1, le=500, description="Max results per page"),
     offset: int = Query(0, ge=0, description="Pagination offset")
 ):
@@ -42,7 +44,7 @@ async def get_red_flags(
     
     **Example Request:**
     ```
-    GET /api/red-flags?status=FINISHED&from_date=2024-01-01&limit=50
+    GET /api/red-flags?status=FINISHED&from_date=2024-01-01&sort_by=severity&sort_order=desc&limit=50
     ```
     
     **Query Parameters:**
@@ -53,13 +55,16 @@ async def get_red_flags(
     - `category`: Filter by red flag category (Domain)
     - `severity`: Filter by HIGH or CRITICAL
     - `is_never_event`: Show only red flags that are also Never Events
+    - `sort_by`: Sort by date (default), severity, department, status, created_at, or patient_name
+    - `sort_order`: asc or desc (default: desc for newest first)
     - `limit`: Results per page (default: 100, max: 500)
     - `offset`: Pagination offset (default: 0)
     
     **Returns:**
-    - List of red flag records with basic information
+    - List of red flag records with full patient information, complaint details, and classifications
     - Total count for pagination
-    - Sorted by date descending (most recent first)
+    - Sorted by date descending (most recent first) by default
+    - Includes fields: patient_full_name, complaint_text, severity, department, classification, etc.
     """
     
     try:
@@ -72,6 +77,8 @@ async def get_red_flags(
             category=category,
             severity=severity,
             is_never_event=is_never_event,
+            sort_by=sort_by,
+            sort_order=sort_order,
             limit=limit,
             offset=offset
         )
@@ -107,15 +114,16 @@ async def get_statistics(
     - `to_date`: Statistics to this date (optional, default: today)
     
     **Returns:**
-    - Total red flags count
-    - Unfinished vs finished counts
-    - Breakdown by status (OPEN, UNDER_REVIEW, FINISHED)
-    - Breakdown by category (Domain)
-    - Breakdown by severity (HIGH, CRITICAL)
-    - Current month count
-    - Previous month count
-    - Never Event overlap statistics
-    - Date range applied
+    - `total_red_flags`: Total count of red flags
+    - `unfinished`: Count of red flags not yet finished
+    - `finished`: Count of completed red flags
+    - `by_severity`: Nested object with counts by severity (CRITICAL, HIGH, MEDIUM, LOW)
+    - `by_status`: Nested object with counts by status (OPEN, IN_PROGRESS, RESOLVED, CLOSED)
+    - `current_month`: Object with count, month name, start_date, and end_date
+    - `previous_month`: Object with count and month name
+    - `never_event_overlap`: Statistics on overlap between red flags and never events
+    - `average_resolution_days`: Average days to resolve red flags
+    - `period`: Date range applied (from_date, to_date)
     
     **Never Event Overlap:**
     - `total_never_events`: Total count of Never Events in system

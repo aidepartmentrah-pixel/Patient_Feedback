@@ -3,21 +3,9 @@ Database layer for Settings page operations.
 Handles departments, variable attributes, and policies.
 """
 
-import pyodbc
 from datetime import datetime
 from typing import Dict, List, Any, Optional
-
-def get_connection():
-    """Get database connection."""
-    conn = pyodbc.connect(
-        "DRIVER={ODBC Driver 17 for SQL Server};"
-        "SERVER=SOCIALMEDIA;"
-        "DATABASE=IncidentManager;"
-        "Trusted_Connection=yes;"
-        "TrustServerCertificate=yes;"
-    )
-    return conn
-
+from core.database import get_connection
 
 # =============================================
 # DEPARTMENTS
@@ -464,6 +452,87 @@ def update_policies(policy_updates: List[Dict]) -> List[Dict]:
     conn.close()
     
     return updated_policies
+
+
+# =============================================
+# DEPARTMENT POLICY (JSON Config)
+# =============================================
+
+def get_department_policy(department_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Get the policy configuration for a specific department.
+    Returns the parsed JSON policy data or None if no policy exists.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Check if APP_DepartmentPolicy table exists and has data
+        cursor.execute("""
+        SELECT PolicyData 
+        FROM dbo.APP_DepartmentPolicy WITH (NOLOCK)
+        WHERE DepartmentID = ?
+        """, department_id)
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row and row[0]:
+            import json
+            return json.loads(row[0])
+        return None
+    except Exception:
+        # Table may not exist yet, return None
+        conn.close()
+        return None
+
+
+def save_department_policy(department_id: int, policy_data: Dict[str, Any]) -> bool:
+    """
+    Save policy configuration for a specific department.
+    Creates the table if it doesn't exist, then upserts the policy.
+    """
+    import json
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Ensure table exists
+        cursor.execute("""
+        IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'APP_DepartmentPolicy')
+        BEGIN
+            CREATE TABLE dbo.APP_DepartmentPolicy (
+                DepartmentID INT PRIMARY KEY,
+                PolicyData NVARCHAR(MAX),
+                CreatedAt DATETIME DEFAULT GETDATE(),
+                UpdatedAt DATETIME DEFAULT GETDATE()
+            )
+        END
+        """)
+        conn.commit()
+        
+        # Convert policy data to JSON string
+        policy_json = json.dumps(policy_data, ensure_ascii=False)
+        
+        # Upsert - try update first, then insert if no rows affected
+        cursor.execute("""
+        UPDATE dbo.APP_DepartmentPolicy 
+        SET PolicyData = ?, UpdatedAt = GETDATE()
+        WHERE DepartmentID = ?
+        """, policy_json, department_id)
+        
+        if cursor.rowcount == 0:
+            cursor.execute("""
+            INSERT INTO dbo.APP_DepartmentPolicy (DepartmentID, PolicyData)
+            VALUES (?, ?)
+            """, department_id, policy_json)
+        
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        conn.close()
+        raise Exception(f"Failed to save department policy: {str(e)}")
 
 
 # =============================================

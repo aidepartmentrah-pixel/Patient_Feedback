@@ -18,7 +18,8 @@ from typing import List, Dict, Any
 
 # Import existing auth dependencies
 from ..services.auth_service import get_current_user, CurrentUser
-from ..utils.guards import require_software_admin
+from ..utils.guards import require_role
+from core.constants.roles import SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR
 
 # Import service
 from ..services.user_credentials_service import get_all_user_credentials_service
@@ -51,6 +52,7 @@ def list_all_user_credentials(
     List of user credentials with:
     - user_id: User's ID
     - username: Username
+    - display_name: User's display name (or null)
     - role: Assigned role code (or null if no scope)
     - org_unit: Organization unit name (or null)
     - org_unit_id: Organization unit ID (or null)
@@ -69,6 +71,7 @@ def list_all_user_credentials(
         {
             "user_id": 7,
             "username": "sec_10_admin",
+            "display_name": "Emergency Department Admin",
             "role": "SECTION_ADMIN",
             "org_unit": "Emergency Department",
             "org_unit_id": 10,
@@ -79,8 +82,8 @@ def list_all_user_credentials(
     ]
     ```
     """
-    # Check SOFTWARE_ADMIN permission
-    require_software_admin(current_user)
+    # Check SOFTWARE_ADMIN or COMPLAINT_SUPERVISOR permission
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR])
     
     # Get all user credentials
     credentials = get_all_user_credentials_service()

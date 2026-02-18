@@ -9,6 +9,7 @@ from backend.core.database import get_connection
 from backend.api.db_layer.incident_case import create_incident_case
 from backend.api.db_layer.incident_case_target_department import add_target_department
 from backend.api.db_layer.incident_case_doctor import add_doctor_to_case
+from backend.api.db_layer.incident_case_employee import add_employee_to_case
         
 
 def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -341,7 +342,27 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
                 )
                 primary_assigned = True
 
-        # Employees linkage not implemented (no case link in schema provided)
+        # -----------------------------
+        # Employee Linkage (Phase Fix)
+        # -----------------------------
+        # Link employees to this incident via APP_IncidentCaseEmployee
+        if data.get('employees'):
+            primary_assigned = False
+            for emp in data['employees']:
+                emp_id = emp.get('employee_id')
+                if not emp_id:
+                    continue
+                try:
+                    add_employee_to_case(
+                        incident_id=new_id,
+                        employee_id=emp_id,
+                        assigned_by_user_id=1,
+                        full_name=emp.get('full_name', ''),
+                        is_primary=(not primary_assigned)
+                    )
+                    primary_assigned = True
+                except Exception as e:
+                    print(f"[WARN] Failed to link employee {emp_id}: {str(e)}")
 
         # db_layer functions commit internally; nothing to commit here
 
@@ -459,8 +480,21 @@ def update_record(record_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
                     "field": field
                 }
         
-        # Building: Require either building_id or building_code
-        if not data.get('building_id') and not data.get('building_code'):
+        # Building: Require either building_id, building_code, or existing building in DB
+        # Fetch existing building as fallback before validation
+        existing_building_id_prefetch = None
+        try:
+            cursor.execute(
+                "SELECT BuildingID FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID = ?",
+                (record_id,)
+            )
+            brow = cursor.fetchone()
+            if brow:
+                existing_building_id_prefetch = brow.BuildingID
+        except Exception:
+            pass
+
+        if not data.get('building_id') and not data.get('building_code') and not existing_building_id_prefetch:
             return {
                 "success": False,
                 "error": "VALIDATION_ERROR",
@@ -470,7 +504,7 @@ def update_record(record_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
             }
         
         # Block changing Clinical Risk Type
-        if data.get('clinical_risk_type_id') != current_clinical_risk_type_id:
+        if data.get('clinical_risk_type_id') is not None and int(data.get('clinical_risk_type_id')) != int(current_clinical_risk_type_id):
             return {
                 "success": False,
                 "error": "IMMUTABLE_FIELD",
@@ -713,17 +747,20 @@ def update_record(record_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
         # -----------------------------
         # FSM SAFETY CHECK
         # -----------------------------
-        allowed = {
-            (3,4),  # Closed + No Explanation Needed
-            (1,1),  # Open + Waiting
-            (2,2),  # In Progress + Responded
-            (3,2),  # Closed + Responded
-            (3,3),  # Closed + Forcibly Closed
-        }
+        # Only validate FSM state when an explicit FSM command was given.
+        # Simple data edits (no command) should NOT be blocked by state checks.
+        if command:
+            allowed = {
+                (3,4),  # Closed + No Explanation Needed
+                (1,1),  # Open + Waiting
+                (2,2),  # In Progress + Responded
+                (3,2),  # Closed + Responded
+                (3,3),  # Closed + Forcibly Closed
+            }
 
-        if (new_case_status_id, new_explanation_status_id) not in allowed:
-            conn.rollback()
-            return {"success": False, "error": "FSM_VIOLATION", "message": "Illegal state combination"}
+            if (new_case_status_id, new_explanation_status_id) not in allowed:
+                conn.rollback()
+                return {"success": False, "error": "FSM_VIOLATION", "message": "Illegal state combination"}
 
         cursor.execute(update_query, (
             data.get('complaint_text'),
@@ -751,40 +788,103 @@ def update_record(record_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
 
         # Fix: Handle Target Departments update (NO nested connection calls!)
         if 'target_department_ids' in data:
-            # Validate: At least one target department required
+            # If empty list provided, skip update (preserve existing departments)
             if not data['target_department_ids'] or len(data['target_department_ids']) == 0:
-                conn.rollback()
-                return {
-                    "success": False,
-                    "error": "VALIDATION_ERROR",
-                    "message": "At least one target department is required",
-                    "message_ar": "يجب اختيار قسم مستهدف واحد على الأقل",
-                    "field": "target_department_ids"
-                }
-            
-            # Remove existing target departments (same cursor - no deadlock)
-            cursor.execute(
-                "DELETE FROM dbo.APP_IncidentCaseTargetDepartment WHERE IncidentRequestCaseID = ?",
-                (record_id,)
-            )
-            
-            # Add new target departments (same cursor - no deadlock)
-            for idx, dept_id in enumerate(data['target_department_ids']):
-                is_primary = 1 if idx == 0 else 0
+                print(f"[DEBUG] target_department_ids is empty, preserving existing departments")
+            else:
+                # Remove existing target departments (same cursor - no deadlock)
                 cursor.execute(
-                    """
-                    INSERT INTO dbo.APP_IncidentCaseTargetDepartment (
-                        IncidentRequestCaseID,
-                        DepartmentID,
-                        IsPrimary,
-                        AssignedByUserID
-                    )
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (record_id, dept_id, is_primary, 1)
+                    "DELETE FROM dbo.APP_IncidentCaseTargetDepartment WHERE IncidentRequestCaseID = ?",
+                    (record_id,)
                 )
+                
+                # Add new target departments (same cursor - no deadlock)
+                for idx, dept_id in enumerate(data['target_department_ids']):
+                    is_primary = 1 if idx == 0 else 0
+                    cursor.execute(
+                        """
+                        INSERT INTO dbo.APP_IncidentCaseTargetDepartment (
+                            IncidentRequestCaseID,
+                            DepartmentID,
+                            IsPrimary,
+                            AssignedByUserID
+                        )
+                        VALUES (?, ?, ?, ?)
+                        """,
+                        (record_id, dept_id, is_primary, 1)
+                    )
 
+        # -----------------------------
+        # Employee Linkage Update (Supervisor / Worker)
+        # -----------------------------
+        if 'employees' in data and data['employees'] is not None:
+            emp_list = data['employees']
+            if isinstance(emp_list, list):
+                # Remove existing employee links
+                cursor.execute(
+                    "DELETE FROM dbo.APP_IncidentCaseEmployee WHERE IncidentRequestCaseID = ?",
+                    (record_id,)
+                )
+                
+                # Add new employee links
+                primary_assigned = False
+                for emp in emp_list:
+                    emp_id = emp.get('employee_id')
+                    if not emp_id:
+                        continue
+                    is_primary = 1 if not primary_assigned else 0
+                    cursor.execute(
+                        """
+                        INSERT INTO dbo.APP_IncidentCaseEmployee (
+                            EmployeeID,
+                            IncidentRequestCaseID,
+                            IsPrimary,
+                            FullName,
+                            AssignedByUserID,
+                            AssignedAt
+                        )
+                        VALUES (?, ?, ?, ?, ?, GETDATE())
+                        """,
+                        (emp_id, record_id, is_primary, emp.get('full_name', ''), 1)
+                    )
+                    primary_assigned = True
+                print(f"[DEBUG] Updated {len(emp_list)} employees for record {record_id}")
 
+        # -----------------------------
+        # Doctor Linkage Update
+        # -----------------------------
+        if 'doctors' in data and data['doctors'] is not None:
+            doc_list = data['doctors']
+            if isinstance(doc_list, list) and len(doc_list) > 0:
+                # Remove existing doctor links
+                cursor.execute(
+                    "DELETE FROM dbo.APP_IncidentCaseDoctor WHERE IncidentRequestCaseID = ?",
+                    (record_id,)
+                )
+                
+                # Add new doctor links
+                primary_assigned = False
+                for doc in doc_list:
+                    doc_id = doc.get('doctor_id')
+                    if not doc_id:
+                        continue
+                    is_primary = 1 if not primary_assigned else 0
+                    cursor.execute(
+                        """
+                        INSERT INTO dbo.APP_IncidentCaseDoctor (
+                            DoctorID,
+                            IncidentRequestCaseID,
+                            IsPrimary,
+                            DoctorName,
+                            AssignedByUserID,
+                            AssignedAt
+                        )
+                        VALUES (?, ?, ?, ?, ?, GETDATE())
+                        """,
+                        (doc_id, record_id, is_primary, doc.get('doctor_name', ''), 1)
+                    )
+                    primary_assigned = True
+                print(f"[DEBUG] Updated {len(doc_list)} doctors for record {record_id}")
 
         conn.commit()
 

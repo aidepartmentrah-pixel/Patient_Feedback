@@ -17,6 +17,9 @@ from api.routers.patients_router import router as patients_router
 from api.routers.reports_router import router as reports_router
 from api.routers.settings_router import router as settings_router
 from api.routers.doctors_router import router as doctors_router
+from api.routers.worker_reporting_router import router as worker_reporting_router
+from api.routers.seasonal_export_router import router as seasonal_export_router
+from api.routers.person_seasonal_report_router import router as person_seasonal_report_router
 from api.routers.follow_up_router import router as follow_up_router
 from api.routers.action_items import router as action_items_router
 # UPDATED: Using refactored three-type explanation system
@@ -35,6 +38,18 @@ from api.routers.operators_router import router as operators_router
 from api_v2.routers.workflow_router import router as workflow_router
 # Phase 4B: API v2 Insight Router (analytics and KPI endpoints)
 from api_v2.routers.insight_router import router as insight_router
+# Phase F: API v2 Action Log Router (action item export for follow up page)
+from api_v2.routers.action_log_router import router as action_log_router
+# Phase B — B-B1: API v2 Doctors Router (doctors endpoints under v2 namespace)
+from api_v2.routers.doctors_router import router as doctors_v2_router
+# Phase B — B-B2: API v2 Patients Router (patients endpoints under v2 namespace)
+from api_v2.routers.patients_router import router as patients_v2_router
+# Phase B — B-B3: API v2 Workers Router (worker search endpoint)
+from api_v2.routers.workers_router import router as workers_v2_router
+# Phase G — G-B7: API v2 Drawer Notes Router (drawer notes CRUD endpoints)
+from api_v2.routers.drawer_notes_router import router as drawer_notes_router
+# Phase G — G-B8: API v2 Drawer Labels Router (drawer labels management endpoints)
+from api_v2.routers.drawer_labels_router import router as drawer_labels_router
 # Phase 5: User Inventory Router (admin-only user management queries)
 from api.routers.user_inventory_router import router as user_inventory_router
 # Phase 5: Admin Section Router (create sections with admin users)
@@ -49,6 +64,10 @@ from api.routers.admin_user_management_router import router as admin_user_manage
 from api.routers.admin_section_admin_recreate_router import router as admin_section_admin_recreate_router
 # Phase B: Settings Users Router (user management CRUD operations)
 from api.routers.settings_users_router import router as settings_users_router
+# Phase K: Migration Router (legacy case migration endpoints)
+from api.routers.migration_router import router as migration_router
+# Organization Unit Router (specialized organization unit selection endpoints)
+from api.routers.org_unit_router import router as org_unit_router
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -76,9 +95,10 @@ env_mode = os.getenv("ENVIRONMENT", "development")
 if env_mode == "development":
     # Read allowed origins from environment variable
     # Default: localhost:5173 and 127.0.0.1:5173 for development
+    # Also includes common dev ports: 3000 (React/Express), 5174 (alt Vite), 8080
     origins_str = os.getenv(
         "ALLOWED_ORIGINS",
-        "http://localhost:5173,http://127.0.0.1:5173"
+        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000,http://localhost:5174,http://127.0.0.1:5174,http://localhost:8080,http://127.0.0.1:8080"
     )
     origins = [o.strip() for o in origins_str.split(",") if o.strip()]
 
@@ -108,6 +128,9 @@ app.include_router(patients_router)
 app.include_router(reports_router)
 app.include_router(settings_router)
 app.include_router(doctors_router)
+app.include_router(worker_reporting_router)
+app.include_router(seasonal_export_router)
+app.include_router(person_seasonal_report_router)
 app.include_router(follow_up_router)
 app.include_router(action_items_router)
 app.include_router(explanation_router)
@@ -125,6 +148,18 @@ app.include_router(operators_router)
 app.include_router(workflow_router)
 # Phase 4B: API v2 Insight Router (analytics and KPI endpoints)
 app.include_router(insight_router)
+# Phase F: API v2 Action Log Router (action item export endpoint)
+app.include_router(action_log_router)
+# Phase B — B-B1: API v2 Doctors Router (doctors endpoints under v2 namespace)
+app.include_router(doctors_v2_router)
+# Phase B — B-B2: API v2 Patients Router (patients endpoints under v2 namespace)
+app.include_router(patients_v2_router)
+# Phase B — B-B3: API v2 Workers Router (worker search endpoint)
+app.include_router(workers_v2_router)
+# Phase G — G-B7: API v2 Drawer Notes Router (drawer notes CRUD endpoints)
+app.include_router(drawer_notes_router)
+# Phase G — G-B8: API v2 Drawer Labels Router (drawer label management endpoints)
+app.include_router(drawer_labels_router)
 # Phase 5: User Inventory Router (admin-only user management queries)
 app.include_router(user_inventory_router)
 # Phase 5: Admin Section Router (create sections with admin users)
@@ -139,6 +174,10 @@ app.include_router(admin_user_management_router)
 app.include_router(admin_section_admin_recreate_router)
 # Phase B: Settings Users Router (user management CRUD operations)
 app.include_router(settings_users_router)
+# Phase K: Migration Router (legacy case migration endpoints)
+app.include_router(migration_router)
+# Organization Unit Router (specialized organization unit selection endpoints)
+app.include_router(org_unit_router)
 
 @app.get("/")
 def health_check():

@@ -30,7 +30,8 @@ class MonthlyReportService:
         department_ids: Optional[str],
         section_ids: Optional[str],
         page: int = 1,
-        page_size: int = 50
+        page_size: int = 50,
+        group_by: str = "section"
     ) -> Dict[str, Any]:
         """
         Generate a monthly report (dispatcher method).
@@ -116,14 +117,25 @@ class MonthlyReportService:
         if requested_unit_ids:
             require_any_unit_in_scope(current_user, requested_unit_ids)
         
-        # Phase 2.5.7: CRITICAL - Filter by allowed_unit_ids (server authority)
-        # Instead of using client-provided IDs directly, we filter by allowed scope
-        # This makes it impossible to access data outside scope
+        # Security boundary: always use the full user scope for IssuingOrgUnitID filter
         filters["allowed_unit_ids"] = list(current_user.allowed_unit_ids)
+        
+        # Target department filter: when specific sections/depts/admins are requested,
+        # filter by TARGET departments (APP_IncidentCaseTargetDepartment) — this is the
+        # dimension that determines which section a complaint is ABOUT, not who filed it.
+        # Expand requested IDs to include all descendants (e.g., admin → all its sections)
+        if requested_unit_ids:
+            from ..db_layer.reports_db import debug_expand_org_units
+            expanded_target_ids = debug_expand_org_units(requested_unit_ids)
+            filters["target_unit_ids"] = expanded_target_ids
         
         # Handle scope parameter (if needed for future enhancements)
         if scope:
             filters["scope"] = scope
+        
+        # group_by: Controls the aggregation level for by_department breakdown
+        # Valid values: "section" (default), "department", "administration"
+        filters["group_by"] = group_by if group_by in ("section", "department", "administration") else "section"
         
         # Route to appropriate method based on mode
         if mode == "detailed":
@@ -212,12 +224,14 @@ class MonthlyReportService:
             label_ar = f"{months[month][1]} {year}"
         
         # Fetch complaints
+        target_unit_ids = filters.get("target_unit_ids")
         complaints, total_records = get_filtered_complaints(
             year=year,
             month=month,
             start_date=period_start,
             end_date=period_end,
             allowed_unit_ids=allowed_unit_ids,
+            target_unit_ids=target_unit_ids,
             domain_id=domain_id,
             category_id=category_id,
             severity_id=severity_id,
@@ -315,13 +329,19 @@ class MonthlyReportService:
             label = f"{months[month][0]} {year}"
             label_ar = f"{months[month][1]} {year}"
         
+        # group_by controls the aggregation level for by_department
+        group_by = filters.get("group_by", "section")
+        
         # Fetch statistics
+        target_unit_ids = filters.get("target_unit_ids")
         stats = get_monthly_statistics(
             year=year,
             month=month,
             start_date=period_start,
             end_date=period_end,
-            allowed_unit_ids=allowed_unit_ids
+            allowed_unit_ids=allowed_unit_ids,
+            target_unit_ids=target_unit_ids,
+            group_by=group_by
         )
         
         return {

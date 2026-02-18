@@ -8,7 +8,8 @@ from typing import Dict, Any, List
 
 from ..dependencies.user_context import get_current_user
 from ..schemas.auth_models import CurrentUser
-from ..utils.guards import require_logged_in, require_software_admin
+from ..utils.guards import require_logged_in, require_role
+from core.constants.roles import SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR
 from ..services.training_service import (
     run_training_pipeline,
     get_training_status,
@@ -61,7 +62,7 @@ async def get_training_status_endpoint(
     ```
     """
     require_logged_in(current_user)
-    require_software_admin(current_user)
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR])
     
     try:
         return get_training_status()
@@ -125,7 +126,7 @@ async def get_training_progress_endpoint(
     - Display current_model and estimated_remaining_seconds to user
     """
     require_logged_in(current_user)
-    require_software_admin(current_user)
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR])
     
     try:
         return get_training_progress()
@@ -233,7 +234,7 @@ async def get_grouped_training_status_endpoint(
     - Compare family-level performance
     """
     require_logged_in(current_user)
-    require_software_admin(current_user)
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR])
     
     try:
         return get_grouped_training_status()
@@ -268,7 +269,7 @@ async def get_training_history_endpoint(
     ```
     """
     require_logged_in(current_user)
-    require_software_admin(current_user)
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR])
     
     try:
         return get_training_history_list()
@@ -299,7 +300,7 @@ async def get_ml_database_size_endpoint(
     ```
     """
     require_logged_in(current_user)
-    require_software_admin(current_user)
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR])
     
     try:
         return get_ml_database_size_history()
@@ -338,7 +339,7 @@ async def trigger_training_endpoint(
     - Multiple concurrent runs are prevented
     """
     require_logged_in(current_user)
-    require_software_admin(current_user)
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR])
     
     try:
         # Check if training already running
@@ -400,7 +401,7 @@ async def get_db_growth_chart_endpoint(
         }
     """
     require_logged_in(current_user)
-    require_software_admin(current_user)
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR])
     
     return get_db_growth_chart_data(days=days)
 
@@ -439,7 +440,7 @@ async def get_performance_trends_chart_endpoint(
         }
     """
     require_logged_in(current_user)
-    require_software_admin(current_user)
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR])
     
     return get_performance_trends_chart_data()
 
@@ -483,7 +484,7 @@ async def get_training_timeline_chart_endpoint(
         }
     """
     require_logged_in(current_user)
-    require_software_admin(current_user)
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR])
     
     return get_training_timeline_chart_data(limit=limit)
 
@@ -526,6 +527,6 @@ async def get_family_comparison_chart_endpoint(
         }
     """
     require_logged_in(current_user)
-    require_software_admin(current_user)
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR])
     
     return get_family_comparison_chart_data()

@@ -9,12 +9,14 @@ import io
 import re
 from datetime import datetime, date
 
+from .seasonal_word_adapter import SeasonalWordAdapter
 from ..db_layer.patients_db import (
     search_patients,
     get_patient_profile,
     get_patient_incidents,
     get_incident_details,
     get_patient_incidents_for_export,
+    get_patient_metrics,
     create_patient,
     get_all_reserve_patients
 )
@@ -279,14 +281,14 @@ def search_patients_service(
     Search for patients.
     
     Returns:
-        Dict with patients list and total count
+        Dict with success flag, patients list, and count (matching insert page format)
     """
     # Validation
     if limit > 100:
         limit = 100  # Cap at 100 for privacy
     
     if not any([query, mrn, phone, date_of_birth]):
-        return {"patients": [], "total": 0, "message": "At least one search criterion required"}
+        return {"success": True, "patients": [], "count": 0, "message": "At least one search criterion required"}
     
     try:
         patients = search_patients(
@@ -298,8 +300,9 @@ def search_patients_service(
         )
         
         return {
+            "success": True,
             "patients": patients,
-            "total": len(patients)
+            "count": len(patients)
         }
     
     except Exception as e:
@@ -456,11 +459,13 @@ def get_patient_full_history_service(
     Get patient profile and incidents in single response.
     
     Returns:
-        Dict with profile and incidents
+        Dict with profile, incidents, metrics, and meta (V2 schema compatible)
     """
     try:
+        # Get profile
         profile = get_patient_profile_service(patient_id)
         
+        # Get incidents
         incidents_data = get_patient_incidents_service(
             patient_id=patient_id,
             from_date=from_date,
@@ -472,9 +477,29 @@ def get_patient_full_history_service(
             offset=offset
         )
         
+        # Get aggregated metrics
+        patient_name = profile.get('PatientName') if profile else None
+        metrics = get_patient_metrics(
+            patient_id=patient_id,
+            patient_name=patient_name,
+            from_date=from_date,
+            to_date=to_date
+        )
+        
+        # Return normalized V2 schema format
         return {
             "profile": profile,
-            "incidents": incidents_data
+            "metrics": metrics,
+            "items": incidents_data.get('incidents', []),
+            "meta": {
+                "entity_type": "patient",
+                "entity_id": patient_id,
+                "period_from": from_date,
+                "period_to": to_date,
+                "total": incidents_data.get('total', 0),
+                "limit": limit,
+                "offset": offset
+            }
         }
     
     except Exception as e:
@@ -491,17 +516,18 @@ def export_patient_history_service(
     include_profile: bool = True
 ) -> Dict[str, Any]:
     """
-    Generate patient history export in CSV or JSON format.
+    Generate patient history export in CSV, JSON, or Word format.
     
     Args:
         patient_id: Patient ID
-        format_type: "csv" or "json"
+        format_type: "csv", "json", or "word"
         from_date: Optional start date filter
         to_date: Optional end date filter
         include_profile: Include patient profile
     
     Returns:
         For CSV: Dict with filename and csv_content
+        For Word: Dict with filename and word_bytes
         For JSON: JSON export dict
     """
     try:
@@ -515,6 +541,8 @@ def export_patient_history_service(
         
         if format_type == "csv":
             return _generate_csv_export(export_data, patient_id)
+        elif format_type == "word":
+            return _generate_word_export(export_data, patient_id)
         else:
             return export_data
     
@@ -565,3 +593,27 @@ def _generate_csv_export(export_data: Dict[str, Any], patient_id: int) -> Dict[s
     
     except Exception as e:
         raise Exception(f"Failed to generate CSV: {str(e)}")
+
+
+def _generate_word_export(export_data: Dict[str, Any], patient_id: int) -> Dict[str, Any]:
+    """
+    Generate Word document export from export data.
+    
+    Returns:
+        Dict with filename and word_bytes
+    """
+    try:
+        # Generate Word document using SeasonalWordAdapter
+        word_bytes = SeasonalWordAdapter.generate_patient_word_report(export_data)
+        
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        filename = f"patient_{patient_id}_report_{timestamp}.docx"
+        
+        return {
+            "filename": filename,
+            "content": word_bytes,
+            "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        }
+    
+    except Exception as e:
+        raise Exception(f"Failed to generate Word document: {str(e)}")

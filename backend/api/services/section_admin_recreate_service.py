@@ -7,6 +7,7 @@ Handles recreation of section admin users with unique username generation.
 
 from typing import Dict, Any
 from core.database import get_connection
+from ..constants.org_unit_types import ORG_TYPE_SECTION
 from ..db_layer.section_admin_recreate_db import (
     get_section,
     username_exists,
@@ -57,11 +58,11 @@ def recreate_section_admin_service(section_id: int) -> Dict[str, Any]:
         section_type = section.Type
         section_name = section.Name
         
-        # Verify Type = 324 (SECTION)
-        if section_type != 324:
+        # Verify Type = SECTION
+        if section_type != ORG_TYPE_SECTION:
             raise Exception(
                 f"Organization unit '{section_name}' (ID {section_id}) is not a section. "
-                f"Type is {section_type}, expected 324 (SECTION)."
+                f"Type is {section_type}, expected {ORG_TYPE_SECTION} (SECTION)."
             )
         
         # Step 2: Generate unique username with version suffix

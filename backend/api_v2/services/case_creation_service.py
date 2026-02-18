@@ -5,22 +5,18 @@ Orchestrates subcase creation for incidents and seasonal reports.
 Pure orchestration layer - no business logic, validation, or permission checks.
 """
 
+import logging
 from typing import Optional
-import pyodbc
+from core.database import get_connection
 from api_v2.db_layer import administrative_subcase_db
 from api_v2.db_layer import seasonal_report_db
+from api.services.notification_service import (
+    send_subcase_assignment_notification,
+    get_section_admin_email
+)
 
-
-def get_db_connection():
-    """Get database connection using project standard."""
-    conn = pyodbc.connect(
-        "DRIVER={ODBC Driver 17 for SQL Server};"
-        "SERVER=SOCIALMEDIA;"
-        "DATABASE=IncidentManager;"
-        "Trusted_Connection=yes;"
-        "TrustServerCertificate=yes;"
-    )
-    return conn
+# Configure logger
+logger = logging.getLogger(__name__)
 
 
 def _create_subcase(
@@ -34,8 +30,10 @@ def _create_subcase(
     """
     Internal helper to create a subcase.
     Thin adapter to DB layer.
+    
+    After creation, sends notification to section admin if they have an email.
     """
-    return administrative_subcase_db.create_subcase(
+    subcase_id = administrative_subcase_db.create_subcase(
         case_type=case_type,
         incident_id=incident_id,
         seasonal_report_id=seasonal_report_id,
@@ -43,6 +41,24 @@ def _create_subcase(
         created_by_user_id=created_by_user_id,
         initial_status=initial_status
     )
+    
+    # Send notification (async, non-blocking)
+    if subcase_id:
+        try:
+            admin_email = get_section_admin_email(target_org_unit_id)
+            if admin_email:
+                send_subcase_assignment_notification(
+                    to_email=admin_email,
+                    case_id=subcase_id
+                )
+                logger.info(f"NOTIFICATION: Queued email for subcase {subcase_id} to {admin_email}")
+            else:
+                logger.debug(f"NOTIFICATION: No admin email for org_unit {target_org_unit_id}")
+        except Exception as e:
+            # Log but don't fail - notification is non-critical
+            logger.warning(f"NOTIFICATION: Failed to send for subcase {subcase_id}: {str(e)}")
+    
+    return subcase_id
 
 
 def create_subcases_for_incident(incident_id: int, current_user) -> None:
@@ -61,7 +77,7 @@ def create_subcases_for_incident(incident_id: int, current_user) -> None:
     # Handle None current_user (legacy adapter calls)
     user_id = current_user.user_id if current_user else 1  # Default to system user
     
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor()
     
     try:

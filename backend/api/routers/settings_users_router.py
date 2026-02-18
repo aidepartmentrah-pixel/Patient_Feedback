@@ -15,7 +15,8 @@ from typing import List, Dict, Any
 
 # Auth dependencies
 from ..services.auth_service import get_current_user, CurrentUser
-from ..utils.guards import require_software_admin
+from ..utils.guards import require_role
+from core.constants.roles import SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR
 
 # Service functions
 from ..services.user_management_service import (
@@ -23,7 +24,8 @@ from ..services.user_management_service import (
     update_user_identity_service,
     list_users_for_settings_service,
     delete_user_service,
-    admin_reset_user_password_service
+    admin_reset_user_password_service,
+    bulk_delete_users_service
 )
 
 # Schemas
@@ -32,7 +34,9 @@ from ..schemas.settings_users_models import (
     UpdateUserIdentityRequest,
     UpdateUserPasswordRequest,
     SettingsUserListItemResponse,
-    CreateUserResponse
+    CreateUserResponse,
+    BulkDeleteUsersRequest,
+    BulkDeleteUsersResponse
 )
 
 
@@ -75,7 +79,7 @@ def list_users(
     - 403: User does not have SOFTWARE_ADMIN role
     """
     # Authorization guard
-    require_software_admin(current_user)
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR])
     
     # Call service
     return list_users_for_settings_service()
@@ -124,7 +128,7 @@ def create_user(
     - 500: Database error
     """
     # Authorization guard
-    require_software_admin(current_user)
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR])
     
     # Call service
     try:
@@ -133,6 +137,7 @@ def create_user(
             password_plain=request.password,
             display_name=request.display_name,
             department_display_name=request.department_display_name,
+            email=request.email,
             role_id=request.role_id,
             org_unit_id=request.org_unit_id
         )
@@ -186,14 +191,15 @@ def update_user_identity(
     - 500: Database error
     """
     # Authorization guard
-    require_software_admin(current_user)
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR])
     
     # Call service
     try:
         update_user_identity_service(
             user_id=user_id,
             display_name=request.display_name,
-            department_display_name=request.department_display_name
+            department_display_name=request.department_display_name,
+            email=request.email
         )
         
         return {"status": "ok"}
@@ -250,7 +256,7 @@ def reset_user_password(
     - 500: Database error
     """
     # Authorization guard
-    require_software_admin(current_user)
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR])
     
     # Call service
     try:
@@ -304,7 +310,7 @@ def delete_user(
     - 500: Database error
     """
     # Authorization guard
-    require_software_admin(current_user)
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR])
     
     # Call service
     try:
@@ -319,5 +325,100 @@ def delete_user(
     except PermissionError as e:
         # Protection rule violation
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.post("/bulk-delete", response_model=BulkDeleteUsersResponse)
+def bulk_delete_users(
+    request: BulkDeleteUsersRequest,
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Bulk delete multiple users (SOFTWARE_ADMIN only).
+    
+    **Requires:** SOFTWARE_ADMIN role
+    
+    **Body:**
+    ```json
+    {
+        "user_ids": [1, 5, 12, 25, 33]
+    }
+    ```
+    
+    **Process:**
+    1. Validates user IDs (1-100 users per request)
+    2. For each user:
+       - Checks if user exists
+       - Prevents self-deletion (current logged-in user)
+       - Checks protection rules
+       - Deletes role scopes
+       - Deletes user record
+    3. Commits transaction for all successful deletions
+    4. Returns detailed success/failure breakdown
+    
+    **Safety Rules:**
+    - Cannot delete currently logged-in user
+    - Cannot delete username "software_admin"
+    - Cannot delete any user with SOFTWARE_ADMIN role
+    - Maximum 100 users per request
+    - Continues processing on individual failures
+    
+    **Returns:**
+    ```json
+    {
+        "success": true,
+        "deleted_count": 5,
+        "failed_count": 0,
+        "deleted_users": [
+            {
+                "user_id": 1,
+                "username": "testuser1",
+                "status": "deleted"
+            }
+        ],
+        "failed_users": [],
+        "message": "Successfully deleted 5 user(s)"
+    }
+    ```
+    
+    **Response on Partial Failure:**
+    ```json
+    {
+        "success": false,
+        "deleted_count": 3,
+        "failed_count": 2,
+        "deleted_users": [...],
+        "failed_users": [
+            {
+                "user_id": 25,
+                "username": "admin",
+                "status": "failed",
+                "reason": "Cannot delete currently logged in user"
+            }
+        ],
+        "message": "Deleted 3 out of 5 user(s). 2 failed."
+    }
+    ```
+    
+    **Errors:**
+    - 403: User does not have SOFTWARE_ADMIN role
+    - 400: Validation error (empty array, invalid IDs, > 100 users)
+    - 500: Database error
+    """
+    # Authorization guard
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR])
+    
+    # Call service
+    try:
+        result = bulk_delete_users_service(
+            user_ids=request.user_ids,
+            current_user_id=current_user.user_id
+        )
+        
+        return result
+        
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))

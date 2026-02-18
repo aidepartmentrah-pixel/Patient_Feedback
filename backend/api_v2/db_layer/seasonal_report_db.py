@@ -4,19 +4,7 @@ Helper functions for querying seasonal report data needed by case creation servi
 """
 
 from typing import List
-import pyodbc
-
-
-def get_db_connection():
-    """Get database connection using project standard."""
-    conn = pyodbc.connect(
-        "DRIVER={ODBC Driver 17 for SQL Server};"
-        "SERVER=SOCIALMEDIA;"
-        "DATABASE=IncidentManager;"
-        "Trusted_Connection=yes;"
-        "TrustServerCertificate=yes;"
-    )
-    return conn
+from core.database import get_connection
 
 
 def get_target_orgunits_for_seasonal_report(seasonal_report_id: int) -> List[int]:
@@ -29,7 +17,7 @@ def get_target_orgunits_for_seasonal_report(seasonal_report_id: int) -> List[int
     Returns:
         List of OrgUnitID values
     """
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor()
     
     try:

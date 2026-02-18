@@ -1,7 +1,7 @@
 import sys
 sys.path.append('c:\\Users\\IT\\Documents\\GitHub Repository\\Patient_Feedback\\backend')
 
-from api.db_layer.admin_units import get_connection
+from core.database import get_connection
 
 conn = get_connection()
 cursor = conn.cursor()

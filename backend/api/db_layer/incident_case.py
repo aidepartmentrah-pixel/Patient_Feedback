@@ -1,15 +1,5 @@
-import pyodbc
 from datetime import date
-
-def get_connection():
-    conn = pyodbc.connect(
-        "DRIVER={ODBC Driver 17 for SQL Server};"
-        "SERVER=SOCIALMEDIA;"
-        "DATABASE=IncidentManager;"
-        "Trusted_Connection=yes;"
-        "TrustServerCertificate=yes;"
-    )
-    return conn
+from core.database import get_connection
 
 # -----------------------------
 # ALLOWED UPDATE FIELDS
@@ -21,7 +11,7 @@ UPDATABLE_FIELDS = {
     "TakenAction",
     "FeedbackRecievedDate",
     "PatientName",
-    "isINPatient",
+    "isINPa tient",
     "ClinicalRiskTypeID",
     "FeedbackIntentTypeID",
     "BuildingID",
@@ -255,8 +245,6 @@ def soft_delete_incident_case(
     conn.commit()
     conn.close()
 
-from core.database import get_connection
-
 
 def hard_delete_incident_case(incident_id: int) -> None:
     """
@@ -328,3 +316,53 @@ def hard_delete_incident_case(incident_id: int) -> None:
 
     finally:
         conn.close()
+
+
+# -----------------------------
+# FORCE CLOSE TRACKING
+# -----------------------------
+
+def update_force_close_tracking(
+    incident_id: int,
+    force_closed_by_user_id: int,
+    force_close_reason: str
+) -> bool:
+    """
+    Update force close tracking fields for an incident.
+    
+    Sets ForceClosedAt, ForceClosedByUserID, and ForceCloseReason.
+    
+    Args:
+        incident_id: Incident ID
+        force_closed_by_user_id: User ID who force closed the incident
+        force_close_reason: Reason for force closing
+    
+    Returns:
+        True if updated, False if incident not found
+    """
+    from datetime import datetime
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute(
+            """
+            UPDATE dbo.APP_IncidentCase
+            SET ForceClosedAt = ?,
+                ForceClosedByUserID = ?,
+                ForceCloseReason = ?
+            WHERE IncidentRequestCaseID = ?
+            """,
+            datetime.now(),
+            force_closed_by_user_id,
+            force_close_reason,
+            incident_id
+        )
+        
+        updated = cursor.rowcount > 0
+        conn.commit()
+        return updated
+    finally:
+        conn.close()
+

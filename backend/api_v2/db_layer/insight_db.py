@@ -9,19 +9,7 @@ NO workflow mutations. NO table modifications.
 
 from typing import Dict, Any, List, Optional
 from datetime import datetime
-import pyodbc
-
-
-def get_db_connection():
-    """Get database connection using project standard."""
-    conn = pyodbc.connect(
-        "DRIVER={ODBC Driver 17 for SQL Server};"
-        "SERVER=SOCIALMEDIA;"
-        "DATABASE=IncidentManager;"
-        "Trusted_Connection=yes;"
-        "TrustServerCertificate=yes;"
-    )
-    return conn
+from core.database import get_connection
 
 
 # ============================================================
@@ -380,3 +368,146 @@ def get_subcase_org_unit_counts(conn, allowed_unit_ids: List[int]) -> List[Dict[
     
     cursor.close()
     return results
+
+
+# ============================================================
+# USER WORKLOAD TRACKING
+# ============================================================
+
+def get_user_workload(
+    conn,
+    allowed_unit_ids: List[int],
+    org_unit_filter: Optional[int] = None,
+    role_filter: Optional[str] = None,
+    min_items: int = 1,
+    sort_by: str = 'pending_count',
+    sort_order: str = 'desc'
+) -> List[Dict[str, Any]]:
+    """
+    Get user workload statistics based on assigned action items.
+    
+    Aggregates pending action items per user, showing workload distribution
+    across the organization. Only counts items assigned to users for subcases
+    that are NOT in terminal states.
+    
+    Tables:
+    - APP_SubcaseActionItem (action items)
+    - APP_AdministrativeSubcase (to filter by status)
+    - APP_Users (for user details)
+    - APP_UserRoleScope (for role and org unit filtering)
+    
+    Filter Logic:
+    - Subcase Status NOT IN ('ADMIN_APPROVED', 'SECTION_DENIED', 'FORCE_CLOSED')
+    - Action Item CompletedAt IS NULL (only open items)
+    - Target Org Unit IN allowed_unit_ids (scope filtering)
+    
+    Args:
+        conn: Database connection
+        allowed_unit_ids: List of org unit IDs for scope filtering
+        org_unit_filter: Optional org unit ID to filter users by
+        role_filter: Optional role code to filter users by
+        min_items: Minimum pending items to include user (default: 1)
+        sort_by: Sort field ('pending_count', 'oldest_item', 'user_name')
+        sort_order: Sort order ('asc' or 'desc')
+    
+    Returns:
+        List of user workload dicts:
+        [
+            {
+                "user_id": 456,
+                "user_name": "Dr. John Smith",
+                "user_role": "SECTION_ADMIN",
+                "primary_org_unit": "Cardiology Section",
+                "pending_count": 10,
+                "oldest_item_days": 15
+            },
+            ...
+        ]
+    """
+    cursor = conn.cursor()
+    
+    try:
+        # Handle empty allowed_unit_ids
+        if not allowed_unit_ids:
+            return []
+        
+        # Build parameterized IN clause for scope filtering
+        placeholders = ','.join('?' * len(allowed_unit_ids))
+        
+        # Build WHERE clause for optional filters
+        filter_conditions = []
+        filter_params = []
+        
+        if org_unit_filter is not None:
+            filter_conditions.append("urs.OrgUnitID = ?")
+            filter_params.append(org_unit_filter)
+        
+        if role_filter is not None:
+            filter_conditions.append("r.RoleCode = ?")
+            filter_params.append(role_filter)
+        
+        additional_where = ""
+        if filter_conditions:
+            additional_where = " AND " + " AND ".join(filter_conditions)
+        
+        # Build ORDER BY clause
+        order_column_map = {
+            'pending_count': 'PendingCount',
+            'oldest_item': 'OldestItemDays',
+            'user_name': 'u.DisplayName'
+        }
+        order_column = order_column_map.get(sort_by, 'PendingCount')
+        order_direction = 'DESC' if sort_order.lower() == 'desc' else 'ASC'
+        
+        query = f"""
+            SELECT 
+                u.UserID,
+                u.DisplayName AS UserName,
+                r.RoleCode AS UserRole,
+                u.DepartmentDisplayName AS PrimaryOrgUnit,
+                COUNT(DISTINCT ai.ActionItemID) AS PendingCount,
+                DATEDIFF(day, MIN(ai.UpdatedAt), GETDATE()) AS OldestItemDays
+            FROM dbo.APP_SubcaseActionItem ai
+            INNER JOIN dbo.APP_AdministrativeSubcase sc 
+                ON ai.SubcaseID = sc.SubcaseID
+            INNER JOIN dbo.APP_Users u 
+                ON ai.AssignedToUserID = u.UserID
+            LEFT JOIN dbo.APP_UserRoleScope urs
+                ON u.UserID = urs.UserID
+            LEFT JOIN dbo.APP_Roles r
+                ON urs.RoleID = r.RoleID
+            WHERE sc.TargetOrgUnitID IN ({placeholders})
+              AND sc.Status NOT IN ('ADMIN_APPROVED', 'SECTION_DENIED', 'FORCE_CLOSED')
+              AND ai.CompletedAt IS NULL
+              AND ai.AssignedToUserID IS NOT NULL
+              {additional_where}
+            GROUP BY u.UserID, u.DisplayName, r.RoleCode, u.DepartmentDisplayName
+            HAVING COUNT(DISTINCT ai.ActionItemID) >= ?
+            ORDER BY {order_column} {order_direction}
+        """
+        
+        # Combine all parameters: scope IDs + optional filters + min_items
+        params = allowed_unit_ids + filter_params + [min_items]
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        
+        return [
+            {
+                "user_id": row.UserID,
+                "user_name": row.UserName or str(row.UserID),  # Fallback to UserID string if name is None
+                "user_role": row.UserRole or "UNKNOWN",  # Fallback for users without roles
+                "primary_org_unit": row.PrimaryOrgUnit or "Unknown",
+                "pending_count": row.PendingCount,
+                "oldest_item_days": row.OldestItemDays or 0
+            }
+            for row in rows
+        ]
+    
+    finally:
+        cursor.close()
+
+
+def get_db_connection():
+    """Get database connection (wrapper for external usage)."""
+    return get_connection()

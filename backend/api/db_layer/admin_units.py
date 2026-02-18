@@ -1,14 +1,4 @@
-import pyodbc
-
-def get_connection():
-    conn = pyodbc.connect(
-        "DRIVER={ODBC Driver 17 for SQL Server};"
-        "SERVER=SOCIALMEDIA;"
-        "DATABASE=IncidentManager;"
-        "Trusted_Connection=yes;"
-        "TrustServerCertificate=yes;"
-    )
-    return conn
+from core.database import get_connection
 
 
 def get_admin_unit_by_id(admin_unit_id: int):
@@ -21,7 +11,7 @@ def get_admin_unit_by_id(admin_unit_id: int):
     cursor.execute(
         """
         SELECT *
-        FROM AdminsrationUnit
+        FROM AdminsrationUnit WITH (NOLOCK)
         WHERE UniqueID = ?
         """,
         admin_unit_id
@@ -48,7 +38,7 @@ def get_admin_unit_type(admin_unit_id: int) -> int | None:
     cursor.execute(
         """
         SELECT Type
-        FROM AdminsrationUnit
+        FROM AdminsrationUnit WITH (NOLOCK)
         WHERE UniqueID = ?
         """,
         admin_unit_id
@@ -72,7 +62,7 @@ def get_admin_unit_children(parent_id: int):
     cursor.execute(
         """
         SELECT *
-        FROM AdminsrationUnit
+        FROM AdminsrationUnit WITH (NOLOCK)
         WHERE ParentID = ?
         """,
         parent_id
@@ -93,8 +83,8 @@ def get_admin_unit_parent(admin_unit_id: int):
     cursor.execute(
         """
         SELECT parent.*
-        FROM AdminsrationUnit child
-        JOIN AdminsrationUnit parent
+        FROM AdminsrationUnit child WITH (NOLOCK)
+        JOIN AdminsrationUnit parent WITH (NOLOCK)
             ON child.ParentID = parent.UniqueID
         WHERE child.UniqueID = ?
         """,
@@ -117,7 +107,7 @@ def get_admin_unit_tree():
     cursor.execute(
         """
         SELECT *
-        FROM AdminsrationUnit
+        FROM AdminsrationUnit WITH (NOLOCK)
         """
     )
 
@@ -129,6 +119,7 @@ def get_admin_unit_tree():
 def get_admin_unit_leaves():
     """
     Return administration units that have no children (leaf nodes).
+    Excludes frozen units and units with NULL/empty names.
     """
     conn = get_connection()
     cursor = conn.cursor()
@@ -136,10 +127,15 @@ def get_admin_unit_leaves():
     cursor.execute(
         """
         SELECT u.*
-        FROM AdminsrationUnit u
-        LEFT JOIN AdminsrationUnit c
+        FROM AdminsrationUnit u WITH (NOLOCK)
+        LEFT JOIN AdminsrationUnit c WITH (NOLOCK)
             ON u.UniqueID = c.ParentID
         WHERE c.UniqueID IS NULL
+          AND (u.Frozen = 0 OR u.Frozen IS NULL)
+          AND u.Name IS NOT NULL
+          AND u.Name <> ''
+          AND u.Name <> 'NULL'
+        ORDER BY u.Name
         """
     )
 
@@ -159,7 +155,7 @@ def get_active_admin_units():
     cursor.execute(
         """
         SELECT UniqueID, Name
-        FROM AdminsrationUnit
+        FROM AdminsrationUnit WITH (NOLOCK)
         WHERE Frozen = 0 AND Type IS NOT NULL
         """
     )
@@ -194,7 +190,7 @@ def get_units_by_type(unit_type: int):
     cursor.execute(
         """
         SELECT UniqueID, Name, ParentID
-        FROM AdminsrationUnit
+        FROM AdminsrationUnit WITH (NOLOCK)
         WHERE Frozen = 0 AND Type = ? AND Type IS NOT NULL
         ORDER BY Name
         """,

@@ -3,21 +3,9 @@ Database layer for Doctor endpoints.
 Handles all SQL queries for doctor profiles, statistics, and incident tracking.
 """
 
-import pyodbc
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
-
-
-def get_connection():
-    """Get database connection."""
-    conn = pyodbc.connect(
-        "DRIVER={ODBC Driver 17 for SQL Server};"
-        "SERVER=SOCIALMEDIA;"
-        "DATABASE=IncidentManager;"
-        "Trusted_Connection=yes;"
-        "TrustServerCertificate=yes;"
-    )
-    return conn
+from core.database import get_connection
 
 
 # =============================================
@@ -223,18 +211,19 @@ def get_doctor_profile(doctor_id: int) -> Optional[Dict[str, Any]]:
             
             return profile
         
-        # Not found in reserve, try hospital table
+        # Not found in reserve, try hospital view
+        # APP_VIEWTABLE_VW_DOCTORS has columns: DoctorID, Name, SpecialityName, IsActive, etc.
         query_hospital = """
             SELECT
                 d.DoctorID as id,
-                d.DoctorName as name_en,
-                d.DoctorName as name_ar,
-                d.Specialty as specialty,
+                d.Name as name_en,
+                d.Name as name_ar,
+                d.SpecialityName as specialty,
                 CASE WHEN d.IsActive = 1 THEN 'active' ELSE 'inactive' END as status,
                 'hospital' as source,
-                d.SourceSystem as source_system,
-                d.LastSyncedAt as last_synced_at
-            FROM dbo.APP_LOOKUP_DOCTOR d
+                NULL as source_system,
+                NULL as last_synced_at
+            FROM dbo.APP_VIEWTABLE_VW_DOCTORS d
             WHERE d.DoctorID = ?
         """
         
@@ -295,7 +284,10 @@ def get_doctor_statistics(
             COUNT(CASE WHEN s.SeverityName = 'High' THEN 1 END) as high,
             COUNT(CASE WHEN s.SeverityName = 'Medium' THEN 1 END) as medium,
             COUNT(CASE WHEN s.SeverityName = 'Low' THEN 1 END) as low,
-            COUNT(CASE WHEN crt.Code IN ('RED_FLAG', 'NEVER_EVENT') THEN 1 END) as red_flags
+            COUNT(CASE WHEN crt.Code IN ('RED_FLAG', 'NEVER_EVENT') THEN 1 END) as red_flags,
+            COUNT(CASE WHEN ic.FeedbackIntentTypeID = 2 THEN 1 END) as good_feedback,
+            COUNT(CASE WHEN ic.FeedbackIntentTypeID = 3 THEN 1 END) as bad_feedback,
+            COUNT(CASE WHEN ic.FeedbackIntentTypeID IN (1, 4) OR ic.FeedbackIntentTypeID IS NULL THEN 1 END) as neutral_feedback
         FROM dbo.APP_IncidentCase ic
         INNER JOIN dbo.APP_IncidentCaseDoctor icd ON ic.IncidentRequestCaseID = icd.IncidentRequestCaseID
         LEFT JOIN dbo.APP_LOOKUP_SEVERITY s ON ic.SeverityID = s.SeverityID
@@ -315,7 +307,10 @@ def get_doctor_statistics(
                 'high': 0,
                 'medium': 0,
                 'low': 0,
-                'red_flags': 0
+                'red_flags': 0,
+                'good_feedback': 0,
+                'bad_feedback': 0,
+                'neutral_feedback': 0
             }
         
         return {
@@ -323,7 +318,10 @@ def get_doctor_statistics(
             'high': row.high or 0,
             'medium': row.medium or 0,
             'low': row.low or 0,
-            'red_flags': row.red_flags or 0
+            'red_flags': row.red_flags or 0,
+            'good_feedback': row.good_feedback or 0,
+            'bad_feedback': row.bad_feedback or 0,
+            'neutral_feedback': row.neutral_feedback or 0
         }
     finally:
         cursor.close()
@@ -544,17 +542,27 @@ def get_doctor_incidents(
             ic.FeedbackRecievedDate as date,
             CAST(ic.IncidentRequestCaseID AS VARCHAR) as incident_id,
             ic.PatientName as patient_id,
+            ic.PatientName as patient_name,
             cat.CategoryName as category,
             cat.CategoryName as category_ar,
             s.SeverityName as severity,
             cs.Name as status,
-            CASE WHEN crt.Code IN ('RED_FLAG', 'NEVER_EVENT') THEN 1 ELSE 0 END as is_red_flag
+            CASE WHEN crt.Code IN ('RED_FLAG', 'NEVER_EVENT') THEN 1 ELSE 0 END as is_red_flag,
+            ic.FeedbackIntentTypeID as intent_type_id,
+            fit.NameAr as intent_type_ar,
+            fit.NameEn as intent_type_en,
+            CASE
+                WHEN ic.FeedbackIntentTypeID = 2 THEN 'good'
+                WHEN ic.FeedbackIntentTypeID = 3 THEN 'bad'
+                ELSE 'neutral'
+            END as classification
         FROM dbo.APP_IncidentCase ic
         INNER JOIN dbo.APP_IncidentCaseDoctor icd ON ic.IncidentRequestCaseID = icd.IncidentRequestCaseID
         LEFT JOIN dbo.APP_LOOKUP_CATEGORY cat ON ic.CategoryID = cat.CategoryID
         LEFT JOIN dbo.APP_LOOKUP_SEVERITY s ON ic.SeverityID = s.SeverityID
         LEFT JOIN dbo.APP_LOOKUP_CASE_STATUS cs ON ic.CaseStatusID = cs.CaseStatusID
         LEFT JOIN dbo.APP_LOOKUP_CLINICAL_RISK_TYPE crt ON ic.ClinicalRiskTypeID = crt.ClinicalRiskTypeID
+        LEFT JOIN dbo.APP_LOOKUP_FEEDBACK_INTENT_TYPE fit ON ic.FeedbackIntentTypeID = fit.FeedbackIntentTypeID
         WHERE {where_clause}
         ORDER BY ic.FeedbackRecievedDate DESC
         OFFSET {offset} ROWS
@@ -577,6 +585,198 @@ def get_doctor_incidents(
             'limit': limit,
             'offset': offset
         }
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# =============================================
+# DOCTOR METRICS (for full-history)
+# =============================================
+
+def get_doctor_metrics(
+    doctor_id: int,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Get aggregated metrics for a doctor including severity and category breakdowns.
+    Uses APP_IncidentCaseDoctor join to find related incidents.
+    
+    Args:
+        doctor_id: Doctor ID
+        from_date: Optional start date filter (YYYY-MM-DD)
+        to_date: Optional end date filter (YYYY-MM-DD)
+    
+    Returns:
+        Dict with total_incidents, last_incident_date, severity_breakdown, category_breakdown
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        conditions = ["icd.DoctorID = ?"]
+        params = [doctor_id]
+        
+        if from_date:
+            conditions.append("CONVERT(DATE, ic.FeedbackRecievedDate) >= ?")
+            params.append(from_date)
+        
+        if to_date:
+            conditions.append("CONVERT(DATE, ic.FeedbackRecievedDate) <= ?")
+            params.append(to_date)
+        
+        where_clause = " AND ".join(conditions)
+        
+        # Get total incidents and last incident date
+        cursor.execute(f"""
+            SELECT 
+                COUNT(DISTINCT ic.IncidentRequestCaseID) as total_incidents,
+                MAX(CONVERT(VARCHAR(10), ic.FeedbackRecievedDate, 23)) as last_incident_date
+            FROM dbo.APP_IncidentCase ic
+            INNER JOIN dbo.APP_IncidentCaseDoctor icd ON ic.IncidentRequestCaseID = icd.IncidentRequestCaseID
+            WHERE {where_clause}
+        """, params)
+        
+        summary_row = cursor.fetchone()
+        total_incidents = summary_row[0] if summary_row else 0
+        last_incident_date = summary_row[1] if summary_row else None
+        
+        # Get severity breakdown
+        cursor.execute(f"""
+            SELECT 
+                COALESCE(sev.SeverityName, 'Unknown') as severity,
+                COUNT(DISTINCT ic.IncidentRequestCaseID) as count
+            FROM dbo.APP_IncidentCase ic
+            INNER JOIN dbo.APP_IncidentCaseDoctor icd ON ic.IncidentRequestCaseID = icd.IncidentRequestCaseID
+            LEFT JOIN dbo.APP_LOOKUP_SEVERITY sev ON ic.SeverityID = sev.SeverityID
+            WHERE {where_clause}
+            GROUP BY sev.SeverityName
+        """, params)
+        
+        severity_breakdown = {}
+        for row in cursor.fetchall():
+            severity_breakdown[row[0]] = row[1]
+        
+        # Get category breakdown
+        cursor.execute(f"""
+            SELECT 
+                COALESCE(cat.CategoryName, 'Unknown') as category,
+                COUNT(DISTINCT ic.IncidentRequestCaseID) as count
+            FROM dbo.APP_IncidentCase ic
+            INNER JOIN dbo.APP_IncidentCaseDoctor icd ON ic.IncidentRequestCaseID = icd.IncidentRequestCaseID
+            LEFT JOIN dbo.APP_LOOKUP_CATEGORY cat ON ic.CategoryID = cat.CategoryID
+            WHERE {where_clause}
+            GROUP BY cat.CategoryName
+        """, params)
+        
+        category_breakdown = {}
+        for row in cursor.fetchall():
+            category_breakdown[row[0]] = row[1]
+        
+        return {
+            "total_incidents": total_incidents,
+            "last_incident_date": last_incident_date,
+            "severity_breakdown": severity_breakdown,
+            "category_breakdown": category_breakdown
+        }
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# =============================================
+# DOCTOR INCIDENTS FOR EXPORT
+# =============================================
+
+def get_doctor_incidents_for_export(
+    doctor_id: int,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    include_profile: bool = True
+) -> Dict[str, Any]:
+    """
+    Get doctor data formatted for export (CSV/JSON/Word).
+    
+    Args:
+        doctor_id: Doctor ID
+        from_date: Optional start date filter (YYYY-MM-DD)
+        to_date: Optional end date filter (YYYY-MM-DD)
+        include_profile: Include doctor profile in export
+    
+    Returns:
+        Dict with doctor profile and incidents list
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        export_data = {
+            "export_date": datetime.now().isoformat(),
+            "format": "json",
+            "doctor": None,
+            "incidents": []
+        }
+        
+        # Get doctor profile if requested
+        if include_profile:
+            profile = get_doctor_profile(doctor_id)
+            if profile:
+                export_data["doctor"] = {
+                    "doctor_id": profile.get('id'),
+                    "full_name": profile.get('name_en'),
+                    "specialty": profile.get('specialty'),
+                    "status": profile.get('status'),
+                    "source": profile.get('source'),
+                    "total_incidents": 0  # Will be computed below
+                }
+        
+        # Build WHERE clause
+        conditions = ["icd.DoctorID = ?"]
+        params = [doctor_id]
+        
+        if from_date:
+            conditions.append("CONVERT(DATE, ic.FeedbackRecievedDate) >= ?")
+            params.append(from_date)
+        
+        if to_date:
+            conditions.append("CONVERT(DATE, ic.FeedbackRecievedDate) <= ?")
+            params.append(to_date)
+        
+        where_clause = " AND ".join(conditions)
+        
+        # Get incidents
+        query = f"""
+            SELECT
+                ic.IncidentRequestCaseID as RecordID,
+                CONVERT(VARCHAR(10), COALESCE(ic.FeedbackRecievedDate, ic.CreatedAt), 23) as Date,
+                ic.PatientName as PatientName,
+                COALESCE(cat.CategoryName, 'Unknown') as Category,
+                COALESCE(sev.SeverityName, 'Unknown') as Severity,
+                COALESCE(cs.Name, 'Open') as Status,
+                CASE WHEN crt.Code IN ('RED_FLAG', 'NEVER_EVENT') THEN 'Yes' ELSE 'No' END as RedFlag,
+                ic.ComplaintText as Description
+            FROM dbo.APP_IncidentCase ic
+            INNER JOIN dbo.APP_IncidentCaseDoctor icd ON ic.IncidentRequestCaseID = icd.IncidentRequestCaseID
+            LEFT JOIN dbo.APP_LOOKUP_CATEGORY cat ON ic.CategoryID = cat.CategoryID
+            LEFT JOIN dbo.APP_LOOKUP_SEVERITY sev ON ic.SeverityID = sev.SeverityID
+            LEFT JOIN dbo.APP_LOOKUP_CASE_STATUS cs ON ic.CaseStatusID = cs.CaseStatusID
+            LEFT JOIN dbo.APP_LOOKUP_CLINICAL_RISK_TYPE crt ON ic.ClinicalRiskTypeID = crt.ClinicalRiskTypeID
+            WHERE {where_clause}
+            ORDER BY ic.FeedbackRecievedDate DESC
+        """
+        
+        cursor.execute(query, params)
+        columns = [col[0] for col in cursor.description]
+        export_data["incidents"] = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        
+        # Update total count
+        if export_data["doctor"]:
+            export_data["doctor"]["total_incidents"] = len(export_data["incidents"])
+        
+        return export_data
+    
     finally:
         cursor.close()
         conn.close()

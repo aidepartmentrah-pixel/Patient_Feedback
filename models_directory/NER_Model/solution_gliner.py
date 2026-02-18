@@ -5,9 +5,16 @@ import re
 
 
 # ============================================================
-# Load Arabic GLiNER model
+# Load Arabic GLiNER model (lazy loading to support Windows multiprocessing)
 # ============================================================
-gliner_model = GLiNER.from_pretrained("NAMAA-Space/gliner_arabic-v2.1")
+_gliner_model = None
+
+def get_gliner_model():
+    """Lazy load GLiNER model on first use."""
+    global _gliner_model
+    if _gliner_model is None:
+        _gliner_model = GLiNER.from_pretrained("NAMAA-Space/gliner_arabic-v2.1")
+    return _gliner_model
 
 
 # ============================================================
@@ -143,7 +150,7 @@ def detect_role(name: str, text: str) -> str | None:
 def extract_names_gliner_arabic(text: str) -> dict:
     text = normalize_arabic(text)
 
-    predictions = gliner_model.predict_entities(
+    predictions = get_gliner_model().predict_entities(
         text,
         labels=["PERSON"]
     )

@@ -4,6 +4,7 @@ Handles database operations for creating sections with admin users.
 """
 
 from typing import Any
+from ..constants.org_unit_types import ORG_TYPE_SECTION
 
 
 def insert_section(conn, name: str, parent_department_id: int) -> int:
@@ -25,10 +26,10 @@ def insert_section(conn, name: str, parent_department_id: int) -> int:
     
     try:
         # Insert section with Type = 324 and get the new ID using OUTPUT
-        insert_query = """
+        insert_query = f"""
             INSERT INTO dbo.AdminsrationUnit (Name, ParentID, Type, Frozen, CreateDate)
             OUTPUT INSERTED.UniqueID
-            VALUES (?, ?, 324, 0, GETDATE())
+            VALUES (?, ?, {ORG_TYPE_SECTION}, 0, GETDATE())
         """
         
         cursor.execute(insert_query, (name, parent_department_id))
@@ -104,7 +105,7 @@ def insert_user(conn, username: str, display_name: str = None, department_displa
         cursor.close()
 
 
-def insert_user_scope(conn, user_id: int, role_code: str, org_unit_id: int) -> None:
+def insert_user_scope(conn, user_id: int, role_code: str, org_unit_id: int) -> int:
     """
     Insert a new user role scope into APP_UserRoleScope table.
     
@@ -114,12 +115,16 @@ def insert_user_scope(conn, user_id: int, role_code: str, org_unit_id: int) -> N
         role_code: Role code (e.g., 'SECTION_ADMIN')
         org_unit_id: Section UniqueID
         
+    Returns:
+        int: RoleID that was assigned
+        
     Raises:
         Exception: If role_code not found
         
     Note:
         Does NOT commit - caller controls transaction
         Resolves RoleID dynamically from role_code
+        Phase C - B-C8: Returns role_id for verification purposes
     """
     cursor = conn.cursor()
     
@@ -141,6 +146,66 @@ def insert_user_scope(conn, user_id: int, role_code: str, org_unit_id: int) -> N
         """
         
         cursor.execute(scope_query, (user_id, role_id, org_unit_id))
+        
+        return role_id
+        
+    finally:
+        cursor.close()
+
+
+def verify_user_scope(conn, user_id: int, expected_role_id: int, expected_org_unit_id: int, expected_org_unit_type: str) -> bool:
+    """
+    Verify that user scope was correctly assigned in APP_UserRoleScope table.
+    
+    Phase C - B-C8: Explicit verification after scope assignment.
+    
+    Args:
+        conn: Active database connection
+        user_id: UserID to verify
+        expected_role_id: Expected RoleID
+        expected_org_unit_id: Expected OrgUnitID (section_id)
+        expected_org_unit_type: Expected OrgUnitType (e.g., 'SECTION')
+        
+    Returns:
+        bool: True if scope matches expectations, False otherwise
+        
+    Note:
+        Does NOT commit - caller controls transaction
+        Queries most recent scope row for the user
+    """
+    cursor = conn.cursor()
+    
+    try:
+        # Query back the scope row that was just inserted
+        verify_query = """
+            SELECT RoleID, OrgUnitID, OrgUnitType
+            FROM dbo.APP_UserRoleScope
+            WHERE UserID = ?
+            AND RoleID = ?
+            AND OrgUnitID = ?
+        """
+        
+        cursor.execute(verify_query, (user_id, expected_role_id, expected_org_unit_id))
+        result = cursor.fetchone()
+        
+        if not result:
+            return False
+        
+        # Verify all fields match expectations
+        actual_role_id = result.RoleID
+        actual_org_unit_id = result.OrgUnitID
+        actual_org_unit_type = result.OrgUnitType
+        
+        if actual_role_id != expected_role_id:
+            return False
+        
+        if actual_org_unit_id != expected_org_unit_id:
+            return False
+        
+        if actual_org_unit_type != expected_org_unit_type:
+            return False
+        
+        return True
         
     finally:
         cursor.close()

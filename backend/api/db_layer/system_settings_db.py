@@ -3,21 +3,9 @@ System Settings Database Layer
 Handles CRUD operations for APP_SystemSettings table.
 """
 
-import pyodbc
 from datetime import datetime
 from typing import Dict, List, Any, Optional
-
-
-def get_connection():
-    """Get database connection."""
-    conn = pyodbc.connect(
-        "DRIVER={ODBC Driver 17 for SQL Server};"
-        "SERVER=SOCIALMEDIA;"
-        "DATABASE=IncidentManager;"
-        "Trusted_Connection=yes;"
-        "TrustServerCertificate=yes;"
-    )
-    return conn
+from core.database import get_connection
 
 
 # =============================================

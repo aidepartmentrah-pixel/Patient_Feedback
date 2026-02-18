@@ -44,6 +44,30 @@ def _generate_run_id() -> str:
     return now.strftime("%Y_%m_%d_%H%M")
 
 
+def _run_split_data() -> Dict[str, Any]:
+    """
+    Execute split_data() to split data into train/test tables
+    before training begins.
+    
+    Returns:
+        Dict with train_rows, test_rows, source_rows
+    """
+    try:
+        from models_directory.split_data import split_data
+        
+        print("[TRAINING] Running split_data() ...")
+        result = split_data()
+        print(f"[TRAINING] split_data() completed: {result}")
+        return result
+    except ImportError:
+        print("[TRAINING WARNING] Could not import split_data - skipping data split")
+        return {}
+    except Exception as e:
+        print(f"[TRAINING ERROR] split_data() failed: {str(e)}")
+        traceback.print_exc()
+        raise
+
+
 def _run_train_all() -> Dict[str, Any]:
     """
     Execute train_all() from model training pipeline.
@@ -119,6 +143,14 @@ def run_training_pipeline() -> Dict[str, Any]:
         
         try:
             print(f"[TRAINING] Run {run_id} started at {started_at}")
+            
+            # Step 0: Split data into train/test tables
+            try:
+                split_result = _run_split_data()
+                print(f"[TRAINING] Data split done: {split_result}")
+            except Exception as e:
+                print(f"[TRAINING ERROR] Data split failed, aborting: {str(e)}")
+                raise
             
             # Run training pipeline
             result = _run_train_all()

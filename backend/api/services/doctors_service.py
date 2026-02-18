@@ -5,6 +5,8 @@ Business logic for doctor profiles, statistics, and analytics.
 
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
+import csv
+import io
 import re
 from ..db_layer import doctors_db
 
@@ -65,29 +67,29 @@ class DoctorService:
                 source_system = source_system.strip()
                 if len(source_system) > 100:
                     raise ValueError("Source system cannot exceed 100 characters")
-            
+
             # ============================================
             # CREATE DOCTOR
             # ============================================
-            
+
             doctor = doctors_db.create_doctor(
                 doctor_name=doctor_name,
                 specialty=specialty if specialty else None,
                 is_active=is_active,
                 source_system=source_system
             )
-            
+
             # ============================================
             # SUCCESS RESPONSE
             # ============================================
-            
+
             return {
                 'success': True,
                 'message': f"Doctor '{doctor_name}' created successfully",
                 'message_ar': f"تم إنشاء الطبيب '{doctor_name}' بنجاح",
                 'doctor': doctor
             }
-            
+
         except ValueError as ve:
             # Validation errors
             raise ValueError(str(ve))
@@ -97,7 +99,7 @@ class DoctorService:
             if "already exists" in error_msg.lower():
                 raise ValueError(f"Doctor with name '{doctor_name}' already exists")
             raise Exception(f"Failed to create doctor: {error_msg}")
-    
+
     @staticmethod
     def search_doctors(
         query: Optional[str] = None,
@@ -500,54 +502,278 @@ class DoctorService:
         Raises:
             ValueError: If doctor not found or invalid parameters
         """
+        import logging
+        logger = logging.getLogger("doctor_full_report")
+        
         try:
             # Validate doctor exists
             profile = doctors_db.get_doctor_profile(doctor_id)
             if not profile:
+                logger.warning(f"Doctor with ID {doctor_id} not found in any table.")
                 raise ValueError(f"Doctor with ID {doctor_id} not found")
             
-            # Get all components
-            profile_data = DoctorService.get_doctor_profile(doctor_id)
+            # Get all components with robust error handling
+            profile_data = None
+            statistics_data = {'statistics': {}, 'period': None}
+            analytics_data = {'categoryBreakdown': {}, 'monthlyTrend': {}}
+            incidents_data = {'incidents': [], 'total': 0, 'limit': limit, 'offset': offset}
             
-            statistics_data = DoctorService.get_doctor_statistics(
-                doctor_id=doctor_id,
-                from_date=from_date,
-                to_date=to_date
-            )
+            try:
+                profile_data = DoctorService.get_doctor_profile(doctor_id)
+            except Exception as e:
+                logger.error(f"[doctor_id={doctor_id}] Profile error: {e}")
+                profile_data = profile  # fallback to raw profile
             
-            analytics_data = DoctorService.get_doctor_analytics(
-                doctor_id=doctor_id,
-                from_date=from_date,
-                to_date=to_date
-            )
+            try:
+                statistics_data = DoctorService.get_doctor_statistics(
+                    doctor_id=doctor_id,
+                    from_date=from_date,
+                    to_date=to_date
+                )
+            except Exception as e:
+                logger.error(f"[doctor_id={doctor_id}] Statistics error: {e}")
             
-            incidents_data = DoctorService.get_doctor_incidents(
-                doctor_id=doctor_id,
-                from_date=from_date,
-                to_date=to_date,
-                severity=severity,
-                status=status,
-                red_flags_only=red_flags_only,
-                limit=limit,
-                offset=offset
-            )
+            try:
+                analytics_data = DoctorService.get_doctor_analytics(
+                    doctor_id=doctor_id,
+                    from_date=from_date,
+                    to_date=to_date
+                )
+            except Exception as e:
+                logger.error(f"[doctor_id={doctor_id}] Analytics error: {e}")
+            
+            try:
+                incidents_data = DoctorService.get_doctor_incidents(
+                    doctor_id=doctor_id,
+                    from_date=from_date,
+                    to_date=to_date,
+                    severity=severity,
+                    status=status,
+                    red_flags_only=red_flags_only,
+                    limit=limit,
+                    offset=offset
+                )
+            except Exception as e:
+                logger.error(f"[doctor_id={doctor_id}] Incidents error: {e}")
             
             return {
                 'profile': profile_data,
-                'statistics': statistics_data.get('statistics'),
+                'statistics': statistics_data.get('statistics', {}),
                 'analytics': {
-                    'categoryBreakdown': analytics_data.get('categoryBreakdown'),
-                    'monthlyTrend': analytics_data.get('monthlyTrend')
+                    'categoryBreakdown': analytics_data.get('categoryBreakdown', {}),
+                    'monthlyTrend': analytics_data.get('monthlyTrend', {})
                 },
-                'incidents': incidents_data.get('incidents'),
+                'incidents': incidents_data.get('incidents', []),
                 'incidentsPagination': {
-                    'total': incidents_data.get('total'),
-                    'limit': incidents_data.get('limit'),
-                    'offset': incidents_data.get('offset')
+                    'total': incidents_data.get('total', 0),
+                    'limit': incidents_data.get('limit', limit),
+                    'offset': incidents_data.get('offset', offset)
                 },
-                'period': statistics_data.get('period')
+                'period': statistics_data.get('period', None)
             }
         except ValueError:
             raise
         except Exception as e:
+            logger.error(f"[doctor_id={doctor_id}] Full report failed: {str(e)}")
             raise Exception(f"Failed to generate full report: {str(e)}")
+
+
+# ==================== FULL HISTORY (Combined — mirrors patient) ====================
+
+def get_doctor_full_history_service(
+    doctor_id: int,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    severity: Optional[str] = None,
+    status: Optional[str] = None,
+    red_flags_only: bool = False,
+    limit: int = 100,
+    offset: int = 0
+) -> Dict[str, Any]:
+    """
+    Get doctor profile and incidents in single response.
+    Mirrors get_patient_full_history_service for UI consistency.
+    
+    Returns:
+        Dict with profile, metrics, items, and meta (V2 schema compatible)
+    """
+    try:
+        # Get profile
+        profile = doctors_db.get_doctor_profile(doctor_id)
+        if not profile:
+            raise ValueError(f"Doctor with ID {doctor_id} not found")
+        
+        # Get incidents
+        incidents_data = doctors_db.get_doctor_incidents(
+            doctor_id=doctor_id,
+            from_date=from_date,
+            to_date=to_date,
+            severity=severity,
+            status=status,
+            red_flags_only=red_flags_only,
+            limit=limit,
+            offset=offset
+        )
+        
+        # Get aggregated metrics
+        metrics = doctors_db.get_doctor_metrics(
+            doctor_id=doctor_id,
+            from_date=from_date,
+            to_date=to_date
+        )
+        
+        # Return normalized V2 schema format (same shape as patient)
+        return {
+            "profile": profile,
+            "metrics": metrics,
+            "items": incidents_data.get('incidents', []),
+            "meta": {
+                "entity_type": "doctor",
+                "entity_id": doctor_id,
+                "period_from": from_date,
+                "period_to": to_date,
+                "total": incidents_data.get('total', 0),
+                "limit": limit,
+                "offset": offset
+            }
+        }
+    
+    except ValueError:
+        raise
+    except Exception as e:
+        raise Exception(f"Failed to get full doctor history: {str(e)}")
+
+
+# ==================== EXPORT ====================
+
+def export_doctor_history_service(
+    doctor_id: int,
+    format_type: str = "json",
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    include_profile: bool = True
+) -> Dict[str, Any]:
+    """
+    Generate doctor history export in CSV, JSON, or Word format.
+    Mirrors export_patient_history_service.
+    
+    Args:
+        doctor_id: Doctor ID
+        format_type: "csv", "json", or "word"
+        from_date: Optional start date filter
+        to_date: Optional end date filter
+        include_profile: Include doctor profile
+    
+    Returns:
+        For CSV: Dict with filename and csv content
+        For Word: Dict with filename and word bytes
+        For JSON: JSON export dict
+    """
+    try:
+        # Get export data
+        export_data = doctors_db.get_doctor_incidents_for_export(
+            doctor_id=doctor_id,
+            from_date=from_date,
+            to_date=to_date,
+            include_profile=include_profile
+        )
+        
+        if format_type == "csv":
+            return _generate_doctor_csv_export(export_data, doctor_id)
+        elif format_type == "word":
+            return _generate_doctor_word_export(export_data, doctor_id)
+        else:
+            return export_data
+    
+    except Exception as e:
+        raise Exception(f"Failed to export doctor history: {str(e)}")
+
+
+def _generate_doctor_csv_export(export_data: Dict[str, Any], doctor_id: int) -> Dict[str, Any]:
+    """Generate CSV export from doctor export data."""
+    try:
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Write doctor profile header
+        if export_data.get('doctor'):
+            doc = export_data['doctor']
+            writer.writerow(['DOCTOR PROFILE'])
+            writer.writerow(['Doctor ID', doc.get('doctor_id')])
+            writer.writerow(['Full Name', doc.get('full_name')])
+            writer.writerow(['Specialty', doc.get('specialty', '')])
+            writer.writerow(['Status', doc.get('status', '')])
+            writer.writerow(['Total Incidents', doc.get('total_incidents', 0)])
+            writer.writerow([])
+        
+        # Write incidents
+        writer.writerow(['INCIDENT HISTORY'])
+        
+        if export_data.get('incidents'):
+            headers = list(export_data['incidents'][0].keys())
+            writer.writerow(headers)
+            
+            for incident in export_data['incidents']:
+                writer.writerow(incident.values())
+        
+        csv_content = output.getvalue()
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        filename = f"doctor_{doctor_id}_history_{timestamp}.csv"
+        
+        return {
+            "filename": filename,
+            "content": csv_content,
+            "content_type": "text/csv"
+        }
+    
+    except Exception as e:
+        raise Exception(f"Failed to generate CSV: {str(e)}")
+
+
+def _generate_doctor_word_export(export_data: Dict[str, Any], doctor_id: int) -> Dict[str, Any]:
+    """Generate Word document export from doctor export data."""
+    try:
+        from .seasonal_word_adapter import SeasonalWordAdapter
+        
+        # Adapt export_data to the structure expected by the word generator
+        # Map to the doctor seasonal format
+        doctor_info = export_data.get('doctor', {}) or {}
+        incidents = export_data.get('incidents', [])
+        
+        word_data = {
+            'doctor_identity': {
+                'doctor_id': doctor_info.get('doctor_id', doctor_id),
+                'name': doctor_info.get('full_name', f'Doctor {doctor_id}'),
+                'specialty': doctor_info.get('specialty', ''),
+            },
+            'period': {
+                'from': export_data.get('export_date', ''),
+                'to': export_data.get('export_date', ''),
+                'label': 'Export Report'
+            },
+            'metrics': {
+                'total_incidents': doctor_info.get('total_incidents', len(incidents)),
+                'high_severity': sum(1 for i in incidents if i.get('Severity') == 'High'),
+                'medium_severity': sum(1 for i in incidents if i.get('Severity') == 'Medium'),
+                'low_severity': sum(1 for i in incidents if i.get('Severity') == 'Low'),
+                'red_flags': sum(1 for i in incidents if i.get('RedFlag') == 'Yes'),
+            },
+            'performance': {
+                'top_categories': [],
+            },
+            'incidents': incidents
+        }
+        
+        word_bytes = SeasonalWordAdapter.generate_doctor_seasonal_word(word_data)
+        
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        filename = f"doctor_{doctor_id}_report_{timestamp}.docx"
+        
+        return {
+            "filename": filename,
+            "content": word_bytes,
+            "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        }
+    
+    except Exception as e:
+        raise Exception(f"Failed to generate Word document: {str(e)}")

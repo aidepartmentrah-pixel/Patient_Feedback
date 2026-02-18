@@ -392,6 +392,86 @@ async def update_policies(
         })
 
 
+# ==================== B12a: POLICY - GET BY DEPARTMENT ====================
+
+@router.get("/policy/{department_id}")
+async def get_policy_by_department(
+    department_id: int = Path(..., ge=1, description="Department ID"),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """
+    Fetch policy configuration for a specific department.
+    
+    Returns combined global policies and department-specific overrides.
+    
+    **Path Parameters:**
+    - `department_id`: The department ID to fetch policy for
+    
+    **Response:**
+    ```json
+    {
+      "success": true,
+      "department_id": 20,
+      "policy": {
+        "slaThresholds": { "critical": 24, "high": 48, ... },
+        "notificationRules": { ... },
+        ...
+      }
+    }
+    ```
+    """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
+    try:
+        result = SettingsService.get_department_policy(department_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=400, detail={
+            "error": "policy_fetch_failed",
+            "message": str(e),
+            "message_ar": f"فشل جلب السياسة: {str(e)}"
+        })
+
+
+# ==================== B12b: POLICY - SAVE BY DEPARTMENT ====================
+
+@router.put("/policy/{department_id}")
+async def save_policy_by_department(
+    department_id: int = Path(..., ge=1, description="Department ID"),
+    request: Dict[str, Any] = Body(...),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """
+    Save policy configuration for a specific department.
+    
+    **Path Parameters:**
+    - `department_id`: The department ID to save policy for
+    
+    **Request Body:**
+    ```json
+    {
+      "slaThresholds": { "critical": 24, "high": 48, ... },
+      "notificationRules": { ... },
+      "escalationConfig": { ... },
+      ...
+    }
+    ```
+    """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
+    try:
+        result = SettingsService.save_department_policy(department_id, request)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={
+            "error": "policy_save_failed",
+            "message": str(e),
+            "message_ar": f"فشل حفظ السياسة: {str(e)}"
+        })
+
+
 # ==================== B13: EXPORT ====================
 
 @router.get("/export")

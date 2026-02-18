@@ -36,7 +36,7 @@ Usage Example:
     ```
 """
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Depends
 from typing import Optional
 from core.constants.roles import (
     SOFTWARE_ADMIN,
@@ -622,3 +622,150 @@ def require_any_unit_in_scope(
                 "requested_unit_ids": list(unit_ids) if isinstance(unit_ids, set) else unit_ids
             }
         )
+
+
+# ==================== FASTAPI DEPENDENCY GUARDS ====================
+# Phase C - B-C6: Fast API dependency-style guards for route-level protection
+
+# Import auth service here for dependency guards (after main imports to avoid circular deps)
+from ..services.auth_service import get_current_user as _get_current_user
+
+
+def get_current_software_admin(
+    current_user: CurrentUser = Depends(_get_current_user)
+) -> CurrentUser:
+    """
+    FastAPI dependency that ensures the current user is a SOFTWARE_ADMIN.
+    
+    This combines authentication (get_current_user) and authorization
+    (require_software_admin) into a single dependency that can be used
+    directly in route definitions.
+    
+    Args:
+        current_user: Authenticated user from get_current_user dependency
+        
+    Returns:
+        CurrentUser: The authenticated and authorized user
+        
+    Raises:
+        HTTPException(401): If user is not authenticated
+        HTTPException(403): If user is not a SOFTWARE_ADMIN
+        
+    Usage:
+        ```python
+        @router.post("/admin-endpoint")
+        def admin_only(
+            admin: CurrentUser = Depends(get_current_software_admin)
+        ):
+            # admin is guaranteed to be a SOFTWARE_ADMIN
+            return {"message": "Success"}
+        ```
+        
+    Note:
+        This is the preferred pattern for route-level authorization in FastAPI.
+        It explicitly declares the authorization requirement in the route signature.
+    """
+    # Check SOFTWARE_ADMIN permission
+    require_software_admin(current_user)
+    
+    # Return the authorized user
+    return current_user
+
+
+# ==================== PHASE D: SEASONAL REPORT ACCESS GUARDS ====================
+
+def require_doctor_report_access(current_user: CurrentUser) -> None:
+    """
+    Require permission to access doctor seasonal reports.
+    
+    Doctor seasonal reports contain sensitive performance data and should only
+    be accessible to users with administrative or supervisory roles.
+    
+    Allowed Roles:
+    - SOFTWARE_ADMIN: Full system access
+    - ADMINISTRATION_ADMIN: Cross-organizational access
+    - DEPARTMENT_ADMIN: Department-level access
+    - SECTION_ADMIN: Section-level access
+    - COMPLAINT_SUPERVISOR: Supervisory access
+    
+    Phase D-B10: Permission Guards for Seasonal Export Endpoints
+    
+    Args:
+        current_user: Authenticated user
+    
+    Raises:
+        HTTPException(403): If user doesn't have required role
+    
+    Example:
+        ```python
+        @router.get("/doctors/{doctor_id}/seasonal-report")
+        def export_doctor_report(
+            doctor_id: int,
+            current_user: CurrentUser = Depends(get_current_user)
+        ):
+            require_doctor_report_access(current_user)
+            # Generate and return report
+            return seasonal_report
+        ```
+    
+    Note:
+        - Workers cannot access doctor reports (insufficient privileges)
+        - Organizational scoping (if needed) should be applied separately
+        - This guard only checks role permissions, not resource ownership
+    """
+    require_role(current_user, [
+        SOFTWARE_ADMIN,
+        ADMINISTRATION_ADMIN,
+        DEPARTMENT_ADMIN,
+        SECTION_ADMIN,
+        COMPLAINT_SUPERVISOR
+    ])
+
+
+def require_worker_report_access(current_user: CurrentUser) -> None:
+    """
+    Require permission to access worker seasonal reports.
+    
+    Worker seasonal reports contain employee performance data and should only
+    be accessible to users with administrative or supervisory roles.
+    
+    Allowed Roles:
+    - SOFTWARE_ADMIN: Full system access
+    - ADMINISTRATION_ADMIN: Cross-organizational access
+    - DEPARTMENT_ADMIN: Department-level access
+    - SECTION_ADMIN: Section-level access
+    - COMPLAINT_SUPERVISOR: Supervisory access
+    
+    Phase D-B10: Permission Guards for Seasonal Export Endpoints
+    
+    Args:
+        current_user: Authenticated user
+    
+    Raises:
+        HTTPException(403): If user doesn't have required role
+    
+    Example:
+        ```python
+        @router.get("/workers/{employee_id}/seasonal-report")
+        def export_worker_report(
+            employee_id: int,
+            current_user: CurrentUser = Depends(get_current_user)
+        ):
+            require_worker_report_access(current_user)
+            # Generate and return report
+            return seasonal_report
+        ```
+    
+    Note:
+        - Workers cannot access other workers' reports (insufficient privileges)
+        - Same permission level as doctor reports (consistent policy)
+        - Organizational scoping (if needed) should be applied separately
+        - This guard only checks role permissions, not resource ownership
+    """
+    require_role(current_user, [
+        SOFTWARE_ADMIN,
+        ADMINISTRATION_ADMIN,
+        DEPARTMENT_ADMIN,
+        SECTION_ADMIN,
+        COMPLAINT_SUPERVISOR
+    ])

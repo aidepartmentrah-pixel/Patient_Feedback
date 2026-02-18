@@ -236,6 +236,50 @@ class SettingsService:
         }
     
     @staticmethod
+    def get_department_policy(department_id: int) -> Dict[str, Any]:
+        """
+        Get policy configuration for a specific department.
+        Returns stored policy or default values if none exists.
+        """
+        policy_data = settings_db.get_department_policy(department_id)
+        
+        if policy_data:
+            return {
+                'success': True,
+                'department_id': department_id,
+                'policy': policy_data,
+                'is_default': False
+            }
+        else:
+            # Return default policy structure
+            return {
+                'success': True,
+                'department_id': department_id,
+                'policy': None,
+                'is_default': True,
+                'message': 'No saved policy, using defaults',
+                'message_ar': 'لا توجد سياسة محفوظة، استخدام الإعدادات الافتراضية'
+            }
+    
+    @staticmethod
+    def save_department_policy(department_id: int, policy_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Save policy configuration for a specific department.
+        Creates or updates the department policy record.
+        """
+        success = settings_db.save_department_policy(department_id, policy_data)
+        
+        if success:
+            return {
+                'success': True,
+                'department_id': department_id,
+                'message': 'Policy saved successfully',
+                'message_ar': 'تم حفظ السياسة بنجاح'
+            }
+        else:
+            raise Exception('Failed to save policy')
+    
+    @staticmethod
     def export_configuration(
         include_inactive: bool = False,
         format: str = 'json'

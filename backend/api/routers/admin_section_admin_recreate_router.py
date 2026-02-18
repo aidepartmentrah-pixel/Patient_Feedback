@@ -17,6 +17,9 @@ from ..utils.guards import require_software_admin
 # Import service
 from ..services.section_admin_recreate_service import recreate_section_admin_service
 
+# Import schemas
+from ..schemas.section_creation_schemas import SectionRecreateAdminResponse
+
 
 # Create router
 router = APIRouter(
@@ -25,7 +28,7 @@ router = APIRouter(
 )
 
 
-@router.post("/{section_id}/recreate-admin")
+@router.post("/{section_id}/recreate-admin", response_model=SectionRecreateAdminResponse)
 def recreate_section_admin_endpoint(
     section_id: int,
     current_user: CurrentUser = Depends(get_current_user)
@@ -96,7 +99,7 @@ def recreate_section_admin_endpoint(
         return {
             "section_id": result["section_id"],
             "username": result["username"],
-            "password": result["temp_password"]
+            "temp_password": result["temp_password"]
         }
         
     except Exception as e:

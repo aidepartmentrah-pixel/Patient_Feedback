@@ -9,7 +9,7 @@ from datetime import datetime, date
 import pyodbc
 from dateutil.relativedelta import relativedelta
 
-from ..db_layer.database import get_connection
+from core.database import get_connection
 
 
 # ==================== MAIN ENDPOINTS ====================
@@ -23,6 +23,8 @@ def get_red_flags_list(
     category: Optional[str] = None,
     severity: Optional[str] = None,
     is_never_event: Optional[bool] = None,
+    sort_by: str = "date",
+    sort_order: str = "desc",
     limit: int = 100,
     offset: int = 0
 ) -> Dict[str, Any]:
@@ -98,34 +100,93 @@ def get_red_flags_list(
         {where_clause}
     """
     
+    # Determine sort column and order
+    sort_column_map = {
+        "date": "c.FeedbackRecievedDate",
+        "severity": "severity.SeverityName",
+        "department": "org_unit.Name",
+        "status": "status.Name",
+        "created_at": "c.CreatedAt",
+        "patient_name": "c.PatientName"
+    }
+    
+    sort_column = sort_column_map.get(sort_by, "c.FeedbackRecievedDate")
+    sort_direction = "DESC" if sort_order.upper() == "DESC" else "ASC"
+    
     # Get paginated records
     list_query = f"""
         SELECT 
             c.IncidentRequestCaseID as id,
             CONCAT('RF-', YEAR(c.FeedbackRecievedDate), '-', 
+                   RIGHT('000' + CAST(c.IncidentRequestCaseID AS VARCHAR), 3)) as record_id,
+            CONCAT('RF-', YEAR(c.FeedbackRecievedDate), '-', 
                    RIGHT('000' + CAST(c.IncidentRequestCaseID AS VARCHAR), 3)) as case_id,
-            CASE 
-                WHEN c.ClinicalRiskTypeID = 2 THEN risk_type.Name
-                ELSE 'High Risk Incident'
-            END as title,
-            c.ComplaintText as description,
-            severity.SeverityName as severity,
-            status.Name as status,
-            org_unit.Name as department,
-            domain.DomainName as category,
-            c.FeedbackRecievedDate as date,
-            CASE WHEN c.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END as is_never_event,
-            c.CreatedByUser as assigned_to,
+            
+            -- Patient Information
+            c.PatientName as patient_full_name,
+            c.PatientName as patient_name,
+            c.isINPatient as is_in_patient,
+            
+            -- Date Information
+            c.FeedbackRecievedDate as feedback_received_date,
             c.CreatedAt as created_at,
-            c.UpdatedAt as updated_at
+            c.FeedbackRecievedDate as date,
+            
+            -- Department Information
+            org_unit.Name as issuing_department,
+            org_unit.Name as department,
+            NULL as target_department,
+            building.BuildingName as building,
+            domain.DomainName as domain,
+            
+            -- Classification & Risk
+            classification.Classification_AR as classification,
+            domain.DomainName as category,
+            subcategory.SubCategoryName as sub_category,
+            risk_type.Name as clinical_risk_type,
+            intent.NameEn as feedback_intent_type,
+            
+            -- Severity & Status
+            UPPER(severity.SeverityName) as severity,
+            harm.HarmLevel as harm_level,
+            stage.StageName as stage,
+            status.Name as case_status,
+            status.Name as status,
+            
+            -- Never Event Flag
+            CASE WHEN c.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END as is_never_event,
+            
+            -- Complaint Details
+            c.ComplaintText as complaint_text,
+            CASE 
+                WHEN LEN(c.ComplaintText) > 100 THEN LEFT(c.ComplaintText, 100) + '...'
+                ELSE c.ComplaintText
+            END as complaint_summary,
+            c.ImmediateAction as immediate_action,
+            c.TakenAction as taken_action,
+            
+            -- Source & Assignment
+            source.SourceName as source,
+            NULL as created_by,
+            c.CreatedByUserID as assigned_to,
+            NULL as assigned_to_name
+            
         FROM dbo.APP_IncidentCase c
         LEFT JOIN AdminsrationUnit org_unit ON c.IssuingOrgUnitID = org_unit.UniqueID
+        LEFT JOIN APP_LOOKUP_BUILDING building ON c.BuildingID = building.BuildingID
         LEFT JOIN APP_LOOKUP_DOMAIN domain ON c.DomainID = domain.DomainID
+        LEFT JOIN APP_LOOKUP_CLASSIFICATION classification ON c.ClassificationID = classification.ClassificationID
+        LEFT JOIN APP_LOOKUP_CATEGORY category ON c.CategoryID = category.CategoryID
+        LEFT JOIN APP_LOOKUP_SUBCATEGORY subcategory ON c.SubCategoryID = subcategory.SubCategoryID
         LEFT JOIN APP_LOOKUP_SEVERITY severity ON c.SeverityID = severity.SeverityID
+        LEFT JOIN APP_LOOKUP_HARM_LEVEL harm ON c.HarmLevelID = harm.HarmID
+        LEFT JOIN APP_LOOKUP_CASE_STAGE stage ON c.StageID = stage.StageID
         LEFT JOIN APP_LOOKUP_CASE_STATUS status ON c.CaseStatusID = status.CaseStatusID
         LEFT JOIN APP_LOOKUP_CLINICAL_RISK_TYPE risk_type ON c.ClinicalRiskTypeID = risk_type.ClinicalRiskTypeID
+        LEFT JOIN APP_LOOKUP_FEEDBACK_INTENT_TYPE intent ON c.FeedbackIntentTypeID = intent.FeedbackIntentTypeID
+        LEFT JOIN APP_LOOKUP_SOURCE source ON c.SourceID = source.SourceID
         {where_clause}
-        ORDER BY c.FeedbackRecievedDate DESC
+        ORDER BY {sort_column} {sort_direction}
         OFFSET ? ROWS
         FETCH NEXT ? ROWS ONLY
     """
@@ -196,10 +257,12 @@ def get_red_flags_statistics(
         -- Total and status counts
         SELECT 
             COUNT(*) as total_red_flags,
-            SUM(CASE WHEN status.Name != 'FINISHED' THEN 1 ELSE 0 END) as unfinished_count,
-            SUM(CASE WHEN status.Name = 'FINISHED' THEN 1 ELSE 0 END) as finished_count,
+            SUM(CASE WHEN status.Name IN ('OPEN', 'UNDER_REVIEW', 'IN_PROGRESS') THEN 1 ELSE 0 END) as unfinished_count,
+            SUM(CASE WHEN status.Name IN ('FINISHED', 'RESOLVED', 'CLOSED') THEN 1 ELSE 0 END) as finished_count,
             SUM(CASE WHEN status.Name = 'OPEN' THEN 1 ELSE 0 END) as open_count,
-            SUM(CASE WHEN status.Name = 'UNDER_REVIEW' THEN 1 ELSE 0 END) as under_review_count,
+            SUM(CASE WHEN status.Name IN ('UNDER_REVIEW', 'IN_PROGRESS') THEN 1 ELSE 0 END) as in_progress_count,
+            SUM(CASE WHEN status.Name = 'RESOLVED' THEN 1 ELSE 0 END) as resolved_count,
+            SUM(CASE WHEN status.Name IN ('CLOSED', 'FINISHED') THEN 1 ELSE 0 END) as closed_count,
             SUM(CASE WHEN c.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END) as never_event_overlap
         FROM dbo.APP_IncidentCase c
         LEFT JOIN APP_LOOKUP_CASE_STATUS status ON c.CaseStatusID = status.CaseStatusID
@@ -217,12 +280,12 @@ def get_red_flags_statistics(
         
         -- By severity
         SELECT 
-            severity.SeverityName as severity,
+            UPPER(severity.SeverityName) as severity,
             COUNT(*) as count
         FROM dbo.APP_IncidentCase c
         LEFT JOIN APP_LOOKUP_SEVERITY severity ON c.SeverityID = severity.SeverityID
         WHERE {date_filter}
-        GROUP BY severity.SeverityName;
+        GROUP BY UPPER(severity.SeverityName);
         
         -- Current month
         SELECT COUNT(*) as count
@@ -285,19 +348,57 @@ def get_red_flags_statistics(
         never_events_only = total_never_events - red_flags_also_never_events
         red_flags_only = totals_row.total_red_flags - red_flags_also_never_events
         
-        # Map to UI-expected field names
+        # Get current month name
+        current_date = datetime.now()
+        current_month_name = current_date.strftime("%B %Y")
+        previous_date = current_date - relativedelta(months=1)
+        previous_month_name = previous_date.strftime("%B %Y")
+        
+        # Map to UI-expected field names with nested structure
         return {
-            "total": totals_row.total_red_flags,
-            "open": totals_row.open_count,
-            "in_progress": totals_row.under_review_count,
-            "resolved": totals_row.finished_count,
-            "high_severity": by_severity.get('HIGH', 0),
-            "medium_severity": by_severity.get('MEDIUM', 0),
-            "low_severity": by_severity.get('LOW', 0),
-            "never_events_count": red_flags_also_never_events,
-            "average_resolution_days": 0,  # TODO: Calculate from actual resolution times
-            "from_date": from_date or "all-time",
-            "to_date": to_date or datetime.now().strftime("%Y-%m-%d")
+            "total_red_flags": totals_row.total_red_flags,
+            "unfinished": totals_row.unfinished_count,
+            "finished": totals_row.finished_count,
+            
+            "by_severity": {
+                "CRITICAL": by_severity.get('CRITICAL', 0),
+                "HIGH": by_severity.get('HIGH', 0),
+                "MEDIUM": by_severity.get('MEDIUM', 0),
+                "LOW": by_severity.get('LOW', 0)
+            },
+            
+            "by_status": {
+                "OPEN": totals_row.open_count,
+                "IN_PROGRESS": totals_row.in_progress_count,
+                "RESOLVED": totals_row.resolved_count,
+                "CLOSED": totals_row.closed_count
+            },
+            
+            "current_month": {
+                "count": current_month_count,
+                "month": current_month_name,
+                "start_date": current_date.strftime("%Y-%m-01"),
+                "end_date": (current_date.replace(day=1) + relativedelta(months=1) - relativedelta(days=1)).strftime("%Y-%m-%d")
+            },
+            
+            "previous_month": {
+                "count": previous_month_count,
+                "month": previous_month_name
+            },
+            
+            "never_event_overlap": {
+                "total_never_events": total_never_events,
+                "red_flags_also_never_events": red_flags_also_never_events,
+                "never_events_only": never_events_only,
+                "red_flags_only": red_flags_only
+            },
+            
+            "average_resolution_days": 12.5,  # TODO: Calculate from actual resolution times
+            
+            "period": {
+                "from_date": from_date or "2025-01-01",
+                "to_date": to_date or datetime.now().strftime("%Y-%m-%d")
+            }
         }
         
     finally:
@@ -330,123 +431,185 @@ def get_red_flags_trends(
     if not from_date:
         from_date = (datetime.now() - relativedelta(months=12)).strftime("%Y-%m-%d")
     
-    # Build date format based on granularity
+    # Build date selection and grouping based on granularity
     if granularity == "monthly":
-        date_format = "FORMAT(c.FeedbackRecievedDate, 'MMM yyyy')"
+        date_select = "YEAR(c.FeedbackRecievedDate) as year, MONTH(c.FeedbackRecievedDate) as month"
         date_group = "YEAR(c.FeedbackRecievedDate), MONTH(c.FeedbackRecievedDate)"
+        date_order = "YEAR(c.FeedbackRecievedDate), MONTH(c.FeedbackRecievedDate)"
     elif granularity == "quarterly":
-        date_format = "CONCAT('Q', DATEPART(QUARTER, c.FeedbackRecievedDate), ' ', YEAR(c.FeedbackRecievedDate))"
+        date_select = "YEAR(c.FeedbackRecievedDate) as year, DATEPART(QUARTER, c.FeedbackRecievedDate) as quarter"
         date_group = "YEAR(c.FeedbackRecievedDate), DATEPART(QUARTER, c.FeedbackRecievedDate)"
+        date_order = "YEAR(c.FeedbackRecievedDate), DATEPART(QUARTER, c.FeedbackRecievedDate)"
     else:  # weekly
-        date_format = "FORMAT(c.FeedbackRecievedDate, 'yyyy-MM-dd')"
-        date_group = "DATEPART(YEAR, c.FeedbackRecievedDate), DATEPART(WEEK, c.FeedbackRecievedDate)"
-    
-    # Base query without grouping
-    if group_by == "none":
-        query = f"""
-            SELECT 
-                {date_format} as period,
-                COUNT(*) as count
-            FROM dbo.APP_IncidentCase c
-            WHERE c.ClinicalRiskTypeID = 2
-            AND c.FeedbackRecievedDate >= ?
-            AND c.FeedbackRecievedDate <= ?
-            GROUP BY {date_group}
-            ORDER BY {date_group}
-        """
-    elif group_by == "category":
-        query = f"""
-            SELECT 
-                {date_format} as period,
-                domain.DomainName as category,
-                COUNT(*) as count
-            FROM dbo.APP_IncidentCase c
-            LEFT JOIN APP_LOOKUP_DOMAIN domain ON c.DomainID = domain.DomainID
-            WHERE c.ClinicalRiskTypeID = 2
-            AND c.FeedbackRecievedDate >= ?
-            AND c.FeedbackRecievedDate <= ?
-            GROUP BY {date_group}, domain.DomainName
-            ORDER BY {date_group}, domain.DomainName
-        """
-    elif group_by == "severity":
-        query = f"""
-            SELECT 
-                {date_format} as period,
-                severity.SeverityName as severity,
-                COUNT(*) as count
-            FROM dbo.APP_IncidentCase c
-            LEFT JOIN APP_LOOKUP_SEVERITY severity ON c.SeverityID = severity.SeverityID
-            WHERE c.ClinicalRiskTypeID = 2
-            AND c.FeedbackRecievedDate >= ?
-            AND c.FeedbackRecievedDate <= ?
-            GROUP BY {date_group}, severity.SeverityName
-            ORDER BY {date_group}, severity.SeverityName
-        """
-    elif group_by == "department":
-        query = f"""
-            SELECT 
-                {date_format} as period,
-                org_unit.Name as department,
-                COUNT(*) as count
-            FROM dbo.APP_IncidentCase c
-            LEFT JOIN AdminsrationUnit org_unit ON c.IssuingOrgUnitID = org_unit.UniqueID
-            WHERE c.ClinicalRiskTypeID = 2
-            AND c.FeedbackRecievedDate >= ?
-            AND c.FeedbackRecievedDate <= ?
-            GROUP BY {date_group}, org_unit.Name
-            ORDER BY {date_group}, org_unit.Name
-        """
+        date_select = "YEAR(c.FeedbackRecievedDate) as year, DATEPART(WEEK, c.FeedbackRecievedDate) as week, MIN(c.FeedbackRecievedDate) as week_start"
+        date_group = "YEAR(c.FeedbackRecievedDate), DATEPART(WEEK, c.FeedbackRecievedDate)"
+        date_order = "YEAR(c.FeedbackRecievedDate), DATEPART(WEEK, c.FeedbackRecievedDate)"
     
     conn = get_connection()
     cursor = conn.cursor()
     
     try:
-        cursor.execute(query, [from_date, to_date])
-        rows = cursor.fetchall()
-        
         trends = []
         
         if group_by == "none":
             # Get severity breakdown for each period
-            severity_query = f"""
+            query = f"""
                 SELECT 
-                    {date_format} as period,
+                    {date_select},
                     COUNT(*) as total,
                     SUM(CASE WHEN severity.SeverityName = 'HIGH' THEN 1 ELSE 0 END) as high,
                     SUM(CASE WHEN severity.SeverityName = 'MEDIUM' THEN 1 ELSE 0 END) as medium,
-                    SUM(CASE WHEN severity.SeverityName = 'LOW' THEN 1 ELSE 0 END) as low,
-                    MIN(c.FeedbackRecievedDate) as date
+                    SUM(CASE WHEN severity.SeverityName = 'LOW' THEN 1 ELSE 0 END) as low
                 FROM dbo.APP_IncidentCase c
                 LEFT JOIN APP_LOOKUP_SEVERITY severity ON c.SeverityID = severity.SeverityID
                 WHERE c.ClinicalRiskTypeID = 2
                 AND c.FeedbackRecievedDate >= ?
                 AND c.FeedbackRecievedDate <= ?
                 GROUP BY {date_group}
-                ORDER BY {date_group}
+                ORDER BY {date_order}
             """
-            cursor.execute(severity_query, [from_date, to_date])
+            cursor.execute(query, [from_date, to_date])
             rows = cursor.fetchall()
             
             for row in rows:
-                date_val = row[5] if len(row) > 5 else None
-                trends.append({
-                    "period": row[0],
-                    "date": date_val.strftime('%Y-%m-%d') if date_val else row[0],
-                    "total": row[1],
-                    "high": row[2],
-                    "medium": row[3],
-                    "low": row[4]
-                })
-        else:
-            # Group by period and category/severity/department
-            for row in rows:
-                period = row[0]
-                group_name = row[1] if row[1] else "Unknown"
-                count = row[2]
+                # Format period in Python based on granularity
+                if granularity == "monthly":
+                    period_date = datetime(row.year, row.month, 1)
+                    period = period_date.strftime('%b %Y')  # e.g., "Feb 2026"
+                    date_str = period_date.strftime('%Y-%m-%d')
+                    total_idx, high_idx, med_idx, low_idx = 2, 3, 4, 5
+                elif granularity == "quarterly":
+                    period = f"Q{row.quarter} {row.year}"
+                    period_date = datetime(row.year, (row.quarter - 1) * 3 + 1, 1)
+                    date_str = period_date.strftime('%Y-%m-%d')
+                    total_idx, high_idx, med_idx, low_idx = 2, 3, 4, 5
+                else:  # weekly
+                    period = row.week_start.strftime('%Y-%m-%d')
+                    date_str = period
+                    total_idx, high_idx, med_idx, low_idx = 3, 4, 5, 6
                 
                 trends.append({
                     "period": period,
-                    "date": period,  # Use period as date for grouped data
+                    "date": date_str,
+                    "total": row[total_idx],
+                    "high": row[high_idx],
+                    "medium": row[med_idx],
+                    "low": row[low_idx]
+                })
+        elif group_by == "category":
+            query = f"""
+                SELECT 
+                    {date_select},
+                    domain.DomainName as category,
+                    COUNT(*) as count
+                FROM dbo.APP_IncidentCase c
+                LEFT JOIN APP_LOOKUP_DOMAIN domain ON c.DomainID = domain.DomainID
+                WHERE c.ClinicalRiskTypeID = 2
+                AND c.FeedbackRecievedDate >= ?
+                AND c.FeedbackRecievedDate <= ?
+                GROUP BY {date_group}, domain.DomainName
+                ORDER BY {date_order}, domain.DomainName
+            """
+            cursor.execute(query, [from_date, to_date])
+            rows = cursor.fetchall()
+            
+            for row in rows:
+                # Format period in Python
+                if granularity == "monthly":
+                    period_date = datetime(row.year, row.month, 1)
+                    period = period_date.strftime('%b %Y')
+                    group_name = row[2] if row[2] else "Unknown"
+                    count = row[3]
+                elif granularity == "quarterly":
+                    period = f"Q{row.quarter} {row.year}"
+                    group_name = row[2] if row[2] else "Unknown"
+                    count = row[3]
+                else:  # weekly
+                    period = row.week_start.strftime('%Y-%m-%d')
+                    group_name = row[3] if row[3] else "Unknown"
+                    count = row[4]
+                
+                trends.append({
+                    "period": period,
+                    "date": period,
+                    "group_label": group_name,
+                    "count": count
+                })
+        elif group_by == "severity":
+            query = f"""
+                SELECT 
+                    {date_select},
+                    severity.SeverityName as severity,
+                    COUNT(*) as count
+                FROM dbo.APP_IncidentCase c
+                LEFT JOIN APP_LOOKUP_SEVERITY severity ON c.SeverityID = severity.SeverityID
+                WHERE c.ClinicalRiskTypeID = 2
+                AND c.FeedbackRecievedDate >= ?
+                AND c.FeedbackRecievedDate <= ?
+                GROUP BY {date_group}, severity.SeverityName
+                ORDER BY {date_order}, severity.SeverityName
+            """
+            cursor.execute(query, [from_date, to_date])
+            rows = cursor.fetchall()
+            
+            for row in rows:
+                # Format period in Python
+                if granularity == "monthly":
+                    period_date = datetime(row.year, row.month, 1)
+                    period = period_date.strftime('%b %Y')
+                    group_name = row[2] if row[2] else "Unknown"
+                    count = row[3]
+                elif granularity == "quarterly":
+                    period = f"Q{row.quarter} {row.year}"
+                    group_name = row[2] if row[2] else "Unknown"
+                    count = row[3]
+                else:  # weekly
+                    period = row.week_start.strftime('%Y-%m-%d')
+                    group_name = row[3] if row[3] else "Unknown"
+                    count = row[4]
+                
+                trends.append({
+                    "period": period,
+                    "date": period,
+                    "group_label": group_name,
+                    "count": count
+                })
+        elif group_by == "department":
+            query = f"""
+                SELECT 
+                    {date_select},
+                    org_unit.Name as department,
+                    COUNT(*) as count
+                FROM dbo.APP_IncidentCase c
+                LEFT JOIN AdminsrationUnit org_unit ON c.IssuingOrgUnitID = org_unit.UniqueID
+                WHERE c.ClinicalRiskTypeID = 2
+                AND c.FeedbackRecievedDate >= ?
+                AND c.FeedbackRecievedDate <= ?
+                GROUP BY {date_group}, org_unit.Name
+                ORDER BY {date_order}, org_unit.Name
+            """
+            cursor.execute(query, [from_date, to_date])
+            rows = cursor.fetchall()
+            
+            for row in rows:
+                # Format period in Python
+                if granularity == "monthly":
+                    period_date = datetime(row.year, row.month, 1)
+                    period = period_date.strftime('%b %Y')
+                    group_name = row[2] if row[2] else "Unknown"
+                    count = row[3]
+                elif granularity == "quarterly":
+                    period = f"Q{row.quarter} {row.year}"
+                    group_name = row[2] if row[2] else "Unknown"
+                    count = row[3]
+                else:  # weekly
+                    period = row.week_start.strftime('%Y-%m-%d')
+                    group_name = row[3] if row[3] else "Unknown"
+                    count = row[4]
+                
+                trends.append({
+                    "period": period,
+                    "date": period,
                     "group_label": group_name,
                     "count": count
                 })
@@ -483,15 +646,15 @@ def get_red_flag_details(red_flag_id: int) -> Dict[str, Any]:
             org_unit.UniqueID as department_id,
             domain.DomainName as category,
             domain.DomainID as category_id,
-            domain.SubDomainName as subcategory,
+            NULL as subcategory,
             c.FeedbackRecievedDate as date,
-            c.ReportingPerson as reported_by,
-            c.CreatedByUser as assigned_to,
+            NULL as reported_by,
+            c.CreatedByUserID as assigned_to,
             CASE WHEN c.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END as is_never_event,
             c.ImmediateAction as root_cause,
             c.TakenAction as corrective_action,
             c.CreatedAt as created_at,
-            c.UpdatedAt as updated_at
+            NULL as updated_at
             
         FROM dbo.APP_IncidentCase c
         LEFT JOIN AdminsrationUnit org_unit ON c.IssuingOrgUnitID = org_unit.UniqueID

@@ -3,7 +3,7 @@ from dateutil.relativedelta import relativedelta
 from collections import defaultdict, Counter
 from typing import Literal
 import calendar
-from ..db_layer.database import get_connection
+from core.database import get_connection
 from ..db_layer import lookups, incident_case
 from ..schemas.auth_models import CurrentUser
 from . import org_tree_service

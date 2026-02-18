@@ -5,7 +5,9 @@ Handles user creation, deletion with safety checks and transaction management.
 ⚠️ ADMIN TEST TOOL — USER DELETE — HANDLE WITH CARE
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
+import logging
+from datetime import datetime
 from core.database import get_connection
 from ..db_layer.user_management_db import (
     get_user_by_id,
@@ -14,10 +16,16 @@ from ..db_layer.user_management_db import (
     delete_user,
     insert_user_record,
     insert_user_role_scope,
-    update_user_identity_fields
+    update_user_identity_fields,
+    get_user_with_role,
+    username_exists_excluding_user,
+    update_user_credentials
 )
 from ..db_layer.section_admin_recreate_db import username_exists
 from ..db_layer.auth_db import hash_password
+
+# Configure logger for user management operations
+logger = logging.getLogger(__name__)
 
 
 def delete_user_service(user_id: int) -> Dict[str, Any]:
@@ -105,12 +113,218 @@ def delete_user_service(user_id: int) -> Dict[str, Any]:
             conn.close()
 
 
+def bulk_delete_users_service(
+    user_ids: List[int],
+    current_user_id: int
+) -> Dict[str, Any]:
+    """
+    Bulk delete multiple users with detailed success/failure tracking.
+    
+    Args:
+        user_ids: List of user IDs to delete
+        current_user_id: ID of the currently logged-in user (cannot be deleted)
+        
+    Returns:
+        dict: Contains:
+            - success: bool (True if all deletions succeeded)
+            - deleted_count: int
+            - failed_count: int
+            - deleted_users: List[dict] (user_id, username, status="deleted")
+            - failed_users: List[dict] (user_id, username, status="failed", reason)
+            - message: str (summary message)
+            
+    Safety Rules:
+        - Cannot delete currently logged-in user
+        - Cannot delete username "software_admin"
+        - Cannot delete any user with SOFTWARE_ADMIN role
+        - Each deletion is attempted independently
+        - Continues on non-fatal errors
+        - Uses single transaction (commits all or nothing)
+        
+    Process:
+        1. Start transaction
+        2. For each user_id:
+           a. Check if user exists
+           b. Check if it's the current user
+           c. Check protection rules
+           d. Delete user scopes
+           e. Delete user record
+           f. Track success/failure
+        3. Commit transaction if any successes
+        4. Return detailed results
+        
+    Note:
+        - Partial failures are reported but don't stop processing
+        - Transaction commits even if some users failed
+        - All successful deletions are committed together
+        - Audit logs all deletion attempts
+    """
+    conn = None
+    deleted_users = []
+    failed_users = []
+    
+    # Log bulk delete operation start
+    logger.info(
+        f"BULK_DELETE_USERS: Started by user_id={current_user_id} "
+        f"for {len(user_ids)} user(s) at {datetime.utcnow().isoformat()}"
+    )
+    
+    try:
+        # Open database connection
+        conn = get_connection()
+        
+        # Process each user ID
+        for user_id in user_ids:
+            try:
+                # Check if trying to delete self
+                if user_id == current_user_id:
+                    failed_users.append({
+                        "user_id": user_id,
+                        "username": "current_user",
+                        "status": "failed",
+                        "reason": "Cannot delete currently logged in user"
+                    })
+                    logger.warning(
+                        f"BULK_DELETE_USERS: Prevented self-deletion attempt "
+                        f"user_id={user_id} by user_id={current_user_id}"
+                    )
+                    continue
+                
+                # Load user
+                user = get_user_by_id(conn, user_id)
+                
+                if not user:
+                    failed_users.append({
+                        "user_id": user_id,
+                        "username": "unknown",
+                        "status": "failed",
+                        "reason": "User not found"
+                    })
+                    logger.warning(
+                        f"BULK_DELETE_USERS: User not found user_id={user_id}"
+                    )
+                    continue
+                
+                username = user.Username
+                
+                # Check protection rules
+                
+                # Block software_admin username
+                if username.lower() == "software_admin":
+                    failed_users.append({
+                        "user_id": user_id,
+                        "username": username,
+                        "status": "failed",
+                        "reason": "Cannot delete protected account 'software_admin'"
+                    })
+                    logger.warning(
+                        f"BULK_DELETE_USERS: Prevented deletion of protected account "
+                        f"user_id={user_id} username={username}"
+                    )
+                    continue
+                
+                # Block any user with SOFTWARE_ADMIN role
+                if user_has_software_admin_role(conn, user_id):
+                    failed_users.append({
+                        "user_id": user_id,
+                        "username": username,
+                        "status": "failed",
+                        "reason": "Cannot delete user with SOFTWARE_ADMIN role"
+                    })
+                    logger.warning(
+                        f"BULK_DELETE_USERS: Prevented deletion of SOFTWARE_ADMIN "
+                        f"user_id={user_id} username={username}"
+                    )
+                    continue
+                
+                # Delete user scopes first (foreign key constraint)
+                delete_user_scopes(conn, user_id)
+                
+                # Delete user record
+                delete_user(conn, user_id)
+                
+                # Track successful deletion
+                deleted_users.append({
+                    "user_id": user_id,
+                    "username": username,
+                    "status": "deleted"
+                })
+                
+                logger.info(
+                    f"BULK_DELETE_USERS: Successfully deleted "
+                    f"user_id={user_id} username={username}"
+                )
+                
+            except Exception as e:
+                # Track individual failure
+                failed_users.append({
+                    "user_id": user_id,
+                    "username": "unknown",
+                    "status": "failed",
+                    "reason": str(e)
+                })
+                logger.error(
+                    f"BULK_DELETE_USERS: Failed to delete user_id={user_id}: {str(e)}"
+                )
+        
+        # Commit transaction if any deletions succeeded
+        if deleted_users:
+            conn.commit()
+            logger.info(
+                f"BULK_DELETE_USERS: Transaction committed with {len(deleted_users)} deletion(s)"
+            )
+        
+        # Calculate results
+        deleted_count = len(deleted_users)
+        failed_count = len(failed_users)
+        success = failed_count == 0
+        
+        # Generate message
+        if deleted_count == 0:
+            message = "No users were deleted"
+        elif failed_count == 0:
+            message = f"Successfully deleted {deleted_count} user(s)"
+        else:
+            total = deleted_count + failed_count
+            message = f"Deleted {deleted_count} out of {total} user(s). {failed_count} failed."
+        
+        # Log final summary
+        logger.info(
+            f"BULK_DELETE_USERS: Completed by user_id={current_user_id} - "
+            f"Success: {deleted_count}, Failed: {failed_count}"
+        )
+        
+        return {
+            "success": success,
+            "deleted_count": deleted_count,
+            "failed_count": failed_count,
+            "deleted_users": deleted_users,
+            "failed_users": failed_users,
+            "message": message
+        }
+        
+    except Exception as e:
+        # Rollback on critical error
+        if conn:
+            conn.rollback()
+        logger.error(
+            f"BULK_DELETE_USERS: Critical error by user_id={current_user_id}: {str(e)}"
+        )
+        raise Exception(f"Failed to bulk delete users: {str(e)}")
+        
+    finally:
+        # Always close connection
+        if conn:
+            conn.close()
+
+
 def create_user_with_role_scope(
     *,
     username: str,
     password_plain: str,
     display_name: Optional[str],
     department_display_name: Optional[str],
+    email: Optional[str] = None,
     role_id: int,
     org_unit_id: int,
 ) -> int:
@@ -122,6 +336,7 @@ def create_user_with_role_scope(
         password_plain: Plain text password (will be hashed with bcrypt)
         display_name: Optional display name for UI greetings
         department_display_name: Optional department display label
+        email: Optional email address for notifications
         role_id: RoleID from APP_Roles to assign
         org_unit_id: Organization unit ID to assign
         
@@ -134,7 +349,7 @@ def create_user_with_role_scope(
         
     Process:
         1. Validate inputs
-        2. Normalize username (trim)
+        2. Normalize username (trim), email (trim + lowercase)
         3. Check username uniqueness
         4. Hash password with bcrypt
         5. Insert user record
@@ -162,6 +377,10 @@ def create_user_with_role_scope(
     # Normalize username
     username = username.strip()
     
+    # Normalize email - trim and lowercase
+    if email is not None:
+        email = email.strip().lower() if email.strip() else None
+    
     conn = None
     
     try:
@@ -181,7 +400,8 @@ def create_user_with_role_scope(
             username=username,
             password_hash=password_hash,
             display_name=display_name,
-            department_display_name=department_display_name
+            department_display_name=department_display_name,
+            email=email
         )
         
         # Assign role+scope
@@ -215,6 +435,7 @@ def update_user_identity_service(
     user_id: int,
     display_name: Optional[str],
     department_display_name: Optional[str],
+    email: Optional[str] = None,
 ) -> None:
     """
     Service: update user display identity fields only.
@@ -223,14 +444,15 @@ def update_user_identity_service(
         user_id: UserID to update
         display_name: New display name (None = no change)
         department_display_name: New department display name (None = no change)
+        email: Email address for notifications (None = no change)
         
     Raises:
-        ValueError: If user_id <= 0, both fields are None, or user not found
+        ValueError: If user_id <= 0, all fields are None, or user not found
         Exception: If database operation fails (transaction rolled back)
         
     Process:
         1. Validate inputs
-        2. Normalize values (strip whitespace)
+        2. Normalize values (strip whitespace, lowercase email)
         3. Call DB layer update function
         4. Commit transaction
         
@@ -244,8 +466,8 @@ def update_user_identity_service(
         raise ValueError(f"Invalid user_id: {user_id} (must be > 0)")
     
     # At least one field must be provided
-    if display_name is None and department_display_name is None:
-        raise ValueError("At least one field must be provided (display_name or department_display_name)")
+    if display_name is None and department_display_name is None and email is None:
+        raise ValueError("At least one field must be provided (display_name, department_display_name, or email)")
     
     # Normalize values - strip whitespace if provided
     if display_name is not None:
@@ -253,6 +475,10 @@ def update_user_identity_service(
     
     if department_display_name is not None:
         department_display_name = department_display_name.strip()
+    
+    # Normalize email - trim and lowercase
+    if email is not None:
+        email = email.strip().lower() if email.strip() else None
     
     conn = None
     
@@ -265,7 +491,8 @@ def update_user_identity_service(
             conn,
             user_id=user_id,
             display_name=display_name,
-            department_display_name=department_display_name
+            department_display_name=department_display_name,
+            email=email
         )
         
         # Commit transaction
@@ -326,6 +553,7 @@ def list_users_for_settings_service() -> list[dict]:
                 u.Username as username,
                 u.DisplayName as display_name,
                 u.DepartmentDisplayName as department_display_name,
+                u.Email as email,
                 r.RoleCode as role_name,
                 org.Name as org_unit_name,
                 u.IsActive as is_active
@@ -354,6 +582,7 @@ def list_users_for_settings_service() -> list[dict]:
                 "username": row.username,
                 "display_name": row.display_name if row.display_name else None,
                 "department_display_name": row.department_display_name if row.department_display_name else None,
+                "email": row.email if row.email else None,
                 "role_name": row.role_name,
                 "org_unit_name": row.org_unit_name,
                 "is_active": bool(row.is_active) if row.is_active is not None else False
@@ -446,5 +675,127 @@ def admin_reset_user_password_service(user_id: int, new_password: str) -> None:
     finally:
         if cursor:
             cursor.close()
+        if conn:
+            conn.close()
+
+
+def update_user_service(
+    *,
+    user_id: int,
+    display_name: Optional[str] = None,
+    username: Optional[str] = None,
+    password: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Update user profile (display_name, username, password).
+    
+    Args:
+        user_id: ID of user to update
+        display_name: New display name (optional)
+        username: New username (optional)
+        password: New plain text password (optional)
+        
+    Returns:
+        dict: Contains success status and updated user info
+        
+    Raises:
+        Exception: If user not found
+        Exception: If user has SOFTWARE_ADMIN role (protected)
+        Exception: If username already exists
+        Exception: If validation fails
+        Exception: If database operation fails (transaction rolled back)
+        
+    Validation Rules:
+        - Cannot edit SOFTWARE_ADMIN users
+        - Username: 3-50 chars, alphanumeric + underscore only
+        - Username must be unique
+        - Password: minimum 8 characters (if provided)
+        
+    Process:
+        1. Load user and check protection rules
+        2. Validate inputs
+        3. Check username uniqueness (if changing)
+        4. Hash password (if provided)
+        5. Update user record
+        6. Commit transaction
+    """
+    import re
+    
+    conn = None
+    
+    try:
+        # Open database connection
+        conn = get_connection()
+        
+        # Step 1: Load user with role
+        user = get_user_with_role(conn, user_id)
+        
+        if not user:
+            raise Exception(f"User with ID {user_id} not found")
+        
+        # Step 2: Check protection rule - cannot edit SOFTWARE_ADMIN users
+        if user.RoleCode == "SOFTWARE_ADMIN":
+            raise Exception("Cannot edit SOFTWARE_ADMIN users")
+        
+        # Step 3: Validate username if provided
+        if username is not None:
+            username = username.strip()
+            
+            # Validate format (3-50 chars, alphanumeric + underscore)
+            if not re.match(r'^[a-zA-Z0-9_]{3,50}$', username):
+                raise Exception("Username must be 3-50 alphanumeric characters")
+            
+            # Check uniqueness if username is changing
+            if username != user.Username:
+                if username_exists_excluding_user(conn, username, user_id):
+                    raise Exception("Username already exists")
+        
+        # Step 4: Validate password if provided
+        password_hash = None
+        test_password = None
+        if password is not None:
+            password = password.strip()
+            
+            # Validate length
+            if len(password) < 8:
+                raise Exception("Password must be at least 8 characters")
+            
+            # Hash password
+            password_hash = hash_password(password)
+            test_password = password  # Store plain text for testing
+        
+        # Step 5: Update user credentials
+        update_user_credentials(
+            conn,
+            user_id=user_id,
+            username=username,
+            password_hash=password_hash,
+            test_password=test_password,
+            display_name=display_name
+        )
+        
+        # Step 6: Commit transaction
+        conn.commit()
+        
+        # Return updated user info
+        updated_user = get_user_with_role(conn, user_id)
+        
+        return {
+            "success": True,
+            "user": {
+                "user_id": updated_user.UserID,
+                "username": updated_user.Username,
+                "display_name": updated_user.DisplayName if updated_user.DisplayName else None
+            }
+        }
+        
+    except Exception as e:
+        # Rollback on error
+        if conn:
+            conn.rollback()
+        raise Exception(str(e))
+        
+    finally:
+        # Always close connection
         if conn:
             conn.close()

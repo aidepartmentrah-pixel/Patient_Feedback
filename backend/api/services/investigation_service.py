@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from collections import defaultdict
 from typing import Literal, Optional
-from ..db_layer.database import get_connection
+from core.database import get_connection
 from ..db_layer import admin_units, lookups
 
 

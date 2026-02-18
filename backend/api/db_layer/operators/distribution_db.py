@@ -14,10 +14,10 @@ Key Functions:
 - Support for SINGLE, MULTI, and BINARY_SPLIT time modes
 """
 
-import pyodbc
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import date, datetime
 from decimal import Decimal
+from core.database import get_connection
 
 from ...schemas.operators.base import (
     TimeWindowYear,
@@ -27,22 +27,6 @@ from ...schemas.operators.base import (
     TimeWindow,
     OperatorFilters
 )
-
-
-# ============================================================================
-# CONNECTION
-# ============================================================================
-
-def get_connection():
-    """Get database connection for IncidentManager database"""
-    conn = pyodbc.connect(
-        "DRIVER={ODBC Driver 17 for SQL Server};"
-        "SERVER=SOCIALMEDIA;"
-        "DATABASE=IncidentManager;"
-        "Trusted_Connection=yes;"
-        "TrustServerCertificate=yes;"
-    )
-    return conn
 
 
 # ============================================================================

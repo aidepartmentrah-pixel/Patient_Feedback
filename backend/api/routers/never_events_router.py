@@ -25,11 +25,13 @@ router = APIRouter(prefix="/api/never-events", tags=["Never Events"])
 @router.get("")
 async def get_never_events(
     search: Optional[str] = Query(None, description="Search by record ID, patient name, or event type"),
-    status: Optional[str] = Query(None, description="Filter by status: OPEN, UNDER_REVIEW, FINISHED, all"),
+    status: Optional[str] = Query(None, description="Filter by status: OPEN, UNDER_INVESTIGATION, RESOLVED, CLOSED, all"),
     from_date: Optional[str] = Query(None, description="Filter from date (YYYY-MM-DD)"),
     to_date: Optional[str] = Query(None, description="Filter to date (YYYY-MM-DD)"),
     department: Optional[str] = Query(None, description="Filter by department"),
     category: Optional[str] = Query(None, description="Filter by never event category"),
+    sort_by: str = Query("date", description="Sort by: date, incident_date, severity, department, status, category, patient_name"),
+    sort_order: str = Query("desc", description="Sort order: asc or desc"),
     limit: int = Query(100, ge=1, le=500, description="Max results per page"),
     offset: int = Query(0, ge=0, description="Pagination offset")
 ):
@@ -40,22 +42,27 @@ async def get_never_events(
     
     **Example Request:**
     ```
-    GET /api/never-events?status=FINISHED&from_date=2024-01-01&limit=50
+    GET /api/never-events?status=UNDER_INVESTIGATION&from_date=2024-01-01&sort_by=severity&sort_order=desc&limit=50
     ```
     
     **Query Parameters:**
     - `search`: Search across record ID, patient name, and event type
-    - `status`: Filter by OPEN, UNDER_REVIEW, FINISHED, or "all"
+    - `status`: Filter by OPEN, UNDER_INVESTIGATION, RESOLVED, CLOSED, or "all"
     - `from_date`, `to_date`: Date range filters
     - `department`: Filter by department name
     - `category`: Filter by never event category
+    - `sort_by`: Sort by date (default), incident_date, severity, department, status, category, or patient_name
+    - `sort_order`: asc or desc (default: desc for newest first)
     - `limit`: Results per page (default: 100, max: 500)
     - `offset`: Pagination offset (default: 0)
     
     **Returns:**
-    - List of never event records with basic information
+    - List of never event records with full patient information, investigation details, and tracking
     - Total count for pagination
-    - Sorted by date descending (most recent first)
+    - Goal (always 0 - zero tolerance)
+    - Message about zero tolerance target
+    - Sorted by incident date descending (most recent first) by default
+    - Includes fields: patient_full_name, incident_description, investigation_status, root_cause, etc.
     """
     
     try:
@@ -66,6 +73,8 @@ async def get_never_events(
             to_date=to_date,
             department=department,
             category=category,
+            sort_by=sort_by,
+            sort_order=sort_order,
             limit=limit,
             offset=offset
         )
@@ -101,19 +110,27 @@ async def get_statistics(
     - `to_date`: Statistics to this date (optional, default: today)
     
     **Returns:**
-    - Total never events count
-    - Unfinished vs finished counts
-    - Breakdown by status (OPEN, UNDER_REVIEW, FINISHED)
-    - Breakdown by category
-    - Breakdown by severity
-    - Current month count
-    - Previous month count
-    - Date range applied
+    - `total_never_events`: Total count of never events
+    - `goal`: Target (always 0 - zero tolerance)
+    - `variance`: Difference from goal
+    - `ytd_total`: Year-to-date total
+    - `unfinished_count`: Count of never events not yet resolved
+    - `finished_count`: Count of completed never events
+    - `by_status`: Nested object with counts by status (OPEN, UNDER_INVESTIGATION, RCA_IN_PROGRESS, PENDING_REVIEW, RESOLVED, CLOSED)
+    - `by_severity`: Nested object with counts by severity (CRITICAL, HIGH, MEDIUM, LOW)
+    - `by_category`: Detailed category breakdown with count and percentage
+    - `by_harm_level`: Distribution of harm levels
+    - `current_month`: Object with count, month name, start_date, end_date, goal, and status
+    - `previous_month`: Object with count, month name, and comparison percentage
+    - `rca_statistics`: Root cause analysis statistics (completed, in_progress, completion_rate)
+    - `performance_indicators`: Time to investigation, time to resolution, recurrence rate
+    - `period`: Date range applied (from_date, to_date)
     
     **Notes:**
-    - Never events are zero-tolerance incidents
-    - All never events should be HIGH severity by default
-    - Current and previous month help track trends
+    - Never events are zero-tolerance incidents - goal is always 0
+    - Investigation status tracking included
+    - RCA completion metrics provided
+    - Current month status shows CRITICAL if count > 0
     """
     
     try:

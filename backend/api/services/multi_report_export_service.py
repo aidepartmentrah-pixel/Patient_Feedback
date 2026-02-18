@@ -12,6 +12,11 @@ from docx.shared import Pt
 
 from ..schemas.auth_models import CurrentUser
 from ..utils.guards import require_unit_in_scope
+from ..constants.org_unit_types import (
+    ORG_TYPE_ADMINISTRATION,
+    ORG_TYPE_DEPARTMENT,
+    ORG_TYPE_SECTION
+)
 from .monthly_report_service import monthly_report_service
 from .reports_service import reports_service
 from ..db_layer.admin_units import get_units_by_type
@@ -62,11 +67,10 @@ class MultiReportExportService:
             HTTPException: 403 if any requested unit is outside user's scope
         """
         # Map report level to Type values in database
-        # Based on actual database values: 323=Administration, 324=Section, 325=Department
         type_mapping = {
-            "administration": 323,
-            "department": 325,
-            "section": 324
+            "administration": ORG_TYPE_ADMINISTRATION,
+            "department": ORG_TYPE_DEPARTMENT,
+            "section": ORG_TYPE_SECTION
         }
         
         unit_type = type_mapping[report_level]

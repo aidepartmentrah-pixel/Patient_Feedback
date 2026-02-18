@@ -5,17 +5,7 @@ SQL queries for action CRUD, filtering, and derived field computation.
 
 from typing import Dict, List, Any, Optional
 from datetime import datetime
-import pyodbc
-
-def get_db_connection():
-    conn = pyodbc.connect(
-        "DRIVER={ODBC Driver 17 for SQL Server};"
-        "SERVER=SOCIALMEDIA;"
-        "DATABASE=IncidentManager;"
-        "Trusted_Connection=yes;"
-        "TrustServerCertificate=yes;"
-    )
-    return conn
+from core.database import get_connection
 
 
 def create_follow_up_action(
@@ -39,7 +29,7 @@ def create_follow_up_action(
     Returns:
         Created action dict with ID
     """
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor()
     
     try:
@@ -104,7 +94,7 @@ def get_follow_up_actions(
     Returns:
         Dict with actions array and global statistics
     """
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor()
     
     try:
@@ -239,7 +229,7 @@ def get_follow_up_action_by_id(action_id: int) -> Optional[Dict[str, Any]]:
     Returns:
         Action dict or None if not found
     """
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor()
     
     try:
@@ -329,7 +319,7 @@ def update_follow_up_action(
     Returns:
         Updated action dict or None if not found
     """
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor()
     
     try:
@@ -390,7 +380,7 @@ def complete_follow_up_action(
     Returns:
         Updated action dict or None if not found
     """
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor()
     
     try:
@@ -434,7 +424,7 @@ def reopen_follow_up_action(
     Returns:
         Updated action dict or None if not found
     """
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor()
     
     try:
@@ -474,7 +464,7 @@ def get_action_history(action_id: int) -> List[Dict[str, Any]]:
     Returns:
         List of history entries
     """
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor()
     
     try:
@@ -517,7 +507,7 @@ def get_calendar_actions(
     Returns:
         Dict with actions grouped by date
     """
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor()
     
     try:
@@ -604,7 +594,7 @@ def bulk_complete_actions(
     Returns:
         Dict with success count and failed IDs
     """
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor()
     
     try:
@@ -667,7 +657,7 @@ def bulk_delay_actions(
     Returns:
         Dict with success count and failed IDs
     """
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor()
     
     try:
@@ -753,7 +743,7 @@ def delay_follow_up_action(
     Returns:
         Updated action dict or None if not found
     """
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor()
     
     try:

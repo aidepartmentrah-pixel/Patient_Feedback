@@ -5,7 +5,7 @@ Identifies type mismatches and null values in target department assignments
 import sys
 sys.path.insert(0, r"C:\Users\IT\Documents\GitHub Repository\Patient_Feedback\backend")
 
-from api.db_layer.reports_db import get_connection
+from core.database import get_connection
 
 conn = get_connection()
 cursor = conn.cursor()

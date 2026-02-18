@@ -78,8 +78,11 @@ def get_dashboard_stats(
     include_issuing_dept = scope in ("hospital", "administration", "department")
 
     incidents = _fetch_incidents_in_scope(scope_unit_ids, start_date, end_date)
+    
+    # Count force-closed subcases from APP_AdministrativeSubcase table
+    force_closed_count = _count_force_closed_subcases(scope_unit_ids, start_date, end_date)
 
-    metrics = _compute_metrics(incidents)
+    metrics = _compute_metrics(incidents, force_closed_subcase_count=force_closed_count)
     charts = _build_charts(
         incidents, 
         include_issuing_dept,
@@ -97,9 +100,12 @@ def get_dashboard_stats(
         previous_start,
         previous_end,
     )
+    
+    # Count force-closed subcases for previous period (for trend calculation)
+    previous_force_closed = _count_force_closed_subcases(scope_unit_ids, previous_start, previous_end)
 
     trends = _compute_trends(
-        _compute_metrics(previous_incidents),
+        _compute_metrics(previous_incidents, force_closed_subcase_count=previous_force_closed),
         metrics,
     )
 
@@ -108,6 +114,68 @@ def get_dashboard_stats(
         "trends": trends,
         "charts": charts,
         "recentActivity": recent_activity,
+    }
+
+
+def get_dashboard_date_bounds_for_units(unit_ids: list[int]) -> dict:
+    """
+    Get minimum and maximum incident CreatedAt dates for given unit IDs.
+    
+    Supports frontend timeline slider date range selector.
+    
+    Args:
+        unit_ids: List of organizational unit IDs to query
+    
+    Returns:
+        dict with keys:
+            - min_date: date object or None
+            - max_date: date object or None
+    """
+    from core.database import get_connection
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Build WHERE clause
+    where_parts = []
+    params = []
+    
+    if unit_ids:
+        placeholders = ','.join('?' * len(unit_ids))
+        where_parts.append(f"IssuingOrgUnitID IN ({placeholders})")
+        params.extend(unit_ids)
+    
+    where_clause = " AND ".join(where_parts) if where_parts else "1=1"
+    
+    # Query MIN/MAX dates using DATE cast
+    query = f"""
+        SELECT 
+            MIN(CAST(CreatedAt AS DATE)) AS min_date,
+            MAX(CAST(CreatedAt AS DATE)) AS max_date
+        FROM dbo.APP_IncidentCase 
+        WHERE {where_clause}
+    """
+    
+    cursor.execute(query, params)
+    row = cursor.fetchone()
+    conn.close()
+    
+    # -------------------------
+    # NULL SAFETY CONTRACT (DR-B3)
+    # Always return dict with both keys
+    # Values are date objects or None
+    # -------------------------
+    if not row or (row[0] is None and row[1] is None):
+        # No incidents in scope - return explicit None values
+        return {
+            "min_date": None,
+            "max_date": None
+        }
+    
+    # Return date objects or None
+    return {
+        "min_date": row[0] if row[0] else None,
+        "max_date": row[1] if row[1] else None
     }
 
 
@@ -198,7 +266,47 @@ def _fetch_incidents_in_scope(unit_ids, start_date, end_date):
     )
 
 
-def _compute_metrics(incidents):
+def _count_force_closed_subcases(unit_ids: list[int], start_date, end_date) -> int:
+    """
+    Count subcases with Status = 'ForceClosed' from APP_AdministrativeSubcase.
+    
+    Filters by:
+    - TargetOrgUnitID in unit_ids (organization scope)
+    - CreatedAt date range from the linked incident case
+    
+    Returns:
+        Count of force-closed subcases
+    """
+    from core.database import get_connection
+    
+    if not unit_ids:
+        return 0
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    placeholders = ','.join('?' * len(unit_ids))
+    
+    query = f"""
+        SELECT COUNT(*)
+        FROM dbo.APP_AdministrativeSubcase s
+        INNER JOIN dbo.APP_IncidentCase ic ON s.IncidentRequestCaseID = ic.IncidentRequestCaseID
+        WHERE s.Status = 'FORCE_CLOSED'
+          AND s.TargetOrgUnitID IN ({placeholders})
+          AND CAST(ic.CreatedAt AS DATE) >= ?
+          AND CAST(ic.CreatedAt AS DATE) <= ?
+    """
+    
+    params = list(unit_ids) + [start_date, end_date]
+    cursor.execute(query, params)
+    
+    result = cursor.fetchone()[0]
+    conn.close()
+    
+    return result or 0
+
+
+def _compute_metrics(incidents, force_closed_subcase_count: int = 0):
     metrics = {
         "totalIncidents": len(incidents),
         "uniquePatients": len(
@@ -207,7 +315,7 @@ def _compute_metrics(incidents):
         "openClosed": {
             "open": 0,
             "closed": 0,
-            "forciblyClosed": 0,
+            "forciblyClosed": force_closed_subcase_count,  # Count from APP_AdministrativeSubcase
         },
         "severityBreakdown": {
             "high": 0,
@@ -224,15 +332,13 @@ def _compute_metrics(incidents):
 
     for i in incidents:
         # -------------------------
-        # Case status & Explanation Status
+        # Case status
         # -------------------------
         status_id = i.get("CaseStatusID")
-        explanation_status_id = i.get("ExplanationStatusID")
 
-        # Check for Forcibly Closed (ExplanationStatusID == 3)
-        if explanation_status_id == 3:
-            metrics["openClosed"]["forciblyClosed"] += 1
-        elif status_id in (1,):  # example OPEN
+        # forciblyClosed is now counted separately from APP_AdministrativeSubcase
+        # Only count open/closed status from incidents
+        if status_id in (1,):  # example OPEN
             metrics["openClosed"]["open"] += 1
         elif status_id in (2,):  # example CLOSED
             metrics["openClosed"]["closed"] += 1

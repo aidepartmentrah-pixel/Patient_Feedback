@@ -25,7 +25,8 @@ def require_supervisor_or_worker(
     """
     Allows: SUPERVISOR, WORKER
     """
-    if current_user.role not in ["SUPERVISOR", "WORKER"]:
+    allowed = {"SUPERVISOR", "WORKER"}
+    if not allowed.intersection(current_user.roles):
         raise HTTPException(status_code=403, detail="Forbidden")
     return current_user
 
@@ -36,7 +37,7 @@ def require_section_admin(
     """
     Allows: SECTION_ADMIN
     """
-    if current_user.role != "SECTION_ADMIN":
+    if "SECTION_ADMIN" not in current_user.roles:
         raise HTTPException(status_code=403, detail="Forbidden")
     return current_user
 
@@ -47,7 +48,7 @@ def require_dept_admin(
     """
     Allows: DEPARTMENT_ADMIN
     """
-    if current_user.role != "DEPARTMENT_ADMIN":
+    if "DEPARTMENT_ADMIN" not in current_user.roles:
         raise HTTPException(status_code=403, detail="Forbidden")
     return current_user
 
@@ -58,7 +59,8 @@ def require_admin_level(
     """
     Allows: DEPARTMENT_ADMIN, ADMINISTRATION_ADMIN
     """
-    if current_user.role not in ["DEPARTMENT_ADMIN", "ADMINISTRATION_ADMIN"]:
+    allowed = {"DEPARTMENT_ADMIN", "ADMINISTRATION_ADMIN"}
+    if not allowed.intersection(current_user.roles):
         raise HTTPException(status_code=403, detail="Forbidden")
     return current_user
 
@@ -69,6 +71,6 @@ def require_administrator(
     """
     Allows: ADMINISTRATION_ADMIN
     """
-    if current_user.role != "ADMINISTRATION_ADMIN":
+    if "ADMINISTRATION_ADMIN" not in current_user.roles:
         raise HTTPException(status_code=403, detail="Forbidden")
     return current_user

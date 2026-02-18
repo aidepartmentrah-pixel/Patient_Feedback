@@ -1,12 +1,6 @@
-import pyodbc
+from core.database import get_connection
 
-conn = pyodbc.connect(
-    'DRIVER={ODBC Driver 17 for SQL Server};'
-    'SERVER=SOCIALMEDIA;'
-    'DATABASE=IncidentManager;'
-    'Trusted_Connection=yes;'
-    'TrustServerCertificate=yes;'
-)
+conn = get_connection()
 cursor = conn.cursor()
 
 # Get all lookup tables

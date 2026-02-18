@@ -85,11 +85,15 @@ COLUMNS:
   - CreatedByUserID: int (NOT NULL)
   - UpdatedAt: datetime
   - UpdatedByUserID: int
+  - ForceClosedAt: datetime
+  - ForceClosedByUserID: int
+  - ForceCloseReason: nvarchar
 
 PRIMARY KEY:
   - SubcaseID
 
 FOREIGN KEYS:
+  - ForceClosedByUserID -> dbo.APP_Users.UserID
   - SeasonalReportID -> dbo.APP_SeasonalOrgUnitReport.SeasonalReportID
   - TargetOrgUnitID -> dbo.AdminsrationUnit.UniqueID
   - IncidentRequestCaseID -> dbo.APP_IncidentCase.IncidentRequestCaseID
@@ -136,6 +140,24 @@ FOREIGN KEYS:
 
 
 ============================================================
+TABLE: dbo.APP_DataMigration_Map
+============================================================
+COLUMNS:
+  - MapID: int (NOT NULL)
+  - legacy_case_id: int (NOT NULL)
+  - new_case_id: int (NOT NULL)
+  - migrated_by_user_id: int (NOT NULL)
+  - migrated_at: datetime2 (NOT NULL) (Default=(getdate()))
+
+PRIMARY KEY:
+  - MapID
+
+FOREIGN KEYS:
+  - migrated_by_user_id -> dbo.APP_Users.UserID
+  - new_case_id -> dbo.APP_IncidentCase.IncidentRequestCaseID
+
+
+============================================================
 TABLE: dbo.APP_DepartmentEvaluationRule
 ============================================================
 COLUMNS:
@@ -159,6 +181,56 @@ PRIMARY KEY:
 
 FOREIGN KEYS:
   None
+
+
+============================================================
+TABLE: dbo.APP_DrawerLabel
+============================================================
+COLUMNS:
+  - LabelID: int (NOT NULL)
+  - LabelName: nvarchar(100) (NOT NULL)
+  - IsActive: bit (NOT NULL) (Default=((1)))
+  - CreatedAt: datetime2 (NOT NULL) (Default=(sysutcdatetime()))
+
+PRIMARY KEY:
+  - LabelID
+
+FOREIGN KEYS:
+  None
+
+
+============================================================
+TABLE: dbo.APP_DrawerNote
+============================================================
+COLUMNS:
+  - NoteID: int (NOT NULL)
+  - NoteText: nvarchar (NOT NULL)
+  - CreatedAt: datetime2 (NOT NULL) (Default=(sysutcdatetime()))
+  - CreatedByUserID: int (NOT NULL)
+  - CreatedByName: nvarchar(200) (NOT NULL)
+  - IsDeleted: bit (NOT NULL) (Default=((0)))
+
+PRIMARY KEY:
+  - NoteID
+
+FOREIGN KEYS:
+  None
+
+
+============================================================
+TABLE: dbo.APP_DrawerNoteLabelLink
+============================================================
+COLUMNS:
+  - NoteID: int (NOT NULL)
+  - LabelID: int (NOT NULL)
+
+PRIMARY KEY:
+  - NoteID
+  - LabelID
+
+FOREIGN KEYS:
+  - NoteID -> dbo.APP_DrawerNote.NoteID
+  - LabelID -> dbo.APP_DrawerLabel.LabelID
 
 
 ============================================================
@@ -189,11 +261,15 @@ COLUMNS:
   - SourceID: int (NOT NULL)
   - ExplanationStatusID: int (NOT NULL)
   - RequiresExplanation: bit (NOT NULL) (Default=((0)))
+  - ForceClosedAt: datetime
+  - ForceClosedByUserID: int
+  - ForceCloseReason: nvarchar
 
 PRIMARY KEY:
   - IncidentRequestCaseID
 
 FOREIGN KEYS:
+  - ForceClosedByUserID -> dbo.APP_Users.UserID
   - SourceID -> dbo.APP_LOOKUP_SOURCE.SourceID
 
 
@@ -229,12 +305,16 @@ COLUMNS:
   - AdministrationID: int
   - IsManager: bit (NOT NULL) (Default=((0)))
   - IsActive: bit (NOT NULL) (Default=((1)))
+  - IncidentRequestCaseID: int
+  - IsPrimary: bit (Default=((0)))
+  - AssignedAt: datetime (Default=(getdate()))
+  - AssignedByUserID: int
 
 PRIMARY KEY:
   - EmployeeID
 
 FOREIGN KEYS:
-  None
+  - IncidentRequestCaseID -> dbo.APP_IncidentCase.IncidentRequestCaseID
 
 
 ============================================================

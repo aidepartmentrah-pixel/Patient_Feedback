@@ -32,6 +32,7 @@ def get_all_user_credentials(conn) -> List[Any]:
                 u.Username,
                 u.PasswordHash,
                 u.IsActive,
+                u.DisplayName,
                 r.RoleCode,
                 a.Name AS org_unit_name,
                 s.OrgUnitType,

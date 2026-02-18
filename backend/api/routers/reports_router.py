@@ -37,6 +37,7 @@ from ..services.monthly_report_service import monthly_report_service
 from ..services.report_export_service import report_export_service
 from ..services.seasonal_report_orchestrator import get_or_generate_seasonal_report
 from ..services.seasonal_report_explanation_service import SeasonalReportExplanationService
+from ..services.search_service import search_patients  # For patient search
 
 
 
@@ -45,6 +46,66 @@ from ..services.seasonal_report_explanation_service import SeasonalReportExplana
 # ============================================================
 
 router = APIRouter(prefix="/api/reports", tags=["Reports"])
+
+# ============================================================
+# SEARCH ENDPOINTS (For Reporting Page Filters)
+# ============================================================
+
+@router.get("/search/patients")
+async def search_patients_endpoint(
+    q: str = Query(..., min_length=1, description="Search query (patient name, document number, or medical file number)"),
+    limit: int = Query(20, ge=1, le=100, description="Maximum number of results (1-100)"),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """
+    Search for patients by name, document number, or medical file number.
+    Used by the Reporting Page for patient filtering.
+    
+    **Query Parameters:**
+    - `q`: Search text (required, min 1 character)
+    - `limit`: Maximum results to return (default: 20, max: 100)
+    
+    **Examples:**
+    - `/api/reports/search/patients?q=أحمد` - Search for patients named أحمد
+    - `/api/reports/search/patients?q=123456&limit=10` - Search by document number
+    
+    **Returns:**
+    ```json
+    {
+      "success": true,
+      "patients": [
+        {
+          "patient_admission_id": 12345,
+          "full_name": "أحمد محمد علي",
+          "first_name": "أحمد",
+          "last_name": "علي",
+          "document_number": "123456789",
+          "phone_number": "0501234567",
+          "birth_date": "1990-05-15",
+          "sex": "M",
+          "medical_file_number": "MF-2024-001",
+          "admission_date": "2024-12-15T10:30:00",
+          "source": "hospital"
+        }
+      ],
+      "count": 1
+    }
+    ```
+    """
+    require_logged_in(current_user)
+    
+    result = search_patients(q, limit)
+    
+    if not result.get("success", False):
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "SEARCH_FAILED",
+                "message": result.get("error", "Failed to search patients")
+            }
+        )
+    
+    return result
 
 # ============================================================
 # REQUEST/RESPONSE MODELS
@@ -92,6 +153,7 @@ class MonthlyViewRequest(BaseModel):
     administration_ids: Optional[str] = None
     department_ids: Optional[str] = None
     section_ids: Optional[str] = None
+    group_by: Optional[Literal["section", "department", "administration"]] = "section"
 
 
 class SeasonalExportRequest(BaseModel):
@@ -140,11 +202,12 @@ EXPORT_STORAGE: Dict[str, Dict[str, Any]] = {}
 @router.post("/seasonal/view", response_model=Dict[str, Any])
 def view_seasonal_report(
     request: SeasonalViewRequestV2,
-    current_user: CurrentUser = Depends(require_administrator)
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """View a seasonal report (generates if needed)."""
+    require_logged_in(current_user)
     
-    # Phase 4: Policy gate - only admins who pass policy can generate
+    # Phase 4: Policy gate - only users with org scope can generate
     if not can_generate_seasonal_report(current_user):
         raise HTTPException(
             status_code=403,
@@ -219,6 +282,7 @@ def view_monthly_report(
             administration_ids=request.administration_ids,
             department_ids=request.department_ids,
             section_ids=request.section_ids,
+            group_by=request.group_by or "section",
         )
         return result
     except Exception as e:

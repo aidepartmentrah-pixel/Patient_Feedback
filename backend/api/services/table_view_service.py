@@ -18,10 +18,90 @@ from datetime import datetime, date
 import pyodbc
 from dateutil.relativedelta import relativedelta
 from io import BytesIO
+from core.database import get_connection
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 
 from ..db_layer.database import get_connection
+
+
+# ==================== HELPER FUNCTIONS ====================
+
+def _get_workflow_status(incident_id: int, cursor=None) -> Optional[Dict[str, Any]]:
+    """
+    Get workflow status for an incident (subcases information).
+    
+    Returns:
+        Dictionary with workflow status info or None if no subcases
+        {
+            "has_subcases": bool,
+            "open_subcase_count": int,
+            "force_closed": bool,
+            "subcases": [
+                {
+                    "subcase_id": int,
+                    "status": str,
+                    "target_org_unit": str,
+                    "target_org_unit_id": int
+                },
+                ...
+            ]
+        }
+    """
+    close_cursor = False
+    if cursor is None:
+        conn = get_connection()
+        cursor = conn.cursor()
+        close_cursor = True
+    
+    try:
+        query = """
+            SELECT 
+                s.SubcaseID,
+                s.Status,
+                s.TargetOrgUnitID,
+                org.Name as TargetOrgUnitName
+            FROM dbo.APP_AdministrativeSubcase s
+            LEFT JOIN AdminsrationUnit org ON s.TargetOrgUnitID = org.UniqueID
+            WHERE s.IncidentRequestCaseID = ?
+            ORDER BY s.CreatedAt ASC
+        """
+        
+        cursor.execute(query, (incident_id,))
+        rows = cursor.fetchall()
+        
+        if not rows:
+            return None
+        
+        subcases = []
+        open_count = 0
+        force_closed_count = 0
+        
+        for row in rows:
+            status = row.Status
+            if status == 'FORCE_CLOSED':
+                force_closed_count += 1
+            elif status not in ['ADMIN_APPROVED', 'SECTION_DENIED']:
+                open_count += 1
+            
+            subcases.append({
+                "subcase_id": row.SubcaseID,
+                "status": status,
+                "target_org_unit": row.TargetOrgUnitName,
+                "target_org_unit_id": row.TargetOrgUnitID
+            })
+        
+        return {
+            "has_subcases": True,
+            "open_subcase_count": open_count,
+            "force_closed": force_closed_count > 0,
+            "subcases": subcases
+        }
+    
+    finally:
+        if close_cursor:
+            cursor.close()
+            conn.close()
 
 
 # ==================== MAIN ENDPOINTS ====================
@@ -286,6 +366,9 @@ def get_complaints_paginated(
                     complaint['days_open'] = None
             else:
                 complaint['days_open'] = None
+            
+            # Add workflow_status information
+            complaint['workflow_status'] = _get_workflow_status(complaint['id'], cursor)
             
             complaints.append(complaint)
         
@@ -620,6 +703,54 @@ def get_complaint_by_id(complaint_id: int) -> Optional[Dict[str, Any]]:
         
         complaint['target_departments'] = target_departments
         
+        # Fetch linked employees (supervisors/workers)
+        employee_query = """
+            SELECT 
+                e.EmployeeID as employee_id,
+                e.FullName as full_name,
+                e.JobTitle as job_title,
+                e.IsPrimary as is_primary
+            FROM dbo.APP_IncidentCaseEmployee e
+            WHERE e.IncidentRequestCaseID = ?
+            ORDER BY e.IsPrimary DESC, e.EmployeeID
+        """
+        cursor.execute(employee_query, (complaint_id,))
+        employee_rows = cursor.fetchall()
+        
+        employees = []
+        for emp_row in employee_rows:
+            employees.append({
+                'employee_id': emp_row.employee_id,
+                'full_name': emp_row.full_name,
+                'job_title': emp_row.job_title if hasattr(emp_row, 'job_title') else None,
+                'is_primary': bool(emp_row.is_primary) if emp_row.is_primary is not None else False
+            })
+        
+        complaint['employees'] = employees
+        
+        # Fetch linked doctors
+        doctor_query = """
+            SELECT 
+                d.DoctorID as doctor_id,
+                d.DoctorName as doctor_name,
+                d.IsPrimary as is_primary
+            FROM dbo.APP_IncidentCaseDoctor d
+            WHERE d.IncidentRequestCaseID = ?
+            ORDER BY d.IsPrimary DESC, d.DoctorID
+        """
+        cursor.execute(doctor_query, (complaint_id,))
+        doctor_rows = cursor.fetchall()
+        
+        doctors = []
+        for doc_row in doctor_rows:
+            doctors.append({
+                'doctor_id': doc_row.doctor_id,
+                'doctor_name': doc_row.doctor_name,
+                'is_primary': bool(doc_row.is_primary) if doc_row.is_primary is not None else False
+            })
+        
+        complaint['doctors'] = doctors
+        
         return complaint
         
     finally:
@@ -838,7 +969,7 @@ def export_complaints_excel(
             c.PatientName as patient_name,
             issuing_org.Name as issuing_org_unit_name,
             concerned_org.Name as concerned_org_unit_name,
-            N'' as source_name,
+            source.SourceNameAr as source_name,
             CASE 
                 WHEN c.FeedbackIntentTypeID = 1 THEN N'شكوى'
                 WHEN c.FeedbackIntentTypeID = 2 THEN N'ملاحظة'
@@ -848,8 +979,8 @@ def export_complaints_excel(
             END as feedback_type,
             domain.DomainName as domain_name,
             category.CategoryName as category_name,
-            CAST(c.SubCategoryID AS NVARCHAR(50)) as subcategory_name,
-            CAST(c.ClassificationID AS NVARCHAR(50)) as classification_name,
+            subcat.SubCategoryName as subcategory_name,
+            classif.Classification_AR as classification_name,
             c.ComplaintText as complaint_text,
             c.ImmediateAction as immediate_action,
             c.TakenAction as taken_action,
@@ -863,6 +994,9 @@ def export_complaints_excel(
         LEFT JOIN AdminsrationUnit concerned_org ON c.BuildingID = concerned_org.UniqueID
         LEFT JOIN APP_LOOKUP_DOMAIN domain ON c.DomainID = domain.DomainID
         LEFT JOIN APP_LOOKUP_CATEGORY category ON c.CategoryID = category.CategoryID
+        LEFT JOIN APP_LOOKUP_SUBCATEGORY subcat ON c.SubCategoryID = subcat.SubCategoryID
+        LEFT JOIN APP_LOOKUP_CLASSIFICATION classif ON c.ClassificationID = classif.ClassificationID
+        LEFT JOIN APP_LOOKUP_SOURCE source ON c.SourceID = source.SourceID
         LEFT JOIN APP_LOOKUP_SEVERITY severity ON c.SeverityID = severity.SeverityID
         LEFT JOIN APP_LOOKUP_CASE_STAGE stage ON c.StageID = stage.StageID
         LEFT JOIN APP_LOOKUP_HARM_LEVEL harm ON c.HarmLevelID = harm.HarmID
@@ -900,12 +1034,12 @@ def export_complaints_excel(
             'patient_name': 'اسم المريض',
             'issuing_org_unit_name': 'قسم الصادر',
             'concerned_org_unit_name': 'قسم المعني',
-            'source_name': 'المصدر 1',
+            'source_name': 'المصدر',
             'feedback_type': 'النوع (Feedback Type)',
             'domain_name': 'Domain',
             'category_name': 'Category',
             'subcategory_name': 'SubCategory',
-            'classification_name': 'New-Classification in Arabic',
+            'classification_name': 'New Classification',
             'complaint_text': 'محتوى الشكوى (Raw Content)',
             'immediate_action': 'Immediate Action',
             'taken_action': 'الإجراءات المتخذة',
@@ -1094,12 +1228,12 @@ def bulk_import_records_from_excel(file_content: bytes) -> Dict[str, Any]:
             'اسم المريض': 'patient_name',
             'قسم الصادر': 'issuing_org_unit_name',
             'قسم المعني': 'concerned_org_unit_name',
-            'المصدر 1': 'source_name',
+            'المصدر': 'source_name',
             'النوع (Feedback Type)': 'feedback_type',
             'Domain': 'domain_name',
             'Category': 'category_name',
             'SubCategory': 'subcategory_name',
-            'New-Classification in Arabic': 'classification_name',
+            'New Classification': 'classification_name',
             'محتوى الشكوى (Raw Content)': 'complaint_text',
             'Immediate Action': 'immediate_action',
             'الإجراءات المتخذة': 'taken_action',

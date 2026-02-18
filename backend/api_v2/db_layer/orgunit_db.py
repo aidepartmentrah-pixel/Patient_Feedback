@@ -8,19 +8,7 @@ READ ONLY - no mutations.
 """
 
 from typing import Dict, Any, List, Optional, Set
-import pyodbc
-
-
-def get_db_connection():
-    """Get database connection using project standard."""
-    conn = pyodbc.connect(
-        "DRIVER={ODBC Driver 17 for SQL Server};"
-        "SERVER=SOCIALMEDIA;"
-        "DATABASE=IncidentManager;"
-        "Trusted_Connection=yes;"
-        "TrustServerCertificate=yes;"
-    )
-    return conn
+from core.database import get_connection
 
 
 # ============================================================
@@ -39,7 +27,7 @@ def get_all_orgunits() -> List[Dict[str, Any]]:
     Returns:
         List of dictionaries containing all orgunit records
     """
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor()
     
     try:

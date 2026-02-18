@@ -3,21 +3,10 @@ Patients Database Layer
 Queries patient information and related incidents from SQL Server.
 """
 
-import pyodbc
 from datetime import datetime
 from typing import List, Dict, Any, Optional
-
-
-def get_connection():
-    """Get SQL Server connection."""
-    conn = pyodbc.connect(
-        "DRIVER={ODBC Driver 17 for SQL Server};"
-        "SERVER=SOCIALMEDIA;"
-        "DATABASE=IncidentManager;"
-        "Trusted_Connection=yes;"
-        "TrustServerCertificate=yes;"
-    )
-    return conn
+from core.database import get_connection
+from core.table_config import PATIENT_ADMISSION_TABLE
 
 
 # ==================== CREATE PATIENT (RESERVE TABLE) ====================
@@ -391,15 +380,19 @@ def search_patients(
                 SELECT
                     PatientAdmissionID as patient_id,
                     MedicalFileNumber as mrn,
-                    FullName as patient_name,
+                    FullName as full_name,
                     FirstName as first_name,
                     LastName as last_name,
                     CONVERT(VARCHAR(10), BirthDate, 23) as date_of_birth,
                     DATEDIFF(YEAR, BirthDate, GETDATE()) as age,
-                    SEX as gender,
+                    CASE 
+                        WHEN SEX = 'M' THEN 'Male'
+                        WHEN SEX = 'F' THEN 'Female'
+                        ELSE SEX
+                    END as gender,
                     PhoneNumber1 as phone,
                     'hospital' as source
-                FROM dbo.APP_VIEWTABLE_PATIENT_ADMISSION
+                FROM dbo.{PATIENT_ADMISSION_TABLE}
                 WHERE {where_hospital}
                 
                 UNION ALL
@@ -408,18 +401,22 @@ def search_patients(
                 SELECT
                     PatientAdmissionID as patient_id,
                     MedicalFileNumber as mrn,
-                    FullName as patient_name,
+                    FullName as full_name,
                     FirstName as first_name,
                     LastName as last_name,
                     CONVERT(VARCHAR(10), BirthDate, 23) as date_of_birth,
                     DATEDIFF(YEAR, BirthDate, GETDATE()) as age,
-                    SEX as gender,
+                    CASE 
+                        WHEN SEX = 'M' THEN 'Male'
+                        WHEN SEX = 'F' THEN 'Female'
+                        ELSE SEX
+                    END as gender,
                     PhoneNumber1 as phone,
                     'reserve' as source
                 FROM dbo.APP_RESERVE_PATIENT
                 WHERE {where_reserve}
             ) AS CombinedPatients
-            ORDER BY patient_name ASC
+            ORDER BY full_name ASC
         """
         
         # Combine parameters for both queries
@@ -440,6 +437,7 @@ def search_patients(
 def get_patient_profile(patient_id: int) -> Optional[Dict[str, Any]]:
     """
     Get complete patient profile information.
+    Uses UNION to search both hospital and reserve tables.
     
     Args:
         patient_id: Patient unique identifier
@@ -451,25 +449,37 @@ def get_patient_profile(patient_id: int) -> Optional[Dict[str, Any]]:
     cursor = conn.cursor()
     
     try:
-        cursor.execute("""
-            SELECT
-                PatientID,
-                MRN,
-                PatientName,
-                PatientNameEnglish,
-                CONVERT(VARCHAR(10), DateOfBirth, 23) as DateOfBirth,
-                DATEDIFF(YEAR, DateOfBirth, GETDATE()) as Age,
-                Gender,
-                Nationality,
-                Phone,
-                Email,
-                Address,
-                EmergencyContact,
-                EmergencyPhone,
-                CONVERT(VARCHAR(19), RegistrationDate, 121) as RegistrationDate
-            FROM dbo.APP_Patient
-            WHERE PatientID = ?
-        """, patient_id)
+        # Query both hospital and reserve tables
+        cursor.execute(f"""
+            SELECT TOP 1
+                PatientAdmissionID as PatientID,
+                MedicalFileNumber as MRN,
+                FullName as PatientName,
+                FirstName as PatientNameEnglish,
+                CONVERT(VARCHAR(10), BirthDate, 23) as DateOfBirth,
+                DATEDIFF(YEAR, BirthDate, GETDATE()) as Age,
+                CASE 
+                    WHEN SEX = 'M' THEN 'Male'
+                    WHEN SEX = 'F' THEN 'Female'
+                    WHEN SEX = 'ذكر' THEN 'Male'
+                    WHEN SEX = 'أنثى' THEN 'Female'
+                    ELSE SEX
+                END as Gender,
+                '' as Nationality,
+                PhoneNumber1 as Phone,
+                '' as Email,
+                '' as Address,
+                '' as EmergencyContact,
+                '' as EmergencyPhone,
+                CONVERT(VARCHAR(19), SystemTime, 121) as RegistrationDate
+            FROM (
+                SELECT PatientAdmissionID, MedicalFileNumber, FullName, FirstName, BirthDate, SEX, PhoneNumber1, SystemTime
+                FROM dbo.{PATIENT_ADMISSION_TABLE} WHERE PatientAdmissionID = ?
+                UNION ALL
+                SELECT PatientAdmissionID, MedicalFileNumber, FullName, FirstName, BirthDate, SEX, PhoneNumber1, SystemTime
+                FROM dbo.APP_RESERVE_PATIENT WHERE PatientAdmissionID = ?
+            ) AS CombinedPatients
+        """, patient_id, patient_id)
         
         row = cursor.fetchone()
         if not row:
@@ -478,14 +488,19 @@ def get_patient_profile(patient_id: int) -> Optional[Dict[str, Any]]:
         columns = [col[0] for col in cursor.description]
         profile = dict(zip(columns, row))
         
-        # Get total incidents count and last visit date
-        cursor.execute("""
+        # Get total incidents count and last visit date using correct PatientAdmissionID
+        cursor.execute(f"""
             SELECT 
                 COUNT(*) as TotalIncidents,
                 MAX(CONVERT(VARCHAR(10), FeedbackRecievedDate, 23)) as LastVisitDate
-            FROM dbo.APP_IncidentCase
-            WHERE PatientName = ? OR PatientID = ?
-        """, profile['PatientName'], patient_id)
+            FROM dbo.APP_IncidentCase ic
+            WHERE ic.PatientName = ? 
+               OR ic.PatientName IN (
+                    SELECT FullName FROM dbo.{PATIENT_ADMISSION_TABLE} WHERE PatientAdmissionID = ?
+                    UNION ALL
+                    SELECT FullName FROM dbo.APP_RESERVE_PATIENT WHERE PatientAdmissionID = ?
+               )
+        """, profile['PatientName'], patient_id, patient_id)
         
         incident_row = cursor.fetchone()
         if incident_row:
@@ -496,6 +511,114 @@ def get_patient_profile(patient_id: int) -> Optional[Dict[str, Any]]:
             profile['LastVisitDate'] = None
         
         return profile
+    
+    finally:
+        conn.close()
+
+
+# ==================== GET PATIENT METRICS WITH AGGREGATION ====================
+
+def get_patient_metrics(
+    patient_id: int,
+    patient_name: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Get aggregated metrics for a patient including severity and category breakdowns.
+    
+    Args:
+        patient_id: Patient unique identifier
+        patient_name: Patient name for filtering
+        from_date: Optional start date filter
+        to_date: Optional end date filter
+    
+    Returns:
+        Dict with total incidents and breakdowns by severity and category
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Get all possible patient names from UNION
+        cursor.execute(f"""
+            SELECT DISTINCT FullName FROM (
+                SELECT FullName FROM dbo.{PATIENT_ADMISSION_TABLE} WHERE PatientAdmissionID = ?
+                UNION ALL
+                SELECT FullName FROM dbo.APP_RESERVE_PATIENT WHERE PatientAdmissionID = ?
+            ) AS PatientNames
+        """, patient_id, patient_id)
+        
+        patient_names = [row[0] for row in cursor.fetchall()]
+        
+        # Build dynamic WHERE clause
+        if patient_names:
+            placeholders = ','.join('?' * len(patient_names))
+            conditions = [f"ic.PatientName IN ({placeholders})"]
+            params = list(patient_names)
+        else:
+            conditions = ["1=0"]  # No patient found
+            params = []
+        
+        if from_date:
+            conditions.append("CONVERT(DATE, ic.FeedbackRecievedDate) >= ?")
+            params.append(from_date)
+        
+        if to_date:
+            conditions.append("CONVERT(DATE, ic.FeedbackRecievedDate) <= ?")
+            params.append(to_date)
+        
+        where_clause = " AND ".join(conditions)
+        
+        # Get total incidents and last visit date
+        cursor.execute(f"""
+            SELECT 
+                COUNT(*) as total_incidents,
+                MAX(CONVERT(VARCHAR(10), ic.FeedbackRecievedDate, 23)) as last_visit_date
+            FROM dbo.APP_IncidentCase ic
+            WHERE {where_clause}
+        """, params)
+        
+        summary_row = cursor.fetchone()
+        total_incidents = summary_row[0] if summary_row else 0
+        last_visit_date = summary_row[1] if summary_row else None
+        
+        # Get severity breakdown
+        cursor.execute(f"""
+            SELECT 
+                COALESCE(sev.SeverityName, 'Unknown') as severity,
+                COUNT(*) as count
+            FROM dbo.APP_IncidentCase ic
+            LEFT JOIN dbo.APP_LOOKUP_SEVERITY sev ON ic.SeverityID = sev.SeverityID
+            WHERE {where_clause}
+            GROUP BY sev.SeverityName
+        """, params)
+        
+        severity_breakdown = {}
+        for row in cursor.fetchall():
+            severity_breakdown[row[0]] = row[1]
+        
+        # Get category breakdown
+        cursor.execute(f"""
+            SELECT 
+                COALESCE(cat.CategoryName, 'Unknown') as category,
+                COUNT(*) as count
+            FROM dbo.APP_IncidentCase ic
+            LEFT JOIN dbo.APP_LOOKUP_CATEGORY cat ON ic.CategoryID = cat.CategoryID
+            WHERE {where_clause}
+            GROUP BY cat.CategoryName
+        """, params)
+        
+        category_breakdown = {}
+        for row in cursor.fetchall():
+            category_breakdown[row[0]] = row[1]
+        
+        return {
+            "total_incidents": total_incidents,
+            "last_visit_date": last_visit_date,
+            "severity_breakdown": severity_breakdown,
+            "category_breakdown": category_breakdown
+        }
     
     finally:
         conn.close()
@@ -535,8 +658,8 @@ def get_patient_incidents(
     cursor = conn.cursor()
     
     try:
-        conditions = ["(PatientName = ? OR PatientID = ?)"]
-        params = [patient_name or "", patient_id]
+        conditions = ["ic.PatientName = ?"]
+        params = [patient_name or ""]
         
         if from_date:
             conditions.append("CONVERT(DATE, FeedbackRecievedDate) >= ?")
@@ -547,7 +670,7 @@ def get_patient_incidents(
             params.append(to_date)
         
         if department:
-            conditions.append("OrgUnitName LIKE ?")
+            conditions.append("ou.Name LIKE ?")
             params.append(f"%{department}%")
         
         if severity:
@@ -555,7 +678,7 @@ def get_patient_incidents(
             params.append(severity)
         
         if status:
-            conditions.append("CaseStatusName = ?")
+            conditions.append("cs.Name = ?")
             params.append(status)
         
         where_clause = " AND ".join(conditions)
@@ -564,9 +687,9 @@ def get_patient_incidents(
         count_query = f"""
             SELECT COUNT(*)
             FROM dbo.APP_IncidentCase ic
-            LEFT JOIN dbo.APP_OrgUnit ou ON ic.IssuingOrgUnitID = ou.OrgUnitID
-            LEFT JOIN dbo.APP_Severity sev ON ic.SeverityID = sev.SeverityID
-            LEFT JOIN dbo.APP_CaseStatus cs ON ic.CaseStatusID = cs.CaseStatusID
+            LEFT JOIN dbo.AdminsrationUnit ou WITH (NOLOCK) ON ic.IssuingOrgUnitID = ou.UniqueID
+            LEFT JOIN dbo.APP_LOOKUP_SEVERITY sev ON ic.SeverityID = sev.SeverityID
+            LEFT JOIN dbo.APP_LOOKUP_CASE_STATUS cs ON ic.CaseStatusID = cs.CaseStatusID
             WHERE {where_clause}
         """
         cursor.execute(count_query, params)
@@ -575,32 +698,44 @@ def get_patient_incidents(
         # Get incidents with pagination
         incidents_query = f"""
             SELECT
-                ic.IncidentRequestCaseID as IncidentID,
-                ic.IncidentRequestCaseID as RecordID,
-                CONVERT(VARCHAR(10), ic.CreatedAt, 23) as Date,
-                CONVERT(VARCHAR(10), ic.FeedbackRecievedDate, 23) as FeedbackReceivedDate,
-                COALESCE(ou.OrgUnitNameEN, 'Unknown') as Department,
-                COALESCE(ou.OrgUnitName, 'غير محدد') as DepartmentAr,
-                COALESCE(cat.CategoryNameEN, 'Unknown') as Category,
-                COALESCE(cat.CategoryName, 'غير محدد') as CategoryAr,
-                COALESCE(sev.SeverityName, 'Unknown') as Severity,
-                ic.PatientName as DoctorName,
-                COALESCE(cs.CaseStatusName, 'Open') as Status,
-                LEFT(ic.ComplaintText, 200) as Description,
-                CASE WHEN ic.ClinicalRiskTypeID = 2 THEN 1 ELSE 0 END as IsRedFlag,
-                CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END as IsNeverEvent
+                ic.IncidentRequestCaseID as incident_id,
+                ic.IncidentRequestCaseID as record_id,
+                CONVERT(VARCHAR(10), ic.CreatedAt, 23) as date,
+                CONVERT(VARCHAR(10), ic.FeedbackRecievedDate, 23) as feedback_received_date,
+                COALESCE(ou.Name, 'Unknown') as department,
+                COALESCE(ou.Name, 'غير محدد') as department_ar,
+                COALESCE(cat.CategoryName, 'Unknown') as category,
+                COALESCE(cat.CategoryName, 'غير محدد') as category_ar,
+                COALESCE(sev.SeverityName, 'Unknown') as severity,
+                COALESCE(icd.DoctorName, 'غير محدد') as doctor_name,
+                COALESCE(cs.Name, 'Open') as status,
+                LEFT(ic.ComplaintText, 200) as description,
+                CASE WHEN ic.ClinicalRiskTypeID = 2 THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END as is_red_flag,
+                CASE WHEN ic.ClinicalRiskTypeID = 3 THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END as is_never_event
             FROM dbo.APP_IncidentCase ic
-            LEFT JOIN dbo.APP_OrgUnit ou ON ic.IssuingOrgUnitID = ou.OrgUnitID
-            LEFT JOIN dbo.APP_Category cat ON ic.CategoryID = cat.CategoryID
-            LEFT JOIN dbo.APP_Severity sev ON ic.SeverityID = sev.SeverityID
-            LEFT JOIN dbo.APP_CaseStatus cs ON ic.CaseStatusID = cs.CaseStatusID
+            LEFT JOIN dbo.AdminsrationUnit ou WITH (NOLOCK) ON ic.IssuingOrgUnitID = ou.UniqueID
+            LEFT JOIN dbo.APP_LOOKUP_CATEGORY cat ON ic.CategoryID = cat.CategoryID
+            LEFT JOIN dbo.APP_LOOKUP_SEVERITY sev ON ic.SeverityID = sev.SeverityID
+            LEFT JOIN dbo.APP_LOOKUP_CASE_STATUS cs ON ic.CaseStatusID = cs.CaseStatusID
+            LEFT JOIN dbo.APP_IncidentCaseDoctor icd ON ic.IncidentRequestCaseID = icd.IncidentRequestCaseID AND icd.IsPrimary = 1
             WHERE {where_clause}
             ORDER BY ic.FeedbackRecievedDate DESC
             OFFSET {offset} ROWS FETCH NEXT {limit} ROWS ONLY
         """
         cursor.execute(incidents_query, params)
         columns = [col[0] for col in cursor.description]
-        incidents = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        rows = cursor.fetchall()
+        
+        # Convert boolean integers to proper booleans
+        incidents = []
+        for row in rows:
+            incident_dict = dict(zip(columns, row))
+            # Convert bit fields to boolean
+            if 'is_red_flag' in incident_dict:
+                incident_dict['is_red_flag'] = bool(incident_dict['is_red_flag'])
+            if 'is_never_event' in incident_dict:
+                incident_dict['is_never_event'] = bool(incident_dict['is_never_event'])
+            incidents.append(incident_dict)
         
         # Get patient name for response
         patient_profile = get_patient_profile(patient_id)
@@ -608,7 +743,7 @@ def get_patient_incidents(
         
         return {
             "patient_id": patient_id,
-            "patient_name": patient_name_result,
+            "full_name": patient_name_result,
             "incidents": incidents,
             "total": total,
             "limit": limit,
@@ -642,52 +777,57 @@ def get_incident_details(patient_id: int, incident_id: int) -> Optional[Dict[str
                 ic.IncidentRequestCaseID as RecordID,
                 CONVERT(VARCHAR(10), ic.CreatedAt, 23) as Date,
                 CONVERT(VARCHAR(10), ic.FeedbackRecievedDate, 23) as FeedbackReceivedDate,
-                ic.PatientID,
                 ic.PatientName,
-                COALESCE(ou.OrgUnitNameEN, 'Unknown') as Department,
-                COALESCE(ou_target.OrgUnitNameEN, 'Unknown') as TargetDepartment,
-                COALESCE(cat.CategoryNameEN, 'Unknown') as Category,
+                COALESCE(ou.Name, 'Unknown') as Department,
+                COALESCE(ou_target.Name, 'Unknown') as TargetDepartment,
+                COALESCE(cat.CategoryName, 'Unknown') as Category,
                 COALESCE(cat.CategoryName, 'غير محدد') as CategoryAr,
                 CONCAT(
-                    COALESCE(dom.DomainNameEN, ''),
+                    COALESCE(dom.DomainName, ''),
                     ' > ',
-                    COALESCE(cat.CategoryNameEN, ''),
+                    COALESCE(cat.CategoryName, ''),
                     ' > ',
-                    COALESCE(subcat.SubCategoryNameEN, '')
+                    COALESCE(subcat.SubCategoryName, '')
                 ) as Classification,
                 COALESCE(sev.SeverityName, 'Unknown') as Severity,
-                COALESCE(hl.HarmLevelName, 'Unknown') as HarmLevel,
+                COALESCE(hl.HarmLevel, 'Unknown') as HarmLevel,
                 COALESCE(st.StageName, 'Unknown') as Stage,
-                ic.PatientName as DoctorName,
-                COALESCE(cs.CaseStatusName, 'Open') as Status,
+                COALESCE(icd.DoctorName, 'غير محدد') as DoctorName,
+                COALESCE(cs.Name, 'Open') as Status,
                 ic.ComplaintText,
                 ic.ImmediateAction,
                 ic.TakenAction,
-                CASE WHEN ic.ClinicalRiskTypeID = 2 THEN 1 ELSE 0 END as IsRedFlag,
-                CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END as IsNeverEvent,
-                CONVERT(VARCHAR(19), ic.CreatedAt, 121) as CreatedAt,
-                CONVERT(VARCHAR(19), ic.UpdatedAt, 121) as LastUpdatedAt
+                CASE WHEN ic.ClinicalRiskTypeID = 2 THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END as IsRedFlag,
+                CASE WHEN ic.ClinicalRiskTypeID = 3 THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END as IsNeverEvent,
+                CONVERT(VARCHAR(19), ic.CreatedAt, 121) as CreatedAt
             FROM dbo.APP_IncidentCase ic
-            LEFT JOIN dbo.APP_OrgUnit ou ON ic.IssuingOrgUnitID = ou.OrgUnitID
-            LEFT JOIN dbo.APP_OrgUnit ou_target ON ic.TargetOrgUnitID = ou_target.OrgUnitID
-            LEFT JOIN dbo.APP_Category cat ON ic.CategoryID = cat.CategoryID
-            LEFT JOIN dbo.APP_Domain dom ON ic.DomainID = dom.DomainID
-            LEFT JOIN dbo.APP_SubCategory subcat ON ic.SubCategoryID = subcat.SubCategoryID
-            LEFT JOIN dbo.APP_Severity sev ON ic.SeverityID = sev.SeverityID
-            LEFT JOIN dbo.APP_HarmLevel hl ON ic.HarmLevelID = hl.HarmLevelID
-            LEFT JOIN dbo.APP_Stage st ON ic.StageID = st.StageID
-            LEFT JOIN dbo.APP_CaseStatus cs ON ic.CaseStatusID = cs.CaseStatusID
-            WHERE ic.IncidentRequestCaseID = ? AND (ic.PatientID = ? OR ic.PatientName IN (
-                SELECT PatientName FROM dbo.APP_Patient WHERE PatientID = ?
-            ))
-        """, incident_id, patient_id, patient_id)
+            LEFT JOIN dbo.AdminsrationUnit ou WITH (NOLOCK) ON ic.IssuingOrgUnitID = ou.UniqueID
+            LEFT JOIN dbo.AdminsrationUnit ou_target WITH (NOLOCK) ON ic.TargetOrgUnitID = ou_target.UniqueID
+            LEFT JOIN dbo.APP_LOOKUP_CATEGORY cat ON ic.CategoryID = cat.CategoryID
+            LEFT JOIN dbo.APP_LOOKUP_DOMAIN dom ON ic.DomainID = dom.DomainID
+            LEFT JOIN dbo.APP_LOOKUP_SUBCATEGORY subcat ON ic.SubCategoryID = subcat.SubCategoryID
+            LEFT JOIN dbo.APP_LOOKUP_SEVERITY sev ON ic.SeverityID = sev.SeverityID
+            LEFT JOIN dbo.APP_LOOKUP_HARM_LEVEL hl ON ic.HarmLevelID = hl.HarmID
+            LEFT JOIN dbo.APP_LOOKUP_CASE_STAGE st ON ic.StageID = st.StageID
+            LEFT JOIN dbo.APP_LOOKUP_CASE_STATUS cs ON ic.CaseStatusID = cs.CaseStatusID
+            LEFT JOIN dbo.APP_IncidentCaseDoctor icd ON ic.IncidentRequestCaseID = icd.IncidentRequestCaseID AND icd.IsPrimary = 1
+            WHERE ic.IncidentRequestCaseID = ?
+        """, incident_id)
         
         row = cursor.fetchone()
         if not row:
             return None
         
         columns = [col[0] for col in cursor.description]
-        return dict(zip(columns, row))
+        incident_dict = dict(zip(columns, row))
+        
+        # Convert bit fields to boolean
+        if 'IsRedFlag' in incident_dict:
+            incident_dict['IsRedFlag'] = bool(incident_dict['IsRedFlag'])
+        if 'IsNeverEvent' in incident_dict:
+            incident_dict['IsNeverEvent'] = bool(incident_dict['IsNeverEvent'])
+        
+        return incident_dict
     
     finally:
         conn.close()
@@ -724,10 +864,40 @@ def get_patient_incidents_for_export(
             "incidents": []
         }
         
-        # Get patient profile if requested
+        # Get patient profile if requested (check both hospital and reserve)
         if include_profile:
+            # Try to get from APP_Patient first
             profile = get_patient_profile(patient_id)
-            if profile:
+            
+            # If not found, try to get from reserve or hospital view
+            if not profile:
+                cursor.execute(f"""
+                    SELECT 
+                        PatientAdmissionID as patient_id,
+                        MedicalFileNumber as mrn,
+                        FullName as full_name
+                    FROM (
+                        SELECT PatientAdmissionID, MedicalFileNumber, FullName
+                        FROM dbo.{PATIENT_ADMISSION_TABLE}
+                        WHERE PatientAdmissionID = ?
+                        
+                        UNION ALL
+                        
+                        SELECT PatientAdmissionID, MedicalFileNumber, FullName
+                        FROM dbo.APP_RESERVE_PATIENT
+                        WHERE PatientAdmissionID = ?
+                    ) AS CombinedPatients
+                """, patient_id, patient_id)
+                
+                row = cursor.fetchone()
+                if row:
+                    export_data["patient"] = {
+                        "patient_id": row[0],
+                        "mrn": row[1],
+                        "full_name": row[2],
+                        "total_incidents": 0  # Will be computed below
+                    }
+            else:
                 export_data["patient"] = {
                     "patient_id": profile['PatientID'],
                     "mrn": profile['MRN'],
@@ -735,9 +905,32 @@ def get_patient_incidents_for_export(
                     "total_incidents": profile['TotalIncidents']
                 }
         
-        # Get incidents for export
-        conditions = ["(ic.PatientID = ? OR ic.PatientName IN (SELECT PatientName FROM dbo.APP_Patient WHERE PatientID = ?))"]
-        params = [patient_id, patient_id]
+        # Get patient name(s) for incident matching
+        cursor.execute(f"""
+            SELECT DISTINCT FullName FROM (
+                SELECT FullName FROM dbo.{PATIENT_ADMISSION_TABLE} WHERE PatientAdmissionID = ?
+                UNION ALL
+                SELECT FullName FROM dbo.APP_RESERVE_PATIENT WHERE PatientAdmissionID = ?
+            ) AS PatientNames
+        """, patient_id, patient_id)
+        
+        patient_names = [row[0] for row in cursor.fetchall()]
+        
+        # Build dynamic WHERE clause for patient matching
+        patient_conditions = []
+        params = []
+        
+        if patient_names:
+            placeholders = ','.join('?' * len(patient_names))
+            patient_conditions.append(f"ic.PatientName IN ({placeholders})")
+            params.extend(patient_names)
+        
+        # Fallback: if no patient names, return empty
+        if not patient_conditions:
+            export_data["incidents"] = []
+            return export_data
+        
+        conditions = [f"({' OR '.join(patient_conditions)})"]
         
         if from_date:
             conditions.append("CONVERT(DATE, ic.FeedbackRecievedDate) >= ?")
@@ -752,37 +945,15 @@ def get_patient_incidents_for_export(
         query = f"""
             SELECT
                 ic.IncidentRequestCaseID as RecordID,
-                CONVERT(VARCHAR(10), ic.CreatedAt, 23) as Date,
-                COALESCE(ou.OrgUnitNameEN, 'Unknown') as Department,
-                COALESCE(cat.CategoryNameEN, 'Unknown') as Category,
-                COALESCE(sev.SeverityName, 'Unknown') as Severity,
-                ic.PatientName as DoctorName,
-                COALESCE(cs.CaseStatusName, 'Open') as Status,
-                ic.ComplaintText,
-                ic.ImmediateAction,
-                ic.TakenAction,
-                CONCAT(
-                    COALESCE(dom.DomainNameEN, ''),
-                    ' > ',
-                    COALESCE(cat.CategoryNameEN, ''),
-                    ' > ',
-                    COALESCE(subcat.SubCategoryNameEN, '')
-                ) as Classification,
-                COALESCE(hl.HarmLevelName, 'Unknown') as HarmLevel,
-                COALESCE(st.StageName, 'Unknown') as Stage,
-                COALESCE(ou_target.OrgUnitNameEN, 'Unknown') as TargetDepartment
+                CONVERT(VARCHAR(10), COALESCE(ic.CreatedAt, ic.FeedbackRecievedDate), 23) as Date,
+                CAST(COALESCE(ic.IssuingOrgUnitID, 0) AS VARCHAR(50)) as Department,
+                CAST(COALESCE(ic.CategoryID, 0) AS VARCHAR(50)) as Category,
+                CAST(COALESCE(ic.SeverityID, 0) AS VARCHAR(50)) as Severity,
+                CAST(COALESCE(ic.CaseStatusID, 0) AS VARCHAR(50)) as Status,
+                ic.ComplaintText
             FROM dbo.APP_IncidentCase ic
-            LEFT JOIN dbo.APP_OrgUnit ou ON ic.IssuingOrgUnitID = ou.OrgUnitID
-            LEFT JOIN dbo.APP_OrgUnit ou_target ON ic.TargetOrgUnitID = ou_target.OrgUnitID
-            LEFT JOIN dbo.APP_Category cat ON ic.CategoryID = cat.CategoryID
-            LEFT JOIN dbo.APP_Domain dom ON ic.DomainID = dom.DomainID
-            LEFT JOIN dbo.APP_SubCategory subcat ON ic.SubCategoryID = subcat.SubCategoryID
-            LEFT JOIN dbo.APP_Severity sev ON ic.SeverityID = sev.SeverityID
-            LEFT JOIN dbo.APP_HarmLevel hl ON ic.HarmLevelID = hl.HarmLevelID
-            LEFT JOIN dbo.APP_Stage st ON ic.StageID = st.StageID
-            LEFT JOIN dbo.APP_CaseStatus cs ON ic.CaseStatusID = cs.CaseStatusID
             WHERE {where_clause}
-            ORDER BY ic.FeedbackRecievedDate DESC
+            ORDER BY COALESCE(ic.FeedbackRecievedDate, ic.CreatedAt) DESC
         """
         
         cursor.execute(query, params)
