@@ -423,3 +423,83 @@ async def export_all_workers_seasonal_word(
             status_code=500,
             detail=f"Failed to generate aggregate worker seasonal report: {str(e)}"
         )
+
+
+# ==================== PATIENT FEEDBACK REPORT ENDPOINT ====================
+
+@router.get("/patient-feedback/seasonal-word")
+async def export_patient_feedback_seasonal_word(
+    season_start: date = Query(..., description="Season start date (YYYY-MM-DD)"),
+    season_end: date = Query(..., description="Season end date (YYYY-MM-DD)"),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """
+    Export Patient Feedback Seasonal Report as Word document.
+    
+    This endpoint generates a comprehensive report containing:
+    - RCA (Root Cause Analysis) statistics by cause type
+    - Patient Satisfaction distribution
+    - Preventability analysis
+    - Department-wise RCA breakdown
+    - Coverage metrics
+    
+    **Authorization:** Only SOFTWARE_ADMIN, WORKER, or COMPLAINT_SUPERVISOR
+    
+    **Query Parameters:**
+    - season_start: Start date of reporting period (YYYY-MM-DD format)
+    - season_end: End date of reporting period (YYYY-MM-DD format)
+    
+    **Returns:**
+    - Word document (.docx) with Content-Disposition header for download
+    - Filename: patient_feedback_report_YYYY-MM-DD_to_YYYY-MM-DD.docx
+    
+    **Errors:**
+    - 401: Not authenticated
+    - 403: Forbidden (insufficient role)
+    - 400: Invalid date range
+    - 500: Report generation failed
+    """
+    try:
+        # Authorization check: Only SOFTWARE_ADMIN, WORKER, or COMPLAINT_SUPERVISOR
+        require_role(current_user, [SOFTWARE_ADMIN, WORKER, COMPLAINT_SUPERVISOR])
+        
+        # Validate dates
+        if season_start >= season_end:
+            raise HTTPException(
+                status_code=400,
+                detail="season_start must be before season_end"
+            )
+        
+        # Import the patient feedback report generator
+        from ..services.patient_feedback_seasonal_report_service import generate_patient_feedback_seasonal_word
+        
+        # Generate Word document
+        word_bytes = generate_patient_feedback_seasonal_word(
+            season_start=season_start,
+            season_end=season_end
+        )
+        
+        # Wrap bytes in BytesIO for StreamingResponse
+        word_file = BytesIO(word_bytes)
+        word_file.seek(0)
+        
+        # Prepare filename
+        filename = f"patient_feedback_report_{season_start.strftime('%Y-%m-%d')}_to_{season_end.strftime('%Y-%m-%d')}.docx"
+        
+        # Return as StreamingResponse
+        return StreamingResponse(
+            word_file,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
+        )
+    
+    except HTTPException:
+        raise
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate patient feedback seasonal report: {str(e)}"
+        )

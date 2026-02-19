@@ -50,6 +50,8 @@ from api_v2.routers.workers_router import router as workers_v2_router
 from api_v2.routers.drawer_notes_router import router as drawer_notes_router
 # Phase G — G-B8: API v2 Drawer Labels Router (drawer labels management endpoints)
 from api_v2.routers.drawer_labels_router import router as drawer_labels_router
+# Satisfaction Router (patient satisfaction on cases)
+from api_v2.routers.satisfaction_router import router as satisfaction_router
 # Phase 5: User Inventory Router (admin-only user management queries)
 from api.routers.user_inventory_router import router as user_inventory_router
 # Phase 5: Admin Section Router (create sections with admin users)
@@ -160,6 +162,8 @@ app.include_router(workers_v2_router)
 app.include_router(drawer_notes_router)
 # Phase G — G-B8: API v2 Drawer Labels Router (drawer label management endpoints)
 app.include_router(drawer_labels_router)
+# Satisfaction Router (patient satisfaction on cases)
+app.include_router(satisfaction_router)
 # Phase 5: User Inventory Router (admin-only user management queries)
 app.include_router(user_inventory_router)
 # Phase 5: Admin Section Router (create sections with admin users)

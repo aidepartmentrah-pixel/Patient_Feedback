@@ -6,6 +6,7 @@ This router will provide:
 - Inbox endpoints (STEP 3.5.2)
 - Follow-up action endpoints (to be added in STEP 3.5.3)
 - Case action endpoints (to be added in STEP 3.5.4)
+- Incident detail endpoint (read-only for workflow inbox)
 
 Security: All endpoints protected by role guards and scope enforcement.
 """
@@ -14,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Dict, Any
 from backend.api.dependencies.user_context import get_current_user
 from backend.api.schemas.auth_models import CurrentUser
-from backend.api_v2.services import inbox_service, follow_up_service, case_response_service
+from backend.api_v2.services import inbox_service, follow_up_service, case_response_service, workflow_incident_service
 from backend.api_v2.guards.high_level_guards import (
     require_section_admin_on_subcase,
     require_dept_admin_on_subcase,
@@ -300,6 +301,67 @@ def get_seasonal_report_detail(
 
 
 # ============================================================
+# INCIDENT DETAIL VIEWER (read-only for workflow inbox)
+# ============================================================
+
+@router.get("/incident/{incident_id}")
+def get_workflow_incident_detail(
+    incident_id: int,
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Return read-only incident details for the workflow inbox "View" action.
+    
+    Allows section admins, department admins, and administration admins to 
+    view incident details without needing full edit permissions (WORKER-level).
+    
+    Authorization:
+    - User must have an active subcase assigned to their org unit for this incident, OR
+    - User must be COMPLAINT_SUPERVISOR or higher (SOFTWARE_ADMIN)
+    
+    Response (200):
+    {
+        "incident_id": 503,
+        "complaint_text": "...",
+        "domain_name": "...",
+        "category_name": "...",
+        "subcategory_name": "...",
+        "classification_name": "...",
+        "severity_name": "...",
+        "issuing_department_name": "...",
+        "target_departments": [{"id": 1, "name": "..."}],
+        "building": "BIC",
+        "in_out": "IN",
+        "feedback_received_date": "2026-02-10",
+        "created_at": "2026-02-10T...",
+        "patient_name": "...",
+        "immediate_action": "...",
+        "taken_action": "...",
+        "doctors": [{"doctor_id": 1, "name": "..."}],
+        "employees": [{"employee_id": 1, "full_name": "..."}]
+    }
+    
+    Errors:
+        403 — user not authorized to view this incident
+        404 — incident not found
+    """
+    # Step 1: Authorization check
+    if not workflow_incident_service.can_view_incident(incident_id, current_user):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have permission to view this incident. "
+                   "You must have an active subcase for this incident in your org unit scope."
+        )
+    
+    # Step 2: Fetch incident details
+    incident = workflow_incident_service.get_incident_detail(incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+    
+    return incident
+
+
+# ============================================================
 # CASE RESPONSE VIEWER (read-only)
 # ============================================================
 
@@ -352,10 +414,12 @@ def act_on_case(
     - APPROVE: Approve response at department or administration level
     - OVERRIDE: Override response at department or administration level
     - FORCE_CLOSE: Force close subcase (administration only)
+    - REOPEN: Complaint supervisor reopens a SECTION_DENIED case
+    - DIRECT_APPROVE: UNIVERSAL_SECTION bypasses workflow to approve directly
     
     Request body:
     {
-        "action": "SUBMIT_RESPONSE" | "REJECT" | "APPROVE" | "OVERRIDE" | "FORCE_CLOSE",
+        "action": "SUBMIT_RESPONSE" | "REJECT" | "APPROVE" | "OVERRIDE" | "FORCE_CLOSE" | "REOPEN" | "DIRECT_APPROVE",
         "payload": {
             "explanation_text": "string (optional)",
             "rejection_text": "string (optional)",
@@ -407,14 +471,16 @@ def act_on_case(
         payload = {k: v for k, v in body.items() if k != "action"}
     
     if action == "SUBMIT_RESPONSE":
-        # Section administrator submits response
+        # Section administrator submits response with mandatory RCA
         explanation_text = payload.get("explanation_text", "")
         action_items = payload.get("action_items", [])
+        rca_feedback = payload.get("rca_feedback", None)
         case_response_service.submit_section_response(
             subcase_id=subcase_id,
             explanation_text=explanation_text,
             action_items=action_items,
-            current_user=current_user
+            current_user=current_user,
+            rca_feedback=rca_feedback
         )
         return {"success": True}
     
@@ -539,6 +605,21 @@ def act_on_case(
             subcase_id=subcase_id,
             rejection_text=rejection_text,
             current_user=current_user
+        )
+        return {"success": True}
+    
+    elif action == "DIRECT_APPROVE":
+        # UNIVERSAL_SECTION: Direct approval bypassing normal workflow
+        # Transitions: SUBMITTED_TO_SECTION or RETURNED_TO_SECTION_FOR_REVISION -> ADMIN_APPROVED
+        explanation_text = payload.get("explanation_text", "")
+        action_items = payload.get("action_items", [])
+        rca_feedback = payload.get("rca_feedback", None)
+        case_response_service.direct_approve_to_admin(
+            subcase_id=subcase_id,
+            explanation_text=explanation_text,
+            action_items=action_items,
+            current_user=current_user,
+            rca_feedback=rca_feedback
         )
         return {"success": True}
     

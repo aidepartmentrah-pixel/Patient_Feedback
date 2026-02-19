@@ -20,6 +20,7 @@ from ..db_layer.patients_db import (
     create_patient,
     get_all_reserve_patients
 )
+from ..db_layer.satisfaction_db import get_satisfactions_by_cases
 
 
 # ==================== CREATE PATIENT ====================
@@ -486,11 +487,28 @@ def get_patient_full_history_service(
             to_date=to_date
         )
         
+        items = incidents_data.get('incidents', [])
+        
+        # Enrich items with satisfaction data
+        if items:
+            case_ids = [item.get('incident_id') or item.get('record_id') for item in items if item.get('incident_id') or item.get('record_id')]
+            if case_ids:
+                satisfactions_map = get_satisfactions_by_cases(case_ids)
+                for item in items:
+                    case_id = item.get('incident_id') or item.get('record_id')
+                    if case_id and case_id in satisfactions_map:
+                        item['satisfaction'] = {
+                            'exists': True,
+                            **satisfactions_map[case_id]
+                        }
+                    else:
+                        item['satisfaction'] = {'exists': False}
+        
         # Return normalized V2 schema format
         return {
             "profile": profile,
             "metrics": metrics,
-            "items": incidents_data.get('incidents', []),
+            "items": items,
             "meta": {
                 "entity_type": "patient",
                 "entity_id": patient_id,

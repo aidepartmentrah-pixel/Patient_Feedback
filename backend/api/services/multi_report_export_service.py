@@ -19,7 +19,7 @@ from ..constants.org_unit_types import (
 )
 from .monthly_report_service import monthly_report_service
 from .reports_service import reports_service
-from ..db_layer.admin_units import get_units_by_type
+from ..db_layer.admin_units import get_units_by_type, get_unit_hierarchy
 
 
 class MultiReportExportService:
@@ -141,6 +141,9 @@ class MultiReportExportService:
                         empty_units.append({"id": unit_id, "name": unit_name})
                         continue
                     
+                    # Get proper hierarchy for this unit from database
+                    unit_hierarchy = get_unit_hierarchy(unit_id)
+                    
                     # Generate file content
                     file_content = self._generate_file_content(
                         report_data=report_data,
@@ -148,7 +151,9 @@ class MultiReportExportService:
                         language=language,
                         unit_name=unit_name,
                         unit_type=report_level,
-                        display_mode=display_mode
+                        display_mode=display_mode,
+                        unit_id=unit_id,
+                        unit_hierarchy=unit_hierarchy
                     )
                     
                     # Create filename
@@ -265,7 +270,9 @@ class MultiReportExportService:
         language: str,
         unit_name: str = None,
         unit_type: str = None,
-        display_mode: str = "detailed"
+        display_mode: str = "detailed",
+        unit_id: int = None,
+        unit_hierarchy: dict = None
     ) -> bytes:
         """Generate file content in specified format."""
         
@@ -277,12 +284,12 @@ class MultiReportExportService:
         
         # Determine entity parameters for header
         # We need to populate ALL THREE fields (Administration, Department, Section)
-        # based on what level we're reporting at and what's in the data
+        # based on what level we're reporting at and the ACTUAL HIERARCHY from the database
         report_administration = None
         report_department = None
         report_section = None
         
-        # Helper function to get unique values from data
+        # Helper function to get unique values from data (fallback only)
         def get_unique_values(data, field_name):
             """Get unique non-null values from complaints data"""
             if not data or not isinstance(data, list):
@@ -294,33 +301,60 @@ class MultiReportExportService:
                     values.add(val)
             return list(values)
         
-        # Extract hierarchy information from the actual data
+        # Extract hierarchy information from the actual data (for fallback and multi-value detection)
         unique_admins = get_unique_values(export_data, "administration_name")
         unique_depts = get_unique_values(export_data, "department_name")
         unique_sections = get_unique_values(export_data, "section_name")
         
-        print(f"[MULTI EXPORT] Unit: {unit_name} ({unit_type})")
+        print(f"[MULTI EXPORT] Unit: {unit_name} ({unit_type}) ID={unit_id}")
         print(f"[MULTI EXPORT] Data has {len(export_data) if isinstance(export_data, list) else 0} records")
-        print(f"[MULTI EXPORT] Unique admins: {unique_admins}")
-        print(f"[MULTI EXPORT] Unique depts: {unique_depts}")
-        print(f"[MULTI EXPORT] Unique sections: {unique_sections}")
+        print(f"[MULTI EXPORT] Unique admins from data: {unique_admins}")
+        print(f"[MULTI EXPORT] Unique depts from data: {unique_depts}")
+        print(f"[MULTI EXPORT] Unique sections from data: {unique_sections}")
         
-        # Set header values based on report level
+        if unit_hierarchy:
+            print(f"[MULTI EXPORT] Hierarchy from DB: parent={unit_hierarchy.get('parent_name')}, grandparent={unit_hierarchy.get('grandparent_name')}")
+        
+        # Set header values based on report level using ACTUAL HIERARCHY from database
         if unit_type == "administration":
             # Administration report: show admin name, aggregate dept/section info
             report_administration = unit_name
             report_department = unique_depts[0] if len(unique_depts) == 1 else ("متعدد" if len(unique_depts) > 1 else "—")
             report_section = unique_sections[0] if len(unique_sections) == 1 else ("متعدد" if len(unique_sections) > 1 else "—")
         elif unit_type == "department":
-            # Department report: show dept name and parent admin
+            # Department report: use hierarchy from database for parent administration
             report_department = unit_name
-            report_administration = unique_admins[0] if unique_admins else "—"
+            # Use DB hierarchy for administration (parent of department)
+            if unit_hierarchy and unit_hierarchy.get('parent_name'):
+                report_administration = unit_hierarchy['parent_name']
+                print(f"[MULTI EXPORT] Using DB hierarchy for admin: {report_administration}")
+            else:
+                # Fallback to data extraction (may be wrong if data has mixed parents)
+                report_administration = unique_admins[0] if unique_admins else "—"
+                print(f"[MULTI EXPORT] Fallback to data for admin: {report_administration}")
             report_section = unique_sections[0] if len(unique_sections) == 1 else ("متعدد" if len(unique_sections) > 1 else "—")
         elif unit_type == "section":
-            # Section report: show all three levels
+            # Section report: use hierarchy from database for parent (department) and grandparent (administration)
             report_section = unit_name
-            report_department = unique_depts[0] if unique_depts else "—"
-            report_administration = unique_admins[0] if unique_admins else "—"
+            # Use DB hierarchy for department (parent) and administration (grandparent)
+            if unit_hierarchy:
+                if unit_hierarchy.get('parent_name'):
+                    report_department = unit_hierarchy['parent_name']
+                    print(f"[MULTI EXPORT] Using DB hierarchy for dept: {report_department}")
+                else:
+                    report_department = unique_depts[0] if unique_depts else "—"
+                    print(f"[MULTI EXPORT] Fallback to data for dept: {report_department}")
+                    
+                if unit_hierarchy.get('grandparent_name'):
+                    report_administration = unit_hierarchy['grandparent_name']
+                    print(f"[MULTI EXPORT] Using DB hierarchy for admin: {report_administration}")
+                else:
+                    report_administration = unique_admins[0] if unique_admins else "—"
+                    print(f"[MULTI EXPORT] Fallback to data for admin: {report_administration}")
+            else:
+                # Full fallback
+                report_department = unique_depts[0] if unique_depts else "—"
+                report_administration = unique_admins[0] if unique_admins else "—"
         
         # Generate file based on format
         if file_format == "docx":

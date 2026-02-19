@@ -59,9 +59,10 @@ def create_drawer_note(
     - Note text cannot be empty (trimmed)
     - Must have at least one label
     - All labels must be active
+    - Patient link is optional
     
     Args:
-        request: Note creation request with text and label IDs
+        request: Note creation request with text, label IDs, and optional patient_admission_id
         current_user: Authenticated user with SOFTWARE_ADMIN or WORKER role
         
     Returns:
@@ -81,7 +82,8 @@ def create_drawer_note(
             note_text=request.note_text,
             label_ids=request.label_ids,
             created_by_user_id=current_user.user_id,
-            created_by_name=current_user.username
+            created_by_name=current_user.username,
+            patient_admission_id=request.patient_admission_id
         )
         
         return CreateNoteResponse(note_id=note_id, success=True)
@@ -96,12 +98,13 @@ def create_drawer_note(
 @router.get("/", response_model=ListNotesResponse)
 def list_drawer_notes(
     label_ids: Optional[List[int]] = Query(None, description="Filter by label IDs (AND logic)"),
+    patient_admission_id: Optional[int] = Query(None, description="Filter by patient admission ID"),
     limit: int = Query(50, ge=1, le=500, description="Maximum number of results"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     current_user: CurrentUser = Depends(require_drawer_notes_role)
 ):
     """
-    List drawer notes with optional label filtering.
+    List drawer notes with optional label and patient filtering.
     
     Phase G Drawer Notes — List endpoint.
     
@@ -110,8 +113,12 @@ def list_drawer_notes(
     - If no label_ids: returns all active notes
     - Deleted notes are excluded from list
     
+    Patient Filtering:
+    - If patient_admission_id provided: returns only notes linked to that patient
+    
     Args:
         label_ids: Optional list of label IDs for filtering
+        patient_admission_id: Optional patient admission ID for filtering
         limit: Maximum number of results (1-500)
         offset: Pagination offset
         current_user: Authenticated user with SOFTWARE_ADMIN or WORKER role
@@ -130,7 +137,8 @@ def list_drawer_notes(
     notes = drawer_note_service.list_notes(
         label_ids=label_ids,
         limit=limit,
-        offset=offset
+        offset=offset,
+        patient_admission_id=patient_admission_id
     )
     
     # Convert to response models
@@ -142,7 +150,9 @@ def list_drawer_notes(
             created_by_user_id=note['created_by_user_id'],
             created_by_name=note['created_by_name'],
             label_ids=note.get('label_ids', []),
-            is_deleted=note.get('is_deleted', False)
+            is_deleted=note.get('is_deleted', False),
+            patient_admission_id=note.get('patient_admission_id'),
+            patient_name=note.get('patient_name')
         )
         for note in notes
     ]
@@ -160,7 +170,7 @@ def get_drawer_note(
     
     Phase G Drawer Notes — Get detail endpoint.
     
-    Returns note with all details including attached labels.
+    Returns note with all details including attached labels and patient info.
     Deleted notes can still be retrieved (soft delete).
     
     Args:
@@ -168,7 +178,7 @@ def get_drawer_note(
         current_user: Authenticated user with SOFTWARE_ADMIN or WORKER role
         
     Returns:
-        Note details with label IDs
+        Note details with label IDs and patient info
         
     Security:
         - Requires authentication
@@ -194,7 +204,9 @@ def get_drawer_note(
         created_by_user_id=note['created_by_user_id'],
         created_by_name=note['created_by_name'],
         label_ids=note.get('label_ids', []),
-        is_deleted=note.get('is_deleted', False)
+        is_deleted=note.get('is_deleted', False),
+        patient_admission_id=note.get('patient_admission_id'),
+        patient_name=note.get('patient_name')
     )
 
 

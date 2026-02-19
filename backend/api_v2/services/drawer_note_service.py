@@ -21,7 +21,7 @@ from api_v2.db_layer import drawer_note_db
 from api_v2.db_layer import drawer_label_db
 
 
-def create_note_with_labels(note_text, label_ids, created_by_user_id, created_by_name):
+def create_note_with_labels(note_text, label_ids, created_by_user_id, created_by_name, patient_admission_id=None):
     """
     Create a new drawer note with labels.
     
@@ -29,12 +29,14 @@ def create_note_with_labels(note_text, label_ids, created_by_user_id, created_by
     - Text cannot be empty (after trim)
     - Must have at least one label
     - All labels must exist and be active
+    - Patient is optional
     
     Args:
         note_text (str): The note content
         label_ids (list): List of label IDs to attach
         created_by_user_id (int): User ID creating the note
         created_by_name (str): User name creating the note
+        patient_admission_id (int, optional): Patient admission ID to link the note to
     
     Returns:
         int: The created note ID
@@ -61,7 +63,8 @@ def create_note_with_labels(note_text, label_ids, created_by_user_id, created_by
     note_id = drawer_note_db.insert_note(
         note_text=trimmed_text,
         created_by_user_id=created_by_user_id,
-        created_by_name=created_by_name
+        created_by_name=created_by_name,
+        patient_admission_id=patient_admission_id
     )
     
     # Attach labels
@@ -190,25 +193,33 @@ def get_note_detail(note_id):
     return note
 
 
-def list_notes(label_ids=None, limit=50, offset=0):
+def list_notes(label_ids=None, limit=50, offset=0, patient_admission_id=None):
     """
-    List notes with optional label filtering.
+    List notes with optional label and patient filtering.
     
     Business Rules:
     - Only returns non-deleted notes
     - If label_ids provided, uses AND filtering (must have ALL labels)
+    - If patient_admission_id provided, filters by that patient
     
     Args:
         label_ids (list, optional): Filter by labels (AND logic). Defaults to None.
         limit (int, optional): Max results. Defaults to 50.
         offset (int, optional): Pagination offset. Defaults to 0.
+        patient_admission_id (int, optional): Filter by patient. Defaults to None.
     
     Returns:
-        list: List of note dicts
+        list: List of note dicts with patient info included
     """
     if label_ids and len(label_ids) > 0:
-        # Filter by labels (AND logic)
-        return drawer_note_db.filter_notes_by_label_ids(label_ids, limit, offset)
+        # Filter by labels (AND logic), optionally with patient filter
+        notes = drawer_note_db.filter_notes_by_label_ids(label_ids, limit, offset, patient_admission_id)
     else:
-        # List all active notes
-        return drawer_note_db.list_notes_paged(limit, offset)
+        # List notes, optionally filtered by patient
+        notes = drawer_note_db.list_notes_paged(limit, offset, patient_admission_id)
+    
+    # Add label_ids to each note
+    for note in notes:
+        note['label_ids'] = drawer_note_db.get_note_label_ids(note['note_id'])
+    
+    return notes

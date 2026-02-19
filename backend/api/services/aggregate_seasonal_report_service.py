@@ -25,7 +25,13 @@ def _fetch_doctors_with_incident_counts(
 ) -> List[Dict[str, Any]]:
     """
     Fetch all doctors who have incidents in the given date range,
-    with counts by severity. Single efficient SQL query.
+    with counts by severity and feedback intent type (complaints vs praises).
+    
+    FeedbackIntentType differentiation:
+    - NOTICE (ID=2) → Praise (good feedback, severity not relevant)
+    - IMPROVEMENT_OPPORTUNITY (ID=1), CRITIQUE_SUGGESTION (ID=3), OTHER (ID=4) → Complaints (bad)
+    
+    Single efficient SQL query.
     """
     conn = None
     cursor = None
@@ -39,10 +45,14 @@ def _fetch_doctors_with_incident_counts(
                 COALESCE(d.DoctorName, vw.Name, rd.DoctorName, CONCAT('Doctor ', icd.DoctorID)) as DoctorName,
                 COALESCE(d.Specialty, vw.SpecialityName, rd.Specialty, '') as Specialty,
                 COUNT(*) as TotalIncidents,
-                SUM(CASE WHEN sev.SeverityName = 'High' THEN 1 ELSE 0 END) as HighSeverity,
-                SUM(CASE WHEN sev.SeverityName = 'Medium' THEN 1 ELSE 0 END) as MediumSeverity,
-                SUM(CASE WHEN sev.SeverityName = 'Low' THEN 1 ELSE 0 END) as LowSeverity,
-                SUM(CASE WHEN crt.Code IN ('RED_FLAG', 'NEVER_EVENT') THEN 1 ELSE 0 END) as RedFlags
+                -- Complaints (FeedbackIntentTypeID != 2, i.e. NOT NOTICE)
+                SUM(CASE WHEN COALESCE(ic.FeedbackIntentTypeID, 1) != 2 THEN 1 ELSE 0 END) as TotalComplaints,
+                SUM(CASE WHEN COALESCE(ic.FeedbackIntentTypeID, 1) != 2 AND sev.SeverityName = 'High' THEN 1 ELSE 0 END) as HighSeverity,
+                SUM(CASE WHEN COALESCE(ic.FeedbackIntentTypeID, 1) != 2 AND sev.SeverityName = 'Medium' THEN 1 ELSE 0 END) as MediumSeverity,
+                SUM(CASE WHEN COALESCE(ic.FeedbackIntentTypeID, 1) != 2 AND sev.SeverityName = 'Low' THEN 1 ELSE 0 END) as LowSeverity,
+                SUM(CASE WHEN COALESCE(ic.FeedbackIntentTypeID, 1) != 2 AND crt.Code IN ('RED_FLAG', 'NEVER_EVENT') THEN 1 ELSE 0 END) as RedFlags,
+                -- Praises (FeedbackIntentTypeID = 2, i.e. NOTICE)
+                SUM(CASE WHEN ic.FeedbackIntentTypeID = 2 THEN 1 ELSE 0 END) as TotalPraises
             FROM dbo.APP_IncidentCaseDoctor icd
             INNER JOIN dbo.APP_IncidentCase ic 
                 ON ic.IncidentRequestCaseID = icd.IncidentRequestCaseID
@@ -73,10 +83,12 @@ def _fetch_doctors_with_incident_counts(
                 "name": row.DoctorName or f"Doctor {row.DoctorID}",
                 "specialty": row.Specialty or "Unknown",
                 "total_incidents": row.TotalIncidents,
+                "total_complaints": row.TotalComplaints,
                 "high_severity": row.HighSeverity,
                 "medium_severity": row.MediumSeverity,
                 "low_severity": row.LowSeverity,
-                "red_flags": row.RedFlags
+                "red_flags": row.RedFlags,
+                "total_praises": row.TotalPraises
             })
         
         return results
@@ -93,7 +105,13 @@ def _fetch_workers_with_incident_counts(
 ) -> List[Dict[str, Any]]:
     """
     Fetch all workers (employees) who have incidents in the given date range,
-    with counts by severity. Single efficient SQL query.
+    with counts by severity and feedback intent type (complaints vs praises).
+    
+    FeedbackIntentType differentiation:
+    - NOTICE (ID=2) → Praise (good feedback, severity not relevant)
+    - IMPROVEMENT_OPPORTUNITY (ID=1), CRITIQUE_SUGGESTION (ID=3), OTHER (ID=4) → Complaints (bad)
+    
+    Single efficient SQL query.
     """
     conn = None
     cursor = None
@@ -107,10 +125,14 @@ def _fetch_workers_with_incident_counts(
                 COALESCE(e.FullName, CONCAT('Employee ', ice.EmployeeID)) as FullName,
                 COALESCE(e.JobTitle, '') as JobTitle,
                 COUNT(*) as TotalIncidents,
-                SUM(CASE WHEN sev.SeverityName = 'High' THEN 1 ELSE 0 END) as HighSeverity,
-                SUM(CASE WHEN sev.SeverityName = 'Medium' THEN 1 ELSE 0 END) as MediumSeverity,
-                SUM(CASE WHEN sev.SeverityName = 'Low' THEN 1 ELSE 0 END) as LowSeverity,
-                SUM(CASE WHEN crt.Code IN ('RED_FLAG', 'NEVER_EVENT') THEN 1 ELSE 0 END) as RedFlags
+                -- Complaints (FeedbackIntentTypeID != 2, i.e. NOT NOTICE)
+                SUM(CASE WHEN COALESCE(ic.FeedbackIntentTypeID, 1) != 2 THEN 1 ELSE 0 END) as TotalComplaints,
+                SUM(CASE WHEN COALESCE(ic.FeedbackIntentTypeID, 1) != 2 AND sev.SeverityName = 'High' THEN 1 ELSE 0 END) as HighSeverity,
+                SUM(CASE WHEN COALESCE(ic.FeedbackIntentTypeID, 1) != 2 AND sev.SeverityName = 'Medium' THEN 1 ELSE 0 END) as MediumSeverity,
+                SUM(CASE WHEN COALESCE(ic.FeedbackIntentTypeID, 1) != 2 AND sev.SeverityName = 'Low' THEN 1 ELSE 0 END) as LowSeverity,
+                SUM(CASE WHEN COALESCE(ic.FeedbackIntentTypeID, 1) != 2 AND crt.Code IN ('RED_FLAG', 'NEVER_EVENT') THEN 1 ELSE 0 END) as RedFlags,
+                -- Praises (FeedbackIntentTypeID = 2, i.e. NOTICE)
+                SUM(CASE WHEN ic.FeedbackIntentTypeID = 2 THEN 1 ELSE 0 END) as TotalPraises
             FROM dbo.APP_IncidentCaseEmployee ice
             INNER JOIN dbo.APP_IncidentCase ic 
                 ON ic.IncidentRequestCaseID = ice.IncidentRequestCaseID
@@ -137,10 +159,12 @@ def _fetch_workers_with_incident_counts(
                 "name": row.FullName or f"Employee {row.EmployeeID}",
                 "job_title": row.JobTitle or "Unknown",
                 "total_incidents": row.TotalIncidents,
+                "total_complaints": row.TotalComplaints,
                 "high_severity": row.HighSeverity,
                 "medium_severity": row.MediumSeverity,
                 "low_severity": row.LowSeverity,
-                "red_flags": row.RedFlags
+                "red_flags": row.RedFlags,
+                "total_praises": row.TotalPraises
             })
         
         return results
@@ -217,21 +241,25 @@ def generate_all_doctors_seasonal_word(
         run.font.name = 'Arial'
     
     total_all = sum(dr["total_incidents"] for dr in doctor_reports)
+    total_complaints = sum(dr["total_complaints"] for dr in doctor_reports)
+    total_praises = sum(dr["total_praises"] for dr in doctor_reports)
     total_high = sum(dr["high_severity"] for dr in doctor_reports)
     total_medium = sum(dr["medium_severity"] for dr in doctor_reports)
     total_low = sum(dr["low_severity"] for dr in doctor_reports)
     total_red = sum(dr["red_flags"] for dr in doctor_reports)
     avg_per = total_all / len(doctor_reports) if doctor_reports else 0
     
-    summary_table = doc.add_table(rows=6, cols=2)
+    summary_table = doc.add_table(rows=8, cols=2)
     summary_table.style = 'Light List Accent 1'
     
     summary_data = [
         ('إجمالي الحالات / Total Incidents', str(total_all)),
+        ('إجمالي الشكاوى / Total Complaints', str(total_complaints)),
+        ('إجمالي التنويهات (إيجابي) / Total Praises', str(total_praises)),
         ('متوسط الحالات لكل طبيب / Avg per Doctor', f'{avg_per:.1f}'),
-        ('حالات شدة عالية / High Severity', str(total_high)),
-        ('حالات شدة متوسطة / Medium Severity', str(total_medium)),
-        ('حالات شدة منخفضة / Low Severity', str(total_low)),
+        ('شكاوى شدة عالية / High Severity Complaints', str(total_high)),
+        ('شكاوى شدة متوسطة / Medium Severity Complaints', str(total_medium)),
+        ('شكاوى شدة منخفضة / Low Severity Complaints', str(total_low)),
         ('علامات حمراء / Red Flags', str(total_red)),
     ]
     
@@ -259,14 +287,22 @@ def generate_all_doctors_seasonal_word(
     note_run.font.italic = True
     note_run.font.color.rgb = RGBColor(100, 100, 100)
     
-    table = doc.add_table(rows=1, cols=8)
+    # Legend for complaints vs praises
+    legend = doc.add_paragraph()
+    legend_run = legend.add_run('الشكاوى = فرصة تحسين + نقد/اقتراح + آخر | التنويهات = إيجابية فقط (بدون شدة)')
+    legend_run.font.size = Pt(8)
+    legend_run.font.name = 'Arial'
+    legend_run.font.italic = True
+    legend_run.font.color.rgb = RGBColor(80, 80, 80)
+    
+    table = doc.add_table(rows=1, cols=9)
     table.style = 'Light Grid Accent 1'
     
     hdr_cells = table.rows[0].cells
     headers = [
         '#', 'اسم الطبيب\nDoctor Name', 'التخصص\nSpecialty',
-        'إجمالي\nTotal', 'عالية\nHigh', 'متوسطة\nMedium',
-        'منخفضة\nLow', 'علامات حمراء\nRed Flags'
+        'شكاوى\nComplaints', 'عالية\nHigh', 'متوسطة\nMedium',
+        'منخفضة\nLow', 'علامات حمراء\nRed Flags', 'تنويهات\nPraises'
     ]
     
     for idx, header_text in enumerate(headers):
@@ -286,11 +322,12 @@ def generate_all_doctors_seasonal_word(
             str(idx),
             doctor["name"],
             doctor["specialty"] or "غير محدد",
-            str(doctor["total_incidents"]),
+            str(doctor["total_complaints"]),
             str(doctor["high_severity"]),
             str(doctor["medium_severity"]),
             str(doctor["low_severity"]),
-            str(doctor["red_flags"])
+            str(doctor["red_flags"]),
+            str(doctor["total_praises"])
         ]
         
         for cell_idx, value in enumerate(row_data):
@@ -300,6 +337,9 @@ def generate_all_doctors_seasonal_word(
                 for run in paragraph.runs:
                     run.font.size = Pt(9)
                     run.font.name = 'Arial'
+                    # Highlight praises column in green
+                    if cell_idx == 8 and int(value) > 0:
+                        run.font.color.rgb = RGBColor(0, 128, 0)
     
     doc.add_paragraph()
     
@@ -384,21 +424,25 @@ def generate_all_workers_seasonal_word(
         run.font.name = 'Arial'
     
     total_all = sum(wr["total_incidents"] for wr in worker_reports)
+    total_complaints = sum(wr["total_complaints"] for wr in worker_reports)
+    total_praises = sum(wr["total_praises"] for wr in worker_reports)
     total_high = sum(wr["high_severity"] for wr in worker_reports)
     total_medium = sum(wr["medium_severity"] for wr in worker_reports)
     total_low = sum(wr["low_severity"] for wr in worker_reports)
     total_red = sum(wr["red_flags"] for wr in worker_reports)
     avg_per = total_all / len(worker_reports) if worker_reports else 0
     
-    summary_table = doc.add_table(rows=6, cols=2)
+    summary_table = doc.add_table(rows=8, cols=2)
     summary_table.style = 'Light List Accent 1'
     
     summary_data = [
         ('إجمالي الحالات / Total Incidents', str(total_all)),
+        ('إجمالي الشكاوى / Total Complaints', str(total_complaints)),
+        ('إجمالي التنويهات (إيجابي) / Total Praises', str(total_praises)),
         ('متوسط الحالات لكل موظف / Avg per Worker', f'{avg_per:.1f}'),
-        ('حالات شدة عالية / High Severity', str(total_high)),
-        ('حالات شدة متوسطة / Medium Severity', str(total_medium)),
-        ('حالات شدة منخفضة / Low Severity', str(total_low)),
+        ('شكاوى شدة عالية / High Severity Complaints', str(total_high)),
+        ('شكاوى شدة متوسطة / Medium Severity Complaints', str(total_medium)),
+        ('شكاوى شدة منخفضة / Low Severity Complaints', str(total_low)),
         ('علامات حمراء / Red Flags', str(total_red)),
     ]
     
@@ -426,14 +470,22 @@ def generate_all_workers_seasonal_word(
     note_run.font.italic = True
     note_run.font.color.rgb = RGBColor(100, 100, 100)
     
-    table = doc.add_table(rows=1, cols=8)
+    # Legend for complaints vs praises
+    legend = doc.add_paragraph()
+    legend_run = legend.add_run('الشكاوى = فرصة تحسين + نقد/اقتراح + آخر | التنويهات = إيجابية فقط (بدون شدة)')
+    legend_run.font.size = Pt(8)
+    legend_run.font.name = 'Arial'
+    legend_run.font.italic = True
+    legend_run.font.color.rgb = RGBColor(80, 80, 80)
+    
+    table = doc.add_table(rows=1, cols=9)
     table.style = 'Light Grid Accent 1'
     
     hdr_cells = table.rows[0].cells
     headers = [
         '#', 'اسم الموظف\nWorker Name', 'المسمى الوظيفي\nJob Title',
-        'إجمالي\nTotal', 'عالية\nHigh', 'متوسطة\nMedium',
-        'منخفضة\nLow', 'علامات حمراء\nRed Flags'
+        'شكاوى\nComplaints', 'عالية\nHigh', 'متوسطة\nMedium',
+        'منخفضة\nLow', 'علامات حمراء\nRed Flags', 'تنويهات\nPraises'
     ]
     
     for idx, header_text in enumerate(headers):
@@ -453,11 +505,12 @@ def generate_all_workers_seasonal_word(
             str(idx),
             worker["name"],
             worker["job_title"] or "غير محدد",
-            str(worker["total_incidents"]),
+            str(worker["total_complaints"]),
             str(worker["high_severity"]),
             str(worker["medium_severity"]),
             str(worker["low_severity"]),
-            str(worker["red_flags"])
+            str(worker["red_flags"]),
+            str(worker["total_praises"])
         ]
         
         for cell_idx, value in enumerate(row_data):
@@ -467,6 +520,9 @@ def generate_all_workers_seasonal_word(
                 for run in paragraph.runs:
                     run.font.size = Pt(9)
                     run.font.name = 'Arial'
+                    # Highlight praises column in green
+                    if cell_idx == 8 and int(value) > 0:
+                        run.font.color.rgb = RGBColor(0, 128, 0)
     
     doc.add_paragraph()
     

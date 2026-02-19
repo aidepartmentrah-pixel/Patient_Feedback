@@ -6,7 +6,7 @@ These schemas define the contract between frontend and backend for drawer notes 
 """
 
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 
 
@@ -14,12 +14,14 @@ class CreateNoteRequest(BaseModel):
     """Request model for creating a new drawer note."""
     note_text: str = Field(..., description="The note content")
     label_ids: List[int] = Field(..., description="List of label IDs to attach to note")
+    patient_admission_id: Optional[int] = Field(None, description="Optional patient admission ID to link note to a patient")
     
     class Config:
         json_schema_extra = {
             "example": {
                 "note_text": "Patient expressed concern about medication timing",
-                "label_ids": [1, 3]
+                "label_ids": [1, 3],
+                "patient_admission_id": 12345
             }
         }
 
@@ -57,6 +59,8 @@ class NoteResponse(BaseModel):
     created_by_name: str = Field(..., description="Creator username")
     label_ids: List[int] = Field(..., description="Attached label IDs")
     is_deleted: bool = Field(False, description="Whether note is soft-deleted")
+    patient_admission_id: Optional[int] = Field(None, description="Linked patient admission ID")
+    patient_name: Optional[str] = Field(None, description="Patient name (if linked)")
     
     class Config:
         json_schema_extra = {
@@ -67,7 +71,9 @@ class NoteResponse(BaseModel):
                 "created_by_user_id": 5,
                 "created_by_name": "john_doe",
                 "label_ids": [1, 3],
-                "is_deleted": False
+                "is_deleted": False,
+                "patient_admission_id": 12345,
+                "patient_name": "John Doe"
             }
         }
 

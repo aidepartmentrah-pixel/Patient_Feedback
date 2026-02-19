@@ -208,3 +208,64 @@ def get_units_by_type(unit_type: int):
             "parent_id": row[2]
         })
     return result
+
+
+def get_unit_hierarchy(unit_id: int) -> dict:
+    """
+    Get the full hierarchy for a unit (self, parent, grandparent).
+    
+    Returns the unit's name, its parent's name (department for sections),
+    and grandparent's name (administration for sections, or parent administration for departments).
+    
+    Args:
+        unit_id: The organizational unit ID
+        
+    Returns:
+        Dict with:
+        - unit_id, unit_name, unit_type
+        - parent_id, parent_name (if exists)
+        - grandparent_id, grandparent_name (if exists)
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Get unit and its parent/grandparent in one query
+        cursor.execute(
+            """
+            SELECT 
+                u.UniqueID as unit_id,
+                u.Name as unit_name,
+                u.Type as unit_type,
+                u.ParentID as parent_id,
+                p.Name as parent_name,
+                p.Type as parent_type,
+                p.ParentID as grandparent_id,
+                gp.Name as grandparent_name,
+                gp.Type as grandparent_type
+            FROM AdminsrationUnit u WITH (NOLOCK)
+            LEFT JOIN AdminsrationUnit p WITH (NOLOCK) ON u.ParentID = p.UniqueID
+            LEFT JOIN AdminsrationUnit gp WITH (NOLOCK) ON p.ParentID = gp.UniqueID
+            WHERE u.UniqueID = ?
+            """,
+            unit_id
+        )
+        
+        row = cursor.fetchone()
+        if not row:
+            return None
+        
+        return {
+            "unit_id": row.unit_id,
+            "unit_name": row.unit_name,
+            "unit_type": row.unit_type,
+            "parent_id": row.parent_id,
+            "parent_name": row.parent_name,
+            "parent_type": row.parent_type,
+            "grandparent_id": row.grandparent_id,
+            "grandparent_name": row.grandparent_name,
+            "grandparent_type": row.grandparent_type
+        }
+    finally:
+        cursor.close()
+        conn.close()

@@ -18,7 +18,8 @@ from core.database import get_connection
 def insert_note(
     note_text: str,
     created_by_user_id: int,
-    created_by_name: str
+    created_by_name: str,
+    patient_admission_id: Optional[int] = None
 ) -> int:
     """
     Create a new drawer note.
@@ -27,6 +28,7 @@ def insert_note(
         note_text: Note content
         created_by_user_id: User ID who created the note
         created_by_name: User name who created the note
+        patient_admission_id: Optional patient admission ID to link note to a patient
     
     Returns:
         NoteID of newly created note
@@ -42,13 +44,14 @@ def insert_note(
             INSERT INTO dbo.APP_DrawerNote (
                 NoteText,
                 CreatedByUserID,
-                CreatedByName
+                CreatedByName,
+                PatientAdmissionID
             )
             OUTPUT INSERTED.NoteID
-            VALUES (?, ?, ?)
+            VALUES (?, ?, ?, ?)
         """
         
-        cursor.execute(query, (note_text, created_by_user_id, created_by_name))
+        cursor.execute(query, (note_text, created_by_user_id, created_by_name, patient_admission_id))
         note_id = cursor.fetchone()[0]
         conn.commit()
         
@@ -132,14 +135,18 @@ def get_note_by_id(note_id: int) -> Optional[Dict[str, Any]]:
     try:
         query = """
             SELECT 
-                NoteID,
-                NoteText,
-                CreatedAt,
-                CreatedByUserID,
-                CreatedByName,
-                IsDeleted
-            FROM dbo.APP_DrawerNote
-            WHERE NoteID = ?
+                n.NoteID,
+                n.NoteText,
+                n.CreatedAt,
+                n.CreatedByUserID,
+                n.CreatedByName,
+                n.IsDeleted,
+                n.PatientAdmissionID,
+                COALESCE(p.FullName, r.FullName) as PatientName
+            FROM dbo.APP_DrawerNote n
+            LEFT JOIN dbo.APP_VIEWTABLE_PATIENT_ADMISSION p ON n.PatientAdmissionID = p.PatientAdmissionID
+            LEFT JOIN dbo.APP_RESERVE_PATIENT r ON n.PatientAdmissionID = r.PatientAdmissionID AND p.PatientAdmissionID IS NULL
+            WHERE n.NoteID = ?
         """
         
         cursor.execute(query, (note_id,))
@@ -154,7 +161,9 @@ def get_note_by_id(note_id: int) -> Optional[Dict[str, Any]]:
             'created_at': row.CreatedAt,
             'created_by_user_id': row.CreatedByUserID,
             'created_by_name': row.CreatedByName,
-            'is_deleted': row.IsDeleted
+            'is_deleted': row.IsDeleted,
+            'patient_admission_id': row.PatientAdmissionID,
+            'patient_name': row.PatientName
         }
         
     finally:
@@ -162,13 +171,14 @@ def get_note_by_id(note_id: int) -> Optional[Dict[str, Any]]:
         conn.close()
 
 
-def list_notes_paged(limit: int, offset: int) -> List[Dict[str, Any]]:
+def list_notes_paged(limit: int, offset: int, patient_admission_id: Optional[int] = None) -> List[Dict[str, Any]]:
     """
     Get paginated list of non-deleted notes, ordered by created_at DESC.
     
     Args:
         limit: Maximum number of notes to return
         offset: Number of notes to skip
+        patient_admission_id: Optional filter by patient
     
     Returns:
         List of note dicts
@@ -177,22 +187,47 @@ def list_notes_paged(limit: int, offset: int) -> List[Dict[str, Any]]:
     cursor = conn.cursor()
     
     try:
-        query = """
-            SELECT 
-                NoteID,
-                NoteText,
-                CreatedAt,
-                CreatedByUserID,
-                CreatedByName,
-                IsDeleted
-            FROM dbo.APP_DrawerNote
-            WHERE IsDeleted = 0
-            ORDER BY CreatedAt DESC
-            OFFSET ? ROWS
-            FETCH NEXT ? ROWS ONLY
-        """
+        if patient_admission_id is not None:
+            query = """
+                SELECT 
+                    n.NoteID,
+                    n.NoteText,
+                    n.CreatedAt,
+                    n.CreatedByUserID,
+                    n.CreatedByName,
+                    n.IsDeleted,
+                    n.PatientAdmissionID,
+                    COALESCE(p.FullName, r.FullName) as PatientName
+                FROM dbo.APP_DrawerNote n
+                LEFT JOIN dbo.APP_VIEWTABLE_PATIENT_ADMISSION p ON n.PatientAdmissionID = p.PatientAdmissionID
+                LEFT JOIN dbo.APP_RESERVE_PATIENT r ON n.PatientAdmissionID = r.PatientAdmissionID AND p.PatientAdmissionID IS NULL
+                WHERE n.IsDeleted = 0 AND n.PatientAdmissionID = ?
+                ORDER BY n.CreatedAt DESC
+                OFFSET ? ROWS
+                FETCH NEXT ? ROWS ONLY
+            """
+            cursor.execute(query, (patient_admission_id, offset, limit))
+        else:
+            query = """
+                SELECT 
+                    n.NoteID,
+                    n.NoteText,
+                    n.CreatedAt,
+                    n.CreatedByUserID,
+                    n.CreatedByName,
+                    n.IsDeleted,
+                    n.PatientAdmissionID,
+                    COALESCE(p.FullName, r.FullName) as PatientName
+                FROM dbo.APP_DrawerNote n
+                LEFT JOIN dbo.APP_VIEWTABLE_PATIENT_ADMISSION p ON n.PatientAdmissionID = p.PatientAdmissionID
+                LEFT JOIN dbo.APP_RESERVE_PATIENT r ON n.PatientAdmissionID = r.PatientAdmissionID AND p.PatientAdmissionID IS NULL
+                WHERE n.IsDeleted = 0
+                ORDER BY n.CreatedAt DESC
+                OFFSET ? ROWS
+                FETCH NEXT ? ROWS ONLY
+            """
+            cursor.execute(query, (offset, limit))
         
-        cursor.execute(query, (offset, limit))
         rows = cursor.fetchall()
         
         notes = []
@@ -203,7 +238,9 @@ def list_notes_paged(limit: int, offset: int) -> List[Dict[str, Any]]:
                 'created_at': row.CreatedAt,
                 'created_by_user_id': row.CreatedByUserID,
                 'created_by_name': row.CreatedByName,
-                'is_deleted': row.IsDeleted
+                'is_deleted': row.IsDeleted,
+                'patient_admission_id': row.PatientAdmissionID,
+                'patient_name': row.PatientName
             })
         
         return notes
@@ -325,7 +362,8 @@ def get_note_label_ids(note_id: int) -> List[int]:
 def filter_notes_by_label_ids(
     label_ids: List[int],
     limit: int,
-    offset: int
+    offset: int,
+    patient_admission_id: Optional[int] = None
 ) -> List[Dict[str, Any]]:
     """
     Filter non-deleted notes that have ALL specified labels (AND logic).
@@ -335,6 +373,7 @@ def filter_notes_by_label_ids(
         label_ids: List of label IDs (note must have ALL of these)
         limit: Maximum number of notes to return
         offset: Number of notes to skip
+        patient_admission_id: Optional filter by patient
     
     Returns:
         List of note dicts matching all labels
@@ -351,6 +390,13 @@ def filter_notes_by_label_ids(
         label_count = len(label_ids)
         placeholders = ','.join(['?'] * label_count)
         
+        patient_filter = ""
+        params = list(label_ids)
+        
+        if patient_admission_id is not None:
+            patient_filter = "AND n.PatientAdmissionID = ?"
+            params.append(patient_admission_id)
+        
         query = f"""
             SELECT 
                 n.NoteID,
@@ -358,22 +404,27 @@ def filter_notes_by_label_ids(
                 n.CreatedAt,
                 n.CreatedByUserID,
                 n.CreatedByName,
-                n.IsDeleted
+                n.IsDeleted,
+                n.PatientAdmissionID,
+                COALESCE(p.FullName, r.FullName) as PatientName
             FROM dbo.APP_DrawerNote n
+            LEFT JOIN dbo.APP_VIEWTABLE_PATIENT_ADMISSION p ON n.PatientAdmissionID = p.PatientAdmissionID
+            LEFT JOIN dbo.APP_RESERVE_PATIENT r ON n.PatientAdmissionID = r.PatientAdmissionID AND p.PatientAdmissionID IS NULL
             INNER JOIN dbo.APP_DrawerNoteLabelLink lnk ON n.NoteID = lnk.NoteID
             WHERE n.IsDeleted = 0
             AND lnk.LabelID IN ({placeholders})
-            GROUP BY n.NoteID, n.NoteText, n.CreatedAt, n.CreatedByUserID, n.CreatedByName, n.IsDeleted
+            {patient_filter}
+            GROUP BY n.NoteID, n.NoteText, n.CreatedAt, n.CreatedByUserID, n.CreatedByName, n.IsDeleted, n.PatientAdmissionID, COALESCE(p.FullName, r.FullName)
             HAVING COUNT(DISTINCT lnk.LabelID) = ?
             ORDER BY n.CreatedAt DESC
             OFFSET ? ROWS
             FETCH NEXT ? ROWS ONLY
         """
         
-        # Parameters: label_ids + label_count + offset + limit
-        params = tuple(label_ids) + (label_count, offset, limit)
+        # Parameters: label_ids + (patient_admission_id if provided) + label_count + offset + limit
+        params.extend([label_count, offset, limit])
         
-        cursor.execute(query, params)
+        cursor.execute(query, tuple(params))
         rows = cursor.fetchall()
         
         notes = []
@@ -384,7 +435,9 @@ def filter_notes_by_label_ids(
                 'created_at': row.CreatedAt,
                 'created_by_user_id': row.CreatedByUserID,
                 'created_by_name': row.CreatedByName,
-                'is_deleted': row.IsDeleted
+                'is_deleted': row.IsDeleted,
+                'patient_admission_id': row.PatientAdmissionID,
+                'patient_name': row.PatientName
             })
         
         return notes

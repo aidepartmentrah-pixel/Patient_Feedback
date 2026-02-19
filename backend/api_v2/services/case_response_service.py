@@ -18,6 +18,7 @@ from fastapi import HTTPException
 from backend.api_v2.db_layer import administrative_subcase_db
 from backend.api_v2.db_layer import action_item_subcase_db
 from backend.api.db_layer import auth_db
+from backend.api.db_layer import incident_case_feedback
 
 
 # ============================================================
@@ -286,7 +287,8 @@ def submit_section_response(
     subcase_id: int,
     explanation_text: str,
     action_items: List[Dict[str, Any]],
-    current_user
+    current_user,
+    rca_feedback: Optional[Dict[str, Any]] = None
 ) -> None:
     """
     Section Administrator accepts responsibility and provides response.
@@ -304,17 +306,33 @@ def submit_section_response(
         action_items: List of action items to create (DRAFT status)
             [{"title": str, "description": str, "due_date": str or None}, ...]
         current_user: Current user object (must have user_id attribute)
+        rca_feedback: Optional RCA feedback data with Cause_* and Preventive_* fields
+            RCA is mandatory for inbox submissions.
     
     Raises:
-        Exception: If user is None, subcase not found, or status invalid
+        Exception: If user is None, subcase not found, status invalid, or RCA missing
     """
     if current_user is None:
         raise Exception("current_user cannot be None")
+    
+    # RCA is mandatory for section submissions
+    if rca_feedback is None:
+        raise Exception("RCA feedback is required for section response submission")
     
     subcase = _load_subcase_or_fail(subcase_id)
     
     # Allow both initial submission and resubmission after rejection
     _assert_status(subcase, ['SUBMITTED_TO_SECTION', 'RETURNED_TO_SECTION_FOR_REVISION'])
+    
+    # Get incident ID for RCA linkage
+    incident_id = subcase.get('incident_request_case_id')
+    if not incident_id:
+        raise Exception(f"Subcase {subcase_id} has no linked incident case")
+    
+    # Check if RCA already exists for this subcase (prevent duplicates)
+    existing_rca = incident_case_feedback.get_rca_feedback_by_subcase(subcase_id)
+    if existing_rca:
+        raise Exception(f"RCA feedback already exists for subcase {subcase_id}. RCA cannot be edited.")
     
     # If resubmitting (returned for revision), replace existing action items
     if subcase.get('status') == 'RETURNED_TO_SECTION_FOR_REVISION':
@@ -331,6 +349,14 @@ def submit_section_response(
                 initial_status='DRAFT',
                 assigned_to_user_id=item.get('assigned_to_user_id')
             )
+    
+    # Create RCA feedback record linked to subcase
+    incident_case_feedback.create_subcase_rca_feedback(
+        subcase_id=subcase_id,
+        incident_id=incident_id,
+        feedback_data=rca_feedback,
+        created_by_user_id=current_user.user_id
+    )
     
     # Update section explanation
     administrative_subcase_db.update_section_explanation(
@@ -925,6 +951,112 @@ def force_close_incident(
         "closed_by": getattr(current_user, 'username', str(current_user.user_id)),
         "reason": reason_text
     }
+
+
+# ============================================================
+# UNIVERSAL SECTION: DIRECT APPROVAL TO ADMIN
+# ============================================================
+
+def direct_approve_to_admin(
+    subcase_id: int,
+    explanation_text: str,
+    action_items: List[Dict[str, Any]],
+    current_user,
+    rca_feedback: Optional[Dict[str, Any]] = None
+) -> None:
+    """
+    UNIVERSAL_SECTION direct approval: Submit response + approve directly to ADMIN_APPROVED.
+    
+    This is an operational bridge function that allows UNIVERSAL_SECTION role
+    to bypass the normal multi-level workflow and approve directly.
+    
+    Status transition: SUBMITTED_TO_SECTION or RETURNED_TO_SECTION_FOR_REVISION -> ADMIN_APPROVED
+    
+    What this does:
+    1. Validates user has UNIVERSAL_SECTION role
+    2. Validates subcase is in appropriate status
+    3. Sets the section explanation text
+    4. Creates RCA feedback record (mandatory)
+    5. Creates action items in ADMIN_APPROVED status
+    6. Transitions subcase directly to ADMIN_APPROVED
+    
+    Args:
+        subcase_id: Subcase ID
+        explanation_text: Explanation text for the case
+        action_items: List of action items to create
+        current_user: Current user object (must have UNIVERSAL_SECTION role)
+        rca_feedback: RCA feedback data with Cause_* and Preventive_* fields (mandatory)
+    
+    Raises:
+        Exception: If user is None, not UNIVERSAL_SECTION, subcase not found, status invalid, or RCA missing
+    """
+    if current_user is None:
+        raise Exception("current_user cannot be None")
+    
+    # RCA is mandatory for direct approval
+    if rca_feedback is None:
+        raise Exception("RCA feedback is required for direct approval")
+    
+    # Validate UNIVERSAL_SECTION role
+    if not hasattr(current_user, 'scopes') or not current_user.scopes:
+        raise Exception("User must have UNIVERSAL_SECTION role for direct approval")
+    
+    role_code = current_user.scopes[0].role_code
+    if role_code != 'UNIVERSAL_SECTION':
+        raise Exception(f"User must have UNIVERSAL_SECTION role for direct approval, got {role_code}")
+    
+    # Load subcase and validate status
+    subcase = _load_subcase_or_fail(subcase_id)
+    _assert_status(subcase, ['SUBMITTED_TO_SECTION', 'RETURNED_TO_SECTION_FOR_REVISION'])
+    
+    # Get incident ID for RCA linkage
+    incident_id = subcase.get('incident_request_case_id')
+    if not incident_id:
+        raise Exception(f"Subcase {subcase_id} has no linked incident case")
+    
+    # Check if RCA already exists for this subcase (prevent duplicates)
+    existing_rca = incident_case_feedback.get_rca_feedback_by_subcase(subcase_id)
+    if existing_rca:
+        raise Exception(f"RCA feedback already exists for subcase {subcase_id}. RCA cannot be edited.")
+    
+    # Set section explanation text
+    if explanation_text:
+        administrative_subcase_db.update_section_explanation(
+            subcase_id=subcase_id,
+            text=explanation_text,
+            updated_by_user_id=current_user.user_id
+        )
+    
+    # Create RCA feedback record linked to subcase
+    incident_case_feedback.create_subcase_rca_feedback(
+        subcase_id=subcase_id,
+        incident_id=incident_id,
+        feedback_data=rca_feedback,
+        created_by_user_id=current_user.user_id
+    )
+    
+    # Clear any existing action items for this subcase and create new ones
+    existing_items = action_item_subcase_db.get_action_items_by_subcase(subcase_id)
+    for item in existing_items:
+        action_item_subcase_db.delete_action_item(item['action_item_id'])
+    
+    # Create new action items directly in ADMIN_APPROVED status
+    for item in action_items:
+        action_item_subcase_db.create_action_item(
+            subcase_id=subcase_id,
+            title=item['title'],
+            description=item.get('description', ''),
+            created_by_user_id=current_user.user_id,
+            due_date=item.get('due_date'),
+            initial_status='ADMIN_APPROVED'  # Skip workflow, go directly to approved
+        )
+    
+    # Transition subcase directly to ADMIN_APPROVED
+    administrative_subcase_db.update_subcase_status(
+        subcase_id=subcase_id,
+        new_status='ADMIN_APPROVED',
+        updated_by_user_id=current_user.user_id
+    )
 
 
 

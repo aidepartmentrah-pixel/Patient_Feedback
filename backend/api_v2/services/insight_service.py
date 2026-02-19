@@ -375,10 +375,21 @@ def _build_section_group(org_unit_id: int, subcases: List[Dict]) -> Dict[str, An
     Returns:
         Group dict with metadata and sorted subcases
     """
+    # Map numeric org_type codes to string enums
+    # 323 = ADMINISTRATION, 324 = SECTION, 325 = DEPARTMENT
+    ORG_TYPE_MAP = {
+        323: 'ADMINISTRATION',
+        324: 'SECTION',
+        325: 'DEPARTMENT',
+    }
+    
     # Get org unit info from first subcase (all have same org unit)
     first_subcase = subcases[0] if subcases else {}
     org_unit_name = first_subcase.get('org_unit_name', f'Org Unit {org_unit_id}')
-    org_type = first_subcase.get('org_type', 'Unknown')
+    raw_org_type = first_subcase.get('org_type')
+    
+    # Convert numeric org_type to string enum
+    org_type = ORG_TYPE_MAP.get(raw_org_type, 'SECTION')  # Default to SECTION
     
     # Look up supervisor name
     supervisor_name = administrative_subcase_db.get_supervisor_name_for_org_unit(org_unit_id)

@@ -1447,6 +1447,47 @@ def get_subcases_archived_for_complaint_supervisor() -> List[Dict[str, Any]]:
     return get_subcases_by_statuses(archive_statuses)
 
 
+def check_user_has_subcase_for_incident(incident_id: int, allowed_unit_ids: set) -> bool:
+    """
+    Check if a user has any subcase assigned to their org units for a given incident.
+    
+    Used for authorization when viewing incident details from workflow inbox.
+    
+    Args:
+        incident_id: Incident ID to check
+        allowed_unit_ids: Set of org unit IDs the user has access to
+    
+    Returns:
+        True if user has at least one subcase for this incident in their scope, False otherwise
+    """
+    if not allowed_unit_ids:
+        return False
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Build IN clause for allowed unit IDs
+        placeholders = ",".join(["?" for _ in allowed_unit_ids])
+        
+        query = f"""
+            SELECT COUNT(*) as cnt
+            FROM dbo.APP_AdministrativeSubcase
+            WHERE IncidentRequestCaseID = ?
+              AND TargetOrgUnitID IN ({placeholders})
+        """
+        
+        params = [incident_id] + list(allowed_unit_ids)
+        cursor.execute(query, params)
+        row = cursor.fetchone()
+        
+        return row[0] > 0 if row else False
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def get_supervisor_name_for_org_unit(org_unit_id: int) -> Optional[str]:
     """
     Lookup supervisor/admin name for a given org unit.
