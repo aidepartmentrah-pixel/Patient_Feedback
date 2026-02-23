@@ -98,6 +98,109 @@ class DoctorService:
             error_msg = str(e)
             if "already exists" in error_msg.lower():
                 raise ValueError(f"Doctor with name '{doctor_name}' already exists")
+            raise Exception(f"Failed to create doctor: {str(e)}")
+    
+    @staticmethod
+    def delete_doctor(
+        doctor_id: int,
+        force: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Delete a doctor from the reserve table (APP_RESERVE_DOCTOR) ONLY.
+        
+        This function does NOT touch the hospital's view (APP_LOOKUP_DOCTOR/VW_Doctors).
+        Hospital doctors cannot be deleted - they are read-only.
+        
+        Behavior:
+        - If doctor has associated incidents: soft-delete (deactivate)
+        - If doctor has no incidents and force=True: hard-delete
+        - If doctor has no incidents and force=False: soft-delete
+        
+        Args:
+            doctor_id: The doctor's ID to delete (must be from reserve table)
+            force: If True and no incidents, permanently delete
+        
+        Returns:
+            Dict with deletion result
+            
+        Raises:
+            ValueError: If doctor not found in reserve table or is a hospital doctor
+        """
+        try:
+            # ============================================
+            # STEP 1: Verify doctor exists in RESERVE table only
+            # ============================================
+            reserve_doctor = doctors_db.get_reserve_doctor_by_id(doctor_id)
+            
+            if not reserve_doctor:
+                # Check if it's a hospital doctor (read-only)
+                hospital_doctor = doctors_db.get_doctor_profile(doctor_id)
+                if hospital_doctor and hospital_doctor.get('source') == 'hospital':
+                    raise ValueError(
+                        f"Doctor ID {doctor_id} is from the hospital system and cannot be deleted. "
+                        "Hospital doctors are read-only."
+                    )
+                raise ValueError(f"Doctor with ID {doctor_id} not found in reserve table")
+            
+            doctor_name = reserve_doctor.get('name_en', f'Doctor {doctor_id}')
+            
+            # ============================================
+            # STEP 2: Check for associated incidents
+            # ============================================
+            incident_count = doctors_db.count_incidents_by_doctor(doctor_id)
+            
+            if incident_count > 0:
+                # Has incidents - must soft-delete (deactivate)
+                doctors_db.deactivate_reserve_doctor(doctor_id)
+                
+                return {
+                    'success': True,
+                    'id': doctor_id,
+                    'is_active': False,
+                    'deleted_at': None,
+                    'action': 'deactivated',
+                    'incident_count': incident_count,
+                    'message': f"Doctor '{doctor_name}' deactivated. Cannot delete due to {incident_count} associated incident(s).",
+                    'message_ar': f"تم إلغاء تنشيط الطبيب '{doctor_name}'. لا يمكن الحذف بسبب {incident_count} حادثة مرتبطة."
+                }
+            
+            # ============================================
+            # STEP 3: No incidents - delete based on force flag
+            # ============================================
+            if force:
+                # Hard delete
+                doctors_db.hard_delete_reserve_doctor(doctor_id)
+                from datetime import datetime
+                
+                return {
+                    'success': True,
+                    'id': doctor_id,
+                    'is_active': False,
+                    'deleted_at': datetime.now().isoformat(),
+                    'action': 'deleted',
+                    'incident_count': 0,
+                    'message': f"Doctor '{doctor_name}' permanently deleted.",
+                    'message_ar': f"تم حذف الطبيب '{doctor_name}' نهائياً."
+                }
+            else:
+                # Soft delete (deactivate)
+                doctors_db.deactivate_reserve_doctor(doctor_id)
+                
+                return {
+                    'success': True,
+                    'id': doctor_id,
+                    'is_active': False,
+                    'deleted_at': None,
+                    'action': 'deactivated',
+                    'incident_count': 0,
+                    'message': f"Doctor '{doctor_name}' deactivated successfully.",
+                    'message_ar': f"تم إلغاء تنشيط الطبيب '{doctor_name}' بنجاح."
+                }
+        
+        except ValueError:
+            raise
+        except Exception as e:
+            raise Exception(f"Failed to delete doctor: {str(e)}")
             raise Exception(f"Failed to create doctor: {error_msg}")
 
     @staticmethod

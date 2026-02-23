@@ -12,6 +12,7 @@ from ..dependencies.user_context import get_current_user
 from ..schemas.auth_models import CurrentUser
 from ..utils.guards import require_logged_in, require_software_admin
 from ..services.settings_service import SettingsService
+from ..services.doctors_service import DoctorService
 
 
 router = APIRouter(prefix="/api/settings", tags=["Settings"])
@@ -791,4 +792,84 @@ async def create_system_setting(
             "error": "setting_create_failed",
             "message": str(e),
             "message_ar": f"فشل إنشاء الإعداد: {str(e)}"
+        })
+
+
+# ==================== B8: DOCTORS - DELETE ====================
+
+@router.delete("/doctors/{doctor_id}")
+async def delete_doctor(
+    doctor_id: int = Path(..., description="Doctor ID to delete"),
+    force: bool = Query(False, description="If true, permanently delete (only if no incidents)"),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """
+    Delete or deactivate a doctor from the reserve table (APP_RESERVE_DOCTOR).
+    
+    **IMPORTANT**: This endpoint ONLY operates on user-created doctors in the 
+    reserve table. Hospital doctors (from VW_Doctors/APP_LOOKUP_DOCTOR) are 
+    read-only and cannot be deleted.
+    
+    **Behavior:**
+    - If doctor has associated incidents: Doctor is deactivated (soft-delete)
+    - If doctor has no incidents and force=false: Doctor is deactivated
+    - If doctor has no incidents and force=true: Doctor is permanently deleted
+    
+    **Response** (200 OK - Soft Delete):
+    ```json
+    {
+      "success": true,
+      "id": 157,
+      "is_active": false,
+      "deleted_at": null,
+      "action": "deactivated",
+      "incident_count": 45,
+      "message": "Doctor deactivated successfully",
+      "message_ar": "تم إلغاء تنشيط الطبيب بنجاح"
+    }
+    ```
+    
+    **Response** (404 Not Found):
+    ```json
+    {
+      "error": "doctor_not_found",
+      "message": "Doctor with ID 999 not found in reserve table"
+    }
+    ```
+    
+    **Response** (403 Forbidden - Hospital Doctor):
+    ```json
+    {
+      "error": "hospital_doctor_readonly",
+      "message": "Doctor ID 123 is from the hospital system and cannot be deleted."
+    }
+    ```
+    """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+    
+    try:
+        result = DoctorService.delete_doctor(
+            doctor_id=doctor_id,
+            force=force
+        )
+        return result
+    except ValueError as ve:
+        error_msg = str(ve)
+        if "hospital system" in error_msg.lower():
+            raise HTTPException(status_code=403, detail={
+                "error": "hospital_doctor_readonly",
+                "message": error_msg,
+                "message_ar": "لا يمكن حذف طبيب من نظام المستشفى. الأطباء في نظام المستشفى للقراءة فقط."
+            })
+        raise HTTPException(status_code=404, detail={
+            "error": "doctor_not_found",
+            "message": error_msg,
+            "message_ar": "الطبيب غير موجود في جدول الاحتياط"
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={
+            "error": "doctor_delete_failed",
+            "message": str(e),
+            "message_ar": f"فشل حذف الطبيب: {str(e)}"
         })

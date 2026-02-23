@@ -24,12 +24,11 @@ TreeType = Literal[
 # CONSTANTS
 # =========================================================
 
-# Severity thresholds for red flags (high severity = severity_id with high order)
-# Adjust based on your actual severity definitions
-RED_FLAG_SEVERITY_THRESHOLD = 3  # Incidents with SeverityID >= 3 are red flags
-
-# Never event categories (adjust based on your classifications)
-NEVER_EVENT_CATEGORY_IDS = []  # Add specific category IDs that are never events
+# Red Flag and Never Event are determined by ClinicalRiskTypeID:
+# - ClinicalRiskTypeID = 2 -> Red Flag
+# - ClinicalRiskTypeID = 3 -> Never Event
+RED_FLAG_CLINICAL_RISK_TYPE = 2
+NEVER_EVENT_CLINICAL_RISK_TYPE = 3
 
 
 # =========================================================
@@ -165,12 +164,69 @@ def get_available_seasons() -> dict:
     """
     Get list of available investigation seasons/periods.
     
+    Auto-generates missing seasons to ensure autonomous operation.
+    Uses date-based detection for current season (not IsDone flag).
+    
     Returns:
         Dictionary with seasons array and current season
     """
+    from datetime import date as dt_date
+    
     conn = get_connection()
     cursor = conn.cursor()
     
+    today = dt_date.today()
+    
+    # =============================================
+    # AUTO-GENERATE MISSING SEASONS
+    # =============================================
+    QUARTER_DATE_RANGES = {
+        1: {"start_month": 1, "start_day": 1, "end_month": 3, "end_day": 31},
+        2: {"start_month": 4, "start_day": 1, "end_month": 6, "end_day": 30},
+        3: {"start_month": 7, "start_day": 1, "end_month": 9, "end_day": 30},
+        4: {"start_month": 10, "start_day": 1, "end_month": 12, "end_day": 31},
+    }
+    
+    current_year = today.year
+    years_ahead = 2
+    
+    # Get the current max UniqueID
+    cursor.execute("SELECT ISNULL(MAX(UniqueID), 0) FROM dbo.Season")
+    next_id = cursor.fetchone()[0] + 1
+    
+    for year in range(current_year, current_year + years_ahead + 1):
+        for quarter in range(1, 5):
+            season_name = f"Q{quarter}-{year}"
+            
+            # Check if exists
+            cursor.execute(
+                "SELECT UniqueID FROM dbo.Season WHERE SeasonName = ?",
+                (season_name,)
+            )
+            
+            if cursor.fetchone() is not None:
+                continue
+            
+            # Create it
+            q = QUARTER_DATE_RANGES[quarter]
+            start_date = dt_date(year, q["start_month"], q["start_day"])
+            end_date = dt_date(year, q["end_month"], q["end_day"])
+            
+            cursor.execute(
+                """
+                INSERT INTO dbo.Season (UniqueID, SeasonName, StartDate, EndDate, IsDone, Frozen)
+                VALUES (?, ?, ?, ?, 0, 0)
+                """,
+                (next_id, season_name, start_date, end_date)
+            )
+            next_id += 1
+            print(f"[Investigation] Auto-created season: {season_name}")
+    
+    conn.commit()
+    
+    # =============================================
+    # FETCH ALL SEASONS
+    # =============================================
     cursor.execute(
         """
         SELECT 
@@ -194,21 +250,22 @@ def get_available_seasons() -> dict:
     for row in rows:
         season_id = str(row.UniqueID)
         season_name = row.SeasonName
-        start_date = row.StartDate.isoformat() if row.StartDate else None
-        end_date = row.EndDate.isoformat() if row.EndDate else None
+        start_date = row.StartDate
+        end_date = row.EndDate
         is_done = bool(row.IsDone)
         
-        # Determine if this is the current season (most recent non-done)
+        # Determine current season by DATE RANGE (correct approach)
         is_current = False
-        if not is_done and current_season_id is None:
-            is_current = True
-            current_season_id = season_id
+        if start_date and end_date:
+            if start_date <= today <= end_date:
+                is_current = True
+                current_season_id = season_id
         
         seasons.append({
             "season_id": season_id,
             "season_label": season_name,
-            "start_date": start_date,
-            "end_date": end_date,
+            "start_date": start_date.isoformat() if start_date else None,
+            "end_date": end_date.isoformat() if end_date else None,
             "is_current": is_current,
         })
     
@@ -345,6 +402,7 @@ def _fetch_incidents_for_season(
         SeverityID,
         CategoryID,
         HarmLevelID,
+        ClinicalRiskTypeID,
         FeedbackRecievedDate
     FROM dbo.APP_IncidentCase
     WHERE FeedbackRecievedDate >= ?
@@ -681,7 +739,7 @@ def _build_severity_distribution_tree(
 def _build_red_flag_tree(org_hierarchy: dict, incidents: list[dict]) -> list[dict]:
     """
     Build tree with red flag incident counts.
-    Red flags = high severity incidents (SeverityID >= threshold)
+    Red flags = ClinicalRiskTypeID = 2
     """
     # Count red flags and total incidents per unit
     unit_red_flags = defaultdict(int)
@@ -689,11 +747,11 @@ def _build_red_flag_tree(org_hierarchy: dict, incidents: list[dict]) -> list[dic
     
     for incident in incidents:
         unit_id = incident["IssuingOrgUnitID"]
-        severity_id = incident.get("SeverityID", 0)
+        clinical_risk_type_id = incident.get("ClinicalRiskTypeID")
         
         if unit_id:
             unit_totals[unit_id] += 1
-            if severity_id and severity_id >= RED_FLAG_SEVERITY_THRESHOLD:
+            if clinical_risk_type_id == RED_FLAG_CLINICAL_RISK_TYPE:
                 unit_red_flags[unit_id] += 1
     
     # Populate tree nodes
@@ -729,7 +787,7 @@ def _build_red_flag_tree(org_hierarchy: dict, incidents: list[dict]) -> list[dic
 def _build_never_event_tree(org_hierarchy: dict, incidents: list[dict]) -> list[dict]:
     """
     Build tree with never event incident counts.
-    Never events = specific categories or very high harm levels.
+    Never events = ClinicalRiskTypeID = 3
     """
     # Count never events and total incidents per unit
     unit_never_events = defaultdict(int)
@@ -737,19 +795,12 @@ def _build_never_event_tree(org_hierarchy: dict, incidents: list[dict]) -> list[
     
     for incident in incidents:
         unit_id = incident["IssuingOrgUnitID"]
-        category_id = incident.get("CategoryID")
-        harm_level_id = incident.get("HarmLevelID", 0)
+        clinical_risk_type_id = incident.get("ClinicalRiskTypeID")
         
         if unit_id:
             unit_totals[unit_id] += 1
             
-            # Define never event criteria (adjust as needed)
-            is_never_event = (
-                category_id in NEVER_EVENT_CATEGORY_IDS or
-                harm_level_id >= 4  # Assuming harm level 4+ is severe
-            )
-            
-            if is_never_event:
+            if clinical_risk_type_id == NEVER_EVENT_CLINICAL_RISK_TYPE:
                 unit_never_events[unit_id] += 1
     
     # Populate tree nodes
@@ -886,10 +937,11 @@ def _build_severity_distribution_summary(incidents: list[dict], as_percentage: b
 def _build_red_flag_summary(incidents: list[dict]) -> dict:
     """
     Build summary for red flag tree.
+    Red flags = ClinicalRiskTypeID = 2
     """
     red_flag_count = sum(
         1 for incident in incidents
-        if incident.get("SeverityID", 0) >= RED_FLAG_SEVERITY_THRESHOLD
+        if incident.get("ClinicalRiskTypeID") == RED_FLAG_CLINICAL_RISK_TYPE
     )
     
     total = len(incidents)
@@ -905,13 +957,11 @@ def _build_red_flag_summary(incidents: list[dict]) -> dict:
 def _build_never_event_summary(incidents: list[dict]) -> dict:
     """
     Build summary for never event tree.
+    Never events = ClinicalRiskTypeID = 3
     """
     never_event_count = sum(
         1 for incident in incidents
-        if (
-            incident.get("CategoryID") in NEVER_EVENT_CATEGORY_IDS or
-            incident.get("HarmLevelID", 0) >= 4
-        )
+        if incident.get("ClinicalRiskTypeID") == NEVER_EVENT_CLINICAL_RISK_TYPE
     )
     
     total = len(incidents)

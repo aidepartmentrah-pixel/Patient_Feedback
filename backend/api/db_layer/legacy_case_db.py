@@ -161,6 +161,7 @@ def list_legacy_cases_paged(page: int = 1, page_size: int = 50) -> dict:
         offset = (page - 1) * page_size
         
         # Query legacy cases with parent request data
+        # FILTER: Only return cases NOT YET migrated (dm.MapID IS NULL)
         cursor.execute("""
             SELECT 
                 irc.UniqueID AS LegacyCaseID,
@@ -170,7 +171,7 @@ def list_legacy_cases_paged(page: int = 1, page_size: int = 50) -> dict:
                 ir.DateAndTimeRecieved AS FeedbackDate,
                 irc.IncidentRequestCaseStatusID AS StatusID,
                 irc.DateAndTimeCreated AS CreatedAt,
-                CASE WHEN dm.MapID IS NOT NULL THEN 1 ELSE 0 END AS Migrated,
+                0 AS Migrated,
                 dept.Name AS DepartmentName,
                 sect.Name AS SectionName
             FROM dbo.IncidentRequestCase irc
@@ -178,6 +179,7 @@ def list_legacy_cases_paged(page: int = 1, page_size: int = 50) -> dict:
             LEFT JOIN dbo.APP_DataMigration_Map dm ON irc.UniqueID = dm.legacy_case_id
             LEFT JOIN dbo.AdminsrationUnit dept ON irc.DepartmentID = dept.UniqueID
             LEFT JOIN dbo.AdminsrationUnit sect ON irc.SectionID = sect.UniqueID
+            WHERE dm.MapID IS NULL
             ORDER BY irc.UniqueID DESC
             OFFSET ? ROWS
             FETCH NEXT ? ROWS ONLY
@@ -185,8 +187,13 @@ def list_legacy_cases_paged(page: int = 1, page_size: int = 50) -> dict:
         
         rows = cursor.fetchall()
         
-        # Query total count
-        cursor.execute("SELECT COUNT(*) FROM dbo.IncidentRequestCase")
+        # Query total count of UNMIGRATED cases only
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM dbo.IncidentRequestCase irc
+            LEFT JOIN dbo.APP_DataMigration_Map dm ON irc.UniqueID = dm.legacy_case_id
+            WHERE dm.MapID IS NULL
+        """)
         total = cursor.fetchone()[0]
         
         cases = []
@@ -278,6 +285,12 @@ def get_legacy_case_by_id(legacy_case_id: int) -> dict:
                 irc.IncidentCaseSubCategoryID AS SubCategoryID,
                 irc.CaseBuilding AS Building,
                 CASE WHEN dm.MapID IS NOT NULL THEN 1 ELSE 0 END AS Migrated,
+                -- NEW: Legacy source fields for migration reference
+                ir.SourceDepartmentID AS SourceDepartmentID,
+                ir.SourceDepartmentName AS SourceDepartmentName,
+                ir.SourceBuilding AS SourceBuilding,
+                ir.DoctorID AS RequestDoctorID,
+                ir.EmployeeID AS RequestEmployeeID,
                 dm.new_case_id AS MigratedCaseID,
                 dept.Name AS DepartmentName,
                 sect.Name AS SectionName
@@ -311,9 +324,16 @@ def get_legacy_case_by_id(legacy_case_id: int) -> dict:
         subcategory_id = row[13]
         building = row[14]
         migrated = bool(row[15])
-        migrated_case_id = row[16]
-        department_name = row[17] or ''
-        section_name = row[18] or ''
+        # NEW: Legacy source fields (indices 16-20)
+        source_department_id = row[16]
+        source_department_name = row[17] or ''
+        source_building = row[18] or ''
+        request_doctor_id = row[19] or ''
+        request_employee_id = row[20]
+        # Shifted indices
+        migrated_case_id = row[21]
+        department_name = row[22] or ''
+        section_name = row[23] or ''
         
         # =====================================================================
         # QUERY 2: Fetch ALL actions ordered by DateAndTimeCreated ASC
@@ -369,6 +389,13 @@ def get_legacy_case_by_id(legacy_case_id: int) -> dict:
         # =====================================================================
         org_name = department_name or section_name or 'N/A'
         
+        # Collect all ProblemReason values from actions for legacy_data
+        all_problem_reasons = [
+            a["problem_reason"] for a in actions 
+            if a["problem_reason"] and a["problem_reason"].strip()
+        ]
+        combined_problem_reason = "\n---\n".join(all_problem_reasons) if all_problem_reasons else None
+        
         return {
             # Core identifiers
             "legacy_case_id": legacy_case_id_val,
@@ -418,7 +445,21 @@ def get_legacy_case_by_id(legacy_case_id: int) -> dict:
             
             # Actions count for info
             "total_actions_count": len(actions),
-            "remaining_actions_count": len(remaining_actions)
+            "remaining_actions_count": len(remaining_actions),
+            
+            # ============ LEGACY DATA REFERENCE (for copy during migration) ============
+            # These fields are from the old schema and can be referenced by users
+            # when manually filling the migration form
+            "legacy_data": {
+                "source_department_id": source_department_id,
+                "source_department_name": source_department_name,
+                "source_building": source_building,
+                "case_building": building,
+                "doctor_id": request_doctor_id,  # From IncidentRequest (nvarchar(8))
+                "employee_id": request_employee_id,  # From IncidentRequest
+                "problem_reason": combined_problem_reason,  # Combined from all actions
+                "is_inpatient": bool(is_inpatient) if is_inpatient is not None else None
+            }
         }
         
     except Exception as e:

@@ -9,7 +9,7 @@ from typing import Dict, Any
 from datetime import date
 
 from core.database import get_connection
-from backend.api_v2.db_layer import season_db
+from api_v2.db_layer import season_db
 
 
 class SeasonNotFoundError(ValueError):
@@ -84,9 +84,15 @@ def resolve_season_date_range(season_id: int) -> Dict[str, Any]:
         conn.close()
 
 
-def get_all_seasons() -> list[Dict[str, Any]]:
+def get_all_seasons(auto_generate: bool = True) -> list[Dict[str, Any]]:
     """
     Get all seasons (for UI dropdowns).
+    
+    Auto-generates missing seasons for current and future years
+    to ensure the software works autonomously.
+    
+    Args:
+        auto_generate: If True, auto-create missing seasons first
     
     Returns:
         List of season dicts with basic info
@@ -94,7 +100,33 @@ def get_all_seasons() -> list[Dict[str, Any]]:
     conn = get_connection()
     
     try:
+        if auto_generate:
+            # Ensure seasons exist for current year + 2 years ahead
+            season_db.ensure_seasons_exist(conn, years_ahead=2)
+        
         return season_db.get_all_seasons(conn)
+    finally:
+        conn.close()
+
+
+def get_current_season() -> Dict[str, Any] | None:
+    """
+    Get the current season based on today's date.
+    
+    Uses date-range detection (start_date <= today <= end_date),
+    NOT the "first non-done" approach.
+    
+    Returns:
+        Season dict or None if no season covers today
+    """
+    conn = get_connection()
+    
+    try:
+        # First ensure seasons exist
+        season_db.ensure_seasons_exist(conn, years_ahead=2)
+        
+        # Then get current season by date
+        return season_db.get_current_season_by_date(conn)
     finally:
         conn.close()
 

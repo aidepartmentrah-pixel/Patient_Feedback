@@ -2,39 +2,22 @@
 Notification Configuration
 Settings for email notification system.
 
-This module controls email notification behavior.
-Change NOTIFICATION_MODE to "smtp" when ready to send real emails.
+⚠️ SMTP settings now from deployment_port.py ⚠️
+Email templates remain in this file.
 """
 
-# ============================================================
-# NOTIFICATION MODE
-# ============================================================
-# Options:
-#   "mock"  - Log notifications only (for development/testing)
-#   "smtp"  - Send real emails via SMTP
-#
-NOTIFICATION_MODE = "mock"
-
-
-# ============================================================
-# SENDER CONFIGURATION
-# ============================================================
-# The email address and display name used when sending notifications
-
-SENDER_EMAIL = "complaint-system@hospital.local"
-SENDER_NAME = "Hospital Complaint System"
-
-
-# ============================================================
-# SMTP SERVER CONFIGURATION
-# ============================================================
-# Only used when NOTIFICATION_MODE = "smtp"
-
-SMTP_HOST = "smtp.hospital.local"
-SMTP_PORT = 25
-SMTP_USE_TLS = False  # Set True if your server requires TLS
-SMTP_USERNAME = None  # None for unauthenticated relay
-SMTP_PASSWORD = None  # None for unauthenticated relay
+# Import SMTP settings from unified deployment port
+from .deployment_port import (
+    NOTIFICATION_MODE,
+    SMTP_HOST,
+    SMTP_PORT,
+    SMTP_USE_TLS,
+    SMTP_USE_SSL,
+    SMTP_USERNAME,
+    SMTP_PASSWORD,
+    SENDER_EMAIL,
+    SENDER_NAME,
+)
 
 
 # ============================================================

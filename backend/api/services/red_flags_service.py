@@ -2,14 +2,42 @@
 Red Flags Service
 Handles data retrieval and filtering for Red Flags (Critical Issues) page.
 Red flags are high-risk incidents requiring immediate attention and governance follow-up.
+
+SECURITY: All queries filter by user's allowed_unit_ids to enforce organizational scoping.
 """
 
-from typing import Dict, List, Optional, Any, Literal
+from typing import Dict, List, Optional, Any, Literal, Set
 from datetime import datetime, date
 import pyodbc
 from dateutil.relativedelta import relativedelta
 
 from core.database import get_connection
+
+
+# ==================== SCOPE FILTER HELPER ====================
+
+def _build_scope_condition(allowed_unit_ids: Optional[Set[int]], table_alias: str = "c") -> tuple[str, list]:
+    """
+    Build SQL WHERE condition for organizational scope filtering.
+    
+    Args:
+        allowed_unit_ids: Set of org unit IDs the user can access
+        table_alias: SQL table alias (default: "c" for APP_IncidentCase)
+    
+    Returns:
+        Tuple of (SQL condition string, parameter list)
+        Returns ("1=0", []) if no allowed units (blocks all access)
+    """
+    if not allowed_unit_ids:
+        # No allowed units = no access
+        return "1=0", []
+    
+    # Build IN clause for allowed units
+    placeholders = ",".join("?" * len(allowed_unit_ids))
+    condition = f"{table_alias}.IssuingOrgUnitID IN ({placeholders})"
+    params = list(allowed_unit_ids)
+    
+    return condition, params
 
 
 # ==================== MAIN ENDPOINTS ====================
@@ -26,12 +54,14 @@ def get_red_flags_list(
     sort_by: str = "date",
     sort_order: str = "desc",
     limit: int = 100,
-    offset: int = 0
+    offset: int = 0,
+    allowed_unit_ids: Optional[Set[int]] = None
 ) -> Dict[str, Any]:
     """
     Fetch list of red flag incidents with optional filtering.
     
     Red flags are critical incidents with ClinicalRiskTypeID = 2 (REDFLAG).
+    Results are scoped to user's allowed organizational units.
     
     Returns:
         Dictionary with red_flags array, total count, and pagination info.
@@ -40,6 +70,11 @@ def get_red_flags_list(
     # Build WHERE clause
     where_conditions = ["c.ClinicalRiskTypeID = 2"]  # Red flags only
     params = []
+    
+    # SECURITY: Apply organizational scope filter
+    scope_condition, scope_params = _build_scope_condition(allowed_unit_ids)
+    where_conditions.append(scope_condition)
+    params.extend(scope_params)
     
     # Free-text search
     if search:
@@ -231,17 +266,24 @@ def get_red_flags_list(
 
 def get_red_flags_statistics(
     from_date: Optional[str] = None,
-    to_date: Optional[str] = None
+    to_date: Optional[str] = None,
+    allowed_unit_ids: Optional[Set[int]] = None
 ) -> Dict[str, Any]:
     """
     Fetch summary statistics for Red Flags KPI cards.
     
     Returns counts, breakdowns by status/category/severity, and Never Event overlap.
+    Results are scoped to user's allowed organizational units.
     """
     
     # Build date filter
     date_conditions = ["c.ClinicalRiskTypeID = 2"]  # Red flags only
     params = []
+    
+    # SECURITY: Apply organizational scope filter
+    scope_condition, scope_params = _build_scope_condition(allowed_unit_ids)
+    date_conditions.append(scope_condition)
+    params.extend(scope_params)
     
     if from_date:
         date_conditions.append("c.FeedbackRecievedDate >= ?")
@@ -252,6 +294,9 @@ def get_red_flags_statistics(
         params.append(to_date)
     
     date_filter = " AND ".join(date_conditions)
+    
+    # Build scope condition for the never events query (separate from date_filter)
+    never_event_scope_condition, never_event_scope_params = _build_scope_condition(allowed_unit_ids)
     
     query = f"""
         -- Total and status counts
@@ -301,18 +346,19 @@ def get_red_flags_statistics(
         AND YEAR(c.FeedbackRecievedDate) = YEAR(DATEADD(MONTH, -1, GETDATE()))
         AND MONTH(c.FeedbackRecievedDate) = MONTH(DATEADD(MONTH, -1, GETDATE()));
         
-        -- Never Events total
+        -- Never Events total (scoped to user's allowed units)
         SELECT COUNT(*) as total_never_events
-        FROM dbo.APP_IncidentCase
-        WHERE ClinicalRiskTypeID = 3;
+        FROM dbo.APP_IncidentCase c
+        WHERE c.ClinicalRiskTypeID = 3 AND {never_event_scope_condition};
     """
     
     conn = get_connection()
     cursor = conn.cursor()
     
     try:
-        # Execute multi-result query
-        cursor.execute(query, params * 6)
+        # Execute multi-result query (params repeated 5 times for first 5 subqueries, plus scope params for never events)
+        all_params = params * 5 + never_event_scope_params
+        cursor.execute(query, all_params)
         
         # Result 1: Totals and status
         totals_row = cursor.fetchone()
@@ -410,7 +456,8 @@ def get_red_flags_trends(
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
     granularity: str = "monthly",
-    group_by: str = "none"
+    group_by: str = "none",
+    allowed_unit_ids: Optional[Set[int]] = None
 ) -> Dict[str, Any]:
     """
     Fetch time-series trend data for Red Flags.
@@ -420,9 +467,11 @@ def get_red_flags_trends(
         to_date: End date for trend
         granularity: 'monthly', 'quarterly', 'weekly'
         group_by: 'category', 'severity', 'department', 'none'
+        allowed_unit_ids: Set of org unit IDs the user can access
     
     Returns:
         Time-series data for trend chart visualization.
+        Results are scoped to user's allowed organizational units.
     """
     
     # Default date range: last 12 months
@@ -430,6 +479,9 @@ def get_red_flags_trends(
         to_date = datetime.now().strftime("%Y-%m-%d")
     if not from_date:
         from_date = (datetime.now() - relativedelta(months=12)).strftime("%Y-%m-%d")
+    
+    # SECURITY: Build scope condition
+    scope_condition, scope_params = _build_scope_condition(allowed_unit_ids)
     
     # Build date selection and grouping based on granularity
     if granularity == "monthly":
@@ -463,12 +515,13 @@ def get_red_flags_trends(
                 FROM dbo.APP_IncidentCase c
                 LEFT JOIN APP_LOOKUP_SEVERITY severity ON c.SeverityID = severity.SeverityID
                 WHERE c.ClinicalRiskTypeID = 2
+                AND {scope_condition}
                 AND c.FeedbackRecievedDate >= ?
                 AND c.FeedbackRecievedDate <= ?
                 GROUP BY {date_group}
                 ORDER BY {date_order}
             """
-            cursor.execute(query, [from_date, to_date])
+            cursor.execute(query, scope_params + [from_date, to_date])
             rows = cursor.fetchall()
             
             for row in rows:
@@ -505,12 +558,13 @@ def get_red_flags_trends(
                 FROM dbo.APP_IncidentCase c
                 LEFT JOIN APP_LOOKUP_DOMAIN domain ON c.DomainID = domain.DomainID
                 WHERE c.ClinicalRiskTypeID = 2
+                AND {scope_condition}
                 AND c.FeedbackRecievedDate >= ?
                 AND c.FeedbackRecievedDate <= ?
                 GROUP BY {date_group}, domain.DomainName
                 ORDER BY {date_order}, domain.DomainName
             """
-            cursor.execute(query, [from_date, to_date])
+            cursor.execute(query, scope_params + [from_date, to_date])
             rows = cursor.fetchall()
             
             for row in rows:
@@ -544,12 +598,13 @@ def get_red_flags_trends(
                 FROM dbo.APP_IncidentCase c
                 LEFT JOIN APP_LOOKUP_SEVERITY severity ON c.SeverityID = severity.SeverityID
                 WHERE c.ClinicalRiskTypeID = 2
+                AND {scope_condition}
                 AND c.FeedbackRecievedDate >= ?
                 AND c.FeedbackRecievedDate <= ?
                 GROUP BY {date_group}, severity.SeverityName
                 ORDER BY {date_order}, severity.SeverityName
             """
-            cursor.execute(query, [from_date, to_date])
+            cursor.execute(query, scope_params + [from_date, to_date])
             rows = cursor.fetchall()
             
             for row in rows:
@@ -583,12 +638,13 @@ def get_red_flags_trends(
                 FROM dbo.APP_IncidentCase c
                 LEFT JOIN AdminsrationUnit org_unit ON c.IssuingOrgUnitID = org_unit.UniqueID
                 WHERE c.ClinicalRiskTypeID = 2
+                AND {scope_condition}
                 AND c.FeedbackRecievedDate >= ?
                 AND c.FeedbackRecievedDate <= ?
                 GROUP BY {date_group}, org_unit.Name
                 ORDER BY {date_order}, org_unit.Name
             """
-            cursor.execute(query, [from_date, to_date])
+            cursor.execute(query, scope_params + [from_date, to_date])
             rows = cursor.fetchall()
             
             for row in rows:
@@ -623,14 +679,21 @@ def get_red_flags_trends(
         conn.close()
 
 
-def get_red_flag_details(red_flag_id: int) -> Dict[str, Any]:
+def get_red_flag_details(
+    red_flag_id: int,
+    allowed_unit_ids: Optional[Set[int]] = None
+) -> Dict[str, Any]:
     """
     Fetch comprehensive details for a single red flag.
     
     Includes red flag data, incident details, timeline, and related actions.
+    Returns None if red flag not found OR not in user's allowed scope.
     """
     
-    query = """
+    # SECURITY: Build scope condition
+    scope_condition, scope_params = _build_scope_condition(allowed_unit_ids)
+    
+    query = f"""
         SELECT 
             c.IncidentRequestCaseID as id,
             CONCAT('RF-', YEAR(c.FeedbackRecievedDate), '-', 
@@ -665,13 +728,14 @@ def get_red_flag_details(red_flag_id: int) -> Dict[str, Any]:
         
         WHERE c.IncidentRequestCaseID = ?
         AND c.ClinicalRiskTypeID = 2
+        AND {scope_condition}
     """
     
     conn = get_connection()
     cursor = conn.cursor()
     
     try:
-        cursor.execute(query, [red_flag_id])
+        cursor.execute(query, [red_flag_id] + scope_params)
         row = cursor.fetchone()
         
         if not row:
@@ -723,7 +787,8 @@ def get_red_flag_details(red_flag_id: int) -> Dict[str, Any]:
 
 def get_red_flags_category_breakdown(
     from_date: Optional[str] = None,
-    to_date: Optional[str] = None
+    to_date: Optional[str] = None,
+    allowed_unit_ids: Optional[Set[int]] = None
 ) -> Dict[str, Any]:
     """
     Fetch category breakdown for red flags analytics cards.
@@ -731,18 +796,23 @@ def get_red_flags_category_breakdown(
     Args:
         from_date: Filter from date (optional)
         to_date: Filter to date (optional)
+        allowed_unit_ids: Set of org unit IDs the user can access
     
     Returns:
-        Dictionary with category breakdown including counts and percentages
+        Dictionary with category breakdown including counts and percentages.
+        Results are scoped to user's allowed organizational units.
     """
     
     conn = get_connection()
     cursor = conn.cursor()
     
     try:
+        # SECURITY: Build scope condition
+        scope_condition, scope_params = _build_scope_condition(allowed_unit_ids)
+        
         # Build date filter
-        date_filter = "c.ClinicalRiskTypeID = 2"
-        params = []
+        date_filter = f"c.ClinicalRiskTypeID = 2 AND {scope_condition}"
+        params = list(scope_params)
         
         if from_date:
             date_filter += " AND c.FeedbackRecievedDate >= ?"
@@ -800,7 +870,8 @@ def get_red_flags_category_breakdown(
 def get_red_flags_department_breakdown(
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
-    limit: int = 10
+    limit: int = 10,
+    allowed_unit_ids: Optional[Set[int]] = None
 ) -> Dict[str, Any]:
     """
     Fetch department breakdown for red flags analytics cards.
@@ -809,18 +880,23 @@ def get_red_flags_department_breakdown(
         from_date: Filter from date (optional)
         to_date: Filter to date (optional)
         limit: Max number of departments to return (default: 10)
+        allowed_unit_ids: Set of org unit IDs the user can access
     
     Returns:
-        Dictionary with department breakdown including counts and percentages
+        Dictionary with department breakdown including counts and percentages.
+        Results are scoped to user's allowed organizational units.
     """
     
     conn = get_connection()
     cursor = conn.cursor()
     
     try:
+        # SECURITY: Build scope condition
+        scope_condition, scope_params = _build_scope_condition(allowed_unit_ids)
+        
         # Build date filter
-        date_filter = "c.ClinicalRiskTypeID = 2"
-        params = []
+        date_filter = f"c.ClinicalRiskTypeID = 2 AND {scope_condition}"
+        params = list(scope_params)
         
         if from_date:
             date_filter += " AND c.FeedbackRecievedDate >= ?"

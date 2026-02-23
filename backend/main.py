@@ -70,6 +70,8 @@ from api.routers.settings_users_router import router as settings_users_router
 from api.routers.migration_router import router as migration_router
 # Organization Unit Router (specialized organization unit selection endpoints)
 from api.routers.org_unit_router import router as org_unit_router
+# Hardware Configuration Router (deployment settings - SOFTWARE_ADMIN only)
+from api.routers.hardware_config_router import router as hardware_config_router
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -182,6 +184,8 @@ app.include_router(settings_users_router)
 app.include_router(migration_router)
 # Organization Unit Router (specialized organization unit selection endpoints)
 app.include_router(org_unit_router)
+# Hardware Configuration Router (deployment settings - SOFTWARE_ADMIN only)
+app.include_router(hardware_config_router)
 
 @app.get("/")
 def health_check():

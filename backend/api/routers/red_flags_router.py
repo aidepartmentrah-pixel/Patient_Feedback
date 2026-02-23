@@ -2,10 +2,13 @@
 Red Flags Router
 API endpoints for Red Flags (Critical Issues) page.
 Red flags are high-risk incidents requiring immediate attention and governance follow-up.
+
+SECURITY: All endpoints are protected by user authentication and organizational scoping.
+Only red flags from the user's allowed organizational units are returned.
 """
 
-from fastapi import APIRouter, Query, HTTPException
-from typing import Optional
+from fastapi import APIRouter, Query, HTTPException, Depends
+from typing import Optional, Set
 
 from ..services.red_flags_service import (
     get_red_flags_list,
@@ -15,6 +18,8 @@ from ..services.red_flags_service import (
     get_red_flags_category_breakdown,
     get_red_flags_department_breakdown
 )
+from ..dependencies.user_context import get_current_user
+from ..schemas.auth_models import CurrentUser
 
 
 router = APIRouter(prefix="/api/red-flags", tags=["Red Flags"])
@@ -24,6 +29,7 @@ router = APIRouter(prefix="/api/red-flags", tags=["Red Flags"])
 
 @router.get("")
 async def get_red_flags(
+    current_user: CurrentUser = Depends(get_current_user),
     search: Optional[str] = Query(None, description="Search by record ID or patient name"),
     status: Optional[str] = Query(None, description="Filter by status: OPEN, UNDER_REVIEW, FINISHED, all"),
     from_date: Optional[str] = Query(None, description="Filter from date (YYYY-MM-DD)"),
@@ -68,6 +74,9 @@ async def get_red_flags(
     """
     
     try:
+        # Get user's allowed organizational units for scoping
+        allowed_unit_ids = getattr(current_user, 'allowed_unit_ids', None) or set()
+        
         result = get_red_flags_list(
             search=search,
             status=status,
@@ -80,7 +89,8 @@ async def get_red_flags(
             sort_by=sort_by,
             sort_order=sort_order,
             limit=limit,
-            offset=offset
+            offset=offset,
+            allowed_unit_ids=allowed_unit_ids
         )
         
         return result
@@ -98,6 +108,7 @@ async def get_red_flags(
 
 @router.get("/statistics")
 async def get_statistics(
+    current_user: CurrentUser = Depends(get_current_user),
     from_date: Optional[str] = Query(None, description="Statistics from date (YYYY-MM-DD)"),
     to_date: Optional[str] = Query(None, description="Statistics to date (YYYY-MM-DD)")
 ):
@@ -133,9 +144,13 @@ async def get_statistics(
     """
     
     try:
+        # Get user's allowed organizational units for scoping
+        allowed_unit_ids = getattr(current_user, 'allowed_unit_ids', None) or set()
+        
         result = get_red_flags_statistics(
             from_date=from_date,
-            to_date=to_date
+            to_date=to_date,
+            allowed_unit_ids=allowed_unit_ids
         )
         
         return result
@@ -153,6 +168,7 @@ async def get_statistics(
 
 @router.get("/trends")
 async def get_trends(
+    current_user: CurrentUser = Depends(get_current_user),
     from_date: Optional[str] = Query(None, description="Trend from date (default: last 12 months)"),
     to_date: Optional[str] = Query(None, description="Trend to date (default: today)"),
     granularity: str = Query("monthly", description="monthly, quarterly, or weekly"),
@@ -185,11 +201,15 @@ async def get_trends(
     """
     
     try:
+        # Get user's allowed organizational units for scoping
+        allowed_unit_ids = getattr(current_user, 'allowed_unit_ids', None) or set()
+        
         result = get_red_flags_trends(
             from_date=from_date,
             to_date=to_date,
             granularity=granularity,
-            group_by=group_by
+            group_by=group_by,
+            allowed_unit_ids=allowed_unit_ids
         )
         
         return result
@@ -209,6 +229,7 @@ async def get_trends(
 
 @router.get("/category-breakdown")
 async def get_category_breakdown(
+    current_user: CurrentUser = Depends(get_current_user),
     from_date: Optional[str] = Query(None, description="Filter from date (YYYY-MM-DD)"),
     to_date: Optional[str] = Query(None, description="Filter to date (YYYY-MM-DD)")
 ):
@@ -242,9 +263,13 @@ async def get_category_breakdown(
     """
     
     try:
+        # Get user's allowed organizational units for scoping
+        allowed_unit_ids = getattr(current_user, 'allowed_unit_ids', None) or set()
+        
         result = get_red_flags_category_breakdown(
             from_date=from_date,
-            to_date=to_date
+            to_date=to_date,
+            allowed_unit_ids=allowed_unit_ids
         )
         
         return result
@@ -262,6 +287,7 @@ async def get_category_breakdown(
 
 @router.get("/department-breakdown")
 async def get_department_breakdown(
+    current_user: CurrentUser = Depends(get_current_user),
     from_date: Optional[str] = Query(None, description="Filter from date (YYYY-MM-DD)"),
     to_date: Optional[str] = Query(None, description="Filter to date (YYYY-MM-DD)"),
     limit: int = Query(10, ge=1, le=50, description="Max departments to return")
@@ -297,10 +323,14 @@ async def get_department_breakdown(
     """
     
     try:
+        # Get user's allowed organizational units for scoping
+        allowed_unit_ids = getattr(current_user, 'allowed_unit_ids', None) or set()
+        
         result = get_red_flags_department_breakdown(
             from_date=from_date,
             to_date=to_date,
-            limit=limit
+            limit=limit,
+            allowed_unit_ids=allowed_unit_ids
         )
         
         return result
@@ -317,7 +347,10 @@ async def get_department_breakdown(
 
 
 @router.get("/{red_flag_id}")
-async def get_single_red_flag(red_flag_id: int):
+async def get_single_red_flag(
+    red_flag_id: int,
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """
     Fetch comprehensive details for a specific red flag (for modal view).
     
@@ -341,7 +374,10 @@ async def get_single_red_flag(red_flag_id: int):
     """
     
     try:
-        result = get_red_flag_details(red_flag_id)
+        # Get user's allowed organizational units for scoping
+        allowed_unit_ids = getattr(current_user, 'allowed_unit_ids', None) or set()
+        
+        result = get_red_flag_details(red_flag_id, allowed_unit_ids=allowed_unit_ids)
         
         if result is None:
             raise HTTPException(
@@ -369,7 +405,10 @@ async def get_single_red_flag(red_flag_id: int):
 
 
 @router.post("/{red_flag_id}/export-pdf")
-async def export_red_flag_pdf(red_flag_id: int):
+async def export_red_flag_pdf(
+    red_flag_id: int,
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """
     Generate PDF report for a specific red flag (for governance documentation).
     
@@ -400,7 +439,9 @@ async def export_red_flag_pdf(red_flag_id: int):
 
 
 @router.post("/export-batch")
-async def export_batch_red_flags():
+async def export_batch_red_flags(
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """
     Export multiple red flags based on filters (for reporting/auditing).
     

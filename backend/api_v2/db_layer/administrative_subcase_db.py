@@ -1040,6 +1040,11 @@ def get_subcases_with_details_for_section() -> List[Dict[str, Any]]:
                 sev.SeverityName,
                 cat.CategoryName,
                 
+                -- Clinical Risk Type (for Red Flag / Never Event badges)
+                ic.ClinicalRiskTypeID,
+                CASE WHEN ic.ClinicalRiskTypeID = 2 THEN 1 ELSE 0 END AS IsRedFlag,
+                CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
+                
                 -- Seasonal Report Info (for SEASONAL_REPORT_RESPONSE)
                 sr.SeasonalReportID,
                 s.SeasonName
@@ -1084,6 +1089,8 @@ def get_subcases_with_details_for_section() -> List[Dict[str, Any]]:
                 "severity_id": row.SeverityID,
                 "severity": row.SeverityName,
                 "category": row.CategoryName,
+                "is_red_flag": bool(row.IsRedFlag),
+                "is_never_event": bool(row.IsNeverEvent),
                 "seasonal_report_id": row.SeasonalReportID,
                 "season_name": row.SeasonName
             })
@@ -1127,6 +1134,11 @@ def get_subcases_with_details_for_department() -> List[Dict[str, Any]]:
                 ic.SeverityID,
                 sev.SeverityName,
                 cat.CategoryName,
+                
+                -- Clinical Risk Type (for Red Flag / Never Event badges)
+                ic.ClinicalRiskTypeID,
+                CASE WHEN ic.ClinicalRiskTypeID = 2 THEN 1 ELSE 0 END AS IsRedFlag,
+                CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
                 
                 -- Seasonal Report Info (for SEASONAL_REPORT_RESPONSE)
                 sr.SeasonalReportID,
@@ -1172,6 +1184,8 @@ def get_subcases_with_details_for_department() -> List[Dict[str, Any]]:
                 "severity_id": row.SeverityID,
                 "severity": row.SeverityName,
                 "category": row.CategoryName,
+                "is_red_flag": bool(row.IsRedFlag),
+                "is_never_event": bool(row.IsNeverEvent),
                 "seasonal_report_id": row.SeasonalReportID,
                 "season_name": row.SeasonName
             })
@@ -1214,6 +1228,11 @@ def get_subcases_with_details_for_administration() -> List[Dict[str, Any]]:
                 ic.SeverityID,
                 sev.SeverityName,
                 cat.CategoryName,
+                
+                -- Clinical Risk Type (for Red Flag / Never Event badges)
+                ic.ClinicalRiskTypeID,
+                CASE WHEN ic.ClinicalRiskTypeID = 2 THEN 1 ELSE 0 END AS IsRedFlag,
+                CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
                 
                 -- Seasonal Report Info (for SEASONAL_REPORT_RESPONSE)
                 sr.SeasonalReportID,
@@ -1259,6 +1278,8 @@ def get_subcases_with_details_for_administration() -> List[Dict[str, Any]]:
                 "severity_id": row.SeverityID,
                 "severity": row.SeverityName,
                 "category": row.CategoryName,
+                "is_red_flag": bool(row.IsRedFlag),
+                "is_never_event": bool(row.IsNeverEvent),
                 "seasonal_report_id": row.SeasonalReportID,
                 "season_name": row.SeasonName
             })

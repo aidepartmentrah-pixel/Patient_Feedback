@@ -115,20 +115,24 @@ def search_doctors(
 # GET RESERVE DOCTORS ONLY
 # =============================================
 
-def get_reserve_doctors(limit: int = 100) -> List[Dict[str, Any]]:
+def get_reserve_doctors(limit: int = 100, include_inactive: bool = False) -> List[Dict[str, Any]]:
     """
     Get all doctors from the reserve table only.
     
     Returns only user-created doctors (not from hospital system).
+    By default, only returns active doctors.
     
     Args:
         limit: Max results
+        include_inactive: If False (default), only returns active doctors
     
     Returns:
         List of reserve doctor records
     """
     conn = get_connection()
     cursor = conn.cursor()
+    
+    where_clause = "" if include_inactive else "WHERE r.IsActive = 1"
     
     query_sql = f"""
         SELECT TOP {limit}
@@ -141,6 +145,7 @@ def get_reserve_doctors(limit: int = 100) -> List[Dict[str, Any]]:
             r.SourceSystem as source_system,
             r.LastSyncedAt as last_synced_at
         FROM dbo.APP_RESERVE_DOCTOR r
+        {where_clause}
         ORDER BY r.LastSyncedAt DESC, r.DoctorName ASC
     """
     
@@ -897,6 +902,152 @@ def create_doctor(
     except Exception as e:
         conn.rollback()
         raise Exception(f"Failed to create doctor: {str(e)}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# =============================================
+# DELETE DOCTOR (RESERVE TABLE)
+# =============================================
+
+def count_incidents_by_doctor(doctor_id: int) -> int:
+    """
+    Count the number of incidents associated with a doctor.
+    
+    Checks the APP_IncidentCaseDoctor table for linked incidents.
+    
+    Args:
+        doctor_id: The doctor's ID to check
+        
+    Returns:
+        Count of incidents linked to this doctor
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM dbo.APP_IncidentCaseDoctor 
+            WHERE DoctorID = ?
+        """, (doctor_id,))
+        
+        count = cursor.fetchone()[0]
+        return count
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_reserve_doctor_by_id(doctor_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Get a reserve doctor by ID.
+    
+    Args:
+        doctor_id: The doctor's ID
+        
+    Returns:
+        Dict with doctor data or None if not found
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            SELECT 
+                DoctorID,
+                DoctorName,
+                Specialty,
+                IsActive,
+                SourceSystem,
+                LastSyncedAt
+            FROM dbo.APP_RESERVE_DOCTOR
+            WHERE DoctorID = ?
+        """, (doctor_id,))
+        
+        row = cursor.fetchone()
+        
+        if row:
+            return {
+                'id': row.DoctorID,
+                'name_en': row.DoctorName,
+                'name_ar': row.DoctorName,
+                'specialty': row.Specialty if row.Specialty else '',
+                'is_active': bool(row.IsActive),
+                'source_system': row.SourceSystem if row.SourceSystem else '',
+                'last_synced_at': row.LastSyncedAt.strftime('%Y-%m-%d %H:%M:%S') if row.LastSyncedAt else ''
+            }
+        return None
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def deactivate_reserve_doctor(doctor_id: int) -> bool:
+    """
+    Soft-delete a reserve doctor by setting IsActive = 0.
+    
+    Args:
+        doctor_id: The doctor's ID to deactivate
+        
+    Returns:
+        True if successful, False if doctor not found
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            UPDATE dbo.APP_RESERVE_DOCTOR
+            SET IsActive = 0, LastSyncedAt = GETDATE()
+            WHERE DoctorID = ?
+        """, (doctor_id,))
+        
+        rows_affected = cursor.rowcount
+        conn.commit()
+        
+        return rows_affected > 0
+        
+    except Exception as e:
+        conn.rollback()
+        raise Exception(f"Failed to deactivate doctor: {str(e)}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def hard_delete_reserve_doctor(doctor_id: int) -> bool:
+    """
+    Permanently delete a reserve doctor from the table.
+    
+    Only call this if the doctor has no associated incidents.
+    
+    Args:
+        doctor_id: The doctor's ID to delete
+        
+    Returns:
+        True if successful, False if doctor not found
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            DELETE FROM dbo.APP_RESERVE_DOCTOR
+            WHERE DoctorID = ?
+        """, (doctor_id,))
+        
+        rows_affected = cursor.rowcount
+        conn.commit()
+        
+        return rows_affected > 0
+        
+    except Exception as e:
+        conn.rollback()
+        raise Exception(f"Failed to delete doctor: {str(e)}")
     finally:
         cursor.close()
         conn.close()

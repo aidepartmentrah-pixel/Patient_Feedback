@@ -19,6 +19,7 @@ import pyodbc
 from dateutil.relativedelta import relativedelta
 from io import BytesIO
 from core.database import get_connection
+from core.table_config import HR_EMPLOYEES_TABLE, DOCTORS_TABLE
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 
@@ -704,13 +705,14 @@ def get_complaint_by_id(complaint_id: int) -> Optional[Dict[str, Any]]:
         complaint['target_departments'] = target_departments
         
         # Fetch linked employees (supervisors/workers)
-        employee_query = """
+        employee_query = f"""
             SELECT 
                 e.EmployeeID as employee_id,
-                e.FullName as full_name,
-                e.JobTitle as job_title,
+                hr.FullName as full_name,
+                hr.JobTitle as job_title,
                 e.IsPrimary as is_primary
             FROM dbo.APP_IncidentCaseEmployee e
+            LEFT JOIN {HR_EMPLOYEES_TABLE} hr ON e.EmployeeID = hr.EmployeeID
             WHERE e.IncidentRequestCaseID = ?
             ORDER BY e.IsPrimary DESC, e.EmployeeID
         """
@@ -728,13 +730,15 @@ def get_complaint_by_id(complaint_id: int) -> Optional[Dict[str, Any]]:
         
         complaint['employees'] = employees
         
-        # Fetch linked doctors
-        doctor_query = """
+        # Fetch linked doctors (check both hospital view and reserve table)
+        doctor_query = f"""
             SELECT 
                 d.DoctorID as doctor_id,
-                d.DoctorName as doctor_name,
+                COALESCE(doc.Name, reserve.DoctorName) as doctor_name,
                 d.IsPrimary as is_primary
             FROM dbo.APP_IncidentCaseDoctor d
+            LEFT JOIN {DOCTORS_TABLE} doc ON d.DoctorID = doc.DoctorID
+            LEFT JOIN dbo.APP_RESERVE_DOCTOR reserve ON d.DoctorID = reserve.DoctorID
             WHERE d.IncidentRequestCaseID = ?
             ORDER BY d.IsPrimary DESC, d.DoctorID
         """
