@@ -16,6 +16,8 @@
 ╚═══════════════════════════════════════════════════════════════════════════════╝
 """
 
+import os
+
 # =============================================================================
 # DEPLOYMENT MODE
 # =============================================================================
@@ -28,31 +30,34 @@ DEPLOYMENT_MODE = "offline"
 # =============================================================================
 # 1. DATABASE CONNECTION SETTINGS
 # =============================================================================
+# Environment variables override defaults (for deployment flexibility)
 
 # Database server hostname or IP address
 # Offline:  "SOCIALMEDIA" or "localhost" or ".\SQLEXPRESS"
 # Online:   Hospital SQL Server IP (e.g., "192.168.1.100" or "HOSPITAL-DB")
-DB_SERVER = "SOCIALMEDIA"
+# VM Deployment: External SQL Server IP
+DB_SERVER = os.environ.get("DB_SERVER", "170.70.32.36")
 
 # Database name
 # Offline:  "IncidentManager"
 # Online:   "IncidentManager" or hospital-specified name
-DB_DATABASE = "IncidentManager"
+DB_DATABASE = os.environ.get("DB_DATABASE", "IncidentManager")
 
 # ODBC Driver (usually no need to change)
-DB_DRIVER = "ODBC Driver 17 for SQL Server"
+DB_DRIVER = os.environ.get("DB_DRIVER", "ODBC Driver 18 for SQL Server")
 
 # Authentication method
 # True:  Windows domain authentication (Trusted_Connection=yes) - common in hospitals
 # False: SQL Server authentication (requires DB_USERNAME and DB_PASSWORD)
-USE_WINDOWS_AUTH = True
+USE_WINDOWS_AUTH = os.environ.get("USE_WINDOWS_AUTH", "False").lower() in ("true", "1", "yes")
 
 # SQL Server credentials (only used if USE_WINDOWS_AUTH = False)
-DB_USERNAME = None
-DB_PASSWORD = None
+# For VM deployment connecting to external SQL Server
+DB_USERNAME = os.environ.get("DB_USERNAME", "SOCIALMEDIA\\IT")
+DB_PASSWORD = os.environ.get("DB_PASSWORD", "")  # Empty password
 
 # Trust server certificate (required for self-signed certificates)
-TRUST_SERVER_CERTIFICATE = True
+TRUST_SERVER_CERTIFICATE = os.environ.get("TRUST_SERVER_CERTIFICATE", "True").lower() in ("true", "1", "yes")
 
 
 # =============================================================================

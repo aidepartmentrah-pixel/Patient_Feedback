@@ -14,4 +14,6 @@ from .deployment_port import (
     DB_DRIVER,
     USE_WINDOWS_AUTH,
     TRUST_SERVER_CERTIFICATE,
+    DB_USERNAME,
+    DB_PASSWORD,
 )
