@@ -596,7 +596,7 @@ async def get_worker_full_history(
 )
 async def export_worker_history(
     employee_id: int = Path(..., ge=1, description="Employee ID"),
-    format: str = Query("json", regex="^(csv|json|word)$", description="Export format: csv, json, or word"),
+    format: str = Query("json", pattern="^(csv|json|word)$", description="Export format: csv, json, or word"),
     date_from: Optional[date] = Query(None, description="Start date filter"),
     date_to: Optional[date] = Query(None, description="End date filter"),
     include_profile: bool = Query(True, description="Include worker profile in export"),

@@ -4,8 +4,9 @@
 ║═══════════════════════════════════════════════════════════════════════════════║
 ║  ⚠️  SINGLE POINT OF CONFIGURATION FOR OFFLINE/ONLINE DEPLOYMENT  ⚠️          ║
 ║                                                                                 ║
-║  This is the UNIFIED configuration file for deploying the system.              ║
-║  Modify ONLY this file when switching between offline and online modes.        ║
+║  Configuration is loaded from config/db_settings.json via config_loader.py.    ║
+║  Environment variables still override JSON values.                              ║
+║  Edit the JSON via the /config page (password protected) or manually.          ║
 ║                                                                                 ║
 ║  Contains:                                                                      ║
 ║    1. Database Connection Settings (Server, Database, Authentication)          ║
@@ -17,129 +18,67 @@
 """
 
 import os
+from .config_loader import get_config
+
+# Load configuration from JSON + env overrides
+_cfg = get_config()
+_db = _cfg.get("database", {})
+_net = _cfg.get("network", {})
+_views = _cfg.get("views", {})
+_email = _cfg.get("email", {})
 
 # =============================================================================
 # DEPLOYMENT MODE
 # =============================================================================
-# "offline"  - Local development with local database and mock tables
-# "online"   - Production with hospital network and real views
-
-DEPLOYMENT_MODE = "offline"
+DEPLOYMENT_MODE = _cfg.get("deployment_mode", "offline")
 
 
 # =============================================================================
 # 1. DATABASE CONNECTION SETTINGS
 # =============================================================================
-# Environment variables override defaults (for deployment flexibility)
-
-# Database server hostname or IP address
-# Offline:  "SOCIALMEDIA" or "localhost" or ".\SQLEXPRESS"
-# Online:   Hospital SQL Server IP (e.g., "192.168.1.100" or "HOSPITAL-DB")
-# VM Deployment: External SQL Server IP
-DB_SERVER = os.environ.get("DB_SERVER", "170.70.32.36")
-
-# Database name
-# Offline:  "IncidentManager"
-# Online:   "IncidentManager" or hospital-specified name
-DB_DATABASE = os.environ.get("DB_DATABASE", "IncidentManager")
-
-# ODBC Driver (usually no need to change)
-DB_DRIVER = os.environ.get("DB_DRIVER", "ODBC Driver 18 for SQL Server")
-
-# Authentication method
-# True:  Windows domain authentication (Trusted_Connection=yes) - common in hospitals
-# False: SQL Server authentication (requires DB_USERNAME and DB_PASSWORD)
-USE_WINDOWS_AUTH = os.environ.get("USE_WINDOWS_AUTH", "False").lower() in ("true", "1", "yes")
-
-# SQL Server credentials (only used if USE_WINDOWS_AUTH = False)
-# For VM deployment connecting to external SQL Server
-DB_USERNAME = os.environ.get("DB_USERNAME", "SOCIALMEDIA\\IT")
-DB_PASSWORD = os.environ.get("DB_PASSWORD", "")  # Empty password
-
-# Trust server certificate (required for self-signed certificates)
-TRUST_SERVER_CERTIFICATE = os.environ.get("TRUST_SERVER_CERTIFICATE", "True").lower() in ("true", "1", "yes")
+DB_SERVER = _db.get("server", "localhost")
+DB_DATABASE = _db.get("database", "IncidentManager")
+DB_DRIVER = _db.get("driver", "ODBC Driver 17 for SQL Server")
+USE_WINDOWS_AUTH = _db.get("use_windows_auth", True)
+DB_USERNAME = _db.get("username", "")
+DB_PASSWORD = _db.get("password", "")
+TRUST_SERVER_CERTIFICATE = _db.get("trust_server_certificate", True)
 
 
 # =============================================================================
 # 2. EXTERNAL SYSTEM VIEW/TABLE NAMES
 # =============================================================================
-# These are the external hospital system views (HIS, HR).
-# The system checks for both VIEWS and TABLES with these names.
-# 
-# Offline (development): Using local tables with production-matching names
-# Online (production):   Using real hospital database views
-
-# HR Employee System - Employee profiles from HR department
-# Offline: "VW_HrEmployeeProfileView" (local table matching production name)
-# Online:  "VW_HrEmployeeProfileView" (real HR view)
-HR_EMPLOYEES_VIEW = "VW_HrEmployeeProfileView"
-
-# Patient Admission System (HIS) - Patient records
-# Offline: "VW_PatientAdmission" (local table matching production name)
-# Online:  "dbo.VW_PatientAdmission" (real HIS view)
-PATIENT_ADMISSION_VIEW = "VW_PatientAdmission"
-
-# Doctor Registry (HIS) - Doctor information
-# Offline: "VW_Doctors" (local table matching production name)
-# Online:  "dbo.VW_Doctors" (real HIS view)
-DOCTORS_VIEW = "VW_Doctors"
+HR_EMPLOYEES_VIEW = _views.get("hr_employees", "VW_HrEmployeeProfileView")
+PATIENT_ADMISSION_VIEW = _views.get("patient_admission", "VW_PatientAdmission")
+DOCTORS_VIEW = _views.get("doctors", "VW_Doctors")
 
 
 # =============================================================================
 # 3. NETWORK & API SETTINGS
 # =============================================================================
-
-# Backend API URL (used by frontend to connect)
-# Offline:  "http://localhost:8000"
-# Online:   "http://<server-ip>:8000" or custom URL
-BACKEND_API_URL = "http://localhost:8000"
-
-# Backend API Port
-BACKEND_PORT = 8000
-
-# Backend Host (0.0.0.0 allows external connections)
-# Offline:  "127.0.0.1" (localhost only)
-# Online:   "0.0.0.0" (accept connections from network)
-BACKEND_HOST = "127.0.0.1"
-
-# CORS Origins (frontend URLs allowed to access API)
-# Offline:  ["http://localhost:3000", "http://localhost:5173"]
-# Online:   Add production frontend URLs
-CORS_ORIGINS = [
+BACKEND_API_URL = _net.get("backend_api_url", "http://localhost:8000")
+BACKEND_PORT = _net.get("backend_port", 8000)
+BACKEND_HOST = _net.get("backend_host", "127.0.0.1")
+CORS_ORIGINS = _net.get("cors_origins", [
     "http://localhost:3000",
     "http://localhost:5173",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5173",
-]
+])
 
 
 # =============================================================================
 # 4. SMTP EMAIL SERVER SETTINGS (Outlook / Exchange)
 # =============================================================================
-
-# Email notification mode
-# "mock": Log emails only (development)
-# "smtp": Send real emails
-NOTIFICATION_MODE = "mock"
-
-# SMTP Server Configuration (for Outlook/Exchange)
-# Typical Outlook settings:
-#   - Internal Exchange: "mail.hospital.local" or IP address
-#   - Office 365: "smtp.office365.com"
-SMTP_HOST = "smtp.hospital.local"
-SMTP_PORT = 25  # Common: 25 (no auth), 587 (TLS), 465 (SSL)
-
-# SMTP Security
-SMTP_USE_TLS = False   # True for Office 365 or secure connections
-SMTP_USE_SSL = False   # True for port 465
-
-# SMTP Authentication (None for internal relay without auth)
-SMTP_USERNAME = None   # e.g., "complaint-system@hospital.org"
-SMTP_PASSWORD = None   # App password or email password
-
-# Sender Information
-SENDER_EMAIL = "complaint-system@hospital.local"
-SENDER_NAME = "Hospital Complaint System"
+NOTIFICATION_MODE = _email.get("notification_mode", "mock")
+SMTP_HOST = _email.get("smtp_host", "smtp.hospital.local")
+SMTP_PORT = _email.get("smtp_port", 25)
+SMTP_USE_TLS = _email.get("smtp_use_tls", False)
+SMTP_USE_SSL = _email.get("smtp_use_ssl", False)
+SMTP_USERNAME = _email.get("smtp_username", None)
+SMTP_PASSWORD = _email.get("smtp_password", None)
+SENDER_EMAIL = _email.get("sender_email", "complaint-system@hospital.local")
+SENDER_NAME = _email.get("sender_name", "Hospital Complaint System")
 
 
 # =============================================================================

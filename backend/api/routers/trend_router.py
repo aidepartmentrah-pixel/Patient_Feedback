@@ -27,12 +27,12 @@ def fetch_domain_trends(
     start_date: str | None = Query(
         None,
         description="Start month in YYYY-MM format (defaults to 12 months ago)",
-        regex=r"^\d{4}-\d{2}$"
+        pattern=r"^\d{4}-\d{2}$"
     ),
     end_date: str | None = Query(
         None,
         description="End month in YYYY-MM format (defaults to current month)",
-        regex=r"^\d{4}-\d{2}$"
+        pattern=r"^\d{4}-\d{2}$"
     ),
     include_zero_months: bool = Query(
         True,
@@ -159,12 +159,12 @@ def fetch_category_trends(
     start_date: str | None = Query(
         None,
         description="Start month in YYYY-MM format (defaults to 12 months ago)",
-        regex=r"^\d{4}-\d{2}$"
+        pattern=r"^\d{4}-\d{2}$"
     ),
     end_date: str | None = Query(
         None,
         description="End month in YYYY-MM format (defaults to current month)",
-        regex=r"^\d{4}-\d{2}$"
+        pattern=r"^\d{4}-\d{2}$"
     ),
     domain_id: int | None = Query(
         None,
@@ -310,12 +310,12 @@ def fetch_time_periods(
     start_date: str | None = Query(
         None,
         description="Filter periods from this month (YYYY-MM format)",
-        regex=r"^\d{4}-\d{2}$"
+        pattern=r"^\d{4}-\d{2}$"
     ),
     end_date: str | None = Query(
         None,
         description="Filter periods to this month (YYYY-MM format)",
-        regex=r"^\d{4}-\d{2}$"
+        pattern=r"^\d{4}-\d{2}$"
     ),
 ):
     """

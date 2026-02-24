@@ -53,7 +53,7 @@ async def get_complaints(
     start_date: Optional[str] = Query(None, description="Filter by received_date >= start_date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="Filter by received_date <= end_date (YYYY-MM-DD)"),
     sort_by: str = Query("FeedbackRecievedDate", description="Sort field"),
-    sort_order: str = Query("desc", regex="^(asc|desc)$", description="Sort order (asc or desc)"),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order (asc or desc)"),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(50, ge=1, le=500, description="Results per page (1-500)"),
     view: str = Query("complete", description="View preset (complete, simplified)")

@@ -70,10 +70,14 @@ from api.routers.settings_users_router import router as settings_users_router
 from api.routers.migration_router import router as migration_router
 # Organization Unit Router (specialized organization unit selection endpoints)
 from api.routers.org_unit_router import router as org_unit_router
-# Hardware Configuration Router (deployment settings - SOFTWARE_ADMIN only)
-from api.routers.hardware_config_router import router as hardware_config_router
+# Bootstrap Configuration Router (password-protected, no DB auth needed)
+from api.routers.config_router import router as config_router
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+import core.bootstrap as bootstrap_module
+from core.bootstrap import run_bootstrap_check
 
 app = FastAPI(title="Incident Manager API")
 
@@ -184,8 +188,59 @@ app.include_router(settings_users_router)
 app.include_router(migration_router)
 # Organization Unit Router (specialized organization unit selection endpoints)
 app.include_router(org_unit_router)
-# Hardware Configuration Router (deployment settings - SOFTWARE_ADMIN only)
-app.include_router(hardware_config_router)
+# Bootstrap Configuration Router (password-protected, no DB auth needed)
+app.include_router(config_router)
+
+
+# ==================== BOOTSTRAP MIDDLEWARE ====================
+# When BOOTSTRAP_MODE is True (DB unreachable), only config and status
+# endpoints are allowed. All other routes return 503.
+
+_BOOTSTRAP_ALLOWED_PREFIXES = (
+    "/api/config",
+    "/api/status",
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+)
+
+
+@app.middleware("http")
+async def bootstrap_gate_middleware(request: Request, call_next):
+    """Block non-config routes when in bootstrap mode."""
+    if bootstrap_module.BOOTSTRAP_MODE:
+        path = request.url.path
+        # Allow health check, config endpoints, status, and docs
+        if path == "/" or path.startswith(_BOOTSTRAP_ALLOWED_PREFIXES):
+            return await call_next(request)
+        # Block everything else with 503
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "database_not_configured",
+                "message": "Database is not configured or unreachable. Please configure database settings.",
+                "config_url": "/config",
+            },
+        )
+    return await call_next(request)
+
+
+# ==================== STARTUP EVENT ====================
+
+@app.on_event("startup")
+async def startup_bootstrap_check():
+    """Check database connection on startup and set bootstrap mode."""
+    import logging
+    logger = logging.getLogger("bootstrap")
+    logger.info("Running bootstrap database connection check...")
+    db_ok = run_bootstrap_check()
+    if db_ok:
+        logger.info("Database connection OK — running in NORMAL mode")
+    else:
+        logger.warning("Database connection FAILED — running in BOOTSTRAP mode")
+        logger.warning("Only /api/config/* and /api/status endpoints are available")
+        logger.warning("Configure database via /config page or /api/config/save endpoint")
+
 
 @app.get("/")
 def health_check():
