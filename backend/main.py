@@ -94,29 +94,43 @@ app.add_middleware(
     https_only=False  # Set to True in production with HTTPS
 )
 
-# ==================== CORS MIDDLEWARE (Conditional by Environment) ====================
-# Read environment mode
-env_mode = os.getenv("ENVIRONMENT", "development")
+# ==================== CORS MIDDLEWARE ====================
+# CORS is needed when frontend and backend are on different origins (different ports count as different origins)
+# Production: Frontend on IIS (port 80) at http://170.70.32.52, Backend on port 8000
+# Development: Frontend on Vite/React dev server, Backend on port 8000
 
-# Only enable CORS in development (separate FE/BE servers)
-# In production, frontend and backend are typically served from same origin
-if env_mode == "development":
-    # Read allowed origins from environment variable
-    # Default: localhost:5173 and 127.0.0.1:5173 for development
-    # Also includes common dev ports: 3000 (React/Express), 5174 (alt Vite), 8080
-    origins_str = os.getenv(
-        "ALLOWED_ORIGINS",
-        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000,http://localhost:5174,http://127.0.0.1:5174,http://localhost:8080,http://127.0.0.1:8080"
-    )
-    origins = [o.strip() for o in origins_str.split(",") if o.strip()]
+# Production origins
+production_origins = [
+    "http://170.70.32.52",  # IIS frontend (production)
+]
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=origins,  # Environment-driven origins
-        allow_credentials=True,  # Enable credentials for session cookies
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+# Development origins
+development_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+]
+
+# Allow override via environment variable
+origins_override = os.getenv("ALLOWED_ORIGINS", "")
+if origins_override:
+    origins = [o.strip() for o in origins_override.split(",") if o.strip()]
+else:
+    # Combine production and development origins
+    origins = production_origins + development_origins
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # All allowed origins
+    allow_credentials=True,  # Enable credentials for session cookies
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Register routers
 app.include_router(dashboard_router)
