@@ -4,9 +4,9 @@
         "server": "170.70.32.36",
         "database": "IncidentManager",
         "driver": "ODBC Driver 18 for SQL Server",
-        "use_windows_auth": true,
+        "use_windows_auth": false,
         "username": "HCAT_Insight",
-        "password": "N*************4",
+        "password": "NewPassword2004",
         "trust_server_certificate": true
     },
     "views": {
@@ -36,5 +36,5 @@
         "sender_email": "complaint-system@hospital.local",
         "sender_name": "Hospital Complaint System"
     },
-    "config_password": "admin2024"
+    "config_password": "NewPassword2004"
 }

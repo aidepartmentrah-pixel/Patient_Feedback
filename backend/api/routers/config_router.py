@@ -122,6 +122,16 @@ def _mask_password(value) -> str:
     return s[0] + "*" * (len(s) - 2) + s[-1]
 
 
+def _is_masked_password(new_value, original_value) -> bool:
+    """
+    Check if new_value is the masked version of original_value.
+    If so, we should keep the original instead of saving asterisks.
+    """
+    if not new_value or not original_value:
+        return False
+    return _mask_password(original_value) == new_value
+
+
 # ==================== ENDPOINTS ====================
 
 @router.post("/api/config/verify-password")
@@ -285,8 +295,12 @@ async def save_settings(body: ConfigSaveRequest, request: Request):
 
     if body.database is not None:
         db = current.get("database", {})
+        original_db_password = db.get("password", "")
         for key, value in body.database.items():
             if value is not None:
+                # Don't save masked password - keep original
+                if key == "password" and _is_masked_password(value, original_db_password):
+                    continue
                 db[key] = value
         current["database"] = db
 
@@ -306,8 +320,12 @@ async def save_settings(body: ConfigSaveRequest, request: Request):
 
     if body.email is not None:
         email = current.get("email", {})
+        original_smtp_password = email.get("smtp_password", "")
         for key, value in body.email.items():
             if value is not None:
+                # Don't save masked password - keep original
+                if key == "smtp_password" and _is_masked_password(value, original_smtp_password):
+                    continue
                 email[key] = value
         current["email"] = email
 
