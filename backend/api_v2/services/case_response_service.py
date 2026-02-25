@@ -329,10 +329,9 @@ def submit_section_response(
     if not incident_id:
         raise Exception(f"Subcase {subcase_id} has no linked incident case")
     
-    # Check if RCA already exists for this subcase (prevent duplicates)
-    existing_rca = incident_case_feedback.get_rca_feedback_by_subcase(subcase_id)
-    if existing_rca:
-        raise Exception(f"RCA feedback already exists for subcase {subcase_id}. RCA cannot be edited.")
+    # Check if RCA already exists for this incident (prevent duplicates)
+    # Note: RCA table uses IncidentRequestCaseID as primary key, so only one RCA per incident
+    existing_rca = incident_case_feedback.get_incident_case_feedback(incident_id)
     
     # If resubmitting (returned for revision), replace existing action items
     if subcase.get('status') == 'RETURNED_TO_SECTION_FOR_REVISION':
@@ -350,13 +349,20 @@ def submit_section_response(
                 assigned_to_user_id=item.get('assigned_to_user_id')
             )
     
-    # Create RCA feedback record linked to subcase
-    incident_case_feedback.create_subcase_rca_feedback(
-        subcase_id=subcase_id,
-        incident_id=incident_id,
-        feedback_data=rca_feedback,
-        created_by_user_id=current_user.user_id
-    )
+    # Create RCA feedback record linked to subcase (only if not already existing for this incident)
+    # Use try/except to handle race conditions when multiple subcases are processed in parallel
+    if not existing_rca:
+        try:
+            incident_case_feedback.create_subcase_rca_feedback(
+                subcase_id=subcase_id,
+                incident_id=incident_id,
+                feedback_data=rca_feedback,
+                created_by_user_id=current_user.user_id
+            )
+        except Exception as e:
+            # Ignore duplicate key errors - another concurrent request already created the RCA
+            if "duplicate key" not in str(e).lower() and "primary key" not in str(e).lower():
+                raise  # Re-raise if it's a different error
     
     # Update section explanation
     administrative_subcase_db.update_section_explanation(
@@ -1014,10 +1020,9 @@ def direct_approve_to_admin(
     if not incident_id:
         raise Exception(f"Subcase {subcase_id} has no linked incident case")
     
-    # Check if RCA already exists for this subcase (prevent duplicates)
-    existing_rca = incident_case_feedback.get_rca_feedback_by_subcase(subcase_id)
-    if existing_rca:
-        raise Exception(f"RCA feedback already exists for subcase {subcase_id}. RCA cannot be edited.")
+    # Check if RCA already exists for this incident (prevent duplicates)
+    # Note: RCA table uses IncidentRequestCaseID as primary key, so only one RCA per incident
+    existing_rca = incident_case_feedback.get_incident_case_feedback(incident_id)
     
     # Set section explanation text
     if explanation_text:
@@ -1027,13 +1032,21 @@ def direct_approve_to_admin(
             updated_by_user_id=current_user.user_id
         )
     
-    # Create RCA feedback record linked to subcase
-    incident_case_feedback.create_subcase_rca_feedback(
-        subcase_id=subcase_id,
-        incident_id=incident_id,
-        feedback_data=rca_feedback,
-        created_by_user_id=current_user.user_id
-    )
+    # Create RCA feedback record linked to subcase (only if not already existing for this incident)
+    # Note: Table uses IncidentRequestCaseID as PK, so only one RCA per incident is allowed
+    # Use try/except to handle race conditions when multiple subcases are processed in parallel
+    if not existing_rca:
+        try:
+            incident_case_feedback.create_subcase_rca_feedback(
+                subcase_id=subcase_id,
+                incident_id=incident_id,
+                feedback_data=rca_feedback,
+                created_by_user_id=current_user.user_id
+            )
+        except Exception as e:
+            # Ignore duplicate key errors - another concurrent request already created the RCA
+            if "duplicate key" not in str(e).lower() and "primary key" not in str(e).lower():
+                raise  # Re-raise if it's a different error
     
     # Clear any existing action items for this subcase and create new ones
     existing_items = action_item_subcase_db.get_action_items_by_subcase(subcase_id)

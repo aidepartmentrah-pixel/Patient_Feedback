@@ -106,7 +106,7 @@ def create_incident_case_feedback(
         feedback_data.get("Preventive_OtherText"),
 
         feedback_data.get("DepartmentExplanationText"),
-        feedback_data.get("DepartmentExplanationStatusID"),
+        feedback_data.get("DepartmentExplanationStatusID", 1),  # Default: 1 = Waiting
         feedback_data.get("DepartmentExplanationReceivalDate"),
 
         created_by_user_id,
@@ -234,7 +234,7 @@ def create_subcase_rca_feedback(
         feedback_data.get("Preventive_OtherText"),
 
         feedback_data.get("DepartmentExplanationText"),
-        feedback_data.get("DepartmentExplanationStatusID"),
+        feedback_data.get("DepartmentExplanationStatusID", 1),  # Default: 1 = Waiting
         feedback_data.get("DepartmentExplanationReceivalDate"),
 
         created_by_user_id,

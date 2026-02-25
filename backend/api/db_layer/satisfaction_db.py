@@ -54,13 +54,29 @@ def get_satisfaction_statuses() -> List[Dict[str, Any]]:
 # CREATE SATISFACTION
 # ============================================================
 
+def _has_feedback_text_column() -> bool:
+    """Check if FeedbackText column exists in the table."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_NAME = 'APP_IncidentCaseSatisfaction' AND COLUMN_NAME = 'FeedbackText'
+        """)
+        return cursor.fetchone() is not None
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def create_satisfaction(
     incident_case_id: int,
     feedback_needed: bool,
     feedback_given: bool,
     feedback_datetime: Optional[datetime],
     satisfaction_status_id: int,
-    created_by_user_id: int
+    created_by_user_id: int,
+    feedback_text: Optional[str] = None
 ) -> int:
     """
     Create a satisfaction record for an incident case.
@@ -72,6 +88,7 @@ def create_satisfaction(
         feedback_datetime: When feedback was given (if applicable)
         satisfaction_status_id: Status from lookup table (1=Not Present, 2=Satisfied, 3=Not Satisfied)
         created_by_user_id: User creating the record
+        feedback_text: Optional feedback text/notes
         
     Returns:
         SatisfactionID of created record
@@ -82,27 +99,54 @@ def create_satisfaction(
     conn = get_connection()
     cursor = conn.cursor()
     
+    # Check if FeedbackText column exists
+    has_feedback_text_col = _has_feedback_text_column()
+    
     try:
-        cursor.execute("""
-            INSERT INTO dbo.APP_IncidentCaseSatisfaction (
-                IncidentRequestCaseID,
-                FeedbackNeeded,
-                FeedbackGiven,
-                FeedbackDateTime,
-                SatisfactionStatusID,
-                CreatedByUserID,
-                CreatedAt
-            )
-            OUTPUT INSERTED.SatisfactionID
-            VALUES (?, ?, ?, ?, ?, ?, GETDATE())
-        """, (
-            incident_case_id,
-            feedback_needed,
-            feedback_given,
-            feedback_datetime,
-            satisfaction_status_id,
-            created_by_user_id
-        ))
+        if has_feedback_text_col and feedback_text:
+            cursor.execute("""
+                INSERT INTO dbo.APP_IncidentCaseSatisfaction (
+                    IncidentRequestCaseID,
+                    FeedbackNeeded,
+                    FeedbackGiven,
+                    FeedbackDateTime,
+                    FeedbackText,
+                    SatisfactionStatusID,
+                    CreatedByUserID,
+                    CreatedAt
+                )
+                OUTPUT INSERTED.SatisfactionID
+                VALUES (?, ?, ?, ?, ?, ?, ?, GETDATE())
+            """, (
+                incident_case_id,
+                feedback_needed,
+                feedback_given,
+                feedback_datetime,
+                feedback_text,
+                satisfaction_status_id,
+                created_by_user_id
+            ))
+        else:
+            cursor.execute("""
+                INSERT INTO dbo.APP_IncidentCaseSatisfaction (
+                    IncidentRequestCaseID,
+                    FeedbackNeeded,
+                    FeedbackGiven,
+                    FeedbackDateTime,
+                    SatisfactionStatusID,
+                    CreatedByUserID,
+                    CreatedAt
+                )
+                OUTPUT INSERTED.SatisfactionID
+                VALUES (?, ?, ?, ?, ?, ?, GETDATE())
+            """, (
+                incident_case_id,
+                feedback_needed,
+                feedback_given,
+                feedback_datetime,
+                satisfaction_status_id,
+                created_by_user_id
+            ))
         
         result = cursor.fetchone()
         conn.commit()
@@ -254,6 +298,86 @@ def satisfaction_exists(incident_case_id: int) -> bool:
         """, incident_case_id)
         
         return cursor.fetchone() is not None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ============================================================
+# UPDATE SATISFACTION
+# ============================================================
+
+def update_satisfaction(
+    incident_case_id: int,
+    feedback_needed: bool,
+    feedback_given: bool,
+    feedback_datetime: Optional[datetime],
+    satisfaction_status_id: int,
+    modified_by_user_id: int,
+    feedback_text: Optional[str] = None
+) -> bool:
+    """
+    Update an existing satisfaction record for an incident case.
+    
+    Args:
+        incident_case_id: The incident case ID
+        feedback_needed: Whether feedback was requested
+        feedback_given: Whether feedback was given
+        feedback_datetime: When feedback was given (if applicable)
+        satisfaction_status_id: Status from lookup table (1=Not Present, 2=Satisfied, 3=Not Satisfied)
+        modified_by_user_id: User updating the record
+        feedback_text: Optional feedback text/notes
+        
+    Returns:
+        True if updated successfully, False if not found
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Check if FeedbackText column exists
+    has_feedback_text_col = _has_feedback_text_column()
+    
+    try:
+        if has_feedback_text_col:
+            cursor.execute("""
+                UPDATE dbo.APP_IncidentCaseSatisfaction
+                SET FeedbackNeeded = ?,
+                    FeedbackGiven = ?,
+                    FeedbackDateTime = ?,
+                    FeedbackText = ?,
+                    SatisfactionStatusID = ?
+                WHERE IncidentRequestCaseID = ?
+            """, (
+                feedback_needed,
+                feedback_given,
+                feedback_datetime,
+                feedback_text,
+                satisfaction_status_id,
+                incident_case_id
+            ))
+        else:
+            cursor.execute("""
+                UPDATE dbo.APP_IncidentCaseSatisfaction
+                SET FeedbackNeeded = ?,
+                    FeedbackGiven = ?,
+                    FeedbackDateTime = ?,
+                    SatisfactionStatusID = ?
+                WHERE IncidentRequestCaseID = ?
+            """, (
+                feedback_needed,
+                feedback_given,
+                feedback_datetime,
+                satisfaction_status_id,
+                incident_case_id
+            ))
+        
+        updated = cursor.rowcount > 0
+        conn.commit()
+        
+        return updated
+    except Exception as e:
+        conn.rollback()
+        raise
     finally:
         cursor.close()
         conn.close()

@@ -29,6 +29,7 @@ class SatisfactionCreate(BaseModel):
     feedback_needed: bool
     feedback_given: bool
     feedback_datetime: Optional[str] = None  # ISO format datetime
+    feedback_text: Optional[str] = None  # Feedback text/notes
     satisfaction_status_id: int  # 1=Not Present, 2=Satisfied, 3=Not Satisfied
 
 
@@ -129,11 +130,15 @@ async def create_case_satisfaction(
             detail="Satisfaction already exists for this case. Cannot edit after submission."
         )
     
-    # Parse datetime if provided
+    # Parse datetime if provided - if date only, append 12:00 PM
     feedback_dt = None
     if data.feedback_datetime:
         try:
-            feedback_dt = datetime.fromisoformat(data.feedback_datetime.replace('Z', '+00:00'))
+            dt_str = data.feedback_datetime.replace('Z', '+00:00')
+            # If it's just a date (YYYY-MM-DD), append 12:00 PM
+            if len(dt_str) == 10 and '-' in dt_str:
+                dt_str = f"{dt_str}T12:00:00"
+            feedback_dt = datetime.fromisoformat(dt_str)
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid datetime format")
     
@@ -150,6 +155,7 @@ async def create_case_satisfaction(
             feedback_needed=data.feedback_needed,
             feedback_given=data.feedback_given,
             feedback_datetime=feedback_dt,
+            feedback_text=data.feedback_text,
             satisfaction_status_id=data.satisfaction_status_id,
             created_by_user_id=current_user.user_id
         )
@@ -163,3 +169,87 @@ async def create_case_satisfaction(
         if "already exists" in str(e).lower():
             raise HTTPException(status_code=409, detail=str(e))
         raise HTTPException(status_code=500, detail=f"Failed to create satisfaction: {str(e)}")
+
+
+@router.put("/cases/{case_id}/satisfaction")
+async def update_case_satisfaction(
+    case_id: int,
+    data: SatisfactionCreate,
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Update satisfaction record for a case.
+    
+    Allowed roles:
+    - WORKER
+    - COMPLAINT_SUPERVISOR
+    - SOFTWARE_ADMIN
+    
+    Returns:
+        { success: true, message: str }
+        
+    Raises:
+        404: If satisfaction not found for this case
+        403: If user not authorized
+    """
+    # Check role authorization
+    if not current_user or not current_user.scopes:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    role_code = current_user.scopes[0].role_code
+    allowed_roles = {'WORKER', 'COMPLAINT_SUPERVISOR', 'SOFTWARE_ADMIN'}
+    
+    if role_code not in allowed_roles:
+        raise HTTPException(
+            status_code=403, 
+            detail=f"Role {role_code} is not authorized to update satisfaction. Allowed: {', '.join(allowed_roles)}"
+        )
+    
+    # Check if satisfaction exists
+    if not satisfaction_db.satisfaction_exists(case_id):
+        raise HTTPException(
+            status_code=404, 
+            detail="Satisfaction not found for this case"
+        )
+    
+    # Parse datetime if provided - if date only, append 12:00 PM
+    feedback_dt = None
+    if data.feedback_datetime:
+        try:
+            dt_str = data.feedback_datetime.replace('Z', '+00:00')
+            # If it's just a date (YYYY-MM-DD), append 12:00 PM
+            if len(dt_str) == 10 and '-' in dt_str:
+                dt_str = f"{dt_str}T12:00:00"
+            feedback_dt = datetime.fromisoformat(dt_str)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid datetime format")
+    
+    # Validate status ID
+    if data.satisfaction_status_id not in [1, 2, 3]:
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid satisfaction_status_id. Must be 1 (Not Present), 2 (Satisfied), or 3 (Not Satisfied)"
+        )
+    
+    try:
+        updated = satisfaction_db.update_satisfaction(
+            incident_case_id=case_id,
+            feedback_needed=data.feedback_needed,
+            feedback_given=data.feedback_given,
+            feedback_datetime=feedback_dt,
+            feedback_text=data.feedback_text,
+            satisfaction_status_id=data.satisfaction_status_id,
+            modified_by_user_id=current_user.user_id
+        )
+        
+        if updated:
+            return {
+                "success": True,
+                "message": "Satisfaction updated successfully"
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Satisfaction not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update satisfaction: {str(e)}")
