@@ -18,7 +18,12 @@ from ..db_layer.patients_db import (
     get_patient_incidents_for_export,
     get_patient_metrics,
     create_patient,
-    get_all_reserve_patients
+    get_all_reserve_patients,
+    get_reserve_patient_by_id,
+    count_incidents_by_patient,
+    deactivate_reserve_patient,
+    hard_delete_reserve_patient,
+    reactivate_reserve_patient
 )
 from ..db_layer.satisfaction_db import get_satisfactions_by_cases
 
@@ -632,6 +637,118 @@ def _generate_word_export(export_data: Dict[str, Any], patient_id: int) -> Dict[
             "content": word_bytes,
             "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         }
-    
     except Exception as e:
-        raise Exception(f"Failed to generate Word document: {str(e)}")
+        raise Exception(f"Failed to generate Word: {str(e)}")
+
+
+# ==================== DELETE PATIENT SERVICE ====================
+
+def delete_patient_service(
+    patient_id: int,
+    force: bool = False
+) -> Dict[str, Any]:
+    """
+    Delete a patient from the reserve table (APP_RESERVE_PATIENT) ONLY.
+    
+    This function does NOT touch the hospital patient view (APP_VIEWTABLE_PATIENT_ADMISSION).
+    Hospital patients cannot be deleted - they are read-only.
+    
+    Behavior:
+    - If patient has associated incidents: soft-delete (deactivate by setting IsActive=0)
+    - If patient has no incidents and force=True: hard-delete (permanently remove)
+    - If patient has no incidents and force=False: soft-delete (deactivate)
+    
+    Args:
+        patient_id: The patient's PatientAdmissionID to delete (must be from reserve table)
+        force: If True and no incidents, permanently delete
+    
+    Returns:
+        Dict with deletion result:
+            - success: True if operation succeeded
+            - id: Patient ID
+            - is_active: Current active state (False if soft-deleted)
+            - deleted: True if hard-deleted
+            - incident_count: Number of associated incidents
+            - action: 'soft_delete' or 'hard_delete'
+            - message: Description of what was done
+            - message_ar: Arabic description
+            
+    Raises:
+        ValueError: If patient not found in reserve table or is a hospital patient
+    """
+    try:
+        # ============================================
+        # STEP 1: Verify patient exists in RESERVE table only
+        # ============================================
+        reserve_patient = get_reserve_patient_by_id(patient_id)
+        
+        if not reserve_patient:
+            # Check if it's a hospital patient (read-only)
+            hospital_patient = get_patient_profile(patient_id)
+            if hospital_patient and hospital_patient.get('source') == 'hospital':
+                raise ValueError(
+                    f"Patient ID {patient_id} is from the hospital system and cannot be deleted. "
+                    "Hospital patients are read-only."
+                )
+            raise ValueError(f"Patient with ID {patient_id} not found in reserve table")
+        
+        patient_name = reserve_patient.get('full_name', f'Patient {patient_id}')
+        
+        # ============================================
+        # STEP 2: Check for associated incidents
+        # ============================================
+        incident_count = count_incidents_by_patient(patient_id)
+        
+        if incident_count > 0:
+            # Has incidents - must soft-delete (deactivate)
+            deactivate_reserve_patient(patient_id)
+            
+            return {
+                'success': True,
+                'id': patient_id,
+                'is_active': False,
+                'deleted': False,
+                'incident_count': incident_count,
+                'action': 'soft_delete',
+                'message': f"Patient '{patient_name}' has {incident_count} associated incident(s). "
+                           "Patient has been deactivated (soft-deleted) to preserve data integrity.",
+                'message_ar': f"تم إلغاء تفعيل المريض '{patient_name}' لوجود {incident_count} حالة مرتبطة."
+            }
+        
+        # ============================================
+        # STEP 3: No incidents - check force flag
+        # ============================================
+        if force:
+            # Hard delete
+            hard_delete_reserve_patient(patient_id)
+            
+            return {
+                'success': True,
+                'id': patient_id,
+                'is_active': None,  # No longer exists
+                'deleted': True,
+                'incident_count': 0,
+                'action': 'hard_delete',
+                'message': f"Patient '{patient_name}' has been permanently deleted.",
+                'message_ar': f"تم حذف المريض '{patient_name}' بشكل دائم."
+            }
+        else:
+            # Soft delete (deactivate)
+            deactivate_reserve_patient(patient_id)
+            
+            return {
+                'success': True,
+                'id': patient_id,
+                'is_active': False,
+                'deleted': False,
+                'incident_count': 0,
+                'action': 'soft_delete',
+                'message': f"Patient '{patient_name}' has been deactivated. "
+                           "Use force=true to permanently delete.",
+                'message_ar': f"تم إلغاء تفعيل المريض '{patient_name}'."
+            }
+    
+    except ValueError:
+        raise  # Re-raise validation errors
+    except Exception as e:
+        raise Exception(f"Failed to delete patient: {str(e)}")

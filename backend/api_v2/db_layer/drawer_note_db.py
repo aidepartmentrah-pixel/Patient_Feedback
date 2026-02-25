@@ -144,7 +144,7 @@ def get_note_by_id(note_id: int) -> Optional[Dict[str, Any]]:
                 n.PatientAdmissionID,
                 COALESCE(p.FullName, r.FullName) as PatientName
             FROM dbo.APP_DrawerNote n
-            LEFT JOIN dbo.APP_VIEWTABLE_PATIENT_ADMISSION p ON n.PatientAdmissionID = p.PatientAdmissionID
+            LEFT JOIN dbo.VW_PatientAdmission p ON n.PatientAdmissionID = p.PatientAdmissionID
             LEFT JOIN dbo.APP_RESERVE_PATIENT r ON n.PatientAdmissionID = r.PatientAdmissionID AND p.PatientAdmissionID IS NULL
             WHERE n.NoteID = ?
         """
@@ -199,7 +199,7 @@ def list_notes_paged(limit: int, offset: int, patient_admission_id: Optional[int
                     n.PatientAdmissionID,
                     COALESCE(p.FullName, r.FullName) as PatientName
                 FROM dbo.APP_DrawerNote n
-                LEFT JOIN dbo.APP_VIEWTABLE_PATIENT_ADMISSION p ON n.PatientAdmissionID = p.PatientAdmissionID
+                LEFT JOIN dbo.VW_PatientAdmission p ON n.PatientAdmissionID = p.PatientAdmissionID
                 LEFT JOIN dbo.APP_RESERVE_PATIENT r ON n.PatientAdmissionID = r.PatientAdmissionID AND p.PatientAdmissionID IS NULL
                 WHERE n.IsDeleted = 0 AND n.PatientAdmissionID = ?
                 ORDER BY n.CreatedAt DESC
@@ -219,7 +219,7 @@ def list_notes_paged(limit: int, offset: int, patient_admission_id: Optional[int
                     n.PatientAdmissionID,
                     COALESCE(p.FullName, r.FullName) as PatientName
                 FROM dbo.APP_DrawerNote n
-                LEFT JOIN dbo.APP_VIEWTABLE_PATIENT_ADMISSION p ON n.PatientAdmissionID = p.PatientAdmissionID
+                LEFT JOIN dbo.VW_PatientAdmission p ON n.PatientAdmissionID = p.PatientAdmissionID
                 LEFT JOIN dbo.APP_RESERVE_PATIENT r ON n.PatientAdmissionID = r.PatientAdmissionID AND p.PatientAdmissionID IS NULL
                 WHERE n.IsDeleted = 0
                 ORDER BY n.CreatedAt DESC

@@ -66,7 +66,7 @@ def delete_user_service(user_id: int) -> Dict[str, Any]:
         user = get_user_by_id(conn, user_id)
         
         if not user:
-            raise Exception(f"User with ID {user_id} not found")
+            raise ValueError(f"User with ID {user_id} not found")
         
         username = user.Username
         
@@ -74,14 +74,14 @@ def delete_user_service(user_id: int) -> Dict[str, Any]:
         
         # Block software_admin username (primary system admin account)
         if username.lower() == "software_admin":
-            raise Exception(
+            raise PermissionError(
                 f"Cannot delete protected account 'software_admin'. "
                 f"This is the primary system administrator account."
             )
         
         # Block any user with SOFTWARE_ADMIN role
         if user_has_software_admin_role(conn, user_id):
-            raise Exception(
+            raise PermissionError(
                 f"Cannot delete user '{username}' because they have SOFTWARE_ADMIN role. "
                 f"Remove SOFTWARE_ADMIN role first or use a different method."
             )
@@ -101,8 +101,14 @@ def delete_user_service(user_id: int) -> Dict[str, Any]:
             "deleted_username": username
         }
         
+    except (ValueError, PermissionError):
+        # Re-raise these expected exceptions as-is for proper HTTP status codes
+        if conn:
+            conn.rollback()
+        raise
+        
     except Exception as e:
-        # Rollback on error
+        # Rollback on unexpected error
         if conn:
             conn.rollback()
         raise Exception(f"Failed to delete user: {str(e)}")

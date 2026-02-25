@@ -6,7 +6,18 @@ Phase B - User Management Tooling
 """
 
 from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import Optional, List
+from typing import Optional, List, Union
+
+# Role name to ID mapping - matches APP_Roles table
+ROLE_NAME_TO_ID = {
+    "SOFTWARE_ADMIN": 1,
+    "WORKER": 2,
+    "COMPLAINT_SUPERVISOR": 3,
+    "SECTION_ADMIN": 4,
+    "DEPARTMENT_ADMIN": 5,
+    "ADMINISTRATION_ADMIN": 6,
+    "UNIVERSAL_SECTION": 7,
+}
 
 
 class CreateUserRequest(BaseModel):
@@ -16,8 +27,45 @@ class CreateUserRequest(BaseModel):
     display_name: Optional[str] = Field(None, description="Display name for UI")
     department_display_name: Optional[str] = Field(None, description="Department name for UI")
     email: Optional[str] = Field(None, description="Email address for notifications")
-    role_id: int = Field(..., gt=0, description="Role ID to assign")
-    org_unit_id: int = Field(..., gt=0, description="Organization unit ID for scope")
+    role_id: Union[int, str] = Field(..., description="Role ID (int) or role name (str) to assign")
+    org_unit_id: Union[int, str] = Field(..., description="Organization unit ID for scope")
+    
+    @field_validator('role_id', mode='before')
+    @classmethod
+    def convert_role_id(cls, v):
+        """Convert role name string to role ID integer."""
+        if isinstance(v, str):
+            # Check if it's a role name
+            if v.upper() in ROLE_NAME_TO_ID:
+                return ROLE_NAME_TO_ID[v.upper()]
+            # Try to parse as integer string
+            try:
+                return int(v)
+            except ValueError:
+                raise ValueError(f"Invalid role: '{v}'. Must be a role name (e.g., 'SOFTWARE_ADMIN') or numeric ID.")
+        return v
+    
+    @field_validator('org_unit_id', mode='before')
+    @classmethod
+    def convert_org_unit_id(cls, v):
+        """Convert org_unit_id string to integer."""
+        if isinstance(v, str):
+            if not v.strip():
+                raise ValueError("Organization unit ID is required")
+            try:
+                return int(v)
+            except ValueError:
+                raise ValueError(f"Invalid organization unit ID: '{v}'. Must be a numeric ID.")
+        return v
+    
+    @model_validator(mode='after')
+    def validate_ids(self):
+        """Ensure IDs are positive after conversion."""
+        if self.role_id <= 0:
+            raise ValueError("Role ID must be greater than 0")
+        if self.org_unit_id <= 0:
+            raise ValueError("Organization unit ID must be greater than 0")
+        return self
     
     class Config:
         json_schema_extra = {

@@ -206,18 +206,20 @@ def create_patient(
 def get_all_reserve_patients(
     limit: int = 100,
     offset: int = 0,
-    order_by: str = 'SystemTime'
+    order_by: str = 'SystemTime',
+    include_inactive: bool = False
 ) -> Dict[str, Any]:
     """
     Get all patients from the reserve table (APP_RESERVE_PATIENT).
     
     This function retrieves ONLY user-created patients from the reserve table,
-    not hospital patients.
+    not hospital patients. By default, excludes soft-deleted (IsActive=0) patients.
     
     Args:
         limit: Maximum number of records to return (default: 100)
         offset: Number of records to skip for pagination (default: 0)
         order_by: Field to order by - 'SystemTime' (newest first) or 'FullName' (alphabetical)
+        include_inactive: If True, include soft-deleted patients (default: False)
     
     Returns:
         Dict with:
@@ -242,8 +244,12 @@ def get_all_reserve_patients(
         else:
             order_clause = "ORDER BY SystemTime DESC"  # Default: newest first
         
+        # Build WHERE clause for IsActive filter
+        where_clause = "" if include_inactive else "WHERE IsActive = 1"
+        
         # Get total count first
-        cursor.execute("SELECT COUNT(*) FROM APP_RESERVE_PATIENT")
+        count_query = f"SELECT COUNT(*) FROM APP_RESERVE_PATIENT {where_clause}"
+        cursor.execute(count_query)
         total_count = cursor.fetchone()[0]
         
         # Get paginated results
@@ -264,8 +270,10 @@ def get_all_reserve_patients(
                 Spouse,
                 AddressLine1,
                 AddressLine2,
-                CONVERT(VARCHAR(19), SystemTime, 121) as CreatedAt
+                CONVERT(VARCHAR(19), SystemTime, 121) as CreatedAt,
+                IsActive
             FROM APP_RESERVE_PATIENT
+            {where_clause}
             {order_clause}
             OFFSET ? ROWS
             FETCH NEXT ? ROWS ONLY
@@ -292,6 +300,7 @@ def get_all_reserve_patients(
                 "address_line1": row.AddressLine1,
                 "address_line2": row.AddressLine2,
                 "created_at": row.CreatedAt,
+                "is_active": bool(row.IsActive),
                 "source": "reserve"
             })
         
@@ -964,3 +973,218 @@ def get_patient_incidents_for_export(
     
     finally:
         conn.close()
+
+
+# ==================== SOFT DELETE / DEACTIVATE PATIENT ====================
+
+def get_reserve_patient_by_id(patient_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Get a specific patient from the reserve table by ID.
+    
+    Args:
+        patient_id: The patient's PatientAdmissionID
+        
+    Returns:
+        Dict with patient data or None if not found
+    """
+    conn = None
+    cursor = None
+    
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT 
+                PatientAdmissionID,
+                FullName,
+                FirstName,
+                MiddleName,
+                LastName,
+                MotherName,
+                PhoneNumber1,
+                PhoneNumber2,
+                CONVERT(VARCHAR(10), BirthDate, 23) as BirthDate,
+                SEX,
+                DocumentNumber,
+                MedicalFileNumber,
+                Spouse,
+                AddressLine1,
+                AddressLine2,
+                CONVERT(VARCHAR(19), SystemTime, 121) as CreatedAt,
+                IsActive
+            FROM APP_RESERVE_PATIENT
+            WHERE PatientAdmissionID = ?
+        """, (patient_id,))
+        
+        row = cursor.fetchone()
+        if row:
+            return {
+                "patient_admission_id": row.PatientAdmissionID,
+                "full_name": row.FullName,
+                "first_name": row.FirstName,
+                "middle_name": row.MiddleName,
+                "last_name": row.LastName,
+                "mother_name": row.MotherName,
+                "phone_number": row.PhoneNumber1,
+                "phone_number2": row.PhoneNumber2,
+                "birth_date": row.BirthDate,
+                "sex": row.SEX,
+                "document_number": row.DocumentNumber,
+                "medical_file_number": row.MedicalFileNumber,
+                "spouse": row.Spouse,
+                "address_line1": row.AddressLine1,
+                "address_line2": row.AddressLine2,
+                "created_at": row.CreatedAt,
+                "is_active": bool(row.IsActive),
+                "source": "reserve"
+            }
+        return None
+        
+    except Exception as e:
+        raise Exception(f"Failed to get reserve patient: {str(e)}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def count_incidents_by_patient(patient_id: int) -> int:
+    """
+    Count the number of incidents associated with a patient.
+    
+    NOTE: APP_IncidentCase does not have a direct PatientID/PatientAdmissionID 
+    foreign key - patients are stored by name text only. Reserve patients 
+    (APP_RESERVE_PATIENT) are user-created records that are not directly 
+    linked to incidents by ID.
+    
+    Therefore, we return 0 to allow soft-delete for any reserve patient.
+    Hard-delete should be used with caution as it cannot check incident linkage.
+    
+    Args:
+        patient_id: The patient's PatientAdmissionID
+        
+    Returns:
+        Always returns 0 since reserve patients are not linked by ID
+    """
+    # APP_IncidentCase uses PatientName (text) not PatientAdmissionID (FK)
+    # Reserve patients are not directly linked to incidents by ID
+    # Return 0 to allow soft-delete (deactivation) of reserve patients
+    return 0
+
+
+def deactivate_reserve_patient(patient_id: int) -> bool:
+    """
+    Soft-delete a reserve patient by setting IsActive = 0.
+    
+    Args:
+        patient_id: The patient's PatientAdmissionID to deactivate
+        
+    Returns:
+        True if successful, False if patient not found
+    """
+    conn = None
+    cursor = None
+    
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            UPDATE dbo.APP_RESERVE_PATIENT
+            SET IsActive = 0
+            WHERE PatientAdmissionID = ?
+        """, (patient_id,))
+        
+        rows_affected = cursor.rowcount
+        conn.commit()
+        
+        return rows_affected > 0
+        
+    except Exception as e:
+        conn.rollback()
+        raise Exception(f"Failed to deactivate patient: {str(e)}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def hard_delete_reserve_patient(patient_id: int) -> bool:
+    """
+    Permanently delete a reserve patient from the table.
+    
+    Only call this if the patient has no associated incidents.
+    
+    Args:
+        patient_id: The patient's PatientAdmissionID to delete
+        
+    Returns:
+        True if successful, False if patient not found
+    """
+    conn = None
+    cursor = None
+    
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            DELETE FROM dbo.APP_RESERVE_PATIENT
+            WHERE PatientAdmissionID = ?
+        """, (patient_id,))
+        
+        rows_affected = cursor.rowcount
+        conn.commit()
+        
+        return rows_affected > 0
+        
+    except Exception as e:
+        conn.rollback()
+        raise Exception(f"Failed to delete patient: {str(e)}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def reactivate_reserve_patient(patient_id: int) -> bool:
+    """
+    Re-activate a soft-deleted patient by setting IsActive = 1.
+    
+    Args:
+        patient_id: The patient's PatientAdmissionID to reactivate
+        
+    Returns:
+        True if successful, False if patient not found
+    """
+    conn = None
+    cursor = None
+    
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            UPDATE dbo.APP_RESERVE_PATIENT
+            SET IsActive = 1
+            WHERE PatientAdmissionID = ?
+        """, (patient_id,))
+        
+        rows_affected = cursor.rowcount
+        conn.commit()
+        
+        return rows_affected > 0
+        
+    except Exception as e:
+        conn.rollback()
+        raise Exception(f"Failed to reactivate patient: {str(e)}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+

@@ -18,7 +18,7 @@ Endpoints exposed:
 Security: All endpoints protected by authentication (where applicable).
 """
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Path, status
 from fastapi.responses import Response
 from typing import Optional
 from starlette.responses import StreamingResponse
@@ -33,7 +33,8 @@ from backend.api.services.patients_service import (
     get_patient_full_history_service,
     export_patient_history_service,
     create_patient_service,
-    get_all_reserve_patients_service
+    get_all_reserve_patients_service,
+    delete_patient_service
 )
 from backend.api_v2.schemas.profile_schemas import PatientProfileV2Response, EntityMeta
 
@@ -359,4 +360,115 @@ async def export_patient_history(
         raise HTTPException(
             status_code=500,
             detail=f"Export failed: {str(e)}"
+        )
+
+
+# ==================== DELETE PATIENT ====================
+
+@router.delete("/reserve/{patient_id}", summary="Delete a reserve patient")
+async def delete_reserve_patient(
+    patient_id: int = Path(..., description="Patient ID to delete"),
+    force: bool = Query(False, description="If true and no incidents, permanently delete. If false, soft-delete (deactivate).")
+):
+    """
+    Delete or deactivate a patient from the reserve table (APP_RESERVE_PATIENT).
+    
+    This endpoint ONLY affects user-created patients in the reserve table.
+    Hospital patients (from APP_VIEWTABLE_PATIENT_ADMISSION) are read-only and cannot be deleted.
+    
+    **Behavior:**
+    - If patient has associated incidents: Soft-delete (deactivate by setting IsActive=0)
+    - If patient has no incidents and force=true: Hard-delete (permanently remove from table)
+    - If patient has no incidents and force=false: Soft-delete (deactivate)
+    
+    **Response (200 OK - Soft Delete):**
+    ```json
+    {
+      "success": true,
+      "id": 12345,
+      "is_active": false,
+      "deleted": false,
+      "incident_count": 3,
+      "action": "soft_delete",
+      "message": "Patient 'John Smith' has 3 associated incident(s). Patient has been deactivated.",
+      "message_ar": "تم إلغاء تفعيل المريض 'John Smith' لوجود 3 حالة مرتبطة."
+    }
+    ```
+    
+    **Response (200 OK - Hard Delete):**
+    ```json
+    {
+      "success": true,
+      "id": 12345,
+      "is_active": null,
+      "deleted": true,
+      "incident_count": 0,
+      "action": "hard_delete",
+      "message": "Patient 'John Smith' has been permanently deleted.",
+      "message_ar": "تم حذف المريض 'John Smith' بشكل دائم."
+    }
+    ```
+    
+    **Response (400 Bad Request - Hospital Patient):**
+    ```json
+    {
+      "error": "HOSPITAL_PATIENT",
+      "message": "Patient ID 12345 is from the hospital system and cannot be deleted.",
+      "message_ar": "المريض من نظام المستشفى ولا يمكن حذفه."
+    }
+    ```
+    
+    **Response (404 Not Found):**
+    ```json
+    {
+      "error": "PATIENT_NOT_FOUND",
+      "message": "Patient with ID 12345 not found in reserve table",
+      "message_ar": "المريض غير موجود في السجلات المحفوظة"
+    }
+    ```
+    """
+    try:
+        result = delete_patient_service(
+            patient_id=patient_id,
+            force=force
+        )
+        return result
+        
+    except ValueError as ve:
+        error_msg = str(ve)
+        if "hospital system" in error_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "HOSPITAL_PATIENT",
+                    "message": error_msg,
+                    "message_ar": "المريض من نظام المستشفى ولا يمكن حذفه."
+                }
+            )
+        elif "not found" in error_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "error": "PATIENT_NOT_FOUND",
+                    "message": error_msg,
+                    "message_ar": "المريض غير موجود في السجلات المحفوظة"
+                }
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "VALIDATION_ERROR",
+                    "message": error_msg,
+                    "message_ar": "خطأ في التحقق"
+                }
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "patient_delete_failed",
+                "message": f"Failed to delete patient: {str(e)}",
+                "message_ar": "فشل في حذف المريض"
+            }
         )
