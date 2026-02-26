@@ -1,6 +1,10 @@
 import datetime
 import json
 import os
+import sys
+
+# Add workspace root to Python path for direct script execution
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 
 #Statistically Acceptable - Needs Refactoring
 from models_directory.Classification_Models.Hierarchical_Classification_Model.domain.train_domain_model import train_domain_models
@@ -71,9 +75,7 @@ def save_training_report(all_metrics: dict, save_path: str):
         f.write(f"Total Models Trained: {total_models}\n")
         f.write(f"Average F1-Score: {avg_f1:.6f}\n")
 
-    print(f"\n📄 Training report saved: {full_path}\n")
-
-
+    print(f"\n Training report saved: {full_path}\n")
 
 def train_all():
     """Runs ALL training steps and generates a unified training report."""
@@ -103,7 +105,20 @@ def train_all():
         print(f"{'='*70}")
         model, metrics = func()
         
-        print(f"\n✔ {model_name} Complete:")
+        # Handle failed training (returns None, None)
+        if metrics is None:
+            print(f"\n[WARNING] {model_name} FAILED - returned None metrics")
+            metrics = {
+                "model_name": model_name,
+                "num_records": 0,
+                "accuracy": 0.0,
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "error": "Training returned None"
+            }
+        
+        print(f"\n {model_name} Complete:")
         print(f"  Records: {metrics.get('num_records', 0)}")
         print(f"  Accuracy:  {metrics.get('accuracy', 0):.6f}")
         print(f"  Precision: {metrics.get('precision', 0):.6f}")
@@ -169,7 +184,7 @@ def train_all():
     save_training_report(all_metrics, REPORT_DIR)
 
     print("\n" + "="*70)
-    print("✔ TRAINING COMPLETE")
+    print(" TRAINING COMPLETE")
     print("="*70)
     print(f"Total models trained: {len(all_metrics)}")
     
@@ -195,8 +210,6 @@ def train_all():
             "average_f1": avg_f1
         }
     }
-
-
 
 if __name__ == "__main__":
     train_all()

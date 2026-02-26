@@ -47,7 +47,7 @@ def generate_metric_embedding(metric_name: str,vocab_list: list,storage_file: st
     with open(storage_file, "w", encoding="utf-8") as f:
         json.dump(metric_store, f, indent=2, ensure_ascii=False)
 
-    print(f"✅ Metric '{metric_name}' saved to: {storage_file}")
+    print(f"[OK] Metric '{metric_name}' saved to: {storage_file}")
     return centroid
 
 def load_metric_embedding(metric_name: str,
@@ -82,13 +82,13 @@ def generate_metric_embedding_from_file(metric_name: str,vocab_folder: str = "vo
     vocab_path = os.path.join(vocab_folder, f"{metric_name}.json")
 
     if not os.path.exists(vocab_path):
-        raise FileNotFoundError(f"❌ Vocab file not found: {vocab_path}")
+        raise FileNotFoundError(f"[ERROR] Vocab file not found: {vocab_path}")
 
     with open(vocab_path, "r", encoding="utf-8") as f:
         vocab_list = json.load(f)
 
     if not isinstance(vocab_list, list):
-        raise ValueError(f"❌ Vocab file must contain a list. File: {vocab_path}")
+        raise ValueError(f"[ERROR] Vocab file must contain a list. File: {vocab_path}")
 
     # ------------------------------------
     # 2. Embed each term

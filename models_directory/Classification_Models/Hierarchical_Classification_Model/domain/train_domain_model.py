@@ -134,7 +134,7 @@ def train_domain_models(base_path=None):
     best_model = trained_models[best_model_name]
     best_pred = all_preds[best_model_name]
     
-    print(f"\n✔ Best model: {best_model_name} (F1={results[best_model_name]['f1']:.4f})")
+    print(f"\n Best model: {best_model_name} (F1={results[best_model_name]['f1']:.4f})")
 
     # ---------- Compute Standardized Metrics ----------
     standardized_metrics = compute_standardized_metrics(
@@ -173,7 +173,7 @@ def train_domain_models(base_path=None):
         f.write("\n".join(report_lines))
 
     print("\n===============================")
-    print("✔ DOMAIN MODELS TRAINED WITH MANUAL WEIGHTS")
+    print(" DOMAIN MODELS TRAINED WITH MANUAL WEIGHTS")
     print("===============================")
     print(f"Saved models in : {MODEL_DIR}")
     print(f"Saved report   : {REPORT_FILE}")

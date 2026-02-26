@@ -90,7 +90,7 @@ def oversample_class(df, target_col, target_value, desired_ratio=0.35, random_st
     minority = df[df[target_col] == target_value]
 
     if len(minority) == 0:
-        print(f"⚠️ No samples for class {target_value}. Skipping oversampling.")
+        print(f"[WARNING] No samples for class {target_value}. Skipping oversampling.")
         return df
 
     target_size = int(len(majority) * desired_ratio)

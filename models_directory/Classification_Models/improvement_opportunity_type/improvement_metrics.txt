@@ -1,13 +1,13 @@
 Improvement Ordinal Model Metrics
 
-Accuracy: 0.989010989010989
-F1: 0.9835468399004311
+Accuracy: 0.967032967032967
+F1: 0.950825710602247
 
               precision    recall  f1-score   support
 
-           0       0.99      1.00      0.99        90
-           1       0.00      0.00      0.00         1
+           0       0.97      1.00      0.98        88
+           1       0.00      0.00      0.00         3
 
-    accuracy                           0.99        91
-   macro avg       0.49      0.50      0.50        91
-weighted avg       0.98      0.99      0.98        91
+    accuracy                           0.97        91
+   macro avg       0.48      0.50      0.49        91
+weighted avg       0.94      0.97      0.95        91

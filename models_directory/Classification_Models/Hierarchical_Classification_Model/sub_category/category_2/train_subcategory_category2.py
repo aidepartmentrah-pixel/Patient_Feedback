@@ -127,7 +127,7 @@ def train_subcategory_cat2(base_path=None):
     best_model = trained_models[best_model_name]
     best_pred = all_preds[best_model_name]
     
-    print(f"\n✔ Best model: {best_model_name} (F1={results[best_model_name]['f1']:.4f})")
+    print(f"\n Best model: {best_model_name} (F1={results[best_model_name]['f1']:.4f})")
 
     # ---------- Compute Standardized Metrics ----------
     standardized_metrics = compute_standardized_metrics(

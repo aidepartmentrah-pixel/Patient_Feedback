@@ -965,14 +965,14 @@ def export_complaints_excel(
         where_clause = "WHERE " + " AND ".join(where_conditions)
     
     # Query to fetch all matching records with all required fields
-    # Note: Some lookup tables may not exist yet, using COALESCE for optional fields
+    # Note: Using OUTER APPLY with STRING_AGG for target departments (multiple per case)
     query = f"""
         SELECT 
             c.FeedbackRecievedDate as received_date,
             c.IncidentRequestCaseID as complaint_number,
             c.PatientName as patient_name,
             issuing_org.Name as issuing_org_unit_name,
-            concerned_org.Name as concerned_org_unit_name,
+            target_depts.target_dept_names as concerned_org_unit_name,
             source.SourceNameAr as source_name,
             CASE 
                 WHEN c.FeedbackIntentTypeID = 1 THEN N'شكوى'
@@ -995,7 +995,12 @@ def export_complaints_excel(
             risk_type.Name as feedback_risk_type
         FROM dbo.APP_IncidentCase c
         LEFT JOIN AdminsrationUnit issuing_org ON c.IssuingOrgUnitID = issuing_org.UniqueID
-        LEFT JOIN AdminsrationUnit concerned_org ON c.BuildingID = concerned_org.UniqueID
+        OUTER APPLY (
+            SELECT STRING_AGG(au.Name, N'، ') as target_dept_names
+            FROM dbo.APP_IncidentCaseTargetDepartment td
+            JOIN dbo.AdminsrationUnit au ON td.DepartmentID = au.UniqueID
+            WHERE td.IncidentRequestCaseID = c.IncidentRequestCaseID
+        ) target_depts
         LEFT JOIN APP_LOOKUP_DOMAIN domain ON c.DomainID = domain.DomainID
         LEFT JOIN APP_LOOKUP_CATEGORY category ON c.CategoryID = category.CategoryID
         LEFT JOIN APP_LOOKUP_SUBCATEGORY subcat ON c.SubCategoryID = subcat.SubCategoryID

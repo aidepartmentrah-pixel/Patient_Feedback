@@ -62,7 +62,7 @@ def _fetch_doctors_with_incident_counts(
                 ON ic.ClinicalRiskTypeID = crt.ClinicalRiskTypeID
             LEFT JOIN dbo.APP_LOOKUP_DOCTOR d 
                 ON icd.DoctorID = d.DoctorID
-            LEFT JOIN dbo.APP_VIEWTABLE_VW_DOCTORS vw 
+            LEFT JOIN dbo.VW_Doctors vw 
                 ON icd.DoctorID = vw.DoctorID
             LEFT JOIN dbo.APP_RESERVE_DOCTOR rd 
                 ON icd.DoctorID = rd.DoctorID

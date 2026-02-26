@@ -18,6 +18,16 @@ def _get_classifier():
     return classify_feedback
 
 
+def _get_valid_classifications(subcategory_id: int) -> list[int]:
+    """Get valid classification IDs for a subcategory."""
+    try:
+        from api.db_layer.lookups import get_classifications
+        classifications = get_classifications(subcategory_id)
+        return [c.get("ClassificationID") for c in classifications if c.get("ClassificationID")]
+    except Exception:
+        return []
+
+
 def classify_text(text: str, explain: bool = True) -> dict:
     """
     Classify patient feedback text into multiple categories.
@@ -37,8 +47,10 @@ def classify_text(text: str, explain: bool = True) -> dict:
         - harm_level
         - improvement_opportunity_type
     """
+    print(f"[CLASSIFY] Received text length: {len(text) if text else 0}")
     
     if not text or not text.strip():
+        print("[CLASSIFY] ERROR: Empty text received")
         return {
             "success": False,
             "error": "EMPTY_TEXT",
@@ -49,13 +61,27 @@ def classify_text(text: str, explain: bool = True) -> dict:
     try:
         # Run classification model
         # classify_feedback expects: patient_text, text_2, text_3, Print
+        print("[CLASSIFY] Getting classifier...")
         classifier = _get_classifier()
+        print("[CLASSIFY] Running classification...")
         classification_result = classifier(
             patient_text=text,
             text_2="",
             text_3="",
             Print=False
         )
+        print(f"[CLASSIFY] Result: {classification_result}")
+        
+        # Validate classification_en_id against subcategory
+        sub_category_id = classification_result.get("sub_category_id")
+        classification_en_id = classification_result.get("classification_en_id")
+        
+        if sub_category_id and classification_en_id:
+            valid_ids = _get_valid_classifications(sub_category_id)
+            if valid_ids and classification_en_id not in valid_ids:
+                # Pick first valid classification for this subcategory
+                classification_result["classification_en_id"] = valid_ids[0]
+                classification_result["classification_en"] = f"Classification {valid_ids[0]}"
         
         return {
             "success": True,
@@ -64,6 +90,9 @@ def classify_text(text: str, explain: bool = True) -> dict:
         }
         
     except Exception as e:
+        import traceback
+        print(f"[CLASSIFY] ERROR: {type(e).__name__}: {str(e)}")
+        traceback.print_exc()
         return {
             "success": False,
             "error": "CLASSIFICATION_FAILED",

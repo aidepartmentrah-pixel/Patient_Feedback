@@ -127,7 +127,7 @@ def search_doctors(search_text: str, limit: int = 20) -> Dict[str, Any]:
     Search for doctors by name.
     
     DUAL-SOURCE PATTERN: Merges results from both hospital view
-    (APP_VIEWTABLE_VW_DOCTORS) and reserve table (APP_RESERVE_DOCTOR).
+    (VW_Doctors) and reserve table (APP_RESERVE_DOCTOR).
     
     Args:
         search_text: Text to search for in doctor names

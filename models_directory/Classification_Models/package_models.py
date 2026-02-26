@@ -71,11 +71,11 @@ SEVERITY_MAP = {
 
 STAGE_MAP = {
     1: "Examination & Diagnosis",
-    2: "Admissions",
-    4: "Care on the Ward",
-    6: "Discharge/Transfer",
-    8: "Operation/Procedure",
-    9: "Unspecified",
+    2: "Admission",
+    3: "Care on the Ward",
+    4: "Operation / Procedure",
+    5: "Discharge / Transfer",
+    6: "Unspecified",
 }
 
 HARM_MAP = {
@@ -194,14 +194,53 @@ def classify_feedback(patient_text, text_2, text_3, Print = False):
 
 
     severity_level_id = predict_severity_from_embedding(Patient_Embedding)
-    stage_id = classify_stage_Score_Based(Patient_Text, Print)
+    
+    # Stage classification returns a dict with chosen_stage being a string
+    stage_result = classify_stage_Score_Based(Patient_Text, Print)
+    # Map stage names to IDs matching reference API:
+    # 1=Examination & Diagnosis, 2=Admission, 3=Care on Ward, 4=Operation, 5=Discharge, 6=Unspecified
+    STAGE_ENCODINGS = {
+        "examination_diagnosis": 1,
+        "admission": 2,
+        "care_on_ward": 3,
+        "discharge": 5,
+        "operation": 4,
+        "unspecified": 6
+    }
+    chosen_stage = stage_result.get("chosen_stage") if isinstance(stage_result, dict) else None
+    stage_id = STAGE_ENCODINGS.get(chosen_stage, 6) if chosen_stage else 6  # default to unspecified (id=6)
 
     harm_result = predict_harm_from_embedding(Patient_Embedding)
     harm_level_id = harm_result["harm_level"]
 
-    feedback_type_id = predict_feedback_type_from_embedding(Patient_Embedding)
-    improvement_opportunity_id = predict_improvement_from_embedding(Patient_Embedding)
+    # feedback_type and improvement functions return strings directly
+    feedback_type_label = predict_feedback_type_from_embedding(Patient_Embedding)
+    improvement_opportunity_label = predict_improvement_from_embedding(Patient_Embedding)
     classification_en_id = predict_classification_en_from_embedding(Patient_Embedding)
+
+    # Reverse lookup for IDs (for compatibility)
+    FEEDBACK_TYPE_REVERSE = {v: k for k, v in FEEDBACK_TYPE_MAP.items()}
+    IMPROVEMENT_REVERSE = {v: k for k, v in IMPROVEMENT_OPPORTUNITY_MAP.items()}
+    # Also check for actual returned labels from model
+    FEEDBACK_LABEL_TO_ID = {
+        "Improvement Opportunity": 1,
+        "Notice": 2, 
+        "Critique Suggestion": 3,
+        "Other": 4,
+        "Complaint": 1,
+        "Compliment": 2,
+        "Suggestion": 3,
+    }
+    IMPROVEMENT_LABEL_TO_ID = {
+        "Ordinary Complaint": 1,
+        "Red Flag": 2,
+        "Never Event": 3,
+        "Process Improvement": 1,
+        "Training Needed": 2,
+        "Resource Allocation": 3,
+    }
+    feedback_type_id = FEEDBACK_TYPE_REVERSE.get(feedback_type_label, FEEDBACK_LABEL_TO_ID.get(feedback_type_label, 4))
+    improvement_opportunity_id = IMPROVEMENT_REVERSE.get(improvement_opportunity_label, IMPROVEMENT_LABEL_TO_ID.get(improvement_opportunity_label, 1))
 
     result = {
         "domain_id": domain_id,

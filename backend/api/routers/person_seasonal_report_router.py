@@ -286,8 +286,12 @@ async def export_all_doctors_seasonal_word(
     - 500: Report generation failed
     """
     try:
+        print(f"[ALL-DOCTORS-WORD] Request: season_start={season_start}, season_end={season_end}")
+        
         # Authorization check: Only SOFTWARE_ADMIN, WORKER, or COMPLAINT_SUPERVISOR
         require_role(current_user, [SOFTWARE_ADMIN, WORKER, COMPLAINT_SUPERVISOR])
+        
+        print("[ALL-DOCTORS-WORD] Authorization passed")
         
         # Validate dates
         if season_start >= season_end:
@@ -299,11 +303,15 @@ async def export_all_doctors_seasonal_word(
         # Import the aggregate report generator
         from ..services.aggregate_seasonal_report_service import generate_all_doctors_seasonal_word
         
+        print("[ALL-DOCTORS-WORD] Calling generate_all_doctors_seasonal_word...")
+        
         # Generate Word document
         word_bytes = generate_all_doctors_seasonal_word(
             season_start=season_start,
             season_end=season_end
         )
+        
+        print(f"[ALL-DOCTORS-WORD] Generated document, size={len(word_bytes)} bytes")
         
         # Wrap bytes in BytesIO for StreamingResponse
         word_file = BytesIO(word_bytes)
@@ -323,6 +331,7 @@ async def export_all_doctors_seasonal_word(
     
     except ValueError as e:
         # No doctors found or validation error
+        print(f"[ALL-DOCTORS-WORD] ValueError: {str(e)}")
         if 'not found' in str(e).lower() or 'no active doctors' in str(e).lower():
             raise HTTPException(status_code=404, detail=str(e))
         else:
@@ -332,6 +341,9 @@ async def export_all_doctors_seasonal_word(
         raise
     
     except Exception as e:
+        import traceback
+        print(f"[ALL-DOCTORS-WORD] ERROR: {type(e).__name__}: {str(e)}")
+        traceback.print_exc()
         raise HTTPException(
             status_code=500,
             detail=f"Failed to generate aggregate doctor seasonal report: {str(e)}"

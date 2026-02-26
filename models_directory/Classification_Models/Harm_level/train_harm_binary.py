@@ -5,8 +5,13 @@ Harm Binary Classification Model
 
 import json
 import os
+import sys
 from pathlib import Path
 import traceback
+
+# Add workspace root to Python path for direct script execution
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
+
 import numpy as np
 import pandas as pd
 import joblib
@@ -122,12 +127,16 @@ def train_harm_binary(base_path: str | None = None):
         # Save model
         joblib.dump(model, MODEL_PATH)
 
-        print("✅ Harm binary model trained successfully")
+        print("[OK] Harm binary model trained successfully")
 
         return model, standardized_metrics
 
     except Exception as e:
+        print(f"[ERROR] train_harm_binary failed: {str(e)}")
         traceback.print_exc()
+        import sys
+        sys.stdout.flush()
+        sys.stderr.flush()
         return None, None
 
 

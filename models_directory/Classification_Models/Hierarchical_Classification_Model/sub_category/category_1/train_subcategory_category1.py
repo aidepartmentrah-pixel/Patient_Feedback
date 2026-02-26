@@ -133,9 +133,9 @@ def train_subcategory_cat1(base_path=None):
             f.write("\n\n")
 
     print("==========================================")
-    print("✔ SUBCATEGORY MODEL (CATEGORY=1) TRAINED")
-    print("✔ MODELS SAVED IN:", MODEL_DIR)
-    print("✔ REPORT SAVED:", REPORT_FILE)
+    print(" SUBCATEGORY MODEL (CATEGORY=1) TRAINED")
+    print(" MODELS SAVED IN:", MODEL_DIR)
+    print(" REPORT SAVED:", REPORT_FILE)
     print("==========================================\n")
 
     return trained_models, results

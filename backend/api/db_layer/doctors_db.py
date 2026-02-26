@@ -217,7 +217,7 @@ def get_doctor_profile(doctor_id: int) -> Optional[Dict[str, Any]]:
             return profile
         
         # Not found in reserve, try hospital view
-        # APP_VIEWTABLE_VW_DOCTORS has columns: DoctorID, Name, SpecialityName, IsActive, etc.
+        # VW_Doctors has columns: DoctorID, Name, SpecialityName, IsActive, etc.
         query_hospital = """
             SELECT
                 d.DoctorID as id,
@@ -228,7 +228,7 @@ def get_doctor_profile(doctor_id: int) -> Optional[Dict[str, Any]]:
                 'hospital' as source,
                 NULL as source_system,
                 NULL as last_synced_at
-            FROM dbo.APP_VIEWTABLE_VW_DOCTORS d
+            FROM dbo.VW_Doctors d
             WHERE d.DoctorID = ?
         """
         

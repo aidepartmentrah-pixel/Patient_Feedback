@@ -5,9 +5,12 @@ Handles training pipeline execution and metadata management.
 
 import asyncio
 import threading
+import json
+import os
 from datetime import datetime
 from typing import Dict, Any, List
 import traceback
+from pathlib import Path
 
 from ..db_layer.training_db import (
     store_training_run,
@@ -19,13 +22,51 @@ from ..db_layer.training_db import (
 )
 
 
-# Global training state
+# File-based progress tracking (shared across processes)
+WORKSPACE_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+PROGRESS_FILE = os.path.join(str(WORKSPACE_ROOT), "backend", "data", "training_progress.json")
+
+# Ensure data directory exists
+os.makedirs(os.path.dirname(PROGRESS_FILE), exist_ok=True)
+
+
+def _read_progress_file() -> Dict[str, Any]:
+    """Read progress from shared file."""
+    default = {
+        "is_running": False,
+        "run_id": None,
+        "current_model": None,
+        "current_step": 0,
+        "total_steps": 18,
+        "started_at": None,
+        "last_completed": None,
+        "completed_models": []
+    }
+    try:
+        if os.path.exists(PROGRESS_FILE):
+            with open(PROGRESS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"[PROGRESS] Error reading progress file: {e}")
+    return default
+
+
+def _write_progress_file(data: Dict[str, Any]):
+    """Write progress to shared file."""
+    try:
+        with open(PROGRESS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+    except Exception as e:
+        print(f"[PROGRESS] Error writing progress file: {e}")
+
+
+# Global training state (for in-process checks)
 _training_state = {
     "is_running": False,
     "current_run_id": None
 }
 
-# Global progress tracking state
+# Global progress tracking state (kept for backwards compatibility, but file is authoritative)
 _training_progress = {
     "is_running": False,
     "run_id": None,
@@ -245,7 +286,9 @@ def get_ml_database_size_history() -> Dict[str, List[Dict[str, Any]]]:
 
 def is_training_running() -> bool:
     """Check if training is currently running."""
-    return _training_state["is_running"]
+    # Read from file for cross-process visibility
+    progress = _read_progress_file()
+    return progress.get("is_running", False)
 
 
 def update_training_progress(model_name: str, step: int):
@@ -256,18 +299,31 @@ def update_training_progress(model_name: str, step: int):
         model_name: Name of the model currently being trained
         step: Current step number (1-based)
     """
-    _training_progress.update({
-        "current_model": model_name,
-        "current_step": step,
-        "last_completed": _training_progress.get("current_model")  # Previous model
-    })
+    # Read current state from file
+    progress = _read_progress_file()
+    
+    last_completed = progress.get("current_model")  # Previous model
+    completed_models = progress.get("completed_models", [])
     
     # Add to completed models list if not first step
-    if step > 1 and _training_progress.get("last_completed"):
-        if _training_progress["last_completed"] not in _training_progress["completed_models"]:
-            _training_progress["completed_models"].append(_training_progress["last_completed"])
+    if step > 1 and last_completed:
+        if last_completed not in completed_models:
+            completed_models.append(last_completed)
     
-    print(f"[PROGRESS] Step {step}/{_training_progress['total_steps']}: {model_name}")
+    progress.update({
+        "current_model": model_name,
+        "current_step": step,
+        "last_completed": last_completed,
+        "completed_models": completed_models
+    })
+    
+    # Write back to file
+    _write_progress_file(progress)
+    
+    # Also update in-memory for backwards compatibility
+    _training_progress.update(progress)
+    
+    print(f"[PROGRESS] Step {step}/{progress.get('total_steps', 18)}: {model_name}")
 
 
 def get_training_progress() -> Dict[str, Any]:
@@ -277,13 +333,16 @@ def get_training_progress() -> Dict[str, Any]:
     Returns:
         Dict with progress information including percentage and time estimates
     """
-    if not _training_progress["is_running"]:
+    # Read from file for cross-process visibility
+    progress = _read_progress_file()
+    
+    if not progress.get("is_running", False):
         return {
             "is_running": False,
             "run_id": None,
             "current_model": None,
             "current_step": 0,
-            "total_steps": _training_progress["total_steps"],
+            "total_steps": progress.get("total_steps", 18),
             "progress_percentage": 0,
             "elapsed_seconds": 0,
             "estimated_remaining_seconds": 0,
@@ -291,14 +350,17 @@ def get_training_progress() -> Dict[str, Any]:
         }
     
     # Calculate elapsed time
-    started_at = _training_progress.get("started_at")
+    started_at = progress.get("started_at")
     elapsed_seconds = 0
     if started_at:
-        elapsed_seconds = int((datetime.now() - datetime.fromisoformat(started_at)).total_seconds())
+        try:
+            elapsed_seconds = int((datetime.now() - datetime.fromisoformat(started_at)).total_seconds())
+        except:
+            elapsed_seconds = 0
     
     # Calculate progress percentage
-    current_step = _training_progress.get("current_step", 0)
-    total_steps = _training_progress.get("total_steps", 18)
+    current_step = progress.get("current_step", 0)
+    total_steps = progress.get("total_steps", 18)
     progress_percentage = int((current_step / total_steps) * 100) if total_steps > 0 else 0
     
     # Estimate remaining time
@@ -310,28 +372,33 @@ def get_training_progress() -> Dict[str, Any]:
     
     return {
         "is_running": True,
-        "run_id": _training_progress.get("run_id"),
-        "current_model": _training_progress.get("current_model"),
+        "run_id": progress.get("run_id"),
+        "current_model": progress.get("current_model"),
         "current_step": current_step,
         "total_steps": total_steps,
         "progress_percentage": progress_percentage,
         "elapsed_seconds": elapsed_seconds,
         "estimated_remaining_seconds": estimated_remaining_seconds,
-        "last_completed": _training_progress.get("last_completed")
+        "last_completed": progress.get("last_completed")
     }
 
 
 def reset_training_progress():
     """Reset training progress state."""
-    _training_progress.update({
+    progress_data = {
         "is_running": False,
         "run_id": None,
         "current_model": None,
         "current_step": 0,
+        "total_steps": 18,
         "started_at": None,
         "last_completed": None,
         "completed_models": []
-    })
+    }
+    # Write to file
+    _write_progress_file(progress_data)
+    # Also update in-memory
+    _training_progress.update(progress_data)
 
 
 def initialize_training_progress(run_id: str, total_steps: int = 18):
@@ -342,7 +409,7 @@ def initialize_training_progress(run_id: str, total_steps: int = 18):
         run_id: Unique run identifier
         total_steps: Total number of training steps (default: 18)
     """
-    _training_progress.update({
+    progress_data = {
         "is_running": True,
         "run_id": run_id,
         "current_model": "Initializing...",
@@ -351,7 +418,11 @@ def initialize_training_progress(run_id: str, total_steps: int = 18):
         "started_at": datetime.now().isoformat(),
         "last_completed": None,
         "completed_models": []
-    })
+    }
+    # Write to file
+    _write_progress_file(progress_data)
+    # Also update in-memory
+    _training_progress.update(progress_data)
 
 
 # ==================== MODEL GROUPING & AGGREGATION ====================

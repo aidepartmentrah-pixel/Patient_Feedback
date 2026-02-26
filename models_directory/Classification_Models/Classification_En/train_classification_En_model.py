@@ -34,8 +34,8 @@ MODEL_PATH = SCRIPT_DIR / "ClassificationEN_Model.pkl"
 REPORT_PATH = SCRIPT_DIR / "classification_en_metrics.txt"
 CM_PATH = SCRIPT_DIR / "classification_en_confusion_matrix.png"
 
-# 🔴 IMPORTANT: BASE ID
-CLASS_BASE = 78   # 78 → 0, 79 → 1, ...
+# IMPORTANT: BASE ID
+CLASS_BASE = 78   
 
 # --------------------------------------------------
 # Helpers
@@ -127,7 +127,7 @@ def train_classification_en_model():
         print("Local classes:", unique_classes)
 
         if len(unique_classes) < 2:
-            raise RuntimeError("❌ Only one class present. Cannot train classifier.")
+            raise RuntimeError("[ERROR] Only one class present. Cannot train classifier.")
 
         # ------------------------------
         # Model
@@ -175,7 +175,7 @@ def train_classification_en_model():
             title="Classification_EN Confusion Matrix (REAL IDs)"
         )
 
-        print("✅ Training finished successfully.")
+        print("Training finished successfully.")
         return model, metrics
 
     except Exception:

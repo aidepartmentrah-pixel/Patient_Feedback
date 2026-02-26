@@ -94,7 +94,7 @@ def _assert_user_can_modify(action_item: Dict[str, Any], subcase: Dict[str, Any]
     
     # Allow if user has privileged role (use actual role codes from the system)
     privileged_roles = [
-        "COMPLAINT_SUPERVISOR", "SOFTWARE_ADMIN",
+        "COMPLAINT_SUPERVISOR", "SOFTWARE_ADMIN", "WORKER",
         "SECTION_ADMIN", "DEPARTMENT_ADMIN", "ADMINISTRATION_ADMIN",
         "UNIVERSAL_SECTION"
     ]

@@ -143,7 +143,7 @@ def get_latest_training_status() -> Dict[str, Any]:
     cursor = conn.cursor()
     
     try:
-        # Get latest run
+        # Get latest run (for status display)
         cursor.execute("""
             SELECT run_id, started_at, finished_at, status, models_trained
             FROM training_runs
@@ -151,30 +151,57 @@ def get_latest_training_status() -> Dict[str, Any]:
             LIMIT 1
         """)
         
-        run_row = cursor.fetchone()
+        latest_run = cursor.fetchone()
         
-        if not run_row:
+        if not latest_run:
             return {
                 "last_run": None,
                 "status": "never_run",
                 "models": []
             }
         
-        run_id = run_row['run_id']
+        # If latest run completed successfully, use its metrics
+        if latest_run['status'] == 'completed' and latest_run['models_trained'] > 0:
+            run_id_for_metrics = latest_run['run_id']
+            last_run_timestamp = latest_run['started_at']
+            status = latest_run['status']
+        else:
+            # Latest run failed - find the last successful run for metrics
+            cursor.execute("""
+                SELECT run_id, started_at, status
+                FROM training_runs
+                WHERE status = 'completed' AND models_trained > 0
+                ORDER BY started_at DESC
+                LIMIT 1
+            """)
+            successful_run = cursor.fetchone()
+            
+            if successful_run:
+                run_id_for_metrics = successful_run['run_id']
+                last_run_timestamp = successful_run['started_at']
+                # Show that latest run failed, but we have metrics from earlier
+                status = latest_run['status']
+            else:
+                # No successful runs at all
+                return {
+                    "last_run": latest_run['started_at'],
+                    "status": latest_run['status'],
+                    "models": []
+                }
         
-        # Get metrics for this run
+        # Get metrics for the chosen run
         cursor.execute("""
             SELECT model_name, num_records, accuracy, precision, recall, f1, last_trained
             FROM model_metrics
             WHERE run_id = ?
             ORDER BY model_name
-        """, (run_id,))
+        """, (run_id_for_metrics,))
         
         models = [dict(row) for row in cursor.fetchall()]
         
         return {
-            "last_run": run_row['started_at'],
-            "status": run_row['status'],
+            "last_run": last_run_timestamp,
+            "status": status,
             "models": models
         }
     finally:

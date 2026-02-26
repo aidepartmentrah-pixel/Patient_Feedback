@@ -16,18 +16,18 @@ metrics_list = ["staff_security_behavior"]
 # Helper Functions
 
 def validate_dataset(X, y, name="DATASET"):
-    print(f"\n🔍 Validating {name} ...")
+    print(f"\n[VALIDATE] Validating {name} ...")
 
     # If dataset missing
     if X is None or y is None:
-        print("❌ ERROR: X or y not provided.")
+        print("[ERROR] ERROR: X or y not provided.")
         return
 
     # Convert to list if numpy
     try:
         total = len(y)
     except:
-        print("❌ ERROR: y has no length.")
+        print("[ERROR] ERROR: y has no length.")
         return
 
     # Count missing labels
@@ -37,7 +37,7 @@ def validate_dataset(X, y, name="DATASET"):
     print(f"Missing labels: {none_labels}")
 
     if none_labels > 0:
-        print("⚠ WARNING: Some rows have NULL stage labels.")
+        print("[WARNING] WARNING: Some rows have NULL stage labels.")
 
     # Check feature vector size
     if len(X) > 0:

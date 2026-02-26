@@ -115,7 +115,7 @@ def train_feedback_type_model():
         # Handle degenerate case (only 1 class)
         # ----------------------------------------
         if len(unique_classes) == 1:
-            print("⚠️ Only one class found. Using DummyClassifier.")
+            print("[WARNING] Only one class found. Using DummyClassifier.")
             model = DummyClassifier(strategy="most_frequent")
             model.fit(X_train, y_train)
             y_pred = model.predict(X_test)

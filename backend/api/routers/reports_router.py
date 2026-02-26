@@ -218,9 +218,9 @@ def view_seasonal_report(
     require_unit_in_scope(current_user, request.orgunit_id)
     from backend.api.db_layer.seasonal_report import resolve_season_id_from_year_trimester
     
-    # 🔍 DEBUG: Log incoming request
+    # DEBUG: Log incoming request
     print("\n" + "="*100)
-    print(f"[SEASONAL/VIEW] 📥 INCOMING REQUEST")
+    print(f"[SEASONAL/VIEW] INCOMING REQUEST")
     print(f"  year: {request.year}")
     print(f"  trimester: {request.trimester}")
     print(f"  orgunit_id: {request.orgunit_id}")
@@ -434,7 +434,7 @@ async def export_seasonal_report(
         require_unit_in_scope(current_user, orgunit_id)
     
     print("\n" + "="*100)
-    print(f"[ROUTER] ⚡ SEASONAL EXPORT ENDPOINT CALLED ⚡")
+    print(f"[ROUTER] SEASONAL EXPORT ENDPOINT CALLED")
     print(f"[ROUTER] Params: year={year}, period={period}, format={format}")
     print(f"[ROUTER] orgunit_id={orgunit_id}, orgunit_type={orgunit_type}")
     print("="*100 + "\n")
@@ -583,7 +583,7 @@ async def export_monthly_report(
     require_logged_in(current_user)
     
     print("\n" + "="*100)
-    print(f"[ROUTER] ⚡ EXPORT ENDPOINT CALLED ⚡")
+    print(f"[ROUTER] EXPORT ENDPOINT CALLED")
     print(f"[ROUTER] Params: year={year}, month={month}, format={format}, display_mode={display_mode}")
     print(f"[ROUTER] Date range: start_date={start_date}, end_date={end_date}")
     print(f"[ROUTER] scope={scope}")
@@ -697,8 +697,8 @@ async def export_monthly_report(
                 "filters_applied": {"multi_export": True, "level": report_level}
             }
             
-            print(f"[ROUTER] 📦 Stored ZIP as export_id: {export_id}")
-            print(f"[ROUTER] ✅ Returning download metadata (not file directly)")
+            print(f"[ROUTER] Stored ZIP as export_id: {export_id}")
+            print(f"[ROUTER] [OK] Returning download metadata (not file directly)")
             
             # Return JSON with download URL instead of file
             # Frontend will see this isn't a file and should handle the download_url
