@@ -417,7 +417,7 @@ def train_ML_Metric_Reader(metric_name):
             f.write("Confusion Matrix:\n")
             f.write(str(cm))
 
-        print(f"[REPORT] {name} report saved → {report_path}")
+        print(f"[REPORT] {name} report saved: {report_path}")
 
     evaluate_and_save(lr, "lr")
     evaluate_and_save(rf, "rf")
