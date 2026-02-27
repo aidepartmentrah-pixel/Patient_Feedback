@@ -1,9 +1,18 @@
+import sys
+import os
+from pathlib import Path
+
+# Allow running this file directly or as a module
+_this_dir = Path(__file__).resolve().parent
+_workspace_root = _this_dir.parent.parent.parent  # models_directory -> Classification_Models -> Stage -> Patient_Feedback
+if str(_workspace_root) not in sys.path:
+    sys.path.insert(0, str(_workspace_root))
+
 from models_directory.Classification_Models.Stage.modular_functions import get_embedding
 from models_directory.Classification_Models.Stage.Training_Internal_Metrics.internal_metrics import split_max_score
 import numpy as np
 import joblib
 import json
-import os
 
 
 
@@ -79,10 +88,10 @@ def classify_stage_Score_Based(sentence: str, Troubleshoot = False):
     STAGE_ENCODINGS = {
         "examination_diagnosis": 1,
         "admission": 2,
-        "care_on_ward": 4,
-        "discharge": 6,
-        "operation": 8,
-        "unspecified": 9
+        "care_on_ward": 3,
+        "discharge": 5,
+        "operation": 4,
+        "unspecified": 99
     }
 
     # Run the metric scoring using your function
@@ -149,7 +158,7 @@ def classify_stage_Score_Based(sentence: str, Troubleshoot = False):
         print(variable)
 
 
-    stage_encoding = STAGE_ENCODINGS.get(chosen_stage, 9)
+    stage_encoding = STAGE_ENCODINGS.get(chosen_stage, 99)
 
     return stage_encoding
 

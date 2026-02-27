@@ -246,20 +246,27 @@ def classify_feedback(patient_text, text_2, text_3, Print = False):
     severity_level_id = adapt_severity_to_db(raw_severity)
     print(f"[DEBUG] Severity: raw_model={raw_severity} ({SEVERITY_MODEL_MAP.get(raw_severity, 'UNKNOWN')})  db_id={severity_level_id} ({DB_SEVERITY_LABELS.get(severity_level_id, 'UNKNOWN')})")
     
-    # Stage classification returns a dict with chosen_stage being a string
+    # Stage classification returns an integer encoding directly:
+    # Model returns: 1=exam/diag, 2=admission, 3=care_on_ward, 4=operation, 5=discharge, 99=unspecified
+    # DB IDs:        1=exam/diag, 2=admission, 3=care_on_ward, 4=operation, 5=discharge, 6=unspecified
     stage_result = classify_stage_Score_Based(Patient_Text, Print)
-    # Map stage names to IDs matching reference API:
-    # 1=Examination & Diagnosis, 2=Admission, 3=Care on Ward, 4=Operation, 5=Discharge, 6=Unspecified
-    STAGE_ENCODINGS = {
-        "examination_diagnosis": 1,
-        "admission": 2,
-        "care_on_ward": 3,
-        "discharge": 5,
-        "operation": 4,
-        "unspecified": 6
-    }
-    chosen_stage = stage_result.get("chosen_stage") if isinstance(stage_result, dict) else None
-    stage_id = STAGE_ENCODINGS.get(chosen_stage, 6) if chosen_stage else 6  # default to unspecified (id=6)
+    
+    # Handle the integer return value
+    if isinstance(stage_result, int):
+        # Model encoding 99 maps to DB ID 6 (unspecified), others match directly
+        stage_id = 6 if stage_result == 99 else stage_result
+    else:
+        # Legacy fallback for dict return (shouldn't happen anymore)
+        chosen_stage = stage_result.get("chosen_stage") if isinstance(stage_result, dict) else None
+        STAGE_NAME_TO_DB = {
+            "examination_diagnosis": 1,
+            "admission": 2,
+            "care_on_ward": 3,
+            "discharge": 5,
+            "operation": 4,
+            "unspecified": 6
+        }
+        stage_id = STAGE_NAME_TO_DB.get(chosen_stage, 6) if chosen_stage else 6
 
     # Harm prediction with adapter
     harm_result = predict_harm_from_embedding(Patient_Embedding)

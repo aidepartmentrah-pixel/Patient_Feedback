@@ -110,7 +110,7 @@ def predict_sentence_metrics(text, top_k=13, Troubleshoot = False):
         print(f"Results for: {text}")
         print("==============================")
         for metric, score in results[:top_k]:
-            print(f"{metric:<35} -> {score:.4f}")
+            print(f"{metric:<35} → {score:.4f}")
 
 
     return results[:top_k]
@@ -165,7 +165,7 @@ def predict_metrics_from_embedding(normalized_vec,Troubleshoot):
         print("\n==============================")
         print("==============================")
         for metric, score in results:
-            print(f"{metric:<35} -> {score:.4f}")
+            print(f"{metric:<35} → {score:.4f}")
 
 
     return results

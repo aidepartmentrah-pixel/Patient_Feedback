@@ -16,18 +16,18 @@ metrics_list = ["staff_security_behavior"]
 # Helper Functions
 
 def validate_dataset(X, y, name="DATASET"):
-    print(f"\n[VALIDATE] Validating {name} ...")
+    print(f"\n🔍 Validating {name} ...")
 
     # If dataset missing
     if X is None or y is None:
-        print("[ERROR] ERROR: X or y not provided.")
+        print("❌ ERROR: X or y not provided.")
         return
 
     # Convert to list if numpy
     try:
         total = len(y)
     except:
-        print("[ERROR] ERROR: y has no length.")
+        print("❌ ERROR: y has no length.")
         return
 
     # Count missing labels
@@ -37,14 +37,14 @@ def validate_dataset(X, y, name="DATASET"):
     print(f"Missing labels: {none_labels}")
 
     if none_labels > 0:
-        print("[WARNING] WARNING: Some rows have NULL stage labels.")
+        print("⚠ WARNING: Some rows have NULL stage labels.")
 
     # Check feature vector size
     if len(X) > 0:
         first_shape = len(X[0])
         print(f"Feature vector length: {first_shape}")
     else:
-        print("P X is empty (no feature vectors loaded).")
+        print("⚠ X is empty (no feature vectors loaded).")
 
     # Check dimension consistency
     bad_rows = 0
@@ -53,9 +53,9 @@ def validate_dataset(X, y, name="DATASET"):
             bad_rows += 1
 
     if bad_rows > 0:
-        print(f" {bad_rows} rows have mismatched vector lengths.")
+        print(f"⚠ {bad_rows} rows have mismatched vector lengths.")
     else:
-        print(" All vectors consistent.")
+        print("✔ All vectors consistent.")
 
 def load_data_for_testing():
     import sqlite3
@@ -81,7 +81,7 @@ def load_data_for_testing():
         conn.close()
         return rows
 
-    print("\nLoading data directly from DB...")
+    print("\n📥 Loading data directly from DB...")
 
     train_rows = load_table(TRAIN_TABLE)
     test_rows  = load_table(TEST_TABLE)
@@ -417,7 +417,7 @@ def train_ML_Metric_Reader(metric_name):
             f.write("Confusion Matrix:\n")
             f.write(str(cm))
 
-        print(f"[REPORT] {name} report saved: {report_path}")
+        print(f"[REPORT] {name} report saved → {report_path}")
 
     evaluate_and_save(lr, "lr")
     evaluate_and_save(rf, "rf")
@@ -583,7 +583,7 @@ def train_ML_Metric_Mapper_Numeric():
         conn.close()
         return rows
 
-    print("\nLoading DB...")
+    print("\n📥 Loading DB...")
     train_rows = load_table(TRAIN_TABLE)
     test_rows  = load_table(TEST_TABLE)
 
@@ -631,7 +631,7 @@ def train_ML_Metric_Mapper_Numeric():
     # Convert DB → ML vectors
     # =========================================
 
-    print("\nExtracting features (TRAIN)...")
+    print("\n🔁 Extracting features (TRAIN)...")
     X_train, y_train = [], []
 
     for row in tqdm(train_rows):
@@ -639,7 +639,7 @@ def train_ML_Metric_Mapper_Numeric():
         X_train.append(vec)
         y_train.append(lab)
 
-    print("\nExtracting features (TEST)...")
+    print("\n🔁 Extracting features (TEST)...")
     X_test, y_test = [], []
 
     for row in tqdm(test_rows):
@@ -653,7 +653,7 @@ def train_ML_Metric_Mapper_Numeric():
     y_train = safe_to_int(y_train, "TRAIN")
     y_test  = safe_to_int(y_test,  "TEST")
 
-    print(" Unique TRAIN labels:", set(y_train))
+    print("✔ Unique TRAIN labels:", set(y_train))
 
     # =========================================
     # Train ML vocab_models
@@ -672,11 +672,11 @@ def train_ML_Metric_Mapper_Numeric():
         )
     }
 
-    print("\nTraining ML vocab_models...\n")
+    print("\n🏋 Training ML vocab_models...\n")
 
     for name, model in MODELS.items():
 
-        print(f"\nTraining {name}...")
+        print(f"\n🚀 Training {name}...")
 
         model.fit(X_train, y_train)
 
@@ -691,9 +691,9 @@ def train_ML_Metric_Mapper_Numeric():
             f.write(f"Accuracy: {acc}\n\n")
             f.write(classification_report(y_test, preds))
 
-        print(f"{name} accuracy: {acc}")
+        print(f"✔ {name} accuracy: {acc}")
 
-    print("\nTraining finished successfully!")
+    print("\n🎉 Training finished successfully!")
 
 
 
