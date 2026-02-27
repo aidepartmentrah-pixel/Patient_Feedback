@@ -170,6 +170,62 @@ def get_departments():
         )
 
 
+@router.get("/section-parents")
+def get_section_parents():
+    """
+    Get all valid parent units for section creation.
+    
+    **Use Case**: Parent dropdown when creating a new section.
+    Only ADMINISTRATION (Type=323) and DEPARTMENT (Type=325) units
+    can be parents of sections. SECTION units (Type=324) cannot be parents.
+    
+    **Returns**:
+    ```json
+    {
+      "parents": [
+        {
+          "id": 1,
+          "name": "Medical Administration",
+          "name_ar": "الإدارة الطبية",
+          "type": 323,
+          "type_name": "ADMINISTRATION"
+        },
+        {
+          "id": 10,
+          "name": "Emergency Department",
+          "name_ar": "قسم الطوارئ",
+          "type": 325,
+          "type_name": "DEPARTMENT"
+        }
+      ],
+      "count": 2
+    }
+    ```
+    
+    **Frontend Usage**:
+    ```javascript
+    // Populate parent dropdown for section creation
+    const response = await fetch('/api/org-units/section-parents');
+    const data = await response.json();
+    const options = data.parents.map(parent => ({
+      value: parent.id,
+      label: `${parent.name} (${parent.type_name})`
+    }));
+    ```
+    """
+    try:
+        parents = org_unit_service.get_section_parents()
+        return {
+            "parents": parents,
+            "count": len(parents)
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve section parents: {str(e)}"
+        )
+
+
 @router.get("/sections")
 def get_sections():
     """
