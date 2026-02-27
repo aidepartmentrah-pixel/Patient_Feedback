@@ -71,7 +71,7 @@ def clean_target(series, target_name, df_name):
     series = pd.to_numeric(series, errors="coerce")
     n_missing = series.isna().sum()
     if n_missing > 0:
-        print(f"⚠️  {n_missing} missing or invalid values found in {df_name}['{target_name}'], dropping those rows.")
+        print(f"  {n_missing} missing or invalid values found in {df_name}['{target_name}'], dropping those rows.")
         series = series.dropna()
     return series.astype(int)
 
@@ -91,7 +91,7 @@ def main():
         X_train_all = parse_embedding_series(df_train[EMBED_COL])
         X_test_all = parse_embedding_series(df_test[EMBED_COL])
 
-        print(f"✅ Embeddings loaded -> train: {X_train_all.shape}, test: {X_test_all.shape}\n")
+        print(f" Embeddings loaded -> train: {X_train_all.shape}, test: {X_test_all.shape}\n")
 
         with open(REPORT_PATH, "w", encoding="utf-8") as report_file:
             report_file.write("Multi-Head Logistic Regression Results\n")
@@ -101,7 +101,7 @@ def main():
                 print(f"\n=== Training head for: {TARGET_COL} ===")
 
                 if TARGET_COL not in df_train.columns:
-                    print(f"⚠️  Skipping {TARGET_COL}: not found in DB.")
+                    print(f"  Skipping {TARGET_COL}: not found in DB.")
                     continue
 
                 # Clean target columns
@@ -112,10 +112,10 @@ def main():
                 X_train = X_train_all[y_train.index]
                 X_test = X_test_all[y_test.index]
 
-                print(f"→ Shapes: X_train={X_train.shape}, y_train={y_train.shape}")
+                print(f" Shapes: X_train={X_train.shape}, y_train={y_train.shape}")
 
                 if len(np.unique(y_train)) < 2:
-                    print(f"⚠️  Skipping {TARGET_COL}: not enough label classes.")
+                    print(f"  Skipping {TARGET_COL}: not enough label classes.")
                     continue
 
                 # Train model
@@ -130,7 +130,7 @@ def main():
                 # Save model
                 model_path = HERE / f"{TARGET_COL}_logreg.pkl"
                 joblib.dump(logreg, model_path)
-                print(f"✅ Saved model: {model_path.name}")
+                print(f" Saved model: {model_path.name}")
 
                 # Write to report
                 report_file.write(f"=== {TARGET_COL.upper()} ===\n")

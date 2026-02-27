@@ -1,14 +1,14 @@
 Severity Level – Ordinal Model Metrics
 
-Accuracy: 0.7263157894736842
-F1: 0.6370009737098344
+Accuracy: 0.7362637362637363
+F1: 0.6244262067046876
 
               precision    recall  f1-score   support
 
            0       0.74      1.00      0.85        67
-           1       1.00      0.08      0.15        24
+           1       0.00      0.00      0.00        20
            2       0.00      0.00      0.00         4
 
-    accuracy                           0.73        95
-   macro avg       0.58      0.36      0.33        95
-weighted avg       0.77      0.73      0.64        95
+    accuracy                           0.74        91
+   macro avg       0.25      0.33      0.28        91
+weighted avg       0.54      0.74      0.62        91

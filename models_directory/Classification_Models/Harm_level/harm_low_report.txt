@@ -1,13 +1,13 @@
 LOW Harm Ordinal Model Results
-Accuracy: 0.4044943820224719
-F1: 0.28219271365338777
+Accuracy: 0.39285714285714285
+F1: 0.2716266686854922
 
               precision    recall  f1-score   support
 
-           0       0.31      0.15      0.21        26
+           0       0.31      0.17      0.22        24
            1       0.00      0.00      0.00        29
-           2       0.42      0.94      0.58        34
+           2       0.41      0.94      0.57        31
 
-    accuracy                           0.40        89
-   macro avg       0.24      0.37      0.26        89
-weighted avg       0.25      0.40      0.28        89
+    accuracy                           0.39        84
+   macro avg       0.24      0.37      0.26        84
+weighted avg       0.24      0.39      0.27        84

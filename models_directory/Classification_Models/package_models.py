@@ -24,61 +24,59 @@ DOMAIN_MAP = {
 
 CATEGORY_MAP = {
     1: "Communication",
-    2: "Environement",
-    3: "Institutional Processes",
-    4: "Listening",
-    5: "Quality of Care",
-    6: "Respect & Patient Rights",
+    2: "Listening",
+    3: "Respect & Patient Rights",
+    4: "Environment",
+    5: "Institutional Processes",
+    6: "Quality of Care",
     7: "Safety",
 }
 
 SUBCATEGORY_MAP = {
-    1: "Neglect - General",
-    2: "Absent Communication",
-    3: "Accomodation",
-    4: "Bureaucracy",
-    5: "Clinician - Errors",
-    6: "Delay - Access",
-    8: "Delay - General",
-    9: "Delay - Procedure",
-    10: "Delayed Communication",
-    11: "Dismissing Patients",
-    12: "Disrespect",
-    13: "Documentation",
-    14: "Equipment",
-    15: "Error - Diagnosis",
-    16: "Error - General",
-    18: "Error - Medication",
-    19: "Examination & Monitoring",
-    21: "Failure to Provide",
-    22: "Failure to Respond",
-    23: "Ignoring Patients",
-    24: "Incorrect Communication",
-    26: "Neglect - Hygiene & Personal Care",
-    27: "Rights",
-    28: "Security",
-    29: "Teamwork",
-    30: "Visiting",
-    31: "Ward Cleanliness",
+    1: "Delays - Access",
+    2: "Delays - Communication",
+    3: "Lack of Information",
+    4: "Misinformation",
+    5: "Dismissing Patient Concerns",
+    6: "Ignoring Patient Needs",
+    7: "Lack of Empathy",
+    8: "Dignity & Privacy",
+    9: "Cleanliness",
+    10: "Comfort",
+    11: "Facilities",
+    12: "Security",
+    13: "Administrative Issues",
+    14: "Billing",
+    15: "Scheduling",
+    16: "Wait Times",
+    17: "Staffing",
+    18: "Bureaucracy",
+    19: "Clinical Competence",
+    20: "Diagnosis Issues",
+    21: "Treatment Effectiveness",
+    22: "Medication Errors",
+    24: "Infection Control",
+    25: "Fall Prevention",
+    26: "Equipment Safety",
+    27: "Patient Identification",
 }
 
 # ============================================================
-# MODEL LABEL MAPS — reflect what model was trained to output
-# DO NOT change these to match DB — they represent model semantics
+# MODEL LABEL MAPS - model outputs match DB IDs directly
+# After data cleanup, model outputs = production DB IDs
 # ============================================================
 SEVERITY_MODEL_MAP = {
-    1: "HIGH",
-    2: "LOW",
-    3: "MEDIUM",
+    1: "Low",
+    2: "Medium",
+    3: "High",
 }
 
 HARM_MODEL_MAP = {
-    1: "Severe Harm",
-    2: "Death",
-    3: "High Severe",
-    4: "Minor Harm",
-    5: "Moderate Harm",
-    6: "No Harm",
+    1: "No Harm",
+    2: "Minor",
+    3: "Moderate",
+    4: "Severe",
+    5: "Death",
 }
 
 # ============================================================
@@ -114,45 +112,28 @@ STAGE_MAP = {
 
 
 # ============================================================
-# ADAPTER FUNCTIONS — convert model output to database IDs
+# ADAPTER FUNCTIONS - now identity since model outputs match DB IDs
 # ============================================================
 def adapt_severity_to_db(model_value: int) -> int:
     """
-    Convert model severity output to database ID.
-    Model: 1=HIGH, 2=LOW, 3=MEDIUM
-    DB:    1=Low,  2=Medium, 3=High
+    Model outputs 1-3 which directly match DB IDs.
+    DB: 1=Low, 2=Medium, 3=High
     """
-    MODEL_TO_DB = {
-        1: 3,  # HIGH → DB High (3)
-        2: 1,  # LOW → DB Low (1)
-        3: 2,  # MEDIUM → DB Medium (2)
-    }
-    db_id = MODEL_TO_DB.get(model_value)
-    if db_id is None:
-        print(f"[WARNING] Severity model returned unexpected value: {model_value}. Defaulting to 1 (Low).")
-        return 1
-    return db_id
+    if model_value in (1, 2, 3):
+        return model_value
+    print(f"[WARNING] Severity model returned unexpected value: {model_value}. Defaulting to 1 (Low).")
+    return 1
 
 
 def adapt_harm_to_db(model_value: int) -> int:
     """
-    Convert model harm output to database ID.
-    Model: 1=Severe, 2=Death, 3=High Severe, 4=Minor, 5=Moderate, 6=No Harm
-    DB:    1=No Harm, 2=Minor, 3=Moderate, 4=Severe, 5=Death
+    Model outputs 1-5 which directly match DB IDs.
+    DB: 1=No Harm, 2=Minor, 3=Moderate, 4=Severe, 5=Death
     """
-    MODEL_TO_DB = {
-        1: 4,  # Severe Harm → DB Severe (4)
-        2: 5,  # Death → DB Death (5)
-        3: 3,  # High Severe → DB Moderate (3) [closest match]
-        4: 2,  # Minor Harm → DB Minor (2)
-        5: 3,  # Moderate Harm → DB Moderate (3)
-        6: 1,  # No Harm → DB No Harm (1)
-    }
-    db_id = MODEL_TO_DB.get(model_value)
-    if db_id is None:
-        print(f"[WARNING] Harm model returned unexpected value: {model_value}. Defaulting to 1 (No Harm).")
-        return 1
-    return db_id
+    if model_value in (1, 2, 3, 4, 5):
+        return model_value
+    print(f"[WARNING] Harm model returned unexpected value: {model_value}. Defaulting to 1 (No Harm).")
+    return 1
 
 FEEDBACK_TYPE_MAP = {
     1: "Complaint",
@@ -263,7 +244,7 @@ def classify_feedback(patient_text, text_2, text_3, Print = False):
     # Severity prediction with adapter
     raw_severity = predict_severity_from_embedding(Patient_Embedding)
     severity_level_id = adapt_severity_to_db(raw_severity)
-    print(f"[DEBUG] Severity: raw_model={raw_severity} ({SEVERITY_MODEL_MAP.get(raw_severity, 'UNKNOWN')}) → db_id={severity_level_id} ({DB_SEVERITY_LABELS.get(severity_level_id, 'UNKNOWN')})")
+    print(f"[DEBUG] Severity: raw_model={raw_severity} ({SEVERITY_MODEL_MAP.get(raw_severity, 'UNKNOWN')})  db_id={severity_level_id} ({DB_SEVERITY_LABELS.get(severity_level_id, 'UNKNOWN')})")
     
     # Stage classification returns a dict with chosen_stage being a string
     stage_result = classify_stage_Score_Based(Patient_Text, Print)
@@ -284,7 +265,7 @@ def classify_feedback(patient_text, text_2, text_3, Print = False):
     harm_result = predict_harm_from_embedding(Patient_Embedding)
     raw_harm = harm_result["harm_level"]
     harm_level_id = adapt_harm_to_db(raw_harm)
-    print(f"[DEBUG] Harm: raw_model={raw_harm} ({HARM_MODEL_MAP.get(raw_harm, 'UNKNOWN')}) → db_id={harm_level_id} ({DB_HARM_LABELS.get(harm_level_id, 'UNKNOWN')})")
+    print(f"[DEBUG] Harm: raw_model={raw_harm} ({HARM_MODEL_MAP.get(raw_harm, 'UNKNOWN')}) db_id={harm_level_id} ({DB_HARM_LABELS.get(harm_level_id, 'UNKNOWN')})")
 
     # feedback_type and improvement functions return strings directly
     feedback_type_label = predict_feedback_type_from_embedding(Patient_Embedding)

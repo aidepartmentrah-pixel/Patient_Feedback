@@ -256,6 +256,74 @@ async def startup_bootstrap_check():
         logger.warning("Configure database via /config page or /api/config/save endpoint")
 
 
+@app.on_event("startup")
+async def startup_ml_warmup():
+    """Pre-load ML models at startup to eliminate cold-start latency."""
+    import time
+    import logging
+    logger = logging.getLogger("ml_warmup")
+    
+    # Skip warmup if in bootstrap mode (DB not configured)
+    if bootstrap_module.BOOTSTRAP_MODE:
+        logger.info("[ML WARMUP] Skipped - running in BOOTSTRAP mode")
+        return
+    
+    logger.info("[ML WARMUP] Starting model initialization...")
+    start = time.time()
+    
+    try:
+        # Import and run a dummy classification to force all lazy-loaded models into RAM
+        from models_directory.Classification_Models.package_models import classify_feedback
+        
+        # Dummy call - forces loading of:
+        # - Tokenizer/Transformer (embedding)
+        # - All hierarchical predictors (domain/category/subcategory)
+        # - Severity, Harm, Stage models
+        # - Classification EN model
+        classify_feedback(
+            patient_text="Warmup initialization text.",
+            text_2="",
+            text_3="",
+            Print=False
+        )
+        
+        elapsed = time.time() - start
+        logger.info(f"[ML WARMUP] Completed in {elapsed:.3f} seconds")
+        
+    except Exception as e:
+        elapsed = time.time() - start
+        logger.error(f"[ML WARMUP] Failed after {elapsed:.3f} seconds: {e}")
+        logger.warning("[ML WARMUP] Server will continue - first classification may be slow")
+
+
+@app.on_event("startup")
+async def startup_stt_warmup():
+    """Pre-load Whisper STT model at startup to eliminate cold-start latency."""
+    import time
+    import logging
+    logger = logging.getLogger("stt_warmup")
+    
+    # Skip warmup if in bootstrap mode (DB not configured)
+    if bootstrap_module.BOOTSTRAP_MODE:
+        logger.info("[STT WARMUP] Skipped - running in BOOTSTRAP mode")
+        return
+    
+    logger.info("[STT WARMUP] Starting Whisper model initialization...")
+    start = time.time()
+    
+    try:
+        from models_directory.STT_Models.Faster_Wisper import get_whisper_model
+        get_whisper_model()
+        
+        elapsed = time.time() - start
+        logger.info(f"[STT WARMUP] Whisper model loaded successfully in {elapsed:.3f} seconds")
+        
+    except Exception as e:
+        elapsed = time.time() - start
+        logger.error(f"[STT WARMUP] Failed after {elapsed:.3f} seconds: {e}")
+        logger.warning("[STT WARMUP] Server will continue - first transcription may be slow")
+
+
 @app.get("/")
 def health_check():
     return {"status": "ok"}

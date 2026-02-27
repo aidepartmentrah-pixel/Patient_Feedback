@@ -44,7 +44,7 @@ def validate_dataset(X, y, name="DATASET"):
         first_shape = len(X[0])
         print(f"Feature vector length: {first_shape}")
     else:
-        print("⚠ X is empty (no feature vectors loaded).")
+        print("P X is empty (no feature vectors loaded).")
 
     # Check dimension consistency
     bad_rows = 0
@@ -53,9 +53,9 @@ def validate_dataset(X, y, name="DATASET"):
             bad_rows += 1
 
     if bad_rows > 0:
-        print(f"⚠ {bad_rows} rows have mismatched vector lengths.")
+        print(f" {bad_rows} rows have mismatched vector lengths.")
     else:
-        print("✔ All vectors consistent.")
+        print(" All vectors consistent.")
 
 def load_data_for_testing():
     import sqlite3
@@ -653,7 +653,7 @@ def train_ML_Metric_Mapper_Numeric():
     y_train = safe_to_int(y_train, "TRAIN")
     y_test  = safe_to_int(y_test,  "TEST")
 
-    print("✔ Unique TRAIN labels:", set(y_train))
+    print(" Unique TRAIN labels:", set(y_train))
 
     # =========================================
     # Train ML vocab_models

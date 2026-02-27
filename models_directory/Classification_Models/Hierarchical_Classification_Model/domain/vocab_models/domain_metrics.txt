@@ -3,59 +3,59 @@
 
 ===== lr =====
 
-Accuracy: 0.5729
+Accuracy: 0.5870
 
-F1 Macro: 0.5100
+F1 Macro: 0.5241
 
 Classification Report:
 
               precision    recall  f1-score   support
 
            0       0.53      0.33      0.41        24
-           1       0.76      0.67      0.71        55
-           2       0.31      0.59      0.41        17
+           1       0.75      0.71      0.73        51
+           2       0.34      0.59      0.43        17
 
-    accuracy                           0.57        96
-   macro avg       0.53      0.53      0.51        96
-weighted avg       0.62      0.57      0.58        96
+    accuracy                           0.59        92
+   macro avg       0.54      0.54      0.52        92
+weighted avg       0.62      0.59      0.59        92
 
 
 
 ===== rf =====
 
-Accuracy: 0.6146
+Accuracy: 0.5761
 
-F1 Macro: 0.3864
+F1 Macro: 0.3263
 
 Classification Report:
 
               precision    recall  f1-score   support
 
-           0       1.00      0.12      0.22        24
-           1       0.61      0.98      0.76        55
-           2       0.40      0.12      0.18        17
+           0       1.00      0.08      0.15        24
+           1       0.58      0.98      0.73        51
+           2       0.25      0.06      0.10        17
 
-    accuracy                           0.61        96
-   macro avg       0.67      0.41      0.39        96
-weighted avg       0.67      0.61      0.52        96
+    accuracy                           0.58        92
+   macro avg       0.61      0.37      0.33        92
+weighted avg       0.63      0.58      0.46        92
 
 
 
 ===== xgb =====
 
-Accuracy: 0.6354
+Accuracy: 0.5870
 
-F1 Macro: 0.4653
+F1 Macro: 0.4473
 
 Classification Report:
 
               precision    recall  f1-score   support
 
-           0       0.54      0.29      0.38        24
-           1       0.71      0.93      0.80        55
-           2       0.27      0.18      0.21        17
+           0       0.50      0.25      0.33        24
+           1       0.68      0.86      0.76        51
+           2       0.27      0.24      0.25        17
 
-    accuracy                           0.64        96
-   macro avg       0.51      0.47      0.47        96
-weighted avg       0.59      0.64      0.59        96
+    accuracy                           0.59        92
+   macro avg       0.48      0.45      0.45        92
+weighted avg       0.55      0.59      0.55        92
 

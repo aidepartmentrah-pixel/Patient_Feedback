@@ -44,13 +44,13 @@ def resolve_user_scope(current_user: CurrentUser) -> Set[int]:
     Return the set of org unit IDs this user is allowed to access.
     
     Algorithm:
-    1. If user has full-access role (SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR, WORKER) → return ALL org units
+    1. If user has full-access role (SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR, WORKER)  return ALL org units
     2. Otherwise, user must have exactly ONE scope (else raise exception)
     3. Expand based on org_unit_type:
-       - SECTION → only that section ID
-       - DEPARTMENT → department + all descendants
-       - ADMINISTRATION → administration + all descendants
-       - COMPLAINT → special handling (typically full access, but falls back to single unit)
+       - SECTION  only that section ID
+       - DEPARTMENT  department + all descendants
+       - ADMINISTRATION  administration + all descendants
+       - COMPLAINT  special handling (typically full access, but falls back to single unit)
     
     Full-Access Roles:
     - SOFTWARE_ADMIN: System administrator
@@ -156,7 +156,7 @@ if __name__ == "__main__":
     # Find test units
     admin_nodes = [n for n in full_tree if n["ParentID"] == n["UniqueID"]]
     if not admin_nodes:
-        print("❌ No administration nodes found in tree")
+        print(" No administration nodes found in tree")
         exit(1)
     
     admin_node = admin_nodes[0]
@@ -166,7 +166,7 @@ if __name__ == "__main__":
     dept_nodes = [n for n in full_tree 
                   if n["ParentID"] == admin_id and n["UniqueID"] != admin_id]
     if not dept_nodes:
-        print("❌ No department nodes found")
+        print(" No department nodes found")
         exit(1)
     
     dept_node = dept_nodes[0]
@@ -176,7 +176,7 @@ if __name__ == "__main__":
     section_nodes = [n for n in full_tree 
                      if n["ParentID"] == dept_id and n["UniqueID"] != dept_id]
     if not section_nodes:
-        print("❌ No section nodes found")
+        print(" No section nodes found")
         exit(1)
     
     section_node = section_nodes[0]
@@ -209,7 +209,7 @@ if __name__ == "__main__":
     admin_scope = resolve_user_scope(software_admin_user)
     print(f"✓ SOFTWARE_ADMIN scope: {len(admin_scope)} org units")
     print(f"  Expected: All {len(full_tree)} units")
-    print(f"  Result: {'✅ PASS' if len(admin_scope) == len(full_tree) else '❌ FAIL'}")
+    print(f"  Result: {' PASS' if len(admin_scope) == len(full_tree) else '❌ FAIL'}")
     
     # =====================================================
     # Test 2: Section user gets only their section
@@ -232,7 +232,7 @@ if __name__ == "__main__":
     section_scope = resolve_user_scope(section_user)
     print(f"✓ SECTION scope: {len(section_scope)} org units")
     print(f"  Expected: 1 unit (only the section)")
-    print(f"  Result: {'✅ PASS' if section_scope == {section_id} else '❌ FAIL'}")
+    print(f"  Result: {' PASS' if section_scope == {section_id} else ' FAIL'}")
     
     # =====================================================
     # Test 3: Department user gets department + sections
@@ -256,7 +256,7 @@ if __name__ == "__main__":
     expected_dept_descendants = org_tree_service.get_descendants(dept_id)
     print(f"✓ DEPARTMENT scope: {len(dept_scope)} org units")
     print(f"  Expected: {len(expected_dept_descendants)} units (department + sections)")
-    print(f"  Result: {'✅ PASS' if dept_scope == expected_dept_descendants else '❌ FAIL'}")
+    print(f"  Result: {' PASS' if dept_scope == expected_dept_descendants else ' FAIL'}")
     
     # =====================================================
     # Test 4: Administration user gets administration + all children
@@ -280,7 +280,7 @@ if __name__ == "__main__":
     expected_admin_descendants = org_tree_service.get_descendants(admin_id)
     print(f"✓ ADMINISTRATION scope: {len(admin_user_scope)} org units")
     print(f"  Expected: {len(expected_admin_descendants)} units (administration + all children)")
-    print(f"  Result: {'✅ PASS' if admin_user_scope == expected_admin_descendants else '❌ FAIL'}")
+    print(f"  Result: {' PASS' if admin_user_scope == expected_admin_descendants else ' FAIL'}")
     
     # =====================================================
     # Test 5: User with 0 scopes should raise error
@@ -298,9 +298,9 @@ if __name__ == "__main__":
     
     try:
         resolve_user_scope(no_scope_user)
-        print("❌ FAIL: Should have raised ValueError")
+        print(" FAIL: Should have raised ValueError")
     except ValueError as e:
-        print(f"✅ PASS: Correctly raised error: {e}")
+        print(f" PASS: Correctly raised error: {e}")
     
     # =====================================================
     # Test 6: User with 2 scopes should raise error
@@ -329,9 +329,9 @@ if __name__ == "__main__":
     
     try:
         resolve_user_scope(multi_scope_user)
-        print("❌ FAIL: Should have raised ValueError")
+        print(" FAIL: Should have raised ValueError")
     except ValueError as e:
-        print(f"✅ PASS: Correctly raised error: {e}")
+        print(f" PASS: Correctly raised error: {e}")
     
     # =====================================================
     # Test 7: is_allowed_unit helper function
@@ -344,18 +344,18 @@ if __name__ == "__main__":
     section_can_access_section = is_allowed_unit(section_user, section_id)
     section_can_access_dept = is_allowed_unit(section_user, dept_id)
     
-    print(f"✓ Section user can access own section: {section_can_access_section}")
-    print(f"✓ Section user can access parent dept: {section_can_access_dept}")
-    print(f"  Result: {'✅ PASS' if section_can_access_section and not section_can_access_dept else '❌ FAIL'}")
+    print(f" Section user can access own section: {section_can_access_section}")
+    print(f" Section user can access parent dept: {section_can_access_dept}")
+    print(f"  Result: {' PASS' if section_can_access_section and not section_can_access_dept else ' FAIL'}")
     
     # Department user should access department and sections
     dept_can_access_dept = is_allowed_unit(dept_user, dept_id)
     dept_can_access_section = is_allowed_unit(dept_user, section_id)
     
-    print(f"✓ Dept user can access own dept: {dept_can_access_dept}")
-    print(f"✓ Dept user can access child section: {dept_can_access_section}")
-    print(f"  Result: {'✅ PASS' if dept_can_access_dept and dept_can_access_section else '❌ FAIL'}")
+    print(f" Dept user can access own dept: {dept_can_access_dept}")
+    print(f" Dept user can access child section: {dept_can_access_section}")
+    print(f"  Result: {' PASS' if dept_can_access_dept and dept_can_access_section else ' FAIL'}")
     
     print("\n" + "=" * 60)
-    print("✓ All tests completed")
+    print(" All tests completed")
     print("=" * 60)
