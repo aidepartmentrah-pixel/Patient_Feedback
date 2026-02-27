@@ -204,7 +204,7 @@ class ReportExportService:
                     )
                     content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     
-                    print(f"[EXPORT SERVICE] ✅ Single season report generated")
+                    print(f"[EXPORT SERVICE] [OK] Single season report generated")
                 else:
                     content = reports_service.generate_pdf_export(
                         report_data=export_data,
@@ -237,7 +237,7 @@ class ReportExportService:
                         language=language
                     )
                     
-                    print(f"[EXPORT SERVICE] ✅ Single season report generated")
+                    print(f"[EXPORT SERVICE] [OK] Single season report generated")
                 else:
                     # Check if this is a numeric (aggregated) report or detailed report
                     if display_mode == "numeric":

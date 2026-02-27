@@ -128,7 +128,7 @@ def save_reports_as_txt(reports: dict, save_folder: str):
             f.write(cr_text)
             f.write("\n" + "=" * 70 + "\n\n")
 
-    print(f"\n📄 TXT report saved at: {file_path}\n")
+    print(f"\nTXT report saved at: {file_path}\n")
 
 if __name__ == "__main__":
     SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))

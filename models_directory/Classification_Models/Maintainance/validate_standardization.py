@@ -38,35 +38,35 @@ training_funcs = [
     ("Severity Model", "models_directory.Classification_Models.Severity_level.train_severity_model", "train_severity_model"),
 ]
 
-print("\n📋 Checking imports...")
+print("\nChecking imports...")
 for name, module_path, func_name in training_funcs:
     try:
         module = __import__(module_path, fromlist=[func_name])
         func = getattr(module, func_name)
-        print(f"  ✓ {name:25} - imported successfully")
+        print(f"  [OK] {name:25} - imported successfully")
     except Exception as e:
-        print(f"  ✗ {name:25} - ERROR: {e}")
+        print(f"  [ERR] {name:25} - ERROR: {e}")
         errors.append((name, str(e)))
         all_imports_ok = False
 
 # Check Helper_Functions
-print("\n📋 Checking Helper_Functions...")
+print("\nChecking Helper_Functions...")
 try:
     from models_directory.Classification_Models.Hierarchical_Classification_Model.Helper_Functions import (
         compute_standardized_metrics,
         load_table,
         parse_embedding_series,
     )
-    print(f"  ✓ compute_standardized_metrics - imported successfully")
-    print(f"  ✓ load_table - imported successfully")
-    print(f"  ✓ parse_embedding_series - imported successfully")
+    print(f"  [OK] compute_standardized_metrics - imported successfully")
+    print(f"  [OK] load_table - imported successfully")
+    print(f"  [OK] parse_embedding_series - imported successfully")
 except Exception as e:
-    print(f"  ✗ Helper_Functions - ERROR: {e}")
+    print(f"  [ERR] Helper_Functions - ERROR: {e}")
     errors.append(("Helper_Functions", str(e)))
     all_imports_ok = False
 
 # Check standardized metrics function signature
-print("\n📋 Checking standardized metrics function signature...")
+print("\nChecking standardized metrics function signature...")
 try:
     import inspect
     sig = inspect.signature(compute_standardized_metrics)
@@ -77,9 +77,9 @@ try:
     actual_params = set(sig.parameters.keys())
     
     if expected_params == actual_params:
-        print(f"  ✓ All expected parameters present: {expected_params}")
+        print(f"  [OK] All expected parameters present: {expected_params}")
     else:
-        print(f"  ✗ Parameter mismatch!")
+        print(f"  [ERR] Parameter mismatch!")
         print(f"    Expected: {expected_params}")
         print(f"    Actual: {actual_params}")
         missing = expected_params - actual_params

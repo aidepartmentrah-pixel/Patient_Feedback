@@ -177,10 +177,10 @@ class MultiReportExportService:
                         "complaints_count": complaints_count
                     })
                     
-                    print(f"[MULTI-EXPORT] ✓ {unit_name}: {complaints_count} complaints → {filename}")
+                    print(f"[MULTI-EXPORT] [OK] {unit_name}: {complaints_count} complaints -> {filename}")
                     
                 except Exception as e:
-                    print(f"[MULTI-EXPORT] ✗ {unit_name} (ID {unit_id}): Failed - {str(e)}")
+                    print(f"[MULTI-EXPORT] [FAIL] {unit_name} (ID {unit_id}): Failed - {str(e)}")
                     failed_units.append({
                         "id": unit_id,
                         "name": unit_name,

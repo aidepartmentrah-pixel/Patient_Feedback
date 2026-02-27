@@ -95,7 +95,7 @@ if __name__ == "__main__":
     example_text = "The nurse did not respond quickly."
 
     print("\n==============================")
-    print("🔍 INPUT TEXT")
+    print("INPUT TEXT")
     print("==============================")
     print(example_text)
 
@@ -103,6 +103,6 @@ if __name__ == "__main__":
     preds = predict_from_text(example_text)
 
     print("\n==============================")
-    print("📊 PREDICTIONS")
+    print("PREDICTIONS")
     print("==============================")
     print(json.dumps(preds, indent=4))

@@ -482,7 +482,7 @@ async def export_seasonal_report(
                 language=language
             )
             
-            print(f"[ROUTER] 🎯 Multi-seasonal export result:")
+            print(f"[ROUTER] Multi-seasonal export result:")
             print(f"  - filename: {result['filename']}")
             print(f"  - content_type: {result['content_type']}")
             print(f"  - content size: {len(result['content'])} bytes")
@@ -678,7 +678,7 @@ async def export_monthly_report(
                 language=language
             )
             
-            print(f"[ROUTER] 🎯 Multi-export result:")
+            print(f"[ROUTER] Multi-export result:")
             print(f"  - filename: {result['filename']}")
             print(f"  - content_type: {result['content_type']}")
             print(f"  - content size: {len(result['content'])} bytes")

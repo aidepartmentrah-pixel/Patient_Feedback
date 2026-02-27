@@ -79,10 +79,10 @@ def predict_from_text(text: str):
 if __name__ == "__main__":
     example_text = "The nurse did not take action quickly, and the follow-up was poor."
 
-    print("🔍 Input Text:")
+    print("Input Text:")
     print(example_text)
 
     preds = predict_from_text(example_text)
 
-    print("\n📊 Predictions (Real Labels):")
+    print("\nPredictions (Real Labels):")
     print(json.dumps(preds, indent=4))

@@ -51,16 +51,16 @@ def load_test_data():
 # ================================================================
 def evaluate_hierarchical_model():
 
-    print("📥 Loading test data from database...")
+    print("Loading test data from database...")
     df = load_test_data()
 
-    print(f"🔢 Loaded {len(df)} test rows.")
+    print(f"Loaded {len(df)} test rows.")
 
     preds_domain = []
     preds_category = []
     preds_subcat = []
 
-    print("🔮 Running hierarchical predictions...")
+    print("Running hierarchical predictions...")
     for t1 in df[TEXT1]:
 
         # Only text1 is used
@@ -77,25 +77,25 @@ def evaluate_hierarchical_model():
 
     # Save table
     df.to_csv(OUTPUT_CSV, index=False)
-    print(f"📁 Predictions saved → {OUTPUT_CSV}")
+    print(f"Predictions saved to {OUTPUT_CSV}")
 
     # ============================================================
     # METRICS
     # ============================================================
     print("\n============================")
-    print("📊 DOMAIN METRICS")
+    print("DOMAIN METRICS")
     print("============================")
     print(classification_report(df[TRUE_DOMAIN], df["pred_domain"]))
     print("Accuracy:", accuracy_score(df[TRUE_DOMAIN], df["pred_domain"]))
 
     print("\n============================")
-    print("📊 CATEGORY METRICS")
+    print("CATEGORY METRICS")
     print("============================")
     print(classification_report(df[TRUE_CATEGORY], df["pred_category"]))
     print("Accuracy:", accuracy_score(df[TRUE_CATEGORY], df["pred_category"]))
 
     print("\n============================")
-    print("📊 SUBCATEGORY METRICS")
+    print("SUBCATEGORY METRICS")
     print("============================")
     print(classification_report(df[TRUE_SUBCAT], df["pred_sub_category"]))
     print("Accuracy:", accuracy_score(df[TRUE_SUBCAT], df["pred_sub_category"]))

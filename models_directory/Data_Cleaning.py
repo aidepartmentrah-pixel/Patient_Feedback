@@ -53,7 +53,7 @@ def clean_arabic(text: str) -> str:
 # ---------------------------------------------------
 def clean_table(table_name: str):
 
-    print(f"\n🔄 Cleaning table: {table_name}")
+    print(f"\nCleaning table: {table_name}")
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
@@ -79,7 +79,7 @@ def clean_table(table_name: str):
 
     conn.commit()
     conn.close()
-    print(f"✅ Completed cleaning: {table_name}")
+    print(f"Completed cleaning: {table_name}")
 
 
 # ---------------------------------------------------
@@ -88,4 +88,4 @@ def clean_table(table_name: str):
 clean_table(TRAIN_TABLE)
 clean_table(TEST_TABLE)
 
-print("\n🎉 ALL text fields cleaned and overwritten successfully!")
+print("\nALL text fields cleaned and overwritten successfully!")

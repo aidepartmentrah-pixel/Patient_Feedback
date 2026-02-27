@@ -140,11 +140,11 @@ def main():
 
             report_file.write("All model heads trained successfully.\n")
 
-        print("\n🎉 Multi-Head Logistic Regression training complete!")
-        print(f"📄 Metrics saved to: {REPORT_PATH}")
+        print("\nMulti-Head Logistic Regression training complete!")
+        print(f"Metrics saved to: {REPORT_PATH}")
 
     except Exception:
-        print("❌ An error occurred during training:")
+        print("An error occurred during training:")
         traceback.print_exc()
 
 

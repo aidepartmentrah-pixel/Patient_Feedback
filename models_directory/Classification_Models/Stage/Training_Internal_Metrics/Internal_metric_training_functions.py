@@ -81,7 +81,7 @@ def load_data_for_testing():
         conn.close()
         return rows
 
-    print("\n📥 Loading data directly from DB...")
+    print("\nLoading data directly from DB...")
 
     train_rows = load_table(TRAIN_TABLE)
     test_rows  = load_table(TEST_TABLE)
@@ -583,7 +583,7 @@ def train_ML_Metric_Mapper_Numeric():
         conn.close()
         return rows
 
-    print("\n📥 Loading DB...")
+    print("\nLoading DB...")
     train_rows = load_table(TRAIN_TABLE)
     test_rows  = load_table(TEST_TABLE)
 
@@ -631,7 +631,7 @@ def train_ML_Metric_Mapper_Numeric():
     # Convert DB → ML vectors
     # =========================================
 
-    print("\n🔁 Extracting features (TRAIN)...")
+    print("\nExtracting features (TRAIN)...")
     X_train, y_train = [], []
 
     for row in tqdm(train_rows):
@@ -639,7 +639,7 @@ def train_ML_Metric_Mapper_Numeric():
         X_train.append(vec)
         y_train.append(lab)
 
-    print("\n🔁 Extracting features (TEST)...")
+    print("\nExtracting features (TEST)...")
     X_test, y_test = [], []
 
     for row in tqdm(test_rows):
@@ -672,11 +672,11 @@ def train_ML_Metric_Mapper_Numeric():
         )
     }
 
-    print("\n🏋 Training ML vocab_models...\n")
+    print("\nTraining ML vocab_models...\n")
 
     for name, model in MODELS.items():
 
-        print(f"\n🚀 Training {name}...")
+        print(f"\nTraining {name}...")
 
         model.fit(X_train, y_train)
 
@@ -691,9 +691,9 @@ def train_ML_Metric_Mapper_Numeric():
             f.write(f"Accuracy: {acc}\n\n")
             f.write(classification_report(y_test, preds))
 
-        print(f"✔ {name} accuracy: {acc}")
+        print(f"{name} accuracy: {acc}")
 
-    print("\n🎉 Training finished successfully!")
+    print("\nTraining finished successfully!")
 
 
 

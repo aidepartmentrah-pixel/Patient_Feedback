@@ -17,7 +17,7 @@ import numpy as np
 
 # ---------------- CONFIG ----------------
 HERE = Path(__file__).resolve().parent
-MODEL_PATH = HERE / "severity_level_rf.pkl"   # 🔹 Random Forest model filename
+MODEL_PATH = HERE / "severity_level_rf.pkl"   # Random Forest model filename
 EMBED_MODEL_NAME = "aubmindlab/bert-base-arabertv2"
 
 # -------------- Embedder -----------------
@@ -44,18 +44,18 @@ def generate_embedding(text: str) -> np.ndarray:
 def predict_severity_level(text: str):
     """Load model and predict severity level for input text."""
     if not MODEL_PATH.exists():
-        raise FileNotFoundError(f"❌ Trained model not found: {MODEL_PATH}")
+        raise FileNotFoundError(f"Trained model not found: {MODEL_PATH}")
 
     model = joblib.load(MODEL_PATH)
-    print("✅ Random Forest model loaded successfully.")
+    print("Random Forest model loaded successfully.")
 
     # Generate embedding
-    print("🔄 Generating embedding from text...")
+    print("Generating embedding from text...")
     embedding = generate_embedding(text).reshape(1, -1)
 
     # Predict
     prediction = model.predict(embedding)[0]
-    print(f"\n🧩 Predicted severity level: {prediction}")
+    print(f"\nPredicted severity level: {prediction}")
 
     return prediction
 

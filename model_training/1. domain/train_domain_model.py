@@ -166,12 +166,12 @@ def main():
                               title="Confusion Matrix - Logistic Regression")
         save_confusion_matrix(cm_rf, labels=label_names, out_path=CM_RF,
                               title="Confusion Matrix - Random Forest")
-        print(f"✅ Saved confusion matrices: {CM_LOGREG.name}, {CM_RF.name}")
+        print(f"Saved confusion matrices: {CM_LOGREG.name}, {CM_RF.name}")
 
-        print("\n🎉 Training & evaluation complete.\n")
+        print("\nTraining & evaluation complete.\n")
 
     except Exception:
-        print("❌ An error occurred during training:")
+        print("An error occurred during training:")
         traceback.print_exc()
 
 

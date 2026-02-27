@@ -15,25 +15,25 @@ os.makedirs(local_model_path, exist_ok=True)
 # --------------------------------------------
 # 2. DOWNLOAD + SAVE MODEL LOCALLY (first run)
 # --------------------------------------------
-print("⬇️ Downloading model & tokenizer...")
+print("Downloading model & tokenizer...")
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModel.from_pretrained(model_name)
 
-print("💾 Saving model locally...")
+print("Saving model locally...")
 tokenizer.save_pretrained(local_model_path)
 model.save_pretrained(local_model_path)
 
-print("✅ Model saved successfully at:")
+print("Model saved successfully at:")
 print(local_model_path)
 
 # --------------------------------------------
 # 3. LOAD MODEL OFFLINE (future runs)
 # --------------------------------------------
-print("\n📦 Loading model offline...")
+print("\nLoading model offline...")
 tokenizer_offline = AutoTokenizer.from_pretrained(local_model_path)
 model_offline = AutoModel.from_pretrained(local_model_path)
 
-print("✅ Offline model loaded successfully!")
+print("Offline model loaded successfully!")
 
 # --------------------------------------------
 # 4. TEST: Generate an embedding

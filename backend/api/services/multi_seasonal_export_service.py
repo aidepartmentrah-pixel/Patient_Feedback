@@ -188,7 +188,7 @@ class MultiSeasonalExportService:
                     regular_filename = f"Seasonal_Report_{safe_name}_{period}{year}.{file_format}"
                     zip_file.writestr(regular_filename, regular_content)
                     files_generated.append(regular_filename)
-                    print(f"[MULTI-SEASONAL] ✓ {unit_name}: Regular report → {regular_filename}")
+                    print(f"[MULTI-SEASONAL] [OK] {unit_name}: Regular report -> {regular_filename}")
                     
                     # FILE 2: Generate comparison report (if previous data exists or for DOCX)
                     if file_format == "docx":
@@ -206,7 +206,7 @@ class MultiSeasonalExportService:
                         comparison_filename = f"Comparison_{safe_name}_{period}_vs_{previous_report.get('header', {}).get('period', 'Previous')}.{file_format}"
                         zip_file.writestr(comparison_filename, comparison_content)
                         files_generated.append(comparison_filename)
-                        print(f"[MULTI-SEASONAL] ✓ {unit_name}: Comparison report → {comparison_filename}")
+                        print(f"[MULTI-SEASONAL] [OK] {unit_name}: Comparison report -> {comparison_filename}")
                     
                     successful_units.append({
                         "id": unit_id,
@@ -217,10 +217,10 @@ class MultiSeasonalExportService:
                         "has_previous_data": has_previous
                     })
                     
-                    print(f"[MULTI-SEASONAL] ✅ {unit_name}: {incidents_count} incidents, {len(files_generated)} files generated")
+                    print(f"[MULTI-SEASONAL] [DONE] {unit_name}: {incidents_count} incidents, {len(files_generated)} files generated")
                     
                 except Exception as e:
-                    print(f"[MULTI-SEASONAL] ✗ {unit_name} (ID {unit_id}): Failed - {str(e)}")
+                    print(f"[MULTI-SEASONAL] [FAIL] {unit_name} (ID {unit_id}): Failed - {str(e)}")
                     import traceback
                     traceback.print_exc()
                     failed_units.append({

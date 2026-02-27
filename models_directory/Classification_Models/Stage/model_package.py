@@ -140,9 +140,9 @@ def classify_stage_Score_Based(sentence: str, Troubleshoot = False):
     }
 
     if Troubleshoot:
-        # 🔷 PRINT THE FINAL CLASSIFICATION
+        # PRINT THE FINAL CLASSIFICATION
         print(f'==============================================')
-        print(f"\n🧩 Sentence classified as: {chosen_stage}")
+        print(f"\nSentence classified as: {chosen_stage}")
         print("Top contributing metrics:")
         for m, score in sorted_metrics[:3]:
             print(f" - {m}: {score:.3f}")

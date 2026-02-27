@@ -74,21 +74,21 @@ def predict_high(model, emb):
 # ============================================================
 def evaluate_harm_models():
 
-    print("📥 Loading test data...")
+    print("Loading test data...")
     df = load_test_data()
 
     # filter valid 1–6
     df = df[df[TARGET_COL].isin([1, 2, 3, 4, 5, 6])]
     df = df.reset_index(drop=True)
 
-    print(f"🔢 Rows after filtering: {len(df)}")
+    print(f"Rows after filtering: {len(df)}")
 
     # Embeddings
     X = parse_embedding_series(df[EMBED_COL])
     y_true = df[TARGET_COL].astype(int).to_numpy()
 
     # Load Models
-    print("📦 Loading vocab_models...")
+    print("Loading vocab_models...")
     model_binary = joblib.load(BINARY_MODEL_PATH)
     model_low    = joblib.load(LOW_MODEL_PATH)
     model_high   = joblib.load(HIGH_MODEL_PATH)
@@ -99,7 +99,7 @@ def evaluate_harm_models():
     high_preds   = []
     final_preds  = []
 
-    print("🔮 Running predictions...")
+    print("Running predictions...")
 
     for i in range(len(df)):
         emb = X[i]
@@ -132,19 +132,19 @@ def evaluate_harm_models():
     df["binary_pred"] = binary_preds
     df["harm_pred"] = final_preds
     df.to_csv(OUTPUT_CSV, index=False)
-    print(f"📁 Results saved to {OUTPUT_CSV}")
+    print(f"Results saved to {OUTPUT_CSV}")
 
     # =======================================================
     # METRICS
     # =======================================================
     print("\n===========================")
-    print("📊 Final Harm Prediction Metrics")
+    print("Final Harm Prediction Metrics")
     print("===========================")
     print(classification_report(y_true, final_preds, zero_division=0))
     print("Accuracy:", accuracy_score(y_true, final_preds))
 
     print("\n===========================")
-    print("📊 LOW Model Metrics (1–3)")
+    print("LOW Model Metrics (1–3)")
     print("===========================")
     mask_low = df[TARGET_COL].isin([1, 2, 3])
     print(classification_report(df[TARGET_COL][mask_low],
@@ -152,7 +152,7 @@ def evaluate_harm_models():
                                 zero_division=0))
 
     print("\n===========================")
-    print("📊 HIGH Model Metrics (4–6)")
+    print("HIGH Model Metrics (4–6)")
     print("===========================")
     mask_high = df[TARGET_COL].isin([4, 5, 6])
     print(classification_report(df[TARGET_COL][mask_high],

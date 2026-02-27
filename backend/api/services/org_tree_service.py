@@ -227,7 +227,7 @@ if __name__ == "__main__":
     
     # Load the tree
     full_tree = get_full_tree()
-    print(f"\n✓ Loaded {len(full_tree)} org units")
+    print(f"\nLoaded {len(full_tree)} org units")
     
     # Find an Administration node (root where ParentID == UniqueID)
     admin_nodes = [n for n in full_tree if n["ParentID"] == n["UniqueID"]]
@@ -236,7 +236,7 @@ if __name__ == "__main__":
         admin_id = admin_node["UniqueID"]
         admin_name = admin_node["Name"]
         
-        print(f"\n📊 Testing with Administration: {admin_name} (ID: {admin_id})")
+        print(f"\nTesting with Administration: {admin_name} (ID: {admin_id})")
         
         # Get all descendants
         admin_descendants = get_descendants(admin_id)
@@ -251,7 +251,7 @@ if __name__ == "__main__":
             dept_id = dept_node["UniqueID"]
             dept_name = dept_node["Name"]
             
-            print(f"\n📊 Testing with Department: {dept_name} (ID: {dept_id})")
+            print(f"\nTesting with Department: {dept_name} (ID: {dept_id})")
             
             # Get department descendants
             dept_descendants = get_descendants(dept_id)
@@ -274,7 +274,7 @@ if __name__ == "__main__":
                 section_id = section_node["UniqueID"]
                 section_name = section_node["Name"]
                 
-                print(f"\n📊 Testing with Section: {section_name} (ID: {section_id})")
+                print(f"\nTesting with Section: {section_name} (ID: {section_id})")
                 
                 # Get section descendants (should only be itself)
                 section_descendants = get_descendants(section_id)
@@ -291,5 +291,5 @@ if __name__ == "__main__":
                 print(f"   → Ancestors: {section_ancestors}")
     
     print("\n" + "=" * 60)
-    print("✓ All tests completed")
+    print("All tests completed")
     print("=" * 60)

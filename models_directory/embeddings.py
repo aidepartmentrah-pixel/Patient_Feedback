@@ -38,7 +38,7 @@ model.eval()
 # 4. Process a table
 # ---------------------------------------------------
 def process_table(table_name: str):
-    print(f"\n🔄 Processing table: {table_name}")
+    print(f"\nProcessing table: {table_name}")
 
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -75,7 +75,7 @@ def process_table(table_name: str):
 
     conn.commit()
     conn.close()
-    print(f"✅ Completed: {table_name}")
+    print(f"Completed: {table_name}")
 
 
 # ---------------------------------------------------
@@ -84,4 +84,4 @@ def process_table(table_name: str):
 process_table(TRAIN_TABLE)
 process_table(TEST_TABLE)
 
-print("\n🎉 ALL embeddings overwritten successfully!")
+print("\nALL embeddings overwritten successfully!")

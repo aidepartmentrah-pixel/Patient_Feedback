@@ -579,10 +579,10 @@ def main():
         write_final_report("category", final_truths["category"], final_preds["category"])
         write_final_report("sub_category", final_truths["sub_category"], final_preds["sub_category"])
 
-        print("\n🎉 ALL MODELS + FINAL REPORTS GENERATED SUCCESSFULLY 🎉\n")
+        print("\nALL MODELS + FINAL REPORTS GENERATED SUCCESSFULLY\n")
 
     except Exception:
-        print("❌ ERROR:")
+        print("ERROR:")
         traceback.print_exc()
 
 

@@ -26,11 +26,11 @@ from pathlib import Path
 # 1. Load tokenizer and embedding model
 # =========================================================
 MODEL_NAME = "aubmindlab/bert-base-arabertv2"
-print("🔹 Loading Arabic BERT tokenizer and model...")
+print("Loading Arabic BERT tokenizer and model...")
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 bert_model = AutoModel.from_pretrained(MODEL_NAME)
 bert_model.eval()
-print("✅ BERT model loaded successfully.\n")
+print("BERT model loaded successfully.\n")
 
 # =========================================================
 # 2. Load trained vocab_models
@@ -47,10 +47,10 @@ MODEL_PATHS = {
 MODELS = {}
 for name, path in MODEL_PATHS.items():
     if not path.exists():
-        print(f"⚠️ Warning: Model file not found for '{name}' -> {path.name}")
+        print(f"Warning: Model file not found for '{name}' -> {path.name}")
     else:
         MODELS[name] = joblib.load(path)
-        print(f"✅ Loaded model: {path.name}")
+        print(f"Loaded model: {path.name}")
 print()
 
 # =========================================================
@@ -96,8 +96,8 @@ def predict_stacked(text: str):
 # =========================================================
 if __name__ == "__main__":
     example_text = "الطبيب كان متعاونًا جدًا ولكن المواعيد كانت متأخرة."
-    print("🧠 Example text:", example_text)
+    print("Example text:", example_text)
     output = predict_stacked(example_text)
-    print("\n🔍 Predictions:")
+    print("\nPredictions:")
     for key, val in output.items():
         print(f" - {key}: {val}")

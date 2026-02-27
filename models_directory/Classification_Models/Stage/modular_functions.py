@@ -488,7 +488,7 @@ def get_embedding(text: str, Troubleshoot=False):
     MODEL_PATH = MODEL_PATH.replace("\\", "/")  # critical for HF local load on Windows
 
     if Troubleshoot:
-        print(f"📦 Trying to load model from: {MODEL_PATH}")
+        print(f"Trying to load model from: {MODEL_PATH}")
         print("Directory exists:", os.path.exists(MODEL_PATH))
         if os.path.exists(os.path.dirname(MODEL_PATH)):
             print("Contents:", os.listdir(os.path.dirname(MODEL_PATH)))
@@ -500,7 +500,7 @@ def get_embedding(text: str, Troubleshoot=False):
         if not os.path.exists(MODEL_PATH):
             raise FileNotFoundError(f"MPNet model folder not found at {MODEL_PATH}")
         if Troubleshoot:
-            print(f"📦 Loading MPNet model from:\n{MODEL_PATH}")
+            print(f"Loading MPNet model from:\n{MODEL_PATH}")
 
         _TOKENIZER = AutoTokenizer.from_pretrained(MODEL_PATH, local_files_only=True)
         _MODEL = AutoModel.from_pretrained(MODEL_PATH, local_files_only=True)
@@ -558,7 +558,7 @@ def get_embedding_list(texts, Troubleshoot=False):
         MODEL_PATH = os.path.abspath(MODEL_PATH).replace("\\", "/")
 
         if Troubleshoot:
-            print(f"📦 Loading MPNet model from: {MODEL_PATH}")
+            print(f"Loading MPNet model from: {MODEL_PATH}")
         _TOKENIZER = AutoTokenizer.from_pretrained(MODEL_PATH, local_files_only=True)
         _MODEL = AutoModel.from_pretrained(MODEL_PATH, local_files_only=True)
         _MODEL.eval()

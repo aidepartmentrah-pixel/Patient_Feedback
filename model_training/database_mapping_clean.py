@@ -38,7 +38,7 @@ FIX_MAP = {
 
 def apply_fixes(conn, table_name):
     cursor = conn.cursor()
-    print(f"\n🔧 Processing table: {table_name}")
+    print(f"\nProcessing table: {table_name}")
 
     for col, mapping in FIX_MAP.items():
         for old_val, new_val in mapping.items():

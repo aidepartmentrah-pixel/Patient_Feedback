@@ -183,7 +183,7 @@ if __name__ == "__main__":
     section_id = section_node["UniqueID"]
     section_name = section_node["Name"]
     
-    print(f"\n📊 Test Org Units:")
+    print(f"\nTest Org Units:")
     print(f"   Administration: {admin_name} (ID: {admin_id})")
     print(f"   Department: {dept_name} (ID: {dept_id})")
     print(f"   Section: {section_name} (ID: {section_id})")

@@ -26,10 +26,10 @@ def load_table(db_path, table_name):
 
 
 # ======================================
-# ✅ CLEAN FUNCTION (ADAPTED)
+# CLEAN FUNCTION (ADAPTED)
 # ======================================
 def clean_and_encode_data(train_df, test_df, target_cols, text_col):
-    print("🧹 Cleaning text and targets...")
+    print("Cleaning text and targets...")
 
     # Drop missing or invalid text rows
     train_df = train_df.dropna(subset=[text_col])
@@ -57,9 +57,9 @@ def clean_and_encode_data(train_df, test_df, target_cols, text_col):
         test_df = test_df[test_df[col] != -1]  # drop unseen labels
 
         encoders[col] = le
-        print(f"🧩 Encoded column '{col}' with {len(le.classes_)} classes.")
+        print(f"Encoded column '{col}' with {len(le.classes_)} classes.")
 
-    print("✅ Cleaning and encoding complete.")
+    print("Cleaning and encoding complete.")
     return train_df, test_df, encoders
 
 
@@ -71,7 +71,7 @@ df_test = load_table(DB_PATH, TEST_TABLE)
 
 df_train, df_test, encoders = clean_and_encode_data(df_train, df_test, target_cols, TEXT_COL)
 
-print("\n📊 After cleaning:")
+print("\nAfter cleaning:")
 print(f"Train: {df_train.shape}, Test: {df_test.shape}")
 print("Target sample counts:")
 for col in target_cols:

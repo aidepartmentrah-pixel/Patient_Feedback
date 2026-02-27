@@ -87,11 +87,11 @@ def predict_from_text(text: str):
 if __name__ == "__main__":
     example_text = "The staff explained the procedure clearly and on time."
 
-    print("🔍 Input Text:")
+    print("Input Text:")
     print(example_text)
 
     # Predict using only raw text
     prediction_text = predict_from_text(example_text)
 
-    print("\n📊 Prediction from Text:")
+    print("\nPrediction from Text:")
     print(json.dumps(prediction_text, indent=4))

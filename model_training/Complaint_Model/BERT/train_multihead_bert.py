@@ -27,13 +27,13 @@ TOKENIZER_PATH = os.path.join(SAVE_DIR, "tokenizer")
 DEVICE = torch.device("cpu")
 
 # ======================================
-# ✅ LOAD TOKENIZER AND MODEL
+# LOAD TOKENIZER AND MODEL
 # ======================================
-print("🔠 Loading tokenizer and base model...")
+print("Loading tokenizer and base model...")
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 bert_model = AutoModel.from_pretrained(MODEL_NAME)
 tokenizer.save_pretrained(TOKENIZER_PATH)
-print("✅ Tokenizer saved.")
+print("Tokenizer saved.")
 
 # ======================================
 # ✅ DATASETS & LOADERS
@@ -118,9 +118,9 @@ def evaluate(model, loader):
     return results
 
 # ======================================
-# ✅ MAIN TRAINING
+# MAIN TRAINING
 # ======================================
-print("\n🚀 Starting training...")
+print("\nStarting training...")
 for epoch in range(EPOCHS):
     loss = train_one_epoch(model, train_loader)
     metrics = evaluate(model, test_loader)
@@ -134,8 +134,8 @@ for epoch in range(EPOCHS):
 # ======================================
 torch.save(model.state_dict(), MODEL_PATH)
 joblib.dump(encoders, ENCODERS_PATH)
-print(f"\n✅ Model saved to: {MODEL_PATH}")
-print(f"✅ Label encoders saved to: {ENCODERS_PATH}")
-print("✅ Training complete!")
+print(f"\nModel saved to: {MODEL_PATH}")
+print(f"Label encoders saved to: {ENCODERS_PATH}")
+print("Training complete!")
 
 

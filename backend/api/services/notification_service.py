@@ -64,10 +64,10 @@ def send_notification(
     
     if NOTIFICATION_MODE == "mock":
         # Mock mode - log only
-        logger.info(f"📧 [MOCK] Would send email:")
-        logger.info(f"📧 [MOCK]   To: {to_email}")
-        logger.info(f"📧 [MOCK]   Subject: {subject}")
-        logger.info(f"📧 [MOCK]   Body preview: {body[:100]}...")
+        logger.info(f"[MOCK] Would send email:")
+        logger.info(f"[MOCK]   To: {to_email}")
+        logger.info(f"[MOCK]   Subject: {subject}")
+        logger.info(f"[MOCK]   Body preview: {body[:100]}...")
         return True
     
     elif NOTIFICATION_MODE == "smtp":

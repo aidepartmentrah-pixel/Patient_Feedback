@@ -277,10 +277,10 @@ def main():
 
             rep.write("Stacked pipeline training completed.\n")
 
-        print("\n🎉 Stacked training complete. Report saved to:", REPORT_PATH)
+        print("\nStacked training complete. Report saved to:", REPORT_PATH)
 
     except Exception:
-        print("❌ An error occurred during stacked training:")
+        print("An error occurred during stacked training:")
         traceback.print_exc()
 
 
