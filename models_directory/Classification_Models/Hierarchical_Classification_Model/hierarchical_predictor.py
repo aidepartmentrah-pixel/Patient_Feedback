@@ -168,21 +168,30 @@ def hierarchical_predict_text(text: str):
 def hierarchical_predict_embeddings(embedding: np.ndarray):
     output = {}
 
+    print(f"\n[HIER_PRED] === HIERARCHICAL PREDICTION START ===")
+    print(f"[HIER_PRED] Embedding shape: {embedding.shape}")
+
     # -------------------------
     # 1) DOMAIN
     # -------------------------
+    print(f"[HIER_PRED] Step 1: Predicting DOMAIN...")
     domain_preds = predict_domain_embedding(embedding)
+    print(f"[HIER_PRED] Domain predictions: {domain_preds}")
     domain_final = domain_preds["xgboost"]  # choose XGBoost as final
+    print(f"[HIER_PRED] Domain final (xgboost): {domain_final}")
     output["domain"] = domain_final
 
     # -------------------------
     # 2) CATEGORY (depends on domain)
     # -------------------------
+    print(f"[HIER_PRED] Step 2: Predicting CATEGORY for domain={domain_final}...")
     category_predictor = CATEGORY_PREDICTORS_EMBEDDING.get(domain_final)
     if not category_predictor:
         raise ValueError(f"No category embedding predictor for domain={domain_final}")
 
+    print(f"[HIER_PRED] Calling category predictor for domain {domain_final}...")
     category_preds = category_predictor(embedding)
+    print(f"[HIER_PRED] Category predictions: {category_preds}")
 
     # Majority voting for category
     votes_category = [
@@ -190,24 +199,34 @@ def hierarchical_predict_embeddings(embedding: np.ndarray):
         category_preds["random_forest"],
         category_preds["xgboost"]
     ]
+    print(f"[HIER_PRED] Category votes: {votes_category}")
     category_final = Counter(votes_category).most_common(1)[0][0]
+    print(f"[HIER_PRED] Category majority vote: {category_final}")
 
     # Validate category
-    if category_final not in DOMAIN_TO_CATEGORIES[domain_final]:
+    valid_cats = DOMAIN_TO_CATEGORIES.get(domain_final, [])
+    print(f"[HIER_PRED] Valid categories for domain {domain_final}: {valid_cats}")
+    if category_final not in valid_cats:
+        print(f"[HIER_PRED] WARNING: Category {category_final} not in valid list, using fallback")
         category_final = DOMAIN_TO_CATEGORIES[domain_final][0]
+        print(f"[HIER_PRED] Category after fallback: {category_final}")
 
     output["category"] = category_final
 
     # -------------------------
     # 3) SUBCATEGORY (depends on category)
     # -------------------------
+    print(f"[HIER_PRED] Step 3: Predicting SUBCATEGORY for category={category_final}...")
     subcategory_predictor = SUBCATEGORY_PREDICTORS_EMBEDDING.get(category_final)
 
     if not subcategory_predictor:
         # fallback to first valid subcategory
+        print(f"[HIER_PRED] WARNING: No subcategory predictor for category={category_final}, using fallback")
         subcategory_final = CATEGORY_TO_SUBCATEGORIES[category_final][0]
     else:
+        print(f"[HIER_PRED] Calling subcategory predictor for category {category_final}...")
         subcategory_preds = subcategory_predictor(embedding)
+        print(f"[HIER_PRED] Subcategory predictions: {subcategory_preds}")
 
         # Majority voting for subcategory
         votes_subcategory = [
@@ -215,13 +234,18 @@ def hierarchical_predict_embeddings(embedding: np.ndarray):
             subcategory_preds["random_forest"],
             subcategory_preds["xgboost"]
         ]
+        print(f"[HIER_PRED] Subcategory votes: {votes_subcategory}")
         subcategory_final = Counter(votes_subcategory).most_common(1)[0][0]
+        print(f"[HIER_PRED] Subcategory majority vote: {subcategory_final}")
 
         # Validate
-        if subcategory_final not in CATEGORY_TO_SUBCATEGORIES[category_final]:
+        valid_subcats = CATEGORY_TO_SUBCATEGORIES.get(category_final, [])
+        if subcategory_final not in valid_subcats:
+            print(f"[HIER_PRED] WARNING: Subcategory {subcategory_final} not in valid list {valid_subcats}, using fallback")
             subcategory_final = CATEGORY_TO_SUBCATEGORIES[category_final][0]
 
     output["subcategory"] = subcategory_final
+    print(f"[HIER_PRED] === FINAL OUTPUT: {output} ===")
 
     return output
 

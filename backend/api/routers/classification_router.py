@@ -3,10 +3,14 @@ Classification Router
 API endpoints for text classification using AI models.
 """
 
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, HTTPException, Body, Depends
 from pydantic import BaseModel, Field
 from typing import Optional
 
+from core.constants.roles import SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR, WORKER
+from ..dependencies.user_context import get_current_user
+from ..schemas.auth_models import CurrentUser
+from ..utils.guards import require_role
 from ..services.classification_service import classify_text, classify_batch
 
 
@@ -30,9 +34,14 @@ class BatchClassificationRequest(BaseModel):
 # ==================== ENDPOINTS ====================
 
 @router.post("/classify")
-async def classify_feedback_text(request: ClassificationRequest = Body(...)):
+async def classify_feedback_text(
+    request: ClassificationRequest = Body(...),
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """
     Classify patient feedback text into multiple categories.
+    
+    Authorization: SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR, WORKER
     
     **Classifies text into 8 categories:**
     1. Domain (المجال)
@@ -58,6 +67,8 @@ async def classify_feedback_text(request: ClassificationRequest = Body(...)):
     - Confidence scores
     - Optional explanations
     """
+    # Authorization guard
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR, WORKER])
     
     try:
         result = classify_text(request.text, explain=request.explain)
@@ -88,9 +99,14 @@ async def classify_feedback_text(request: ClassificationRequest = Body(...)):
 
 
 @router.post("/classify-batch")
-async def classify_batch_texts(request: BatchClassificationRequest = Body(...)):
+async def classify_batch_texts(
+    request: BatchClassificationRequest = Body(...),
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """
     Classify multiple texts in batch (up to 100 texts).
+    
+    Authorization: SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR, WORKER
     
     **Example Request:**
     ```json
@@ -108,6 +124,8 @@ async def classify_batch_texts(request: BatchClassificationRequest = Body(...)):
     - Results for all texts
     - Success/failure count
     """
+    # Authorization guard
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR, WORKER])
     
     try:
         result = classify_batch(request.texts, explain=request.explain)

@@ -47,7 +47,11 @@ def classify_text(text: str, explain: bool = True) -> dict:
         - harm_level
         - improvement_opportunity_type
     """
-    print(f"[CLASSIFY] Received text length: {len(text) if text else 0}")
+    print(f"\n{'='*60}")
+    print(f"[CLASSIFY] === DIAGNOSTIC START ===")
+    print(f"[CLASSIFY] Text length: {len(text) if text else 0}")
+    print(f"[CLASSIFY] Text preview: {text[:100] if text else 'EMPTY'}...")
+    print(f"[CLASSIFY] Explain mode: {explain}")
     
     if not text or not text.strip():
         print("[CLASSIFY] ERROR: Empty text received")
@@ -63,14 +67,14 @@ def classify_text(text: str, explain: bool = True) -> dict:
         # classify_feedback expects: patient_text, text_2, text_3, Print
         print("[CLASSIFY] Getting classifier...")
         classifier = _get_classifier()
-        print("[CLASSIFY] Running classification...")
+        print("[CLASSIFY] Running classification (Print=True for diagnostics)...")
         classification_result = classifier(
             patient_text=text,
             text_2="",
             text_3="",
-            Print=False
+            Print=True  # Enable diagnostic output from model
         )
-        print(f"[CLASSIFY] Result: {classification_result}")
+        print(f"[CLASSIFY] Full result: {classification_result}")
         
         # Validate classification_en_id against subcategory
         sub_category_id = classification_result.get("sub_category_id")
@@ -91,12 +95,19 @@ def classify_text(text: str, explain: bool = True) -> dict:
         
     except Exception as e:
         import traceback
-        print(f"[CLASSIFY] ERROR: {type(e).__name__}: {str(e)}")
+        print(f"\n{'='*60}")
+        print(f"[CLASSIFY] !!! EXCEPTION CAUGHT !!!")
+        print(f"[CLASSIFY] Exception type: {type(e).__name__}")
+        print(f"[CLASSIFY] Exception message: {str(e)}")
+        print(f"[CLASSIFY] Exception repr: {repr(e)}")
+        print(f"[CLASSIFY] Text that caused failure: {text[:200] if text else 'NONE'}")
+        print(f"{'='*60}")
         traceback.print_exc()
+        print(f"{'='*60}\n")
         return {
             "success": False,
             "error": "CLASSIFICATION_FAILED",
-            "message": f"Classification failed: {str(e)}",
+            "message": f"Classification failed: {type(e).__name__}: {str(e)}",
             "message_ar": f"فشل التصنيف: {str(e)}"
         }
 

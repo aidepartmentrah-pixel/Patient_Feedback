@@ -13,6 +13,11 @@ from transformers import AutoTokenizer, AutoModel
 import joblib
 from xgboost import XGBClassifier
 from models_directory.Classification_Models.Stage.model_package import get_embedding
+from models_directory.Classification_Models.label_mapping_helper import (
+    build_temp_to_label_for_category,
+    validate_model_mapping,
+    log_predictor_init,
+)
 
 # ============================================================
 # PATHS
@@ -20,6 +25,8 @@ from models_directory.Classification_Models.Stage.model_package import get_embed
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_DIR = os.path.join(BASE_DIR, "vocab_models")
+CATEGORY_ID = 7
+_FILE_NAME = os.path.basename(__file__)
 
 # ============================================================
 # LOAD TRAINED MODELS FOR CATEGORY 7
@@ -29,30 +36,19 @@ lr = joblib.load(os.path.join(MODEL_DIR, "lr_subcat_cat7.pkl"))
 rf = joblib.load(os.path.join(MODEL_DIR, "rf_subcat_cat7.pkl"))
 
 xgb = XGBClassifier()
-xgb.load_model(os.path.join(MODEL_DIR, "xgb_subcat_cat7.json"))
+_xgb_model_path = os.path.join(MODEL_DIR, "xgb_subcat_cat7.json")
+xgb.load_model(_xgb_model_path)
 
 # ============================================================
-# LABEL MAP (HARDCODED FOR CATEGORY 7)
-# Example labels: [5, 15, 16, 18, 22, 29]
+# LABEL MAP (DYNAMIC FROM TRAINING DB)
 # ============================================================
 
-temp_to_label = {
-    0: 5,
-    1: 15,
-    2: 16,
-    3: 18,
-    4: 22,
-    5: 29
-}
+temp_to_label = build_temp_to_label_for_category(CATEGORY_ID)
+label_to_temp = {v: k for k, v in temp_to_label.items()}
 
-label_to_temp = {
-    5: 0,
-    15: 1,
-    16: 2,
-    18: 3,
-    22: 4,
-    29: 5
-}
+# Validate & log at load time
+validate_model_mapping(xgb, temp_to_label, _FILE_NAME, _xgb_model_path)
+log_predictor_init(_FILE_NAME, _xgb_model_path, xgb.n_classes_, temp_to_label)
 
 # ============================================================
 # EMBEDDING FUNCTION

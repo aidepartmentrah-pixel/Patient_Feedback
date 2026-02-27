@@ -275,7 +275,7 @@ def classify_feedback(patient_text, text_2, text_3, Print = False):
     # READABLE DESCRIPTION
     # ---------------------------------------------------------
     if Print:
-        print(f"The Feedback{Patient_Feedback} ")
+        print(f"The Feedback: {patient_text}")
 
         print("\n================ CLASSIFICATION RESULT ================\n")
         print(f"DOMAIN      : {result['domain']} ({result['domain_id']})")

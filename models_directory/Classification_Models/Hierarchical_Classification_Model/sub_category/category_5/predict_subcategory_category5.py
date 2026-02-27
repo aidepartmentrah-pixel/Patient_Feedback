@@ -11,6 +11,11 @@ import numpy as np
 import joblib
 from xgboost import XGBClassifier
 from models_directory.Classification_Models.Stage.model_package import get_embedding
+from models_directory.Classification_Models.label_mapping_helper import (
+    build_temp_to_label_for_category,
+    validate_model_mapping,
+    log_predictor_init,
+)
 
 # ============================================================
 # PATHS
@@ -18,6 +23,8 @@ from models_directory.Classification_Models.Stage.model_package import get_embed
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_DIR = os.path.join(BASE_DIR, "vocab_models")
+CATEGORY_ID = 5
+_FILE_NAME = os.path.basename(__file__)
 
 # ============================================================
 # LOAD TRAINED MODELS FOR CATEGORY 5
@@ -27,24 +34,19 @@ lr = joblib.load(os.path.join(MODEL_DIR, "lr_subcat_cat5.pkl"))
 rf = joblib.load(os.path.join(MODEL_DIR, "rf_subcat_cat5.pkl"))
 
 xgb = XGBClassifier()
-xgb.load_model(os.path.join(MODEL_DIR, "xgb_subcat_cat5.json"))
+_xgb_model_path = os.path.join(MODEL_DIR, "xgb_subcat_cat5.json")
+xgb.load_model(_xgb_model_path)
 
 # ============================================================
-# LABEL MAP (HARDCODED FOR CATEGORY 5)
-# Example: Category 5 labels = [1, 19, 26]
+# LABEL MAP (DYNAMIC FROM TRAINING DB)
 # ============================================================
 
-temp_to_label = {
-    0: 1,
-    1: 19,
-    2: 26
-}
+temp_to_label = build_temp_to_label_for_category(CATEGORY_ID)
+label_to_temp = {v: k for k, v in temp_to_label.items()}
 
-label_to_temp = {
-    1: 0,
-    19: 1,
-    26: 2
-}
+# Validate & log at load time
+validate_model_mapping(xgb, temp_to_label, _FILE_NAME, _xgb_model_path)
+log_predictor_init(_FILE_NAME, _xgb_model_path, xgb.n_classes_, temp_to_label)
 
 # ============================================================
 # PREDICT FROM EMBEDDING

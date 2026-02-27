@@ -213,7 +213,7 @@ def progress_endpoint(
     """
     Get migration progress statistics.
     
-    Authorization: SOFTWARE_ADMIN, WORKER only
+    Authorization: SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR, WORKER
     
     Returns:
         {
@@ -222,8 +222,8 @@ def progress_endpoint(
             "percent": float        # Percentage complete (rounded to 1 decimal)
         }
     """
-    # Authorization guard - Only SOFTWARE_ADMIN and WORKER
-    require_role(current_user, [SOFTWARE_ADMIN, WORKER])
+    # Authorization guard - SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR, and WORKER
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR, WORKER])
     
     try:
         progress = get_migration_progress()

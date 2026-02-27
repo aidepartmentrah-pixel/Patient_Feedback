@@ -6,6 +6,11 @@ from transformers import AutoTokenizer, AutoModel
 import joblib
 from xgboost import XGBClassifier
 from models_directory.Classification_Models.Stage.modular_functions import get_embedding
+from models_directory.Classification_Models.label_mapping_helper import (
+    build_temp_to_label_for_domain,
+    validate_model_mapping,
+    log_predictor_init,
+)
 
 # ============================================================
 # PATHS
@@ -13,11 +18,8 @@ from models_directory.Classification_Models.Stage.modular_functions import get_e
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_DIR = os.path.join(BASE_DIR, "vocab_models")
-
-
-
-
-
+DOMAIN_ID = 3
+_FILE_NAME = os.path.basename(__file__)
 
 # ============================================================
 # LOAD TRAINED MODELS
@@ -27,14 +29,19 @@ lr = joblib.load(os.path.join(MODEL_DIR, "lr_category_domain3.pkl"))
 rf = joblib.load(os.path.join(MODEL_DIR, "rf_category_domain3.pkl"))
 
 xgb = XGBClassifier()
-xgb.load_model(os.path.join(MODEL_DIR, "xgb_category_domain3.json"))
+_xgb_model_path = os.path.join(MODEL_DIR, "xgb_category_domain3.json")
+xgb.load_model(_xgb_model_path)
 
 # ============================================================
-# LABEL MAP (XGB)
+# LABEL MAP (DYNAMIC FROM TRAINING DB)
 # ============================================================
 
-temp_to_label = {0: 1, 1: 4 , 2:6}     # internal → real
-label_to_temp = {6: 2, 4: 1 , 1:0}     # real → internal
+temp_to_label = build_temp_to_label_for_domain(DOMAIN_ID)
+label_to_temp = {v: k for k, v in temp_to_label.items()}
+
+# Validate & log at load time
+validate_model_mapping(xgb, temp_to_label, _FILE_NAME, _xgb_model_path)
+log_predictor_init(_FILE_NAME, _xgb_model_path, xgb.n_classes_, temp_to_label)
 
 
 # ============================================================
