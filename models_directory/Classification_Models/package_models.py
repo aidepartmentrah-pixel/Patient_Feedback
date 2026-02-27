@@ -62,13 +62,46 @@ SUBCATEGORY_MAP = {
     31: "Ward Cleanliness",
 }
 
-# SEVERITY_MAP aligned with APP_LOOKUP_SEVERITY in database
-# DB truth: 1=Low, 2=Medium, 3=High
-SEVERITY_MAP = {
+# ============================================================
+# MODEL LABEL MAPS — reflect what model was trained to output
+# DO NOT change these to match DB — they represent model semantics
+# ============================================================
+SEVERITY_MODEL_MAP = {
+    1: "HIGH",
+    2: "LOW",
+    3: "MEDIUM",
+}
+
+HARM_MODEL_MAP = {
+    1: "Severe Harm",
+    2: "Death",
+    3: "High Severe",
+    4: "Minor Harm",
+    5: "Moderate Harm",
+    6: "No Harm",
+}
+
+# ============================================================
+# DATABASE LABEL MAPS — reflect APP_LOOKUP tables in database
+# These are used for API response labels
+# ============================================================
+DB_SEVERITY_LABELS = {
     1: "Low",
     2: "Medium",
     3: "High",
 }
+
+DB_HARM_LABELS = {
+    1: "No Harm",
+    2: "Minor",
+    3: "Moderate",
+    4: "Severe",
+    5: "Death",
+}
+
+# Legacy alias for backward compatibility (now points to DB labels)
+SEVERITY_MAP = DB_SEVERITY_LABELS
+HARM_MAP = DB_HARM_LABELS
 
 STAGE_MAP = {
     1: "Examination & Diagnosis",
@@ -79,15 +112,47 @@ STAGE_MAP = {
     6: "Unspecified",
 }
 
-# HARM_MAP aligned with APP_LOOKUP_HARM_LEVEL in database
-# DB truth: 1=No Harm, 2=Minor, 3=Moderate, 4=Severe, 5=Death
-HARM_MAP = {
-    1: "No Harm",
-    2: "Minor",
-    3: "Moderate",
-    4: "Severe",
-    5: "Death",
-}
+
+# ============================================================
+# ADAPTER FUNCTIONS — convert model output to database IDs
+# ============================================================
+def adapt_severity_to_db(model_value: int) -> int:
+    """
+    Convert model severity output to database ID.
+    Model: 1=HIGH, 2=LOW, 3=MEDIUM
+    DB:    1=Low,  2=Medium, 3=High
+    """
+    MODEL_TO_DB = {
+        1: 3,  # HIGH → DB High (3)
+        2: 1,  # LOW → DB Low (1)
+        3: 2,  # MEDIUM → DB Medium (2)
+    }
+    db_id = MODEL_TO_DB.get(model_value)
+    if db_id is None:
+        print(f"[WARNING] Severity model returned unexpected value: {model_value}. Defaulting to 1 (Low).")
+        return 1
+    return db_id
+
+
+def adapt_harm_to_db(model_value: int) -> int:
+    """
+    Convert model harm output to database ID.
+    Model: 1=Severe, 2=Death, 3=High Severe, 4=Minor, 5=Moderate, 6=No Harm
+    DB:    1=No Harm, 2=Minor, 3=Moderate, 4=Severe, 5=Death
+    """
+    MODEL_TO_DB = {
+        1: 4,  # Severe Harm → DB Severe (4)
+        2: 5,  # Death → DB Death (5)
+        3: 3,  # High Severe → DB Moderate (3) [closest match]
+        4: 2,  # Minor Harm → DB Minor (2)
+        5: 3,  # Moderate Harm → DB Moderate (3)
+        6: 1,  # No Harm → DB No Harm (1)
+    }
+    db_id = MODEL_TO_DB.get(model_value)
+    if db_id is None:
+        print(f"[WARNING] Harm model returned unexpected value: {model_value}. Defaulting to 1 (No Harm).")
+        return 1
+    return db_id
 
 FEEDBACK_TYPE_MAP = {
     1: "Complaint",
@@ -195,13 +260,10 @@ def classify_feedback(patient_text, text_2, text_3, Print = False):
     sub_category_id = result_embedding["subcategory"]
 
 
-    severity_level_id_raw = predict_severity_from_embedding(Patient_Embedding)
-    # Safe clamping for severity: DB only has IDs 1-3
-    if severity_level_id_raw < 1 or severity_level_id_raw > 3:
-        print(f"[WARNING] Severity model returned out-of-range value: {severity_level_id_raw}. Clamping to [1,3].")
-        severity_level_id = max(1, min(3, severity_level_id_raw))
-    else:
-        severity_level_id = severity_level_id_raw
+    # Severity prediction with adapter
+    raw_severity = predict_severity_from_embedding(Patient_Embedding)
+    severity_level_id = adapt_severity_to_db(raw_severity)
+    print(f"[DEBUG] Severity: raw_model={raw_severity} ({SEVERITY_MODEL_MAP.get(raw_severity, 'UNKNOWN')}) → db_id={severity_level_id} ({DB_SEVERITY_LABELS.get(severity_level_id, 'UNKNOWN')})")
     
     # Stage classification returns a dict with chosen_stage being a string
     stage_result = classify_stage_Score_Based(Patient_Text, Print)
@@ -218,19 +280,11 @@ def classify_feedback(patient_text, text_2, text_3, Print = False):
     chosen_stage = stage_result.get("chosen_stage") if isinstance(stage_result, dict) else None
     stage_id = STAGE_ENCODINGS.get(chosen_stage, 6) if chosen_stage else 6  # default to unspecified (id=6)
 
+    # Harm prediction with adapter
     harm_result = predict_harm_from_embedding(Patient_Embedding)
-    harm_level_id_raw = harm_result["harm_level"]
-    # Safe clamping for harm: DB only has IDs 1-5
-    if harm_level_id_raw < 1 or harm_level_id_raw > 5:
-        if harm_level_id_raw == 6:
-            # TEMPORARY: Model historically outputs 6, remap to 1 (No Harm) until model is retrained
-            print(f"[WARNING] Harm model returned 6. TEMPORARY mapping to 1 (No Harm). Validate this mapping.")
-            harm_level_id = 1
-        else:
-            print(f"[WARNING] Harm model returned out-of-range value: {harm_level_id_raw}. Clamping to [1,5].")
-            harm_level_id = max(1, min(5, harm_level_id_raw))
-    else:
-        harm_level_id = harm_level_id_raw
+    raw_harm = harm_result["harm_level"]
+    harm_level_id = adapt_harm_to_db(raw_harm)
+    print(f"[DEBUG] Harm: raw_model={raw_harm} ({HARM_MODEL_MAP.get(raw_harm, 'UNKNOWN')}) → db_id={harm_level_id} ({DB_HARM_LABELS.get(harm_level_id, 'UNKNOWN')})")
 
     # feedback_type and improvement functions return strings directly
     feedback_type_label = predict_feedback_type_from_embedding(Patient_Embedding)
