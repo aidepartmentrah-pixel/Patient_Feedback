@@ -62,11 +62,12 @@ SUBCATEGORY_MAP = {
     31: "Ward Cleanliness",
 }
 
+# SEVERITY_MAP aligned with APP_LOOKUP_SEVERITY in database
+# DB truth: 1=Low, 2=Medium, 3=High
 SEVERITY_MAP = {
-    1: "HIGH",
-    2: "LOW",
-    3: "MEDIUM"
-    # 6: "Moderate",
+    1: "Low",
+    2: "Medium",
+    3: "High",
 }
 
 STAGE_MAP = {
@@ -78,13 +79,14 @@ STAGE_MAP = {
     6: "Unspecified",
 }
 
+# HARM_MAP aligned with APP_LOOKUP_HARM_LEVEL in database
+# DB truth: 1=No Harm, 2=Minor, 3=Moderate, 4=Severe, 5=Death
 HARM_MAP = {
-    1: "Severe Harm",
-    2: "Death",
-    3: "High Severe",
-    4: "Minor Harm",
-    5: "Moderate Harm",
-    6: "No Harm",
+    1: "No Harm",
+    2: "Minor",
+    3: "Moderate",
+    4: "Severe",
+    5: "Death",
 }
 
 FEEDBACK_TYPE_MAP = {
@@ -193,7 +195,13 @@ def classify_feedback(patient_text, text_2, text_3, Print = False):
     sub_category_id = result_embedding["subcategory"]
 
 
-    severity_level_id = predict_severity_from_embedding(Patient_Embedding)
+    severity_level_id_raw = predict_severity_from_embedding(Patient_Embedding)
+    # Safe clamping for severity: DB only has IDs 1-3
+    if severity_level_id_raw < 1 or severity_level_id_raw > 3:
+        print(f"[WARNING] Severity model returned out-of-range value: {severity_level_id_raw}. Clamping to [1,3].")
+        severity_level_id = max(1, min(3, severity_level_id_raw))
+    else:
+        severity_level_id = severity_level_id_raw
     
     # Stage classification returns a dict with chosen_stage being a string
     stage_result = classify_stage_Score_Based(Patient_Text, Print)
@@ -211,7 +219,18 @@ def classify_feedback(patient_text, text_2, text_3, Print = False):
     stage_id = STAGE_ENCODINGS.get(chosen_stage, 6) if chosen_stage else 6  # default to unspecified (id=6)
 
     harm_result = predict_harm_from_embedding(Patient_Embedding)
-    harm_level_id = harm_result["harm_level"]
+    harm_level_id_raw = harm_result["harm_level"]
+    # Safe clamping for harm: DB only has IDs 1-5
+    if harm_level_id_raw < 1 or harm_level_id_raw > 5:
+        if harm_level_id_raw == 6:
+            # TEMPORARY: Model historically outputs 6, remap to 1 (No Harm) until model is retrained
+            print(f"[WARNING] Harm model returned 6. TEMPORARY mapping to 1 (No Harm). Validate this mapping.")
+            harm_level_id = 1
+        else:
+            print(f"[WARNING] Harm model returned out-of-range value: {harm_level_id_raw}. Clamping to [1,5].")
+            harm_level_id = max(1, min(5, harm_level_id_raw))
+    else:
+        harm_level_id = harm_level_id_raw
 
     # feedback_type and improvement functions return strings directly
     feedback_type_label = predict_feedback_type_from_embedding(Patient_Embedding)

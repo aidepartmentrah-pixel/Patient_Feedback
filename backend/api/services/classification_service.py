@@ -3,6 +3,7 @@ Classification Service
 Handles Arabic text classification for patient feedback using AI models.
 """
 import sys
+import uuid
 from pathlib import Path
 
 # Add workspace root to path to import models_directory
@@ -47,6 +48,15 @@ def classify_text(text: str, explain: bool = True) -> dict:
         - harm_level
         - improvement_opportunity_type
     """
+    # === TEMPORARY DEBUG INSTRUMENTATION (cross-request isolation test) ===
+    request_debug_id = str(uuid.uuid4())
+    print("====================================")
+    print("CLASSIFY REQUEST ID:", request_debug_id)
+    print("INPUT TEXT:", text)
+    print("INPUT HASH:", hash(text))
+    print("====================================")
+    # === END TEMPORARY DEBUG ===
+    
     print(f"\n{'='*60}")
     print(f"[CLASSIFY] === DIAGNOSTIC START ===")
     print(f"[CLASSIFY] Text length: {len(text) if text else 0}")
@@ -87,11 +97,21 @@ def classify_text(text: str, explain: bool = True) -> dict:
                 classification_result["classification_en_id"] = valid_ids[0]
                 classification_result["classification_en"] = f"Classification {valid_ids[0]}"
         
-        return {
+        result = {
             "success": True,
             "text": text,
             "classifications": classification_result
         }
+        
+        # === TEMPORARY DEBUG INSTRUMENTATION (cross-request isolation test) ===
+        print("====================================")
+        print("CLASSIFY REQUEST ID:", request_debug_id)
+        print("OUTPUT RESULT:", result)
+        print("RESULT OBJECT ID:", id(result))
+        print("====================================")
+        # === END TEMPORARY DEBUG ===
+        
+        return result
         
     except Exception as e:
         import traceback
