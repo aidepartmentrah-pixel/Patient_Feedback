@@ -174,6 +174,61 @@ def get_departments() -> List[Dict]:
     return result
 
 
+def get_section_parents() -> List[Dict]:
+    """
+    Get all valid parent units for section creation.
+    
+    Use Case: Parent dropdown when creating a new section.
+    Only ADMINISTRATION (Type=323) and DEPARTMENT (Type=325) units
+    can be parents of sections. SECTION units (Type=324) cannot be parents.
+    
+    Returns:
+        List of dicts with:
+        - id: Unit ID
+        - name: Unit name
+        - name_ar: Unit name (Arabic)
+        - type: Type code (323 or 325)
+        - type_name: Type name (ADMINISTRATION or DEPARTMENT)
+    
+    Example:
+        [
+            {
+                "id": 1,
+                "name": "Medical Administration",
+                "name_ar": "الإدارة الطبية",
+                "type": 323,
+                "type_name": "ADMINISTRATION"
+            },
+            {
+                "id": 10,
+                "name": "Emergency Department",
+                "name_ar": "قسم الطوارئ",
+                "type": 325,
+                "type_name": "DEPARTMENT"
+            }
+        ]
+    """
+    all_units = admin_units.get_admin_unit_tree()
+    
+    # Valid parent types for sections
+    valid_types = [ORG_TYPE_ADMINISTRATION, ORG_TYPE_DEPARTMENT]
+    
+    result = []
+    for unit in all_units:
+        unit_type = unit.Type
+        if unit_type in valid_types:
+            type_name = ORG_TYPE_NAME_MAP.get(unit_type, "UNKNOWN")
+            result.append({
+                "id": unit.UniqueID,
+                "name": unit.Name,
+                "name_ar": unit.Name,
+                "type": unit_type,
+                "type_name": type_name
+            })
+    
+    return result
+
+
 def get_sections() -> List[Dict]:
     """
     Get all section units (children of departments).
