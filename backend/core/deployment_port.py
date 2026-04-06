@@ -18,7 +18,43 @@
 """
 
 import os
+import socket
 from .config_loader import get_config
+
+
+# =============================================================================
+# AUTO-DETECT LOCAL IP ADDRESS
+# =============================================================================
+def _get_local_ip() -> str:
+    """
+    Auto-detect this machine's IP address.
+    
+    This allows the backend to automatically configure CORS for the current
+    VM IP, so clients can connect without manual config changes when IP changes.
+    """
+    try:
+        # Create a socket and connect to an external address
+        # This doesn't actually send data, just determines the local IP
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(2)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        # Fallback: try hostname resolution
+        try:
+            hostname = socket.gethostname()
+            ip = socket.gethostbyname(hostname)
+            if ip and not ip.startswith("127."):
+                return ip
+        except Exception:
+            pass
+        return "127.0.0.1"
+
+
+# Auto-detected IP (computed once at module load)
+AUTO_DETECTED_IP = _get_local_ip()
 
 # Load configuration from JSON + env overrides
 _cfg = get_config()
@@ -56,15 +92,30 @@ DOCTORS_VIEW = _views.get("doctors", "VW_Doctors")
 # =============================================================================
 # 3. NETWORK & API SETTINGS
 # =============================================================================
-BACKEND_API_URL = _net.get("backend_api_url", "http://localhost:8000")
 BACKEND_PORT = _net.get("backend_port", 8000)
-BACKEND_HOST = _net.get("backend_host", "127.0.0.1")
-CORS_ORIGINS = _net.get("cors_origins", [
+# Always bind to 0.0.0.0 to accept connections from any IP (not just localhost)
+BACKEND_HOST = "0.0.0.0"
+# Auto-generate backend URL using detected IP
+BACKEND_API_URL = f"http://{AUTO_DETECTED_IP}:{BACKEND_PORT}"
+
+# Build CORS origins: start with config values, then add auto-detected IP
+_configured_cors = _net.get("cors_origins", [
     "http://localhost:3000",
     "http://localhost:5173",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5173",
 ])
+
+# Auto-add origins for the detected IP (common frontend ports)
+_auto_cors = [
+    f"http://{AUTO_DETECTED_IP}:3000",
+    f"http://{AUTO_DETECTED_IP}:5173",
+    f"http://{AUTO_DETECTED_IP}:80",
+    f"http://{AUTO_DETECTED_IP}",
+]
+
+# Combine configured + auto-detected, removing duplicates
+CORS_ORIGINS = list(dict.fromkeys(_configured_cors + _auto_cors))
 
 
 # =============================================================================

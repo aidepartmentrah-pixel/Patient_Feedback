@@ -96,37 +96,28 @@ app.add_middleware(
 
 # ==================== CORS MIDDLEWARE ====================
 # CORS is needed when frontend and backend are on different origins (different ports count as different origins)
-# Production: Frontend on IIS (port 80) at http://170.70.32.52, Backend on port 8000
-# Development: Frontend on Vite/React dev server, Backend on port 8000
+# CORS origins are now auto-detected from the VM's IP address via deployment_port.py
+# This allows the system to work automatically when the VM IP changes.
 
-# Production origins
-production_origins = [
-    "http://170.70.32.52",  # IIS frontend (production)
-]
+from core.deployment_port import CORS_ORIGINS, AUTO_DETECTED_IP
 
-# Development origins
-development_origins = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:5174",
-    "http://127.0.0.1:5174",
-    "http://localhost:8080",
-    "http://127.0.0.1:8080",
-]
+# Log the auto-detected configuration at startup
+import logging
+_cors_logger = logging.getLogger(__name__)
+_cors_logger.info(f"Auto-detected VM IP: {AUTO_DETECTED_IP}")
+_cors_logger.info(f"CORS origins configured: {CORS_ORIGINS}")
 
-# Allow override via environment variable
+# Allow override via environment variable (optional)
 origins_override = os.getenv("ALLOWED_ORIGINS", "")
 if origins_override:
     origins = [o.strip() for o in origins_override.split(",") if o.strip()]
 else:
-    # Combine production and development origins
-    origins = production_origins + development_origins
+    # Use auto-detected CORS origins from deployment_port.py
+    origins = CORS_ORIGINS
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,  # All allowed origins
+    allow_origins=origins,  # Auto-detected + configured origins
     allow_credentials=True,  # Enable credentials for session cookies
     allow_methods=["*"],
     allow_headers=["*"],
