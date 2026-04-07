@@ -107,11 +107,16 @@ _configured_cors = _net.get("cors_origins", [
 ])
 
 # Auto-add origins for the detected IP (common frontend ports)
+# Include both HTTP and HTTPS to support IIS with HTTPS binding
 _auto_cors = [
+    # HTTP origins
     f"http://{AUTO_DETECTED_IP}:3000",
     f"http://{AUTO_DETECTED_IP}:5173",
     f"http://{AUTO_DETECTED_IP}:80",
     f"http://{AUTO_DETECTED_IP}",
+    # HTTPS origins (for IIS with SSL certificate)
+    f"https://{AUTO_DETECTED_IP}:443",
+    f"https://{AUTO_DETECTED_IP}",
 ]
 
 # Combine configured + auto-detected, removing duplicates

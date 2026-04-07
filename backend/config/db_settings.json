@@ -1,7 +1,7 @@
 {
     "deployment_mode": "offline",
     "database": {
-        "server": "170.70.32.36",
+        "server": "170.70.32.11",
         "database": "IncidentManager",
         "driver": "ODBC Driver 18 for SQL Server",
         "use_windows_auth": false,
