@@ -72,7 +72,23 @@ DEPLOYMENT_MODE = _cfg.get("deployment_mode", "offline")
 # =============================================================================
 # 1. DATABASE CONNECTION SETTINGS
 # =============================================================================
-DB_SERVER = _db.get("server", "localhost")
+# New explicit host/port configuration (preferred)
+# If 'host' is specified, we build an explicit TCP connection target
+# If only legacy 'server' is specified, we use it directly (backward compat)
+DB_HOST = _db.get("host", None)
+DB_PORT = _db.get("port", 1433)
+
+# Build DB_SERVER with explicit TCP protocol for deterministic connection routing
+# This eliminates Named Pipes ambiguity and ensures consistent behavior
+# Format: tcp:<host>,<port>
+if DB_HOST:
+    # New format: explicit TCP with host and port
+    DB_SERVER = f"tcp:{DB_HOST},{DB_PORT}"
+else:
+    # Legacy format: use 'server' field as-is (for backward compatibility)
+    # WARNING: This may still use Named Pipes if server is a raw IP
+    DB_SERVER = _db.get("server", "localhost")
+
 DB_DATABASE = _db.get("database", "IncidentManager")
 DB_DRIVER = _db.get("driver", "ODBC Driver 17 for SQL Server")
 USE_WINDOWS_AUTH = _db.get("use_windows_auth", True)

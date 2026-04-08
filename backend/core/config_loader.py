@@ -35,6 +35,10 @@ def _get_default_config() -> Dict[str, Any]:
     return {
         "deployment_mode": "offline",
         "database": {
+            # New explicit host/port fields (preferred)
+            "host": "localhost",
+            "port": 1433,
+            # Legacy field (for backward compatibility - will be ignored if host is set)
             "server": "localhost",
             "database": "IncidentManager",
             "driver": "ODBC Driver 17 for SQL Server",

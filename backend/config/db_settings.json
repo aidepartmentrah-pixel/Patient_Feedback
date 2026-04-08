@@ -1,6 +1,8 @@
 {
     "deployment_mode": "offline",
     "database": {
+        "host": "170.70.32.11",
+        "port": 1433,
         "server": "170.70.32.11",
         "database": "IncidentManager",
         "driver": "ODBC Driver 18 for SQL Server",
