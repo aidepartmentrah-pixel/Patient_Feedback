@@ -16,7 +16,7 @@ from docx.shared import Inches, Pt, RGBColor, Mm
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 
 from core.database import get_connection
-from core.table_config import HR_EMPLOYEES_TABLE
+from core.table_config import HR_EMPLOYEES_TABLE, DOCTORS_TABLE
 
 
 def _fetch_doctors_with_incident_counts(
@@ -39,7 +39,7 @@ def _fetch_doctors_with_incident_counts(
         conn = get_connection()
         cursor = conn.cursor()
         
-        query = """
+        query = f"""
             SELECT
                 icd.DoctorID,
                 COALESCE(d.DoctorName, vw.Name, rd.DoctorName, CONCAT('Doctor ', icd.DoctorID)) as DoctorName,
@@ -62,7 +62,7 @@ def _fetch_doctors_with_incident_counts(
                 ON ic.ClinicalRiskTypeID = crt.ClinicalRiskTypeID
             LEFT JOIN dbo.APP_LOOKUP_DOCTOR d 
                 ON icd.DoctorID = d.DoctorID
-            LEFT JOIN dbo.VW_Doctors vw 
+            LEFT JOIN dbo.{DOCTORS_TABLE} vw 
                 ON icd.DoctorID = vw.DoctorID
             LEFT JOIN dbo.APP_RESERVE_DOCTOR rd 
                 ON icd.DoctorID = rd.DoctorID

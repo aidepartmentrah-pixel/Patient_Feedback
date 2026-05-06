@@ -9,7 +9,10 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, Literal
 import uuid
 import traceback
+import logging
 from io import BytesIO
+
+logger = logging.getLogger(__name__)
 
 # FastAPI imports
 from fastapi import APIRouter, Query, HTTPException, Response, Depends
@@ -259,6 +262,14 @@ def view_seasonal_report(
         )
         return report
     except Exception as e:
+        logger.exception(
+            "[SEASONAL/VIEW] Failed season_id=%s year=%s trimester=%s orgunit_id=%s orgunit_type=%s",
+            season_id,
+            request.year,
+            request.trimester,
+            request.orgunit_id,
+            request.orgunit_type,
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 

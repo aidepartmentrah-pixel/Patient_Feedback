@@ -6,6 +6,7 @@ Handles all SQL queries for doctor profiles, statistics, and incident tracking.
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from core.database import get_connection
+from core.table_config import DOCTORS_TABLE
 
 
 # =============================================
@@ -216,9 +217,8 @@ def get_doctor_profile(doctor_id: int) -> Optional[Dict[str, Any]]:
             
             return profile
         
-        # Not found in reserve, try hospital view
-        # VW_Doctors has columns: DoctorID, Name, SpecialityName, IsActive, etc.
-        query_hospital = """
+        # Not found in reserve, try hospital view (name from db_settings views.doctors)
+        query_hospital = f"""
             SELECT
                 d.DoctorID as id,
                 d.Name as name_en,
@@ -228,7 +228,7 @@ def get_doctor_profile(doctor_id: int) -> Optional[Dict[str, Any]]:
                 'hospital' as source,
                 NULL as source_system,
                 NULL as last_synced_at
-            FROM dbo.VW_Doctors d
+            FROM dbo.{DOCTORS_TABLE} d
             WHERE d.DoctorID = ?
         """
         

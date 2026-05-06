@@ -9,6 +9,7 @@ NO business logic. NO authorization. ONLY SQL operations.
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from core.database import get_connection
+from core.table_config import PATIENT_ADMISSION_TABLE
 
 
 # ============================================================
@@ -133,7 +134,7 @@ def get_note_by_id(note_id: int) -> Optional[Dict[str, Any]]:
     cursor = conn.cursor()
     
     try:
-        query = """
+        query = f"""
             SELECT 
                 n.NoteID,
                 n.NoteText,
@@ -144,7 +145,7 @@ def get_note_by_id(note_id: int) -> Optional[Dict[str, Any]]:
                 n.PatientAdmissionID,
                 COALESCE(p.FullName, r.FullName) as PatientName
             FROM dbo.APP_DrawerNote n
-            LEFT JOIN dbo.VW_PatientAdmission p ON n.PatientAdmissionID = p.PatientAdmissionID
+            LEFT JOIN dbo.{PATIENT_ADMISSION_TABLE} p ON n.PatientAdmissionID = p.PatientAdmissionID
             LEFT JOIN dbo.APP_RESERVE_PATIENT r ON n.PatientAdmissionID = r.PatientAdmissionID AND p.PatientAdmissionID IS NULL
             WHERE n.NoteID = ?
         """
@@ -188,7 +189,7 @@ def list_notes_paged(limit: int, offset: int, patient_admission_id: Optional[int
     
     try:
         if patient_admission_id is not None:
-            query = """
+            query = f"""
                 SELECT 
                     n.NoteID,
                     n.NoteText,
@@ -199,7 +200,7 @@ def list_notes_paged(limit: int, offset: int, patient_admission_id: Optional[int
                     n.PatientAdmissionID,
                     COALESCE(p.FullName, r.FullName) as PatientName
                 FROM dbo.APP_DrawerNote n
-                LEFT JOIN dbo.VW_PatientAdmission p ON n.PatientAdmissionID = p.PatientAdmissionID
+                LEFT JOIN dbo.{PATIENT_ADMISSION_TABLE} p ON n.PatientAdmissionID = p.PatientAdmissionID
                 LEFT JOIN dbo.APP_RESERVE_PATIENT r ON n.PatientAdmissionID = r.PatientAdmissionID AND p.PatientAdmissionID IS NULL
                 WHERE n.IsDeleted = 0 AND n.PatientAdmissionID = ?
                 ORDER BY n.CreatedAt DESC
@@ -208,7 +209,7 @@ def list_notes_paged(limit: int, offset: int, patient_admission_id: Optional[int
             """
             cursor.execute(query, (patient_admission_id, offset, limit))
         else:
-            query = """
+            query = f"""
                 SELECT 
                     n.NoteID,
                     n.NoteText,
@@ -219,7 +220,7 @@ def list_notes_paged(limit: int, offset: int, patient_admission_id: Optional[int
                     n.PatientAdmissionID,
                     COALESCE(p.FullName, r.FullName) as PatientName
                 FROM dbo.APP_DrawerNote n
-                LEFT JOIN dbo.VW_PatientAdmission p ON n.PatientAdmissionID = p.PatientAdmissionID
+                LEFT JOIN dbo.{PATIENT_ADMISSION_TABLE} p ON n.PatientAdmissionID = p.PatientAdmissionID
                 LEFT JOIN dbo.APP_RESERVE_PATIENT r ON n.PatientAdmissionID = r.PatientAdmissionID AND p.PatientAdmissionID IS NULL
                 WHERE n.IsDeleted = 0
                 ORDER BY n.CreatedAt DESC
@@ -408,7 +409,7 @@ def filter_notes_by_label_ids(
                 n.PatientAdmissionID,
                 COALESCE(p.FullName, r.FullName) as PatientName
             FROM dbo.APP_DrawerNote n
-            LEFT JOIN dbo.APP_VIEWTABLE_PATIENT_ADMISSION p ON n.PatientAdmissionID = p.PatientAdmissionID
+            LEFT JOIN dbo.{PATIENT_ADMISSION_TABLE} p ON n.PatientAdmissionID = p.PatientAdmissionID
             LEFT JOIN dbo.APP_RESERVE_PATIENT r ON n.PatientAdmissionID = r.PatientAdmissionID AND p.PatientAdmissionID IS NULL
             INNER JOIN dbo.APP_DrawerNoteLabelLink lnk ON n.NoteID = lnk.NoteID
             WHERE n.IsDeleted = 0

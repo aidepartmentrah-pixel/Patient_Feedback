@@ -326,14 +326,14 @@ def get_seasonal_domain_totals(
         print(f"  Severity Sum: {severity_sum} (Low={low_severity}, Medium={medium_severity}, High={high_severity})")
         
         if domain_sum != total_cases:
-            print(f"  ⚠️  WARNING: Domain sum ({domain_sum}) != Total cases ({total_cases})")
+            print(f"  [WARNING] Domain sum ({domain_sum}) != Total cases ({total_cases})")
         else:
-            print(f"  ✅ PASS: Domain sum matches total cases")
-        
+            print(f"  [PASS] Domain sum matches total cases")
+
         if severity_sum != total_cases:
-            print(f"  ⚠️  WARNING: Severity sum ({severity_sum}) != Total cases ({total_cases})")
+            print(f"  [WARNING] Severity sum ({severity_sum}) != Total cases ({total_cases})")
         else:
-            print(f"  ✅ PASS: Severity sum matches total cases")
+            print(f"  [PASS] Severity sum matches total cases")
         print(f"{'='*80}\n")
         
         return {
