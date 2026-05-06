@@ -9,8 +9,6 @@ All configuration should be done in deployment_port.py.
 
 # Import from unified deployment port (single source of truth)
 from .deployment_port import (
-    DB_HOST,
-    DB_PORT,
     DB_SERVER,
     DB_DATABASE,
     DB_DRIVER,
