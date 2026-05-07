@@ -110,6 +110,7 @@ def _get_workflow_status(incident_id: int, cursor=None) -> Optional[Dict[str, An
 def get_complaints_paginated(
     search: Optional[str] = None,
     issuing_org_unit_id: Optional[int] = None,
+    target_department_id: Optional[int] = None,
     domain_id: Optional[int] = None,
     category_id: Optional[int] = None,
     severity_id: Optional[int] = None,
@@ -202,6 +203,17 @@ def get_complaints_paginated(
     if case_status_id:
         where_conditions.append("c.CaseStatusID = ?")
         params.append(case_status_id)
+
+    # Target department filter (via IncidentCaseTargetDepartment join)
+    if target_department_id:
+        where_conditions.append("""
+            EXISTS (
+                SELECT 1 FROM dbo.APP_IncidentCaseTargetDepartment td
+                WHERE td.IncidentRequestCaseID = c.IncidentRequestCaseID
+                  AND td.DepartmentID = ?
+            )
+        """)
+        params.append(target_department_id)
     
     # Date filters
     if year:
@@ -236,9 +248,11 @@ def get_complaints_paginated(
     
     # SQL query for fetching records
     query = f"""
-        SELECT 
+        SELECT
             c.IncidentRequestCaseID as id,
             c.IncidentRequestCaseID as complaint_number,
+            c.incident_id,
+            i.incident_number,
             LEFT(c.ComplaintText, 150) as complaint_summary,
             c.ComplaintText as complaint_text,
             c.FeedbackRecievedDate as received_date,
@@ -320,6 +334,7 @@ def get_complaints_paginated(
         LEFT JOIN APP_LOOKUP_FEEDBACK_INTENT_TYPE feedback_intent ON c.FeedbackIntentTypeID = feedback_intent.FeedbackIntentTypeID
         LEFT JOIN APP_LOOKUP_SOURCE source ON c.SourceID = source.SourceID
         LEFT JOIN APP_LOOKUP_EXPLANATION_STATUS explanation_status ON c.ExplanationStatusID = explanation_status.StatusID
+        LEFT JOIN dbo.APP_Incident i ON c.incident_id = i.incident_id
         {where_clause}
         {order_by_clause}
         OFFSET ? ROWS
@@ -765,6 +780,7 @@ def get_complaint_by_id(complaint_id: int) -> Optional[Dict[str, Any]]:
 def get_complaints_count(
     search: Optional[str] = None,
     issuing_org_unit_id: Optional[int] = None,
+    target_department_id: Optional[int] = None,
     domain_id: Optional[int] = None,
     category_id: Optional[int] = None,
     severity_id: Optional[int] = None,

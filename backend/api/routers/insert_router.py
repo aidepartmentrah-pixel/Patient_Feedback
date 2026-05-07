@@ -5,13 +5,13 @@ API endpoints for creating new incident/feedback records.
 
 from fastapi import APIRouter, HTTPException, Body, Query, Path, Depends
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Any
 from datetime import date, datetime
 
 from ..dependencies.user_context import get_current_user
 from ..schemas.auth_models import CurrentUser
 from ..utils.guards import require_logged_in
-from ..services.insert_service import create_record
+from ..services.insert_service import create_record, create_incident_with_cases
 from ..services.table_view_service import get_complaint_by_id
 from ..services.search_service import (
     search_patients,
@@ -43,7 +43,12 @@ class CreateRecordRequest(BaseModel):
     stage_id: int = Field(..., gt=0, description="Care stage ID")
     harm_id: int = Field(..., gt=0, description="Harm level ID")
     clinical_risk_type_id: int = Field(..., ge=1, le=3, description="Clinical risk type (1=Standard, 2=Red Flag, 3=Never Event)")
-    feedback_intent_type_id: int = Field(..., ge=1, description="Feedback intent type ID (required)")
+    feedback_intent_type_id: int = Field(
+        ...,
+        ge=1,
+        le=2,
+        description="Feedback intent type ID (1=Negative, 2=Positive)",
+    )
     requires_explanation: bool = Field(..., description="Whether the case requires explanation (required)")
     immediate_action: str = Field(..., description="Immediate actions taken (required)")
     taken_action: str = Field(..., description="Follow-up actions taken (required)")
@@ -79,6 +84,35 @@ class CreateRecordRequest(BaseModel):
     improvement_opportunity_type: Optional[int] = Field(None, ge=1, le=3, description="Improvement type (1=Ordinary, 2=RedFlag, 3=NeverEvent)")
     classification_ar: Optional[float] = Field(None, ge=0, le=10, description="Arabic classification confidence score")
     classification_en: Optional[int] = Field(None, ge=0, description="English classification code")
+
+
+class IncidentCommonRequest(BaseModel):
+    """Common Incident-level fields shared across cases."""
+
+    complaint_text: Optional[str] = None
+    feedback_received_date: date
+    issuing_department_id: int
+    feedback_intent_type_id: int = Field(
+        ...,
+        ge=1,
+        le=2,
+        description="Feedback intent type ID (1=Negative, 2=Positive)",
+    )
+    patient_name: Optional[str] = ""
+    is_inpatient: bool = True
+    source_id: int
+    building_id: Optional[int] = None
+    primary_doctor_name: Optional[str] = None
+    primary_worker_name: Optional[str] = None
+    doctors: Optional[list[dict[str, Any]]] = None
+    employees: Optional[list[dict[str, Any]]] = None
+
+
+class CreateIncidentWithCasesRequest(BaseModel):
+    """Request model for creating one Incident with multiple Cases."""
+
+    common: IncidentCommonRequest
+    cases: list[CreateRecordRequest]
 
 
 # ==================== ENDPOINTS ====================
@@ -217,6 +251,43 @@ async def add_record(
                 "message": f"An error occurred: {str(e)}",
                 "message_ar": f"حدث خطأ: {str(e)}"
             }
+        )
+
+
+@router.post("/add-incident")
+async def add_incident_with_cases(
+    request: CreateIncidentWithCasesRequest = Body(...),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Create one Incident parent with one or more operational Cases.
+
+    - common: shared Incident-level fields (patient/doctor/worker/intent, etc.)
+    - cases: list of CreateRecordRequest payloads (each must target exactly one section)
+    """
+    require_logged_in(current_user)
+
+    try:
+        result = create_incident_with_cases(request.model_dump())
+
+        if not result.get("success", False):
+            raise HTTPException(
+                status_code=400,
+                detail=result,
+            )
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "INTERNAL_ERROR",
+                "message": f"An error occurred: {str(e)}",
+                "message_ar": f"حدث خطأ: {str(e)}",
+            },
         )
 
 

@@ -42,6 +42,7 @@ class ExportRequest(BaseModel):
 async def get_complaints(
     search: Optional[str] = Query(None, description="Free-text search across complaint_number, patient_name, complaint_text"),
     issuing_org_unit_id: Optional[int] = Query(None, description="Filter by issuing organizational unit ID"),
+    target_department_id: Optional[int] = Query(None, description="Filter by target department/section ID"),
     domain_id: Optional[int] = Query(None, description="Filter by HCAT domain ID"),
     category_id: Optional[int] = Query(None, description="Filter by category ID"),
     severity_id: Optional[int] = Query(None, description="Filter by severity level ID"),
@@ -79,6 +80,7 @@ async def get_complaints(
         result = get_complaints_paginated(
             search=search,
             issuing_org_unit_id=issuing_org_unit_id,
+            target_department_id=target_department_id,
             domain_id=domain_id,
             category_id=category_id,
             severity_id=severity_id,

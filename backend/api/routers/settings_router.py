@@ -873,3 +873,134 @@ async def delete_doctor(
             "message": str(e),
             "message_ar": f"فشل حذف الطبيب: {str(e)}"
         })
+
+
+# ==================== SECTION MANAGEMENT ====================
+
+class SectionRenameRequest(BaseModel):
+    name: str
+    name_ar: Optional[str] = None
+    parent_id: Optional[int] = None  # reassign to a different department
+
+
+@router.get("/sections")
+async def list_sections(
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """List all sections (leaves) with their parent department info."""
+    require_logged_in(current_user)
+    try:
+        from core.database import get_connection
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                s.UniqueID AS section_id,
+                s.Name AS section_name,
+                s.ParentID AS department_id,
+                d.Name AS department_name,
+                d.ParentID AS administration_id,
+                a.Name AS administration_name
+            FROM AdminsrationUnit s
+            LEFT JOIN AdminsrationUnit d ON s.ParentID = d.UniqueID
+            LEFT JOIN AdminsrationUnit a ON d.ParentID = a.UniqueID
+            WHERE s.Type = 3
+            ORDER BY a.Name, d.Name, s.Name
+            """
+        )
+        rows = cursor.fetchall()
+        cols = [c[0] for c in cursor.description]
+        conn.close()
+        return {"sections": [dict(zip(cols, r)) for r in rows]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": "fetch_failed", "message": str(e)})
+
+
+@router.get("/sections/departments")
+async def list_departments_for_reassignment(
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """Return all departments (Type=2) that sections can be reassigned to."""
+    require_logged_in(current_user)
+    try:
+        from core.database import get_connection
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                d.UniqueID AS department_id,
+                d.Name AS department_name,
+                d.ParentID AS administration_id,
+                a.Name AS administration_name
+            FROM AdminsrationUnit d
+            LEFT JOIN AdminsrationUnit a ON d.ParentID = a.UniqueID
+            WHERE d.Type = 2
+            ORDER BY a.Name, d.Name
+            """
+        )
+        rows = cursor.fetchall()
+        cols = [c[0] for c in cursor.description]
+        conn.close()
+        return {"departments": [dict(zip(cols, r)) for r in rows]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": "fetch_failed", "message": str(e)})
+
+
+@router.put("/sections/{section_id}")
+async def update_section(
+    section_id: int = Path(..., gt=0),
+    request: SectionRenameRequest = Body(...),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Rename a section and/or reassign it to a different department.
+    Only changes Name and/or ParentID — no historical data is touched.
+    """
+    require_logged_in(current_user)
+    try:
+        from core.database import get_connection
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # Verify section exists and is Type=3
+        cursor.execute(
+            "SELECT UniqueID, Name, ParentID, Type FROM AdminsrationUnit WHERE UniqueID = ?",
+            section_id,
+        )
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            raise HTTPException(status_code=404, detail={"error": "NOT_FOUND", "message": f"Section {section_id} not found"})
+        if row.Type != 3:
+            conn.close()
+            raise HTTPException(status_code=400, detail={"error": "NOT_SECTION", "message": "Unit is not a section (Type must be 3)"})
+
+        new_name = request.name.strip()
+        new_parent = request.parent_id if request.parent_id is not None else row.ParentID
+
+        if request.parent_id is not None:
+            # Verify the target department is Type=2
+            cursor.execute("SELECT Type FROM AdminsrationUnit WHERE UniqueID = ?", new_parent)
+            dept_row = cursor.fetchone()
+            if not dept_row or dept_row.Type != 2:
+                conn.close()
+                raise HTTPException(status_code=400, detail={"error": "INVALID_DEPARTMENT", "message": "Target parent must be a department (Type=2)"})
+
+        cursor.execute(
+            "UPDATE AdminsrationUnit SET Name = ?, ParentID = ? WHERE UniqueID = ?",
+            new_name, new_parent, section_id,
+        )
+        conn.commit()
+        conn.close()
+        return {
+            "success": True,
+            "section_id": section_id,
+            "name": new_name,
+            "department_id": new_parent,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": "UPDATE_FAILED", "message": str(e)})

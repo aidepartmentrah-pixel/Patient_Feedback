@@ -10,6 +10,7 @@ from backend.api.db_layer.incident_case import create_incident_case
 from backend.api.db_layer.incident_case_target_department import add_target_department
 from backend.api.db_layer.incident_case_doctor import add_doctor_to_case
 from backend.api.db_layer.incident_case_employee import add_employee_to_case
+from backend.api.db_layer.incident_parent import create_incident_parent, assign_case_to_incident
         
 
 def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -412,12 +413,6 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def update_record(record_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
-
-
-# -----------------------------
-# Load current FSM state
-# -----------------------------
-
     conn = None
     cursor = None
 
@@ -921,3 +916,90 @@ def update_record(record_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
             cursor.close()
         if conn:
             conn.close()
+
+
+def create_incident_with_cases(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Create one parent incident with one or more operational cases.
+    Compatibility-first: each case is still created through legacy create_record flow.
+    """
+    common = payload.get("common", {}) or {}
+    cases = payload.get("cases", []) or []
+
+    if not cases:
+        return {
+            "success": False,
+            "error": "VALIDATION_ERROR",
+            "message": "At least one case is required",
+            "message_ar": "يجب توفير حالة واحدة على الأقل",
+            "field": "cases",
+        }
+
+    if not common.get("feedback_intent_type_id"):
+        return {
+            "success": False,
+            "error": "VALIDATION_ERROR",
+            "message": "Feedback intent type is required",
+            "message_ar": "نوع نية الملاحظة مطلوب",
+            "field": "feedback_intent_type_id",
+        }
+
+    incident_id = create_incident_parent(
+        {
+            "patient_name": common.get("patient_name"),
+            "primary_doctor_name": common.get("primary_doctor_name"),
+            "primary_worker_name": common.get("primary_worker_name"),
+            "feedback_intent_type_id": common.get("feedback_intent_type_id"),
+            "issuing_org_unit_id": common.get("issuing_department_id"),
+            "complaint_summary": common.get("complaint_text"),
+            "building_id": common.get("building_id"),
+            "is_inpatient": 1 if common.get("is_inpatient", True) else 0,
+            "created_by_user_id": 1,
+        }
+    )
+
+    created_cases: list[dict] = []
+    for idx, case_data in enumerate(cases):
+        target_ids = case_data.get("target_department_ids", [])
+        if len(target_ids) != 1:
+            return {
+                "success": False,
+                "error": "VALIDATION_ERROR",
+                "message": f"Case #{idx + 1} must target exactly one section/department",
+                "message_ar": f"الحالة رقم {idx + 1} يجب أن تستهدف قسماً واحداً فقط",
+                "field": "target_department_ids",
+            }
+
+        case_payload = {
+            **case_data,
+            "complaint_text": case_data.get("complaint_text") or common.get("complaint_text") or "",
+            "feedback_received_date": case_data.get("feedback_received_date") or common.get("feedback_received_date"),
+            "issuing_department_id": case_data.get("issuing_department_id") or common.get("issuing_department_id"),
+            "feedback_intent_type_id": common.get("feedback_intent_type_id"),
+            "patient_name": common.get("patient_name") or case_data.get("patient_name") or "",
+            "is_inpatient": common.get("is_inpatient", True),
+            "source_id": case_data.get("source_id") or common.get("source_id"),
+            "building_id": case_data.get("building_id") or common.get("building_id"),
+            "doctors": case_data.get("doctors") or common.get("doctors"),
+            "employees": case_data.get("employees") or common.get("employees"),
+        }
+
+        created = create_record(case_payload)
+        if not created.get("success"):
+            return created
+
+        case_id = int(created["id"])
+        assign_case_to_incident(case_id, incident_id)
+        created_cases.append(
+            {
+                "case_id": case_id,
+                "record_id": created.get("record_id"),
+            }
+        )
+
+    return {
+        "success": True,
+        "incident_id": incident_id,
+        "cases": created_cases,
+        "count": len(created_cases),
+    }
