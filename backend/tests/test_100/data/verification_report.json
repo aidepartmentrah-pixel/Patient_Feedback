@@ -1,0 +1,701 @@
+{
+  "total": 99,
+  "passed": 99,
+  "failed": 0,
+  "score_pct": 100,
+  "details": [
+    {
+      "id": "B20",
+      "label": "Total T100_ cases in DB",
+      "expected": 100,
+      "actual": 100,
+      "passed": true
+    },
+    {
+      "id": "B1",
+      "label": "Patient T100_P1",
+      "expected": 10,
+      "actual": 10,
+      "passed": true
+    },
+    {
+      "id": "B1",
+      "label": "Patient T100_P2",
+      "expected": 20,
+      "actual": 20,
+      "passed": true
+    },
+    {
+      "id": "B1",
+      "label": "Patient T100_P3",
+      "expected": 20,
+      "actual": 20,
+      "passed": true
+    },
+    {
+      "id": "B1",
+      "label": "Patient T100_P4",
+      "expected": 20,
+      "actual": 20,
+      "passed": true
+    },
+    {
+      "id": "B1",
+      "label": "Patient T100_P5",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B11",
+      "label": "Workflow subcases Month 1 (1 per case)",
+      "expected": 50,
+      "actual": 50,
+      "passed": true
+    },
+    {
+      "id": "B12",
+      "label": "Workflow subcases Month 5 (1 per case)",
+      "expected": 50,
+      "actual": 50,
+      "passed": true
+    },
+    {
+      "id": "B13",
+      "label": "Workflow subcases total  (1 per case)",
+      "expected": 100,
+      "actual": 100,
+      "passed": true
+    },
+    {
+      "id": "B8",
+      "label": "Section S1(ID=43) subcases Month 1",
+      "expected": 25,
+      "actual": 25,
+      "passed": true
+    },
+    {
+      "id": "B9",
+      "label": "Section S1(ID=43) subcases Month 5",
+      "expected": 25,
+      "actual": 25,
+      "passed": true
+    },
+    {
+      "id": "B10",
+      "label": "Section S1(ID=43) subcases Total",
+      "expected": 50,
+      "actual": 50,
+      "passed": true
+    },
+    {
+      "id": "B8",
+      "label": "Section S2(ID=95) subcases Month 1",
+      "expected": 20,
+      "actual": 20,
+      "passed": true
+    },
+    {
+      "id": "B9",
+      "label": "Section S2(ID=95) subcases Month 5",
+      "expected": 20,
+      "actual": 20,
+      "passed": true
+    },
+    {
+      "id": "B10",
+      "label": "Section S2(ID=95) subcases Total",
+      "expected": 40,
+      "actual": 40,
+      "passed": true
+    },
+    {
+      "id": "B8",
+      "label": "Section S3(ID=93) subcases Month 1",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B9",
+      "label": "Section S3(ID=93) subcases Month 5",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B10",
+      "label": "Section S3(ID=93) subcases Total",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B8",
+      "label": "Section S4(ID=60) subcases Month 1",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B9",
+      "label": "Section S4(ID=60) subcases Month 5",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B10",
+      "label": "Section S4(ID=60) subcases Total",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B8",
+      "label": "Section S5(ID=72) subcases Month 1",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B9",
+      "label": "Section S5(ID=72) subcases Month 5",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B10",
+      "label": "Section S5(ID=72) subcases Total",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B8",
+      "label": "Section S6(ID=98) subcases Month 1",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B9",
+      "label": "Section S6(ID=98) subcases Month 5",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B10",
+      "label": "Section S6(ID=98) subcases Total",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B8",
+      "label": "Section S7(ID=309) subcases Month 1",
+      "expected": 20,
+      "actual": 20,
+      "passed": true
+    },
+    {
+      "id": "B9",
+      "label": "Section S7(ID=309) subcases Month 5",
+      "expected": 20,
+      "actual": 20,
+      "passed": true
+    },
+    {
+      "id": "B10",
+      "label": "Section S7(ID=309) subcases Total",
+      "expected": 40,
+      "actual": 40,
+      "passed": true
+    },
+    {
+      "id": "B8",
+      "label": "Section S8(ID=83) subcases Month 1",
+      "expected": 25,
+      "actual": 25,
+      "passed": true
+    },
+    {
+      "id": "B9",
+      "label": "Section S8(ID=83) subcases Month 5",
+      "expected": 25,
+      "actual": 25,
+      "passed": true
+    },
+    {
+      "id": "B10",
+      "label": "Section S8(ID=83) subcases Total",
+      "expected": 50,
+      "actual": 50,
+      "passed": true
+    },
+    {
+      "id": "B2",
+      "label": "Doctor 101 M1 Complaints",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B2",
+      "label": "Doctor 101 M1 Praises",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B3",
+      "label": "Doctor 101 M5 Complaints",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B3",
+      "label": "Doctor 101 M5 Praises",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B4",
+      "label": "Doctor 101 Total Complaints",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B4",
+      "label": "Doctor 101 Total Praises",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B2",
+      "label": "Doctor 102 M1 Complaints",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B2",
+      "label": "Doctor 102 M1 Praises",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B3",
+      "label": "Doctor 102 M5 Complaints",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B3",
+      "label": "Doctor 102 M5 Praises",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B4",
+      "label": "Doctor 102 Total Complaints",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B4",
+      "label": "Doctor 102 Total Praises",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B2",
+      "label": "Doctor 103 M1 Complaints",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B2",
+      "label": "Doctor 103 M1 Praises",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B3",
+      "label": "Doctor 103 M5 Complaints",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B3",
+      "label": "Doctor 103 M5 Praises",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B4",
+      "label": "Doctor 103 Total Complaints",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B4",
+      "label": "Doctor 103 Total Praises",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B2",
+      "label": "Doctor 104 M1 Complaints",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B2",
+      "label": "Doctor 104 M1 Praises",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B3",
+      "label": "Doctor 104 M5 Complaints",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B3",
+      "label": "Doctor 104 M5 Praises",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B4",
+      "label": "Doctor 104 Total Complaints",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B4",
+      "label": "Doctor 104 Total Praises",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B2",
+      "label": "Doctor 105 M1 Complaints",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B2",
+      "label": "Doctor 105 M1 Praises",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B3",
+      "label": "Doctor 105 M5 Complaints",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B3",
+      "label": "Doctor 105 M5 Praises",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B4",
+      "label": "Doctor 105 Total Complaints",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B4",
+      "label": "Doctor 105 Total Praises",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B5",
+      "label": "Worker 6 M1 Complaints",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B5",
+      "label": "Worker 6 M1 Praises",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B6",
+      "label": "Worker 6 M5 Complaints",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B6",
+      "label": "Worker 6 M5 Praises",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B7",
+      "label": "Worker 6 Total Complaints",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B7",
+      "label": "Worker 6 Total Praises",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B5",
+      "label": "Worker 7 M1 Complaints",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B5",
+      "label": "Worker 7 M1 Praises",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B6",
+      "label": "Worker 7 M5 Complaints",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B6",
+      "label": "Worker 7 M5 Praises",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B7",
+      "label": "Worker 7 Total Complaints",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B7",
+      "label": "Worker 7 Total Praises",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B5",
+      "label": "Worker 8 M1 Complaints",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B5",
+      "label": "Worker 8 M1 Praises",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B6",
+      "label": "Worker 8 M5 Complaints",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B6",
+      "label": "Worker 8 M5 Praises",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B7",
+      "label": "Worker 8 Total Complaints",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B7",
+      "label": "Worker 8 Total Praises",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B5",
+      "label": "Worker 9 M1 Complaints",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B5",
+      "label": "Worker 9 M1 Praises",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B6",
+      "label": "Worker 9 M5 Complaints",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B6",
+      "label": "Worker 9 M5 Praises",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B7",
+      "label": "Worker 9 Total Complaints",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B7",
+      "label": "Worker 9 Total Praises",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B5",
+      "label": "Worker 10 M1 Complaints",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B5",
+      "label": "Worker 10 M1 Praises",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B6",
+      "label": "Worker 10 M5 Complaints",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B6",
+      "label": "Worker 10 M5 Praises",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B7",
+      "label": "Worker 10 Total Complaints",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B7",
+      "label": "Worker 10 Total Praises",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B14",
+      "label": "Red Flags Month 1",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B15",
+      "label": "Never Events Month 1",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B16",
+      "label": "Red Flags Month 5",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B17",
+      "label": "Never Events Month 5",
+      "expected": 15,
+      "actual": 15,
+      "passed": true
+    },
+    {
+      "id": "B18",
+      "label": "Red Flags Total",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    },
+    {
+      "id": "B19",
+      "label": "Never Events Total",
+      "expected": 30,
+      "actual": 30,
+      "passed": true
+    }
+  ]
+}

@@ -1,0 +1,2405 @@
+{
+  "inserted": [
+    {
+      "db_id": 518,
+      "patient_name": "T100_P1",
+      "group": 1,
+      "case_in_group": 1,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 3,
+      "sections": [
+        43
+      ],
+      "doctors": [
+        101
+      ],
+      "workers": [
+        6
+      ]
+    },
+    {
+      "db_id": 519,
+      "patient_name": "T100_P2",
+      "group": 1,
+      "case_in_group": 2,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 2,
+      "sections": [
+        43,
+        95
+      ],
+      "doctors": [
+        101,
+        102
+      ],
+      "workers": [
+        6,
+        7
+      ]
+    },
+    {
+      "db_id": 520,
+      "patient_name": "T100_P2",
+      "group": 1,
+      "case_in_group": 3,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 3,
+      "sections": [
+        43,
+        95,
+        93
+      ],
+      "doctors": [
+        101,
+        102,
+        103
+      ],
+      "workers": [
+        6,
+        7,
+        8
+      ]
+    },
+    {
+      "db_id": 521,
+      "patient_name": "T100_P3",
+      "group": 1,
+      "case_in_group": 4,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 1,
+      "sections": [
+        43,
+        95,
+        93,
+        60
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9
+      ]
+    },
+    {
+      "db_id": 522,
+      "patient_name": "T100_P3",
+      "group": 1,
+      "case_in_group": 5,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 1,
+      "sections": [
+        43,
+        95,
+        93,
+        60,
+        72
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 523,
+      "patient_name": "T100_P4",
+      "group": 1,
+      "case_in_group": 6,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 1,
+      "sections": [
+        83
+      ],
+      "doctors": [
+        105
+      ],
+      "workers": [
+        10
+      ]
+    },
+    {
+      "db_id": 524,
+      "patient_name": "T100_P4",
+      "group": 1,
+      "case_in_group": 7,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 1,
+      "sections": [
+        309,
+        83
+      ],
+      "doctors": [
+        104,
+        105
+      ],
+      "workers": [
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 525,
+      "patient_name": "T100_P5",
+      "group": 1,
+      "case_in_group": 8,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 3,
+      "sections": [
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 526,
+      "patient_name": "T100_P5",
+      "group": 1,
+      "case_in_group": 9,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 2,
+      "sections": [
+        72,
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 527,
+      "patient_name": "T100_P5",
+      "group": 1,
+      "case_in_group": 10,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 2,
+      "sections": [
+        60,
+        72,
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 528,
+      "patient_name": "T100_P1",
+      "group": 2,
+      "case_in_group": 1,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 3,
+      "sections": [
+        43
+      ],
+      "doctors": [
+        101
+      ],
+      "workers": [
+        6
+      ]
+    },
+    {
+      "db_id": 529,
+      "patient_name": "T100_P2",
+      "group": 2,
+      "case_in_group": 2,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 2,
+      "sections": [
+        43,
+        95
+      ],
+      "doctors": [
+        101,
+        102
+      ],
+      "workers": [
+        6,
+        7
+      ]
+    },
+    {
+      "db_id": 530,
+      "patient_name": "T100_P2",
+      "group": 2,
+      "case_in_group": 3,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 3,
+      "sections": [
+        43,
+        95,
+        93
+      ],
+      "doctors": [
+        101,
+        102,
+        103
+      ],
+      "workers": [
+        6,
+        7,
+        8
+      ]
+    },
+    {
+      "db_id": 531,
+      "patient_name": "T100_P3",
+      "group": 2,
+      "case_in_group": 4,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 1,
+      "sections": [
+        43,
+        95,
+        93,
+        60
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9
+      ]
+    },
+    {
+      "db_id": 532,
+      "patient_name": "T100_P3",
+      "group": 2,
+      "case_in_group": 5,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 1,
+      "sections": [
+        43,
+        95,
+        93,
+        60,
+        72
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 533,
+      "patient_name": "T100_P4",
+      "group": 2,
+      "case_in_group": 6,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 1,
+      "sections": [
+        83
+      ],
+      "doctors": [
+        105
+      ],
+      "workers": [
+        10
+      ]
+    },
+    {
+      "db_id": 534,
+      "patient_name": "T100_P4",
+      "group": 2,
+      "case_in_group": 7,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 1,
+      "sections": [
+        309,
+        83
+      ],
+      "doctors": [
+        104,
+        105
+      ],
+      "workers": [
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 535,
+      "patient_name": "T100_P5",
+      "group": 2,
+      "case_in_group": 8,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 3,
+      "sections": [
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 536,
+      "patient_name": "T100_P5",
+      "group": 2,
+      "case_in_group": 9,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 2,
+      "sections": [
+        72,
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 537,
+      "patient_name": "T100_P5",
+      "group": 2,
+      "case_in_group": 10,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 2,
+      "sections": [
+        60,
+        72,
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 538,
+      "patient_name": "T100_P1",
+      "group": 3,
+      "case_in_group": 1,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 3,
+      "sections": [
+        43
+      ],
+      "doctors": [
+        101
+      ],
+      "workers": [
+        6
+      ]
+    },
+    {
+      "db_id": 539,
+      "patient_name": "T100_P2",
+      "group": 3,
+      "case_in_group": 2,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 2,
+      "sections": [
+        43,
+        95
+      ],
+      "doctors": [
+        101,
+        102
+      ],
+      "workers": [
+        6,
+        7
+      ]
+    },
+    {
+      "db_id": 540,
+      "patient_name": "T100_P2",
+      "group": 3,
+      "case_in_group": 3,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 3,
+      "sections": [
+        43,
+        95,
+        93
+      ],
+      "doctors": [
+        101,
+        102,
+        103
+      ],
+      "workers": [
+        6,
+        7,
+        8
+      ]
+    },
+    {
+      "db_id": 541,
+      "patient_name": "T100_P3",
+      "group": 3,
+      "case_in_group": 4,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 1,
+      "sections": [
+        43,
+        95,
+        93,
+        60
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9
+      ]
+    },
+    {
+      "db_id": 542,
+      "patient_name": "T100_P3",
+      "group": 3,
+      "case_in_group": 5,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 1,
+      "sections": [
+        43,
+        95,
+        93,
+        60,
+        72
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 543,
+      "patient_name": "T100_P4",
+      "group": 3,
+      "case_in_group": 6,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 1,
+      "sections": [
+        83
+      ],
+      "doctors": [
+        105
+      ],
+      "workers": [
+        10
+      ]
+    },
+    {
+      "db_id": 544,
+      "patient_name": "T100_P4",
+      "group": 3,
+      "case_in_group": 7,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 1,
+      "sections": [
+        309,
+        83
+      ],
+      "doctors": [
+        104,
+        105
+      ],
+      "workers": [
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 545,
+      "patient_name": "T100_P5",
+      "group": 3,
+      "case_in_group": 8,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 3,
+      "sections": [
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 546,
+      "patient_name": "T100_P5",
+      "group": 3,
+      "case_in_group": 9,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 2,
+      "sections": [
+        72,
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 547,
+      "patient_name": "T100_P5",
+      "group": 3,
+      "case_in_group": 10,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 2,
+      "sections": [
+        60,
+        72,
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 548,
+      "patient_name": "T100_P1",
+      "group": 4,
+      "case_in_group": 1,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 3,
+      "sections": [
+        43
+      ],
+      "doctors": [
+        101
+      ],
+      "workers": [
+        6
+      ]
+    },
+    {
+      "db_id": 549,
+      "patient_name": "T100_P2",
+      "group": 4,
+      "case_in_group": 2,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 2,
+      "sections": [
+        43,
+        95
+      ],
+      "doctors": [
+        101,
+        102
+      ],
+      "workers": [
+        6,
+        7
+      ]
+    },
+    {
+      "db_id": 550,
+      "patient_name": "T100_P2",
+      "group": 4,
+      "case_in_group": 3,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 3,
+      "sections": [
+        43,
+        95,
+        93
+      ],
+      "doctors": [
+        101,
+        102,
+        103
+      ],
+      "workers": [
+        6,
+        7,
+        8
+      ]
+    },
+    {
+      "db_id": 551,
+      "patient_name": "T100_P3",
+      "group": 4,
+      "case_in_group": 4,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 1,
+      "sections": [
+        43,
+        95,
+        93,
+        60
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9
+      ]
+    },
+    {
+      "db_id": 552,
+      "patient_name": "T100_P3",
+      "group": 4,
+      "case_in_group": 5,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 1,
+      "sections": [
+        43,
+        95,
+        93,
+        60,
+        72
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 553,
+      "patient_name": "T100_P4",
+      "group": 4,
+      "case_in_group": 6,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 1,
+      "sections": [
+        83
+      ],
+      "doctors": [
+        105
+      ],
+      "workers": [
+        10
+      ]
+    },
+    {
+      "db_id": 554,
+      "patient_name": "T100_P4",
+      "group": 4,
+      "case_in_group": 7,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 1,
+      "sections": [
+        309,
+        83
+      ],
+      "doctors": [
+        104,
+        105
+      ],
+      "workers": [
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 555,
+      "patient_name": "T100_P5",
+      "group": 4,
+      "case_in_group": 8,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 3,
+      "sections": [
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 556,
+      "patient_name": "T100_P5",
+      "group": 4,
+      "case_in_group": 9,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 2,
+      "sections": [
+        72,
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 557,
+      "patient_name": "T100_P5",
+      "group": 4,
+      "case_in_group": 10,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 2,
+      "sections": [
+        60,
+        72,
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 558,
+      "patient_name": "T100_P1",
+      "group": 5,
+      "case_in_group": 1,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 3,
+      "sections": [
+        43
+      ],
+      "doctors": [
+        101
+      ],
+      "workers": [
+        6
+      ]
+    },
+    {
+      "db_id": 559,
+      "patient_name": "T100_P2",
+      "group": 5,
+      "case_in_group": 2,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 2,
+      "sections": [
+        43,
+        95
+      ],
+      "doctors": [
+        101,
+        102
+      ],
+      "workers": [
+        6,
+        7
+      ]
+    },
+    {
+      "db_id": 560,
+      "patient_name": "T100_P2",
+      "group": 5,
+      "case_in_group": 3,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 3,
+      "sections": [
+        43,
+        95,
+        93
+      ],
+      "doctors": [
+        101,
+        102,
+        103
+      ],
+      "workers": [
+        6,
+        7,
+        8
+      ]
+    },
+    {
+      "db_id": 561,
+      "patient_name": "T100_P3",
+      "group": 5,
+      "case_in_group": 4,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 1,
+      "sections": [
+        43,
+        95,
+        93,
+        60
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9
+      ]
+    },
+    {
+      "db_id": 562,
+      "patient_name": "T100_P3",
+      "group": 5,
+      "case_in_group": 5,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 1,
+      "sections": [
+        43,
+        95,
+        93,
+        60,
+        72
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 563,
+      "patient_name": "T100_P4",
+      "group": 5,
+      "case_in_group": 6,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 1,
+      "sections": [
+        83
+      ],
+      "doctors": [
+        105
+      ],
+      "workers": [
+        10
+      ]
+    },
+    {
+      "db_id": 564,
+      "patient_name": "T100_P4",
+      "group": 5,
+      "case_in_group": 7,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 1,
+      "sections": [
+        309,
+        83
+      ],
+      "doctors": [
+        104,
+        105
+      ],
+      "workers": [
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 565,
+      "patient_name": "T100_P5",
+      "group": 5,
+      "case_in_group": 8,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 3,
+      "sections": [
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 566,
+      "patient_name": "T100_P5",
+      "group": 5,
+      "case_in_group": 9,
+      "date": "2025-01-15",
+      "intent": 1,
+      "risk": 2,
+      "sections": [
+        72,
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 567,
+      "patient_name": "T100_P5",
+      "group": 5,
+      "case_in_group": 10,
+      "date": "2025-01-15",
+      "intent": 2,
+      "risk": 2,
+      "sections": [
+        60,
+        72,
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 568,
+      "patient_name": "T100_P1",
+      "group": 6,
+      "case_in_group": 1,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 3,
+      "sections": [
+        43
+      ],
+      "doctors": [
+        101
+      ],
+      "workers": [
+        6
+      ]
+    },
+    {
+      "db_id": 569,
+      "patient_name": "T100_P2",
+      "group": 6,
+      "case_in_group": 2,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 2,
+      "sections": [
+        43,
+        95
+      ],
+      "doctors": [
+        101,
+        102
+      ],
+      "workers": [
+        6,
+        7
+      ]
+    },
+    {
+      "db_id": 570,
+      "patient_name": "T100_P2",
+      "group": 6,
+      "case_in_group": 3,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 3,
+      "sections": [
+        43,
+        95,
+        93
+      ],
+      "doctors": [
+        101,
+        102,
+        103
+      ],
+      "workers": [
+        6,
+        7,
+        8
+      ]
+    },
+    {
+      "db_id": 571,
+      "patient_name": "T100_P3",
+      "group": 6,
+      "case_in_group": 4,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 1,
+      "sections": [
+        43,
+        95,
+        93,
+        60
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9
+      ]
+    },
+    {
+      "db_id": 572,
+      "patient_name": "T100_P3",
+      "group": 6,
+      "case_in_group": 5,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 1,
+      "sections": [
+        43,
+        95,
+        93,
+        60,
+        72
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 573,
+      "patient_name": "T100_P4",
+      "group": 6,
+      "case_in_group": 6,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 1,
+      "sections": [
+        83
+      ],
+      "doctors": [
+        105
+      ],
+      "workers": [
+        10
+      ]
+    },
+    {
+      "db_id": 574,
+      "patient_name": "T100_P4",
+      "group": 6,
+      "case_in_group": 7,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 1,
+      "sections": [
+        309,
+        83
+      ],
+      "doctors": [
+        104,
+        105
+      ],
+      "workers": [
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 575,
+      "patient_name": "T100_P5",
+      "group": 6,
+      "case_in_group": 8,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 3,
+      "sections": [
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 576,
+      "patient_name": "T100_P5",
+      "group": 6,
+      "case_in_group": 9,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 2,
+      "sections": [
+        72,
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 577,
+      "patient_name": "T100_P5",
+      "group": 6,
+      "case_in_group": 10,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 2,
+      "sections": [
+        60,
+        72,
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 578,
+      "patient_name": "T100_P1",
+      "group": 7,
+      "case_in_group": 1,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 3,
+      "sections": [
+        43
+      ],
+      "doctors": [
+        101
+      ],
+      "workers": [
+        6
+      ]
+    },
+    {
+      "db_id": 579,
+      "patient_name": "T100_P2",
+      "group": 7,
+      "case_in_group": 2,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 2,
+      "sections": [
+        43,
+        95
+      ],
+      "doctors": [
+        101,
+        102
+      ],
+      "workers": [
+        6,
+        7
+      ]
+    },
+    {
+      "db_id": 580,
+      "patient_name": "T100_P2",
+      "group": 7,
+      "case_in_group": 3,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 3,
+      "sections": [
+        43,
+        95,
+        93
+      ],
+      "doctors": [
+        101,
+        102,
+        103
+      ],
+      "workers": [
+        6,
+        7,
+        8
+      ]
+    },
+    {
+      "db_id": 581,
+      "patient_name": "T100_P3",
+      "group": 7,
+      "case_in_group": 4,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 1,
+      "sections": [
+        43,
+        95,
+        93,
+        60
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9
+      ]
+    },
+    {
+      "db_id": 582,
+      "patient_name": "T100_P3",
+      "group": 7,
+      "case_in_group": 5,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 1,
+      "sections": [
+        43,
+        95,
+        93,
+        60,
+        72
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 583,
+      "patient_name": "T100_P4",
+      "group": 7,
+      "case_in_group": 6,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 1,
+      "sections": [
+        83
+      ],
+      "doctors": [
+        105
+      ],
+      "workers": [
+        10
+      ]
+    },
+    {
+      "db_id": 584,
+      "patient_name": "T100_P4",
+      "group": 7,
+      "case_in_group": 7,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 1,
+      "sections": [
+        309,
+        83
+      ],
+      "doctors": [
+        104,
+        105
+      ],
+      "workers": [
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 585,
+      "patient_name": "T100_P5",
+      "group": 7,
+      "case_in_group": 8,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 3,
+      "sections": [
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 586,
+      "patient_name": "T100_P5",
+      "group": 7,
+      "case_in_group": 9,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 2,
+      "sections": [
+        72,
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 587,
+      "patient_name": "T100_P5",
+      "group": 7,
+      "case_in_group": 10,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 2,
+      "sections": [
+        60,
+        72,
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 588,
+      "patient_name": "T100_P1",
+      "group": 8,
+      "case_in_group": 1,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 3,
+      "sections": [
+        43
+      ],
+      "doctors": [
+        101
+      ],
+      "workers": [
+        6
+      ]
+    },
+    {
+      "db_id": 589,
+      "patient_name": "T100_P2",
+      "group": 8,
+      "case_in_group": 2,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 2,
+      "sections": [
+        43,
+        95
+      ],
+      "doctors": [
+        101,
+        102
+      ],
+      "workers": [
+        6,
+        7
+      ]
+    },
+    {
+      "db_id": 590,
+      "patient_name": "T100_P2",
+      "group": 8,
+      "case_in_group": 3,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 3,
+      "sections": [
+        43,
+        95,
+        93
+      ],
+      "doctors": [
+        101,
+        102,
+        103
+      ],
+      "workers": [
+        6,
+        7,
+        8
+      ]
+    },
+    {
+      "db_id": 591,
+      "patient_name": "T100_P3",
+      "group": 8,
+      "case_in_group": 4,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 1,
+      "sections": [
+        43,
+        95,
+        93,
+        60
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9
+      ]
+    },
+    {
+      "db_id": 592,
+      "patient_name": "T100_P3",
+      "group": 8,
+      "case_in_group": 5,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 1,
+      "sections": [
+        43,
+        95,
+        93,
+        60,
+        72
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 593,
+      "patient_name": "T100_P4",
+      "group": 8,
+      "case_in_group": 6,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 1,
+      "sections": [
+        83
+      ],
+      "doctors": [
+        105
+      ],
+      "workers": [
+        10
+      ]
+    },
+    {
+      "db_id": 594,
+      "patient_name": "T100_P4",
+      "group": 8,
+      "case_in_group": 7,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 1,
+      "sections": [
+        309,
+        83
+      ],
+      "doctors": [
+        104,
+        105
+      ],
+      "workers": [
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 595,
+      "patient_name": "T100_P5",
+      "group": 8,
+      "case_in_group": 8,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 3,
+      "sections": [
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 596,
+      "patient_name": "T100_P5",
+      "group": 8,
+      "case_in_group": 9,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 2,
+      "sections": [
+        72,
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 597,
+      "patient_name": "T100_P5",
+      "group": 8,
+      "case_in_group": 10,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 2,
+      "sections": [
+        60,
+        72,
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 598,
+      "patient_name": "T100_P1",
+      "group": 9,
+      "case_in_group": 1,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 3,
+      "sections": [
+        43
+      ],
+      "doctors": [
+        101
+      ],
+      "workers": [
+        6
+      ]
+    },
+    {
+      "db_id": 599,
+      "patient_name": "T100_P2",
+      "group": 9,
+      "case_in_group": 2,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 2,
+      "sections": [
+        43,
+        95
+      ],
+      "doctors": [
+        101,
+        102
+      ],
+      "workers": [
+        6,
+        7
+      ]
+    },
+    {
+      "db_id": 600,
+      "patient_name": "T100_P2",
+      "group": 9,
+      "case_in_group": 3,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 3,
+      "sections": [
+        43,
+        95,
+        93
+      ],
+      "doctors": [
+        101,
+        102,
+        103
+      ],
+      "workers": [
+        6,
+        7,
+        8
+      ]
+    },
+    {
+      "db_id": 601,
+      "patient_name": "T100_P3",
+      "group": 9,
+      "case_in_group": 4,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 1,
+      "sections": [
+        43,
+        95,
+        93,
+        60
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9
+      ]
+    },
+    {
+      "db_id": 602,
+      "patient_name": "T100_P3",
+      "group": 9,
+      "case_in_group": 5,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 1,
+      "sections": [
+        43,
+        95,
+        93,
+        60,
+        72
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 603,
+      "patient_name": "T100_P4",
+      "group": 9,
+      "case_in_group": 6,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 1,
+      "sections": [
+        83
+      ],
+      "doctors": [
+        105
+      ],
+      "workers": [
+        10
+      ]
+    },
+    {
+      "db_id": 604,
+      "patient_name": "T100_P4",
+      "group": 9,
+      "case_in_group": 7,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 1,
+      "sections": [
+        309,
+        83
+      ],
+      "doctors": [
+        104,
+        105
+      ],
+      "workers": [
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 605,
+      "patient_name": "T100_P5",
+      "group": 9,
+      "case_in_group": 8,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 3,
+      "sections": [
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 606,
+      "patient_name": "T100_P5",
+      "group": 9,
+      "case_in_group": 9,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 2,
+      "sections": [
+        72,
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 607,
+      "patient_name": "T100_P5",
+      "group": 9,
+      "case_in_group": 10,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 2,
+      "sections": [
+        60,
+        72,
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 608,
+      "patient_name": "T100_P1",
+      "group": 10,
+      "case_in_group": 1,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 3,
+      "sections": [
+        43
+      ],
+      "doctors": [
+        101
+      ],
+      "workers": [
+        6
+      ]
+    },
+    {
+      "db_id": 609,
+      "patient_name": "T100_P2",
+      "group": 10,
+      "case_in_group": 2,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 2,
+      "sections": [
+        43,
+        95
+      ],
+      "doctors": [
+        101,
+        102
+      ],
+      "workers": [
+        6,
+        7
+      ]
+    },
+    {
+      "db_id": 610,
+      "patient_name": "T100_P2",
+      "group": 10,
+      "case_in_group": 3,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 3,
+      "sections": [
+        43,
+        95,
+        93
+      ],
+      "doctors": [
+        101,
+        102,
+        103
+      ],
+      "workers": [
+        6,
+        7,
+        8
+      ]
+    },
+    {
+      "db_id": 611,
+      "patient_name": "T100_P3",
+      "group": 10,
+      "case_in_group": 4,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 1,
+      "sections": [
+        43,
+        95,
+        93,
+        60
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9
+      ]
+    },
+    {
+      "db_id": 612,
+      "patient_name": "T100_P3",
+      "group": 10,
+      "case_in_group": 5,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 1,
+      "sections": [
+        43,
+        95,
+        93,
+        60,
+        72
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 613,
+      "patient_name": "T100_P4",
+      "group": 10,
+      "case_in_group": 6,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 1,
+      "sections": [
+        83
+      ],
+      "doctors": [
+        105
+      ],
+      "workers": [
+        10
+      ]
+    },
+    {
+      "db_id": 614,
+      "patient_name": "T100_P4",
+      "group": 10,
+      "case_in_group": 7,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 1,
+      "sections": [
+        309,
+        83
+      ],
+      "doctors": [
+        104,
+        105
+      ],
+      "workers": [
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 615,
+      "patient_name": "T100_P5",
+      "group": 10,
+      "case_in_group": 8,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 3,
+      "sections": [
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 616,
+      "patient_name": "T100_P5",
+      "group": 10,
+      "case_in_group": 9,
+      "date": "2025-05-15",
+      "intent": 1,
+      "risk": 2,
+      "sections": [
+        72,
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "db_id": 617,
+      "patient_name": "T100_P5",
+      "group": 10,
+      "case_in_group": 10,
+      "date": "2025-05-15",
+      "intent": 2,
+      "risk": 2,
+      "sections": [
+        60,
+        72,
+        98,
+        309,
+        83
+      ],
+      "doctors": [
+        101,
+        102,
+        103,
+        104,
+        105
+      ],
+      "workers": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    }
+  ],
+  "failed": []
+}

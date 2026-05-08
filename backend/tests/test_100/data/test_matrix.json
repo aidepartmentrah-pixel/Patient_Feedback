@@ -1,0 +1,3302 @@
+[
+  {
+    "group": 1,
+    "case_in_group": 1,
+    "patient_name": "T100_P1",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43
+    ],
+    "doctor_ids": [
+      101
+    ],
+    "worker_ids": [
+      6
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 1,
+    "case_in_group": 2,
+    "patient_name": "T100_P2",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      43,
+      95
+    ],
+    "doctor_ids": [
+      101,
+      102
+    ],
+    "worker_ids": [
+      6,
+      7
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 1,
+    "case_in_group": 3,
+    "patient_name": "T100_P2",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43,
+      95,
+      93
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 1,
+    "case_in_group": 4,
+    "patient_name": "T100_P3",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      43,
+      95,
+      93,
+      60
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 1,
+    "case_in_group": 5,
+    "patient_name": "T100_P3",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43,
+      95,
+      93,
+      60,
+      72
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 1,
+    "case_in_group": 6,
+    "patient_name": "T100_P4",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      83
+    ],
+    "doctor_ids": [
+      105
+    ],
+    "worker_ids": [
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 1,
+    "case_in_group": 7,
+    "patient_name": "T100_P4",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      309,
+      83
+    ],
+    "doctor_ids": [
+      104,
+      105
+    ],
+    "worker_ids": [
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 1,
+    "case_in_group": 8,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 1,
+    "case_in_group": 9,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      72,
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 1,
+    "case_in_group": 10,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      60,
+      72,
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 2,
+    "case_in_group": 1,
+    "patient_name": "T100_P1",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43
+    ],
+    "doctor_ids": [
+      101
+    ],
+    "worker_ids": [
+      6
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 2,
+    "case_in_group": 2,
+    "patient_name": "T100_P2",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      43,
+      95
+    ],
+    "doctor_ids": [
+      101,
+      102
+    ],
+    "worker_ids": [
+      6,
+      7
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 2,
+    "case_in_group": 3,
+    "patient_name": "T100_P2",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43,
+      95,
+      93
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 2,
+    "case_in_group": 4,
+    "patient_name": "T100_P3",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      43,
+      95,
+      93,
+      60
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 2,
+    "case_in_group": 5,
+    "patient_name": "T100_P3",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43,
+      95,
+      93,
+      60,
+      72
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 2,
+    "case_in_group": 6,
+    "patient_name": "T100_P4",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      83
+    ],
+    "doctor_ids": [
+      105
+    ],
+    "worker_ids": [
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 2,
+    "case_in_group": 7,
+    "patient_name": "T100_P4",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      309,
+      83
+    ],
+    "doctor_ids": [
+      104,
+      105
+    ],
+    "worker_ids": [
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 2,
+    "case_in_group": 8,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 2,
+    "case_in_group": 9,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      72,
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 2,
+    "case_in_group": 10,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      60,
+      72,
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 3,
+    "case_in_group": 1,
+    "patient_name": "T100_P1",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43
+    ],
+    "doctor_ids": [
+      101
+    ],
+    "worker_ids": [
+      6
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 3,
+    "case_in_group": 2,
+    "patient_name": "T100_P2",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      43,
+      95
+    ],
+    "doctor_ids": [
+      101,
+      102
+    ],
+    "worker_ids": [
+      6,
+      7
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 3,
+    "case_in_group": 3,
+    "patient_name": "T100_P2",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43,
+      95,
+      93
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 3,
+    "case_in_group": 4,
+    "patient_name": "T100_P3",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      43,
+      95,
+      93,
+      60
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 3,
+    "case_in_group": 5,
+    "patient_name": "T100_P3",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43,
+      95,
+      93,
+      60,
+      72
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 3,
+    "case_in_group": 6,
+    "patient_name": "T100_P4",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      83
+    ],
+    "doctor_ids": [
+      105
+    ],
+    "worker_ids": [
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 3,
+    "case_in_group": 7,
+    "patient_name": "T100_P4",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      309,
+      83
+    ],
+    "doctor_ids": [
+      104,
+      105
+    ],
+    "worker_ids": [
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 3,
+    "case_in_group": 8,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 3,
+    "case_in_group": 9,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      72,
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 3,
+    "case_in_group": 10,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      60,
+      72,
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 4,
+    "case_in_group": 1,
+    "patient_name": "T100_P1",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43
+    ],
+    "doctor_ids": [
+      101
+    ],
+    "worker_ids": [
+      6
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 4,
+    "case_in_group": 2,
+    "patient_name": "T100_P2",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      43,
+      95
+    ],
+    "doctor_ids": [
+      101,
+      102
+    ],
+    "worker_ids": [
+      6,
+      7
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 4,
+    "case_in_group": 3,
+    "patient_name": "T100_P2",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43,
+      95,
+      93
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 4,
+    "case_in_group": 4,
+    "patient_name": "T100_P3",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      43,
+      95,
+      93,
+      60
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 4,
+    "case_in_group": 5,
+    "patient_name": "T100_P3",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43,
+      95,
+      93,
+      60,
+      72
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 4,
+    "case_in_group": 6,
+    "patient_name": "T100_P4",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      83
+    ],
+    "doctor_ids": [
+      105
+    ],
+    "worker_ids": [
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 4,
+    "case_in_group": 7,
+    "patient_name": "T100_P4",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      309,
+      83
+    ],
+    "doctor_ids": [
+      104,
+      105
+    ],
+    "worker_ids": [
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 4,
+    "case_in_group": 8,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 4,
+    "case_in_group": 9,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      72,
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 4,
+    "case_in_group": 10,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      60,
+      72,
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 5,
+    "case_in_group": 1,
+    "patient_name": "T100_P1",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43
+    ],
+    "doctor_ids": [
+      101
+    ],
+    "worker_ids": [
+      6
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 5,
+    "case_in_group": 2,
+    "patient_name": "T100_P2",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      43,
+      95
+    ],
+    "doctor_ids": [
+      101,
+      102
+    ],
+    "worker_ids": [
+      6,
+      7
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 5,
+    "case_in_group": 3,
+    "patient_name": "T100_P2",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43,
+      95,
+      93
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 5,
+    "case_in_group": 4,
+    "patient_name": "T100_P3",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      43,
+      95,
+      93,
+      60
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 5,
+    "case_in_group": 5,
+    "patient_name": "T100_P3",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43,
+      95,
+      93,
+      60,
+      72
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 5,
+    "case_in_group": 6,
+    "patient_name": "T100_P4",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      83
+    ],
+    "doctor_ids": [
+      105
+    ],
+    "worker_ids": [
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 5,
+    "case_in_group": 7,
+    "patient_name": "T100_P4",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      309,
+      83
+    ],
+    "doctor_ids": [
+      104,
+      105
+    ],
+    "worker_ids": [
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 5,
+    "case_in_group": 8,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 5,
+    "case_in_group": 9,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      72,
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 5,
+    "case_in_group": 10,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      60,
+      72,
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-01-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 6,
+    "case_in_group": 1,
+    "patient_name": "T100_P1",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43
+    ],
+    "doctor_ids": [
+      101
+    ],
+    "worker_ids": [
+      6
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 6,
+    "case_in_group": 2,
+    "patient_name": "T100_P2",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      43,
+      95
+    ],
+    "doctor_ids": [
+      101,
+      102
+    ],
+    "worker_ids": [
+      6,
+      7
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 6,
+    "case_in_group": 3,
+    "patient_name": "T100_P2",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43,
+      95,
+      93
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 6,
+    "case_in_group": 4,
+    "patient_name": "T100_P3",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      43,
+      95,
+      93,
+      60
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 6,
+    "case_in_group": 5,
+    "patient_name": "T100_P3",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43,
+      95,
+      93,
+      60,
+      72
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 6,
+    "case_in_group": 6,
+    "patient_name": "T100_P4",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      83
+    ],
+    "doctor_ids": [
+      105
+    ],
+    "worker_ids": [
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 6,
+    "case_in_group": 7,
+    "patient_name": "T100_P4",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      309,
+      83
+    ],
+    "doctor_ids": [
+      104,
+      105
+    ],
+    "worker_ids": [
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 6,
+    "case_in_group": 8,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 6,
+    "case_in_group": 9,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      72,
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 6,
+    "case_in_group": 10,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      60,
+      72,
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 7,
+    "case_in_group": 1,
+    "patient_name": "T100_P1",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43
+    ],
+    "doctor_ids": [
+      101
+    ],
+    "worker_ids": [
+      6
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 7,
+    "case_in_group": 2,
+    "patient_name": "T100_P2",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      43,
+      95
+    ],
+    "doctor_ids": [
+      101,
+      102
+    ],
+    "worker_ids": [
+      6,
+      7
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 7,
+    "case_in_group": 3,
+    "patient_name": "T100_P2",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43,
+      95,
+      93
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 7,
+    "case_in_group": 4,
+    "patient_name": "T100_P3",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      43,
+      95,
+      93,
+      60
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 7,
+    "case_in_group": 5,
+    "patient_name": "T100_P3",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43,
+      95,
+      93,
+      60,
+      72
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 7,
+    "case_in_group": 6,
+    "patient_name": "T100_P4",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      83
+    ],
+    "doctor_ids": [
+      105
+    ],
+    "worker_ids": [
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 7,
+    "case_in_group": 7,
+    "patient_name": "T100_P4",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      309,
+      83
+    ],
+    "doctor_ids": [
+      104,
+      105
+    ],
+    "worker_ids": [
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 7,
+    "case_in_group": 8,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 7,
+    "case_in_group": 9,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      72,
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 7,
+    "case_in_group": 10,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      60,
+      72,
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 8,
+    "case_in_group": 1,
+    "patient_name": "T100_P1",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43
+    ],
+    "doctor_ids": [
+      101
+    ],
+    "worker_ids": [
+      6
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 8,
+    "case_in_group": 2,
+    "patient_name": "T100_P2",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      43,
+      95
+    ],
+    "doctor_ids": [
+      101,
+      102
+    ],
+    "worker_ids": [
+      6,
+      7
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 8,
+    "case_in_group": 3,
+    "patient_name": "T100_P2",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43,
+      95,
+      93
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 8,
+    "case_in_group": 4,
+    "patient_name": "T100_P3",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      43,
+      95,
+      93,
+      60
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 8,
+    "case_in_group": 5,
+    "patient_name": "T100_P3",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43,
+      95,
+      93,
+      60,
+      72
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 8,
+    "case_in_group": 6,
+    "patient_name": "T100_P4",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      83
+    ],
+    "doctor_ids": [
+      105
+    ],
+    "worker_ids": [
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 8,
+    "case_in_group": 7,
+    "patient_name": "T100_P4",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      309,
+      83
+    ],
+    "doctor_ids": [
+      104,
+      105
+    ],
+    "worker_ids": [
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 8,
+    "case_in_group": 8,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 8,
+    "case_in_group": 9,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      72,
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 8,
+    "case_in_group": 10,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      60,
+      72,
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 9,
+    "case_in_group": 1,
+    "patient_name": "T100_P1",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43
+    ],
+    "doctor_ids": [
+      101
+    ],
+    "worker_ids": [
+      6
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 9,
+    "case_in_group": 2,
+    "patient_name": "T100_P2",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      43,
+      95
+    ],
+    "doctor_ids": [
+      101,
+      102
+    ],
+    "worker_ids": [
+      6,
+      7
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 9,
+    "case_in_group": 3,
+    "patient_name": "T100_P2",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43,
+      95,
+      93
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 9,
+    "case_in_group": 4,
+    "patient_name": "T100_P3",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      43,
+      95,
+      93,
+      60
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 9,
+    "case_in_group": 5,
+    "patient_name": "T100_P3",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43,
+      95,
+      93,
+      60,
+      72
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 9,
+    "case_in_group": 6,
+    "patient_name": "T100_P4",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      83
+    ],
+    "doctor_ids": [
+      105
+    ],
+    "worker_ids": [
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 9,
+    "case_in_group": 7,
+    "patient_name": "T100_P4",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      309,
+      83
+    ],
+    "doctor_ids": [
+      104,
+      105
+    ],
+    "worker_ids": [
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 9,
+    "case_in_group": 8,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 9,
+    "case_in_group": 9,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      72,
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 9,
+    "case_in_group": 10,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      60,
+      72,
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 10,
+    "case_in_group": 1,
+    "patient_name": "T100_P1",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43
+    ],
+    "doctor_ids": [
+      101
+    ],
+    "worker_ids": [
+      6
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 10,
+    "case_in_group": 2,
+    "patient_name": "T100_P2",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      43,
+      95
+    ],
+    "doctor_ids": [
+      101,
+      102
+    ],
+    "worker_ids": [
+      6,
+      7
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 10,
+    "case_in_group": 3,
+    "patient_name": "T100_P2",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43,
+      95,
+      93
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 10,
+    "case_in_group": 4,
+    "patient_name": "T100_P3",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      43,
+      95,
+      93,
+      60
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 10,
+    "case_in_group": 5,
+    "patient_name": "T100_P3",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      43,
+      95,
+      93,
+      60,
+      72
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 10,
+    "case_in_group": 6,
+    "patient_name": "T100_P4",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      83
+    ],
+    "doctor_ids": [
+      105
+    ],
+    "worker_ids": [
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 10,
+    "case_in_group": 7,
+    "patient_name": "T100_P4",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      309,
+      83
+    ],
+    "doctor_ids": [
+      104,
+      105
+    ],
+    "worker_ids": [
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 1,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 10,
+    "case_in_group": 8,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 3,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 10,
+    "case_in_group": 9,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 1,
+    "target_section_ids": [
+      72,
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  },
+  {
+    "group": 10,
+    "case_in_group": 10,
+    "patient_name": "T100_P5",
+    "feedback_intent_type_id": 2,
+    "target_section_ids": [
+      60,
+      72,
+      98,
+      309,
+      83
+    ],
+    "doctor_ids": [
+      101,
+      102,
+      103,
+      104,
+      105
+    ],
+    "worker_ids": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "clinical_risk_type_id": 2,
+    "feedback_received_date": "2025-05-15",
+    "issuing_department_id": 43,
+    "domain_id": 3,
+    "category_id": 1,
+    "subcategory_id": 1,
+    "classification_id": 78,
+    "severity_id": 2,
+    "stage_id": 1,
+    "harm_id": 1,
+    "source_id": 1,
+    "building_id": 1
+  }
+]

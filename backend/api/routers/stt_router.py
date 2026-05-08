@@ -56,7 +56,7 @@ async def transcribe_audio(
             )
         
         # Check file extension
-        allowed_extensions = [".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac"]
+        allowed_extensions = [".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac", ".webm"]
         file_ext = os.path.splitext(audio.filename)[1].lower()
         
         if file_ext not in allowed_extensions:

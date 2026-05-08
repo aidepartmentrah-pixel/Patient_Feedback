@@ -1,0 +1,64 @@
+{
+  "doctor_ids": [
+    101,
+    102,
+    103,
+    104,
+    105
+  ],
+  "doctor_names": {
+    "101": "Dr. Test Doctor 1",
+    "102": "Dr. Test Doctor 2",
+    "103": "Dr. Test Doctor 3",
+    "104": "Dr. Test Doctor 4",
+    "105": "Dr. Test Doctor 5"
+  },
+  "worker_ids": [
+    6,
+    7,
+    8,
+    9,
+    10
+  ],
+  "worker_names": {
+    "6": "Worker Number 1",
+    "7": "Worker Number 2",
+    "8": "Worker Number 3",
+    "9": "Worker Number 4",
+    "10": "Worker Number 5"
+  },
+  "section_ids": [
+    43,
+    95,
+    93,
+    60,
+    72,
+    98,
+    309,
+    83
+  ],
+  "section_names": {
+    "43": "cardiac 1",
+    "95": "\u0642\u0633\u0645 \u0628\u0646\u0643 \u0627\u0644\u062f\u0645",
+    "93": "\u0642\u0633\u0645 \u0627\u0644\u0641\u0648\u062a\u0631\u0629",
+    "60": "\u0627\u0644\u062a\u062f\u0631\u064a\u0628 \u0648 \u0627\u0644\u062a\u0642\u064a\u064a\u0645",
+    "72": "\u0627\u0644\u0645\u0628\u0627\u0646\u064a",
+    "98": "\u0642\u0633\u0645 \u0636\u0628\u0637 \u0627\u0644\u0639\u062f\u0648\u0649",
+    "309": "AI Section",
+    "83": "Lab-\u0642\u0633\u0645 \u0627\u0644\u062a\u062d\u0627\u0644\u064a\u0644 \u0627\u0644\u0645\u062e\u0628\u0631\u064a\u0629"
+  },
+  "issuing_dept_id": 43,
+  "domain_id": 3,
+  "category_id": 1,
+  "subcategory_id": 1,
+  "classification_id": 78,
+  "severity_id": 2,
+  "stage_id": 1,
+  "harm_id": 1,
+  "source_id": 1,
+  "building_id": 1,
+  "month1_date": "2025-01-15",
+  "month5_date": "2025-05-15",
+  "patient_prefix": "T100_P",
+  "all_checks_passed": true
+}
