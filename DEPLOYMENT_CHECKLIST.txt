@@ -1,0 +1,241 @@
+
+================================================================================
+        HCAT PATIENT FEEDBACK SYSTEM — SERVER DEPLOYMENT CHECKLIST
+        Print this page and keep it with the server documentation.
+================================================================================
+
+
+WHAT THIS SYSTEM IS
+-------------------
+A web application for recording, tracking, and managing patient feedback
+and complaints. It runs on a Windows Server with IIS and SQL Server.
+
+Users access it through a web browser — no installation needed on their
+computers except the one-time certificate step described below.
+
+
+================================================================================
+SECTION 1 — MOVING TO A NEW SERVER (complete checklist)
+================================================================================
+
+Before you start, you will need:
+    [ ] The new server's IP address OR domain name (e.g. feedback.hospital.net)
+    [ ] Administrator access on the new Windows Server
+    [ ] The project folder (Patient_Feedback) copied to the new server
+    [ ] SQL Server installed on or accessible from the new server
+    [ ] IIS installed on the new server (with URL Rewrite and ARR modules)
+    [ ] Python installed in: Patient_Feedback\venv\Scripts\python.exe
+
+--------------------------------------------------------------------------------
+STEP 1 — Copy the project folder
+--------------------------------------------------------------------------------
+    Copy the entire folder:   Patient_Feedback\
+    Copy it to the same path: C:\Users\Administrator\Documents\GitHub\
+
+    Also copy the frontend build:
+    C:\inetpub\wwwroot\   (copy all files from the old server's wwwroot)
+
+--------------------------------------------------------------------------------
+STEP 2 — Edit the configuration file (the only file you touch)
+--------------------------------------------------------------------------------
+    Open this file with Notepad:
+        Patient_Feedback\backend\config\db_settings.json
+
+    Change these values to match the new server:
+
+    A) Database section — update if the database moved:
+        "server"   : put the new SQL Server IP or hostname
+        "username" : the SQL Server login username
+        "password" : the SQL Server login password
+
+    B) Network section — update with the new server address:
+        In "cors_origins", add a line for the new address. Example:
+            "http://192.168.1.50",
+            "https://192.168.1.50"
+        Or if using a domain name:
+            "http://feedback.hospital.net",
+            "https://feedback.hospital.net"
+
+    Everything else in the file can stay the same.
+
+    SAVE the file when done.
+
+--------------------------------------------------------------------------------
+STEP 3 — Run the setup script (one command, does everything else)
+--------------------------------------------------------------------------------
+    Open PowerShell as Administrator.
+    Go to the project folder:
+        cd "C:\Users\Administrator\Documents\GitHub\Patient_Feedback"
+
+    Run the setup script with the new address:
+        .\Setup-NewServer.ps1 -Domain "192.168.1.50"
+        (replace 192.168.1.50 with your actual IP or domain name)
+
+    The script will automatically:
+        - Create the HTTPS security certificate
+        - Bind the certificate to the web server
+        - Export the certificate file for users
+        - Create a one-click installer for the 140 users
+        - Restart the backend service
+
+    When it finishes, you will see "Setup Complete!" in green.
+
+--------------------------------------------------------------------------------
+STEP 4 — Install the NSSM service for the backend
+--------------------------------------------------------------------------------
+    Only needed if the service does not already exist on the new server.
+    Open PowerShell as Administrator and run:
+
+        nssm install PatientFeedbackAPI
+            Path:           C:\Users\Administrator\Documents\GitHub\Patient_Feedback\venv\Scripts\python.exe
+            Arguments:      -m uvicorn main:app --host 127.0.0.1 --port 8000
+            Startup dir:    C:\Users\Administrator\Documents\GitHub\Patient_Feedback\backend
+
+        nssm start PatientFeedbackAPI
+
+    If the service already exists, just run:
+        net stop PatientFeedbackAPI
+        net start PatientFeedbackAPI
+
+--------------------------------------------------------------------------------
+STEP 5 — Configure IIS
+--------------------------------------------------------------------------------
+    The IIS site (Default Web Site) should:
+        - Serve files from:  C:\inetpub\wwwroot
+        - Have HTTP  binding on port 80
+        - Have HTTPS binding on port 443
+        - Have URL Rewrite rule that forwards /api/* to http://localhost:8000
+
+    If the URL Rewrite rule is missing, add it in IIS Manager:
+        Site → URL Rewrite → Add Rule → Reverse Proxy
+        From:   api/(.*)
+        To:     http://localhost:8000/api/{R:1}
+
+--------------------------------------------------------------------------------
+STEP 6 — Test the application on this server
+--------------------------------------------------------------------------------
+    Open a browser on the server and go to:
+        https://[your-new-address]
+
+    You should see the login page.
+    Log in with:
+        Username:  software_admin
+        Password:  (see the credentials Word document)
+
+    Test:
+        [ ] Login works
+        [ ] Table View loads and shows records
+        [ ] Insert Record page opens
+        [ ] Microphone button works (requires HTTPS — confirms cert is correct)
+
+--------------------------------------------------------------------------------
+STEP 7 — Distribute the certificate to the 140 users
+--------------------------------------------------------------------------------
+    Send this message to all users (or ask IT to send it):
+
+    ---
+    To use the new Patient Feedback System, please do the following ONCE:
+
+    1. Open your browser and go to:
+       http://[your-new-address]/Install_HCAT_Certificate.bat
+
+    2. Download the file and run it (right-click → Run as Administrator)
+
+    3. Click Yes if a security prompt appears
+
+    4. When it says "Done!", close and reopen your browser
+
+    5. Go to: https://[your-new-address]
+
+    You will not need to do this again.
+    ---
+
+    Alternatively, your IT administrator can push the certificate automatically
+    to all computers using Group Policy. Give them:
+        File:  C:\inetpub\wwwroot\HCAT_RootCA.cer
+        Instructions: Computer Configuration → Windows Settings →
+                      Security Settings → Public Key Policies →
+                      Trusted Root Certification Authorities → Import
+
+================================================================================
+SECTION 2 — ROUTINE MAINTENANCE
+================================================================================
+
+RESTARTING THE BACKEND (after any code change or if the API stops responding)
+    Run in PowerShell:
+        net stop PatientFeedbackAPI
+        net start PatientFeedbackAPI
+
+REBUILDING THE FRONTEND (after any UI code change)
+    Open PowerShell, go to the frontend folder:
+        cd "C:\Users\Administrator\Documents\GitHub\Front_End_Feedback_Analysis"
+        npm run build
+        robocopy build C:\inetpub\wwwroot /MIR
+
+CHECKING IF THE BACKEND IS RUNNING
+    Open a browser on the server and go to:
+        http://localhost:8000/docs
+    If you see the API documentation page, the backend is running.
+
+CHECKING THE DATABASE CONNECTION
+    Open SQL Server Management Studio.
+    Connect to: 127.0.0.1 (or the configured server)
+    Database:   IncidentManager
+
+THE CONFIGURATION FILE
+    All system settings are in one file:
+        Patient_Feedback\backend\config\db_settings.json
+    This is the ONLY file you need to edit for deployment changes.
+
+================================================================================
+SECTION 3 — IMPORTANT FILE LOCATIONS
+================================================================================
+
+    Project root:          C:\Users\Administrator\Documents\GitHub\Patient_Feedback\
+    Backend config:        Patient_Feedback\backend\config\db_settings.json
+    Frontend build output: C:\inetpub\wwwroot\
+    Frontend source:       C:\Users\Administrator\Documents\GitHub\Front_End_Feedback_Analysis\
+    Setup script:          Patient_Feedback\Setup-NewServer.ps1
+    This checklist:        Patient_Feedback\DEPLOYMENT_CHECKLIST.txt
+
+    Certificate (current): C:\inetpub\wwwroot\HCAT_RootCA.cer
+    User installer:        C:\inetpub\wwwroot\Install_HCAT_Certificate.bat
+
+================================================================================
+SECTION 4 — IF SOMETHING GOES WRONG
+================================================================================
+
+PROBLEM: Users see "Not Secure" warning in browser
+    SOLUTION: They need to run the certificate installer.
+    Point them to: http://[server-address]/Install_HCAT_Certificate.bat
+
+PROBLEM: Microphone does not work
+    CAUSE: The user is accessing via HTTP instead of HTTPS.
+    SOLUTION: Make sure the URL starts with https:// not http://
+    If still not working, they need to run the certificate installer first.
+
+PROBLEM: API errors / page does not load
+    SOLUTION: Restart the backend service.
+    Run: net stop PatientFeedbackAPI && net start PatientFeedbackAPI
+
+PROBLEM: Login does not work after moving servers
+    SOLUTION: The database connection may have changed.
+    Edit db_settings.json — check the "server", "username", "password" fields.
+
+PROBLEM: SSL certificate expired
+    The certificate expires every year. Run the setup script again:
+        .\Setup-NewServer.ps1 -Domain "your-address"
+    Distribute the new certificate to users using the same process as setup.
+
+PROBLEM: The setup script says "domain is not recognised"
+    Make sure you are running PowerShell as Administrator.
+    Make sure you are in the correct folder before running the script.
+
+================================================================================
+        Certificate thumbprint and expiry are printed when Setup-NewServer.ps1
+        runs. Write the new expiry date here for reference:
+
+        Current server address : https://170.70.32.34
+        Certificate expires    : May 8, 2027
+        Last setup run         : May 8, 2026
+================================================================================

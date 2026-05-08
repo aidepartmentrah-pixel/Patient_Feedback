@@ -117,102 +117,173 @@ def export_user_credentials_as_markdown(
 def export_user_credentials_as_word(
     current_user: CurrentUser = Depends(get_current_user)
 ) -> Response:
-    """
-    Export all user credentials as a Word document (TEST ONLY).
-    
-    ⚠️ TEST ONLY — DO NOT USE IN PRODUCTION
-    ⚠️ EXPOSES TEST PASSWORDS
-    
-    **Requires:** SOFTWARE_ADMIN role
-    
-    **Purpose:**
-    - Generate Word document with all test account credentials
-    - Formatted table with username, role, org unit, and password
-    - Easy to print or share for testing purposes
-    
-    **Returns:**
-    Word document (.docx) file download
-    
-    **Security Notes:**
-    - Only accessible by SOFTWARE_ADMIN
-    - Shows derived test passwords (not actual hashes)
-    - MUST be disabled before production deployment
-    """
+    """Export all user credentials as a formal Word document. Requires SOFTWARE_ADMIN."""
+    import os
     from docx import Document
     from docx.shared import Inches, Pt, RGBColor
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.enum.table import WD_TABLE_ALIGNMENT
-    
-    # Check SOFTWARE_ADMIN permission
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+
     require_software_admin(current_user)
-    
-    # Get credentials from existing service (MODULE 5.4)
     credentials = get_all_user_credentials_service()
-    
-    # Create Word document
+
+    # ── Document setup ──────────────────────────────────────────────
     doc = Document()
-    
-    # Title
-    title = doc.add_heading('User Credentials Report', 0)
-    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    
-    # Warning
-    warning = doc.add_paragraph()
-    warning_run = warning.add_run('⚠️ TEST ONLY - DO NOT USE IN PRODUCTION ⚠️')
-    warning_run.bold = True
-    warning_run.font.color.rgb = RGBColor(255, 0, 0)
-    warning.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    
-    # Generation info
-    doc.add_paragraph(f'Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
-    doc.add_paragraph(f'Total Users: {len(credentials)}')
+    sec = doc.sections[0]
+    # Landscape A4
+    sec.page_width, sec.page_height = sec.page_height, sec.page_width
+    sec.left_margin   = Inches(0.8)
+    sec.right_margin  = Inches(0.8)
+    sec.top_margin    = Inches(0.7)
+    sec.bottom_margin = Inches(0.7)
+
+    # ── Helper: shade a table cell ───────────────────────────────────
+    def shade_cell(cell, hex_color):
+        tc   = cell._tc
+        tcPr = tc.get_or_add_tcPr()
+        shd  = OxmlElement('w:shd')
+        shd.set(qn('w:val'),   'clear')
+        shd.set(qn('w:color'), 'auto')
+        shd.set(qn('w:fill'),  hex_color)
+        tcPr.append(shd)
+
+    # ── Header block: logo + title ───────────────────────────────────
+    logo_path = os.path.join(
+        os.path.dirname(__file__), '..', '..', 'assets', 'logo.png'
+    )
+    logo_path = os.path.normpath(logo_path)
+
+    header_table = doc.add_table(rows=1, cols=2)
+    header_table.style = 'Table Grid'
+    lc = header_table.rows[0].cells[0]
+    rc = header_table.rows[0].cells[1]
+
+    # Logo on the left
+    if os.path.exists(logo_path):
+        lc_para = lc.paragraphs[0]
+        lc_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        run = lc_para.add_run()
+        run.add_picture(logo_path, width=Inches(1.4))
+    else:
+        lc.paragraphs[0].text = ''
+
+    # Title block on the right
+    shade_cell(rc, '1B3A5C')
+    title_para = rc.paragraphs[0]
+    title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    t_run = title_para.add_run('System Access Credentials')
+    t_run.bold      = True
+    t_run.font.size = Pt(20)
+    t_run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+
+    sub_para = rc.add_paragraph()
+    sub_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    s_run = sub_para.add_run('Incident & Feedback Management System')
+    s_run.font.size  = Pt(11)
+    s_run.font.color.rgb = RGBColor(0xB0, 0xC8, 0xE8)
+
+    date_para = rc.add_paragraph()
+    date_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    d_run = date_para.add_run(
+        f'Issued: {datetime.now().strftime("%d %B %Y")}    |    Total Accounts: {len(credentials)}'
+    )
+    d_run.font.size  = Pt(9)
+    d_run.font.color.rgb = RGBColor(0xCC, 0xDD, 0xEE)
+    d_run.italic     = True
+
+    # Remove borders from header table
+    for row in header_table.rows:
+        for cell in row.cells:
+            tc   = cell._tc
+            tcPr = tc.get_or_add_tcPr()
+            tcBorders = OxmlElement('w:tcBorders')
+            for side in ('top','left','bottom','right','insideH','insideV'):
+                border = OxmlElement(f'w:{side}')
+                border.set(qn('w:val'),  'none')
+                border.set(qn('w:sz'),   '0')
+                border.set(qn('w:space'),'0')
+                border.set(qn('w:color'),'auto')
+                tcBorders.append(border)
+            tcPr.append(tcBorders)
+
     doc.add_paragraph()
-    
-    # Create table
-    table = doc.add_table(rows=1, cols=5)
-    table.style = 'Table Grid'
+
+    # ── Credentials table ────────────────────────────────────────────
+    # Column order: No. | Username | Password | Role | Org Unit | Status
+    table = doc.add_table(rows=1, cols=6)
+    table.style   = 'Table Grid'
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    
-    # Header row
-    header_cells = table.rows[0].cells
-    headers = ['Username', 'Role', 'Org Unit', 'Active', 'Password']
-    for i, header in enumerate(headers):
-        header_cells[i].text = header
-        # Make header bold
-        for paragraph in header_cells[i].paragraphs:
-            for run in paragraph.runs:
-                run.bold = True
-    
+
+    col_widths = [Inches(0.4), Inches(2.0), Inches(1.4), Inches(2.0), Inches(2.8), Inches(0.7)]
+    headers    = ['#', 'Username', 'Password', 'Role', 'Org Unit', 'Active']
+
+    # Header row — dark navy
+    HEADER_BG   = '1B3A5C'
+    HEADER_FG   = RGBColor(0xFF, 0xFF, 0xFF)
+    ROW_ALT     = 'EAF1FB'   # light blue for alternating rows
+
+    hdr_cells = table.rows[0].cells
+    for i, (hdr, width) in enumerate(zip(headers, col_widths)):
+        cell = hdr_cells[i]
+        cell.width = width
+        shade_cell(cell, HEADER_BG)
+        para = cell.paragraphs[0]
+        para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = para.add_run(hdr)
+        run.bold            = True
+        run.font.size       = Pt(10)
+        run.font.color.rgb  = HEADER_FG
+
     # Data rows
-    for user in credentials:
+    for idx, user in enumerate(credentials, start=1):
         row_cells = table.add_row().cells
-        row_cells[0].text = user.get('username', '') or ''
-        row_cells[1].text = user.get('role', '') or ''
-        row_cells[2].text = user.get('org_unit', '') or ''
-        row_cells[3].text = str(user.get('active', False))
-        row_cells[4].text = user.get('test_password', '') or ''
-    
-    # Footer
+        password  = user.get('test_password') or '[secured]'
+        values    = [
+            str(idx),
+            user.get('username', '') or '',
+            password,
+            user.get('role', '') or '',
+            user.get('org_unit', '') or '',
+            'Active' if user.get('active') else 'Inactive',
+        ]
+        bg = ROW_ALT if idx % 2 == 0 else 'FFFFFF'
+        for i, (val, width) in enumerate(zip(values, col_widths)):
+            cell = row_cells[i]
+            cell.width = width
+            shade_cell(cell, bg)
+            para = cell.paragraphs[0]
+            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = para.add_run(val)
+            run.font.size = Pt(9)
+            # Highlight password column in mono-style
+            if i == 2:
+                run.bold = True
+                run.font.color.rgb = RGBColor(0x1B, 0x3A, 0x5C)
+
+    # ── Footer paragraph ─────────────────────────────────────────────
     doc.add_paragraph()
-    footer = doc.add_paragraph()
-    footer_run = footer.add_run('Generated by IncidentManager API - For Testing Purposes Only')
-    footer_run.italic = True
-    footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    
-    # Save to BytesIO
+    fp = doc.add_paragraph()
+    fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    fr = fp.add_run(
+        'This document is confidential and intended solely for authorised system administrators. '
+        'Please store securely and do not distribute.'
+    )
+    fr.italic         = True
+    fr.font.size      = Pt(8)
+    fr.font.color.rgb = RGBColor(0x88, 0x88, 0x88)
+
+    # ── Save & return ─────────────────────────────────────────────────
     file_buffer = BytesIO()
     doc.save(file_buffer)
     file_buffer.seek(0)
-    
-    # Generate filename with timestamp
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"user_credentials_{timestamp}.docx"
-    
-    # Return as downloadable Word file
+    filename  = f"SystemAccessCredentials_{timestamp}.docx"
+
     return Response(
         content=file_buffer.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={
-            "Content-Disposition": f"attachment; filename={filename}"
-        }
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
     )

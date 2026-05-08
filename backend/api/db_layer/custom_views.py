@@ -5,6 +5,7 @@ from core.database import get_connection
 COLUMNS = [
     "ViewID",
     "ViewName",
+    "ShowIncidentNumber",
     "ShowIncidentRequestCaseID",
     "ShowComplaintText",
     "ShowImmediateAction",

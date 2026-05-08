@@ -106,13 +106,29 @@ _configured_cors = _net.get("cors_origins", [
     "http://127.0.0.1:5173",
 ])
 
-# Auto-add origins for the detected IP (common frontend ports)
+# Auto-add origins for the detected IP — both HTTP and HTTPS, with and without port
 _auto_cors = [
+    f"http://{AUTO_DETECTED_IP}",
+    f"http://{AUTO_DETECTED_IP}:80",
     f"http://{AUTO_DETECTED_IP}:3000",
     f"http://{AUTO_DETECTED_IP}:5173",
-    f"http://{AUTO_DETECTED_IP}:80",
-    f"http://{AUTO_DETECTED_IP}",
+    f"https://{AUTO_DETECTED_IP}",
+    f"https://{AUTO_DETECTED_IP}:443",
+    "http://localhost",
+    "http://localhost:80",
+    "https://localhost",
+    "https://localhost:443",
 ]
+
+# Also auto-add the machine hostname variants
+try:
+    _hostname = socket.gethostname().lower()
+    _auto_cors += [
+        f"http://{_hostname}",
+        f"https://{_hostname}",
+    ]
+except Exception:
+    pass
 
 # Combine configured + auto-detected, removing duplicates
 CORS_ORIGINS = list(dict.fromkeys(_configured_cors + _auto_cors))

@@ -105,12 +105,58 @@ def _get_workflow_status(incident_id: int, cursor=None) -> Optional[Dict[str, An
             conn.close()
 
 
+def _get_workflow_statuses_batch(case_ids: list, cursor) -> dict:
+    """
+    Fetch workflow statuses for a list of case IDs in a single query.
+    Returns dict keyed by IncidentRequestCaseID.
+    """
+    if not case_ids:
+        return {}
+
+    placeholders = ",".join("?" * len(case_ids))
+    query = f"""
+        SELECT
+            s.IncidentRequestCaseID,
+            s.SubcaseID,
+            s.Status,
+            s.TargetOrgUnitID,
+            org.Name AS TargetOrgUnitName
+        FROM dbo.APP_AdministrativeSubcase s
+        LEFT JOIN AdminsrationUnit org ON s.TargetOrgUnitID = org.UniqueID
+        WHERE s.IncidentRequestCaseID IN ({placeholders})
+        ORDER BY s.IncidentRequestCaseID, s.CreatedAt ASC
+    """
+    cursor.execute(query, case_ids)
+    rows = cursor.fetchall()
+
+    result = {}
+    for row in rows:
+        cid = row.IncidentRequestCaseID
+        if cid not in result:
+            result[cid] = {"has_subcases": True, "open_subcase_count": 0, "force_closed": False, "subcases": []}
+        status = row.Status
+        if status == "FORCE_CLOSED":
+            result[cid]["force_closed"] = True
+        elif status not in ("ADMIN_APPROVED", "SECTION_DENIED"):
+            result[cid]["open_subcase_count"] += 1
+        result[cid]["subcases"].append({
+            "subcase_id": row.SubcaseID,
+            "status": status,
+            "target_org_unit": row.TargetOrgUnitName,
+            "target_org_unit_id": row.TargetOrgUnitID,
+        })
+
+    return result
+
+
 # ==================== MAIN ENDPOINTS ====================
 
 def get_complaints_paginated(
     search: Optional[str] = None,
     issuing_org_unit_id: Optional[int] = None,
     target_department_id: Optional[int] = None,
+    target_dept_parent_id: Optional[int] = None,
+    target_admin_id: Optional[int] = None,
     domain_id: Optional[int] = None,
     category_id: Optional[int] = None,
     severity_id: Optional[int] = None,
@@ -125,7 +171,8 @@ def get_complaints_paginated(
     sort_order: str = "desc",
     page: int = 1,
     page_size: int = 50,
-    view: str = "complete"
+    view: str = "complete",
+    tab: Optional[str] = None,  # 'preparation' | 'workflow' | None
 ) -> Dict[str, Any]:
     """
     Fetch paginated complaints with search and filtering.
@@ -203,8 +250,12 @@ def get_complaints_paginated(
     if case_status_id:
         where_conditions.append("c.CaseStatusID = ?")
         params.append(case_status_id)
+    elif tab == 'preparation':
+        where_conditions.append("c.CaseStatusID IN (4, 5)")
+    elif tab == 'workflow':
+        where_conditions.append("c.CaseStatusID NOT IN (4, 5)")
 
-    # Target department filter (via IncidentCaseTargetDepartment join)
+    # Target section filter (exact section ID)
     if target_department_id:
         where_conditions.append("""
             EXISTS (
@@ -214,6 +265,31 @@ def get_complaints_paginated(
             )
         """)
         params.append(target_department_id)
+
+    # Target department filter (sections belonging to this department, Type=2)
+    if target_dept_parent_id:
+        where_conditions.append("""
+            EXISTS (
+                SELECT 1 FROM dbo.APP_IncidentCaseTargetDepartment td
+                INNER JOIN AdminsrationUnit s ON s.UniqueID = td.DepartmentID
+                WHERE td.IncidentRequestCaseID = c.IncidentRequestCaseID
+                  AND s.ParentID = ?
+            )
+        """)
+        params.append(target_dept_parent_id)
+
+    # Target administration filter — match sections directly under this admin OR via an intermediate division
+    if target_admin_id:
+        where_conditions.append("""
+            EXISTS (
+                SELECT 1 FROM dbo.APP_IncidentCaseTargetDepartment td
+                INNER JOIN AdminsrationUnit s ON s.UniqueID = td.DepartmentID
+                LEFT JOIN AdminsrationUnit p ON p.UniqueID = s.ParentID
+                WHERE td.IncidentRequestCaseID = c.IncidentRequestCaseID
+                  AND (s.ParentID = ? OR p.ParentID = ?)
+            )
+        """)
+        params.extend([target_admin_id, target_admin_id])
     
     # Date filters
     if year:
@@ -363,17 +439,16 @@ def get_complaints_paginated(
         cursor.execute(query, params)
         columns = [column[0] for column in cursor.description]
         
+        raw_rows = cursor.fetchall()
         complaints = []
-        for row in cursor.fetchall():
+        for row in raw_rows:
             complaint = dict(zip(columns, row))
-            
-            # Format dates
+
             if complaint.get('received_date'):
                 complaint['received_date'] = complaint['received_date'].strftime('%Y-%m-%d')
             if complaint.get('created_at'):
                 complaint['created_at'] = complaint['created_at'].isoformat()
-            
-            # Calculate days_open if not completed
+
             if complaint.get('received_date'):
                 try:
                     received = datetime.strptime(complaint['received_date'], '%Y-%m-%d')
@@ -382,11 +457,15 @@ def get_complaints_paginated(
                     complaint['days_open'] = None
             else:
                 complaint['days_open'] = None
-            
-            # Add workflow_status information
-            complaint['workflow_status'] = _get_workflow_status(complaint['id'], cursor)
-            
+
             complaints.append(complaint)
+
+        # Batch fetch all workflow statuses in one query instead of N queries
+        case_ids = [c['id'] for c in complaints if c.get('id')]
+        workflow_map = _get_workflow_statuses_batch(case_ids, cursor)
+        for complaint in complaints:
+            complaint['workflow_status'] = workflow_map.get(complaint.get('id'))
+            complaint['case_status_name'] = complaint.get('status_name')
         
         total_pages = (total_records + page_size - 1) // page_size
         
@@ -565,7 +644,26 @@ def get_filter_options(include_counts: bool = False) -> Dict[str, List[Dict[str,
         """
         cursor.execute(years_query)
         result['years'] = [row[0] for row in cursor.fetchall()]
-        
+
+        # Target Departments (Type=323 administrations + Type=325 divisions — parents of sections)
+        cursor.execute("""
+            SELECT d.UniqueID as id, d.Name as name, d.ParentID as administration_id, a.Name as administration_name
+            FROM AdminsrationUnit d
+            LEFT JOIN AdminsrationUnit a ON a.UniqueID = d.ParentID
+            WHERE d.Type IN (323, 325) AND d.Frozen = 0
+            ORDER BY a.Name, d.Name
+        """)
+        result['target_departments'] = [dict(zip([c[0] for c in cursor.description], row)) for row in cursor.fetchall()]
+
+        # Target Administrations (Type=323 — top-level)
+        cursor.execute("""
+            SELECT UniqueID as id, Name as name
+            FROM AdminsrationUnit
+            WHERE Type = 323 AND Frozen = 0
+            ORDER BY Name
+        """)
+        result['target_administrations'] = [dict(zip([c[0] for c in cursor.description], row)) for row in cursor.fetchall()]
+
         return result
         
     finally:
@@ -584,7 +682,7 @@ def get_complaint_by_id(complaint_id: int) -> Optional[Dict[str, Any]]:
         Dictionary with full complaint details, or None if not found.
     """
     query = """
-        SELECT 
+        SELECT
             c.IncidentRequestCaseID as id,
             c.ComplaintText as complaint_text,
             c.ImmediateAction as immediate_action,
@@ -594,7 +692,11 @@ def get_complaint_by_id(complaint_id: int) -> Optional[Dict[str, Any]]:
             c.CreatedAt as created_at,
             c.CreatedByUserID as created_by_user_id,
             c.isINPatient as is_inpatient,
-            
+
+            -- Incident parent
+            c.incident_id as incident_id,
+            inc.incident_number as incident_number,
+
             -- Issuing organizational unit
             c.IssuingOrgUnitID as issuing_org_unit_id,
             org_unit.Name as issuing_org_unit_name,
@@ -647,7 +749,12 @@ def get_complaint_by_id(complaint_id: int) -> Optional[Dict[str, Any]]:
             
             -- Explanation Status
             c.ExplanationStatusID as explanation_status_id,
-            explanation_status.StatusName as explanation_status_name
+            explanation_status.StatusName as explanation_status_name,
+
+            -- Incident parent fields (for draft prefill)
+            c.incident_id as incident_id,
+            inc.incident_number as incident_number,
+            inc.complaint_summary as incident_summary
         FROM dbo.APP_IncidentCase c
         LEFT JOIN AdminsrationUnit org_unit ON c.IssuingOrgUnitID = org_unit.UniqueID
         LEFT JOIN APP_LOOKUP_DOMAIN domain ON c.DomainID = domain.DomainID
@@ -663,6 +770,7 @@ def get_complaint_by_id(complaint_id: int) -> Optional[Dict[str, Any]]:
         LEFT JOIN APP_LOOKUP_FEEDBACK_INTENT_TYPE feedback_intent ON c.FeedbackIntentTypeID = feedback_intent.FeedbackIntentTypeID
         LEFT JOIN APP_LOOKUP_SOURCE source ON c.SourceID = source.SourceID
         LEFT JOIN APP_LOOKUP_EXPLANATION_STATUS explanation_status ON c.ExplanationStatusID = explanation_status.StatusID
+        LEFT JOIN dbo.APP_Incident inc ON c.incident_id = inc.incident_id
         WHERE c.IncidentRequestCaseID = ?
     """
     
@@ -781,6 +889,8 @@ def get_complaints_count(
     search: Optional[str] = None,
     issuing_org_unit_id: Optional[int] = None,
     target_department_id: Optional[int] = None,
+    target_dept_parent_id: Optional[int] = None,
+    target_admin_id: Optional[int] = None,
     domain_id: Optional[int] = None,
     category_id: Optional[int] = None,
     severity_id: Optional[int] = None,
@@ -790,7 +900,8 @@ def get_complaints_count(
     year: Optional[int] = None,
     month: Optional[int] = None,
     start_date: Optional[str] = None,
-    end_date: Optional[str] = None
+    end_date: Optional[str] = None,
+    tab: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Get count of complaints matching filters (for export preview).
@@ -815,51 +926,79 @@ def get_complaints_count(
     if issuing_org_unit_id:
         where_conditions.append("c.IssuingOrgUnitID = ?")
         params.append(issuing_org_unit_id)
-    
+
+    if target_department_id:
+        where_conditions.append("""
+            EXISTS (SELECT 1 FROM dbo.APP_IncidentCaseTargetDepartment td
+                    WHERE td.IncidentRequestCaseID = c.IncidentRequestCaseID AND td.DepartmentID = ?)
+        """)
+        params.append(target_department_id)
+
+    if target_dept_parent_id:
+        where_conditions.append("""
+            EXISTS (SELECT 1 FROM dbo.APP_IncidentCaseTargetDepartment td
+                    INNER JOIN AdminsrationUnit s ON s.UniqueID = td.DepartmentID
+                    WHERE td.IncidentRequestCaseID = c.IncidentRequestCaseID AND s.ParentID = ?)
+        """)
+        params.append(target_dept_parent_id)
+
+    if target_admin_id:
+        where_conditions.append("""
+            EXISTS (SELECT 1 FROM dbo.APP_IncidentCaseTargetDepartment td
+                    INNER JOIN AdminsrationUnit s ON s.UniqueID = td.DepartmentID
+                    INNER JOIN AdminsrationUnit d ON d.UniqueID = s.ParentID
+                    WHERE td.IncidentRequestCaseID = c.IncidentRequestCaseID AND d.ParentID = ?)
+        """)
+        params.append(target_admin_id)
+
     if domain_id:
         where_conditions.append("c.DomainID = ?")
         params.append(domain_id)
-    
+
     if category_id:
         where_conditions.append("c.CategoryID = ?")
         params.append(category_id)
-    
+
     if severity_id:
         where_conditions.append("c.SeverityID = ?")
         params.append(severity_id)
-    
+
     if stage_id:
         where_conditions.append("c.StageID = ?")
         params.append(stage_id)
-    
+
     if harm_level_id:
         where_conditions.append("c.HarmLevelID = ?")
         params.append(harm_level_id)
-    
+
     if case_status_id:
         where_conditions.append("c.CaseStatusID = ?")
         params.append(case_status_id)
-    
+    elif tab == 'preparation':
+        where_conditions.append("c.CaseStatusID IN (4, 5)")
+    elif tab == 'workflow':
+        where_conditions.append("c.CaseStatusID NOT IN (4, 5)")
+
     if year:
         where_conditions.append("YEAR(c.FeedbackRecievedDate) = ?")
         params.append(year)
-    
+
     if month:
         where_conditions.append("MONTH(c.FeedbackRecievedDate) = ?")
         params.append(month)
-    
+
     if start_date:
         where_conditions.append("c.FeedbackRecievedDate >= ?")
         params.append(start_date)
-    
+
     if end_date:
         where_conditions.append("c.FeedbackRecievedDate <= ?")
         params.append(end_date)
-    
+
     where_clause = ""
     if where_conditions:
         where_clause = "WHERE " + " AND ".join(where_conditions)
-    
+
     query = f"""
         SELECT COUNT(*) as total
         FROM dbo.APP_IncidentCase c
@@ -983,9 +1122,10 @@ def export_complaints_excel(
     # Query to fetch all matching records with all required fields
     # Note: Using OUTER APPLY with STRING_AGG for target departments (multiple per case)
     query = f"""
-        SELECT 
+        SELECT
             c.FeedbackRecievedDate as received_date,
             c.IncidentRequestCaseID as complaint_number,
+            inc.incident_number as incident_number,
             c.PatientName as patient_name,
             issuing_org.Name as issuing_org_unit_name,
             target_depts.target_dept_names as concerned_org_unit_name,
@@ -1027,6 +1167,7 @@ def export_complaints_excel(
         LEFT JOIN APP_LOOKUP_HARM_LEVEL harm ON c.HarmLevelID = harm.HarmID
         LEFT JOIN APP_LOOKUP_CASE_STATUS status ON c.CaseStatusID = status.CaseStatusID
         LEFT JOIN APP_LOOKUP_CLINICAL_RISK_TYPE risk_type ON c.ClinicalRiskTypeID = risk_type.ClinicalRiskTypeID
+        LEFT JOIN dbo.APP_Incident inc ON c.incident_id = inc.incident_id
         {where_clause}
         ORDER BY c.FeedbackRecievedDate DESC
     """
@@ -1055,7 +1196,8 @@ def export_complaints_excel(
         # Write headers (Arabic translations) - Exact order as specified
         headers_arabic = {
             'received_date': 'تاريخ تلقي الملاحظة',
-            'complaint_number': 'الرقم',
+            'complaint_number': 'رقم الحالة',
+            'incident_number': 'رقم الحادثة',
             'patient_name': 'اسم المريض',
             'issuing_org_unit_name': 'قسم الصادر',
             'concerned_org_unit_name': 'قسم المعني',
@@ -1103,6 +1245,8 @@ def export_complaints_excel(
                 ws.column_dimensions[column_letter].width = 50
             elif col_name in ['patient_name', 'issuing_org_unit_name', 'concerned_org_unit_name', 'classification_name']:
                 ws.column_dimensions[column_letter].width = 25
+            elif col_name in ['incident_number', 'complaint_number']:
+                ws.column_dimensions[column_letter].width = 18
             elif col_name in ['domain_name', 'category_name', 'subcategory_name']:
                 ws.column_dimensions[column_letter].width = 20
             else:

@@ -42,7 +42,9 @@ class ExportRequest(BaseModel):
 async def get_complaints(
     search: Optional[str] = Query(None, description="Free-text search across complaint_number, patient_name, complaint_text"),
     issuing_org_unit_id: Optional[int] = Query(None, description="Filter by issuing organizational unit ID"),
-    target_department_id: Optional[int] = Query(None, description="Filter by target department/section ID"),
+    target_department_id: Optional[int] = Query(None, description="Filter by target section ID"),
+    target_dept_parent_id: Optional[int] = Query(None, description="Filter by target department (Type=2) ID"),
+    target_admin_id: Optional[int] = Query(None, description="Filter by target administration (Type=1) ID"),
     domain_id: Optional[int] = Query(None, description="Filter by HCAT domain ID"),
     category_id: Optional[int] = Query(None, description="Filter by category ID"),
     severity_id: Optional[int] = Query(None, description="Filter by severity level ID"),
@@ -57,7 +59,8 @@ async def get_complaints(
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order (asc or desc)"),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(50, ge=1, le=500, description="Results per page (1-500)"),
-    view: str = Query("complete", description="View preset (complete, simplified)")
+    view: str = Query("complete", description="View preset (complete, simplified)"),
+    tab: Optional[str] = Query(None, description="Tab filter: 'preparation' | 'workflow'")
 ):
     """
     Fetch paginated complaints with search and filtering.
@@ -81,6 +84,8 @@ async def get_complaints(
             search=search,
             issuing_org_unit_id=issuing_org_unit_id,
             target_department_id=target_department_id,
+            target_dept_parent_id=target_dept_parent_id,
+            target_admin_id=target_admin_id,
             domain_id=domain_id,
             category_id=category_id,
             severity_id=severity_id,
@@ -95,7 +100,8 @@ async def get_complaints(
             sort_order=sort_order,
             page=page,
             page_size=page_size,
-            view=view
+            view=view,
+            tab=tab,
         )
         return result
     except ValueError as e:
@@ -604,3 +610,48 @@ async def import_complaints_from_excel(
             "message": f"Failed to process import: {str(e)}",
             "message_ar": f"فشل معالجة الاستيراد: {str(e)}"
         })
+
+
+@router.post("/backfill-incidents")
+async def backfill_incident_parents():
+    """
+    Create a parent Incident for every APP_IncidentCase that has no incident_id.
+    Safe to call multiple times — only processes cases where incident_id IS NULL.
+    Returns the count of cases that were fixed.
+    """
+    from core.database import get_connection
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT IncidentRequestCaseID FROM dbo.APP_IncidentCase WHERE incident_id IS NULL")
+        orphans = [row[0] for row in cursor.fetchall()]
+        if not orphans:
+            return {"fixed": 0, "message": "No orphaned cases found"}
+
+        fixed = 0
+        for case_id in orphans:
+            cursor.execute(
+                "SELECT PatientName, FeedbackIntentTypeID, IssuingOrgUnitID, ComplaintText, BuildingID, isINPatient, CreatedByUserID FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID = ?",
+                case_id
+            )
+            row = cursor.fetchone()
+            if not row:
+                continue
+            cursor.execute(
+                """INSERT INTO dbo.APP_Incident (patient_name, feedback_intent_type_id, issuing_org_unit_id, complaint_summary, building_id, is_inpatient, created_by_user_id)
+                   OUTPUT INSERTED.incident_id
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                row[0], row[1], row[2], row[3], row[4], row[5], row[6]
+            )
+            incident_id = cursor.fetchone()[0]
+            cursor.execute("UPDATE dbo.APP_IncidentCase SET incident_id = ? WHERE IncidentRequestCaseID = ?", incident_id, case_id)
+            fixed += 1
+
+        conn.commit()
+        return {"fixed": fixed, "message": f"Created Incident parents for {fixed} case(s)"}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail={"error": "backfill_failed", "message": str(e)})
+    finally:
+        cursor.close()
+        conn.close()

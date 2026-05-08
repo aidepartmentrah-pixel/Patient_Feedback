@@ -11,9 +11,16 @@ from backend.api.db_layer.incident_case_target_department import add_target_depa
 from backend.api.db_layer.incident_case_doctor import add_doctor_to_case
 from backend.api.db_layer.incident_case_employee import add_employee_to_case
 from backend.api.db_layer.incident_parent import create_incident_parent, assign_case_to_incident
-        
+from backend.api.constants.case_statuses import DRAFT_STATUS_ID, READY_TO_SEND_STATUS_ID
 
-def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
+
+def create_record(data: Dict[str, Any], save_mode: str = 'workflow') -> Dict[str, Any]:
+    """
+    save_mode:
+      'workflow'  — existing behaviour (FSM + subcase creation)
+      'draft'     — skip validation, status=Draft, no subcase
+      'complete'  — validate required fields, status=ReadyToSend, no subcase
+    """
     conn = None
     cursor = None
 
@@ -21,41 +28,57 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
         conn = get_connection()
         cursor = conn.cursor()
 
-        # -----------------------------
-        # Required fields validation
-        # -----------------------------
-        required_fields = [
-            'complaint_text',
-            'feedback_received_date',
-            'issuing_department_id',
-            'domain_id',
-            'category_id',
-            'subcategory_id',
-            'classification_id',
-            'severity_id',
-            'stage_id',
-            'harm_id',
-            'requires_explanation',
-            'clinical_risk_type_id',
-            'feedback_intent_type_id',
-            'immediate_action',
-            'taken_action',
-            'patient_name',
-            'is_inpatient',
-            'source_id'
-        ]
+        # --- Draft: skip all validation, save immediately ---
+        if save_mode == 'draft':
+            pass  # fall through directly to insert below
 
-        for field in required_fields:
-            if field not in data or data[field] is None or data[field] == '':
-                return {
-                    "success": False,
-                    "error": "VALIDATION_ERROR",
-                    "message": f"{field.replace('_', ' ').title()} is required",
-                    "message_ar": f"حقل {field} مطلوب",
-                    "field": field
-                }        
-        # Building: Require either building_id or building_code
-        if not data.get('building_id') and not data.get('building_code'):
+        elif save_mode in ('workflow', 'complete'):
+            # -----------------------------
+            # Required fields validation
+            # -----------------------------
+            required_fields = [
+                'complaint_text',
+                'feedback_received_date',
+                'issuing_department_id',
+                'domain_id',
+                'category_id',
+                'subcategory_id',
+                'classification_id',
+                'severity_id',
+                'stage_id',
+                'harm_id',
+                'requires_explanation',
+                'clinical_risk_type_id',
+                'feedback_intent_type_id',
+                'immediate_action',
+                'taken_action',
+                'patient_name',
+                'is_inpatient',
+                'source_id'
+            ]
+
+            for field in required_fields:
+                if field not in data or data[field] is None or data[field] == '':
+                    if save_mode == 'complete':
+                        # Return error but caller will save as Draft instead
+                        return {
+                            "success": False,
+                            "error": "VALIDATION_ERROR",
+                            "message": f"{field.replace('_', ' ').title()} is required",
+                            "message_ar": f"حقل {field} مطلوب",
+                            "field": field,
+                            "save_as_draft": True,
+                        }
+                    return {
+                        "success": False,
+                        "error": "VALIDATION_ERROR",
+                        "message": f"{field.replace('_', ' ').title()} is required",
+                        "message_ar": f"حقل {field} مطلوب",
+                        "field": field
+                }
+
+        # Building: Require either building_id or building_code (skip for draft)
+        if save_mode != 'draft' and not data.get('building_id') and not data.get('building_code'):
             return {
                 "success": False,
                 "error": "VALIDATION_ERROR",
@@ -239,41 +262,40 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
                 building_id = None
 
         # -----------------------------
-        # FSM LOGIC: Explanation Workflow
+        # STATUS OVERRIDE for draft/complete
+        # Bypass FSM entirely — subcase creation also skipped below
         # -----------------------------
-        # Three paths:
-        # 1. Red Flag (2) OR Never Event (3) -> ALWAYS needs explanation
-        # 2. Ordinary with RequiresExplanation=True -> needs explanation
-        # 3. Ordinary with RequiresExplanation=False -> no explanation needed
-        
-        is_red_flag = clinical_risk_type_id == 2
-        is_never_event = clinical_risk_type_id == 3
-        requires_explanation = data.get('requires_explanation')
-        
-        print(f"[DEBUG] requires_explanation from frontend: {requires_explanation} (type: {type(requires_explanation).__name__})")
-        
-        # Convert to BIT value (0 or 1)
-        if isinstance(requires_explanation, bool):
-            requires_explanation_bit = 1 if requires_explanation else 0
-        elif isinstance(requires_explanation, str):
-            requires_explanation_bit = 1 if requires_explanation.lower() in ('true', '1', 'yes') else 0
-        elif isinstance(requires_explanation, int):
-            requires_explanation_bit = 1 if requires_explanation == 1 else 0
-        else:
+        if save_mode == 'draft':
+            case_status_id = DRAFT_STATUS_ID
+            explanation_status_id = 4  # No Explanation Needed (safe default)
             requires_explanation_bit = 0
-        
-        print(f"[DEBUG] requires_explanation_bit to be stored: {requires_explanation_bit}")
-        
-        if is_red_flag or is_never_event or requires_explanation_bit:
-            # Path 1 & 2: Open + Waiting (S0)
-            case_status_id = 1  # Open
-            explanation_status_id = 1  # Waiting
-            print(f"[FSM] Case requires explanation: RedFlag={is_red_flag}, NeverEvent={is_never_event}, RequiresExplanation={requires_explanation_bit}")
+        elif save_mode == 'complete':
+            case_status_id = READY_TO_SEND_STATUS_ID
+            explanation_status_id = 4
+            requires_explanation_bit = 0
         else:
-            # Path 3: Closed + No Explanation Needed (S4)
-            case_status_id = 3  # Closed
-            explanation_status_id = 4  # No Explanation Needed
-            print(f"[FSM] Case does not require explanation")
+            # -----------------------------
+            # FSM LOGIC: Explanation Workflow
+            # -----------------------------
+            is_red_flag = clinical_risk_type_id == 2
+            is_never_event = clinical_risk_type_id == 3
+            requires_explanation = data.get('requires_explanation')
+
+            if isinstance(requires_explanation, bool):
+                requires_explanation_bit = 1 if requires_explanation else 0
+            elif isinstance(requires_explanation, str):
+                requires_explanation_bit = 1 if requires_explanation.lower() in ('true', '1', 'yes') else 0
+            elif isinstance(requires_explanation, int):
+                requires_explanation_bit = 1 if requires_explanation == 1 else 0
+            else:
+                requires_explanation_bit = 0
+
+            if is_red_flag or is_never_event or requires_explanation_bit:
+                case_status_id = 1  # Open
+                explanation_status_id = 1  # Waiting
+            else:
+                case_status_id = 3  # Closed
+                explanation_status_id = 4  # No Explanation Needed
 
         payload = {
             "ComplaintText": data.get('complaint_text'),
@@ -368,19 +390,17 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
         # db_layer functions commit internally; nothing to commit here
 
         # -------------------------------------------
-        # API V2 ADAPTER HOOK (SAFE / NON-BLOCKING)
-        # Automatically create subcases for this incident
+        # API V2 ADAPTER HOOK — create workflow subcase
+        # SKIPPED for draft/complete: subcase only created on publish
         # -------------------------------------------
-        try:
-            from backend.api_v2.services.case_creation_service import create_subcases_for_incident
-            # Note: current_user is not available in this legacy code context
-            # We'll pass None and the service will handle it gracefully
-            create_subcases_for_incident(new_id, current_user=None)
-        except Exception as e:
-            # Log only — never interrupt main flow
-            print(f"[API V2 ADAPTER WARNING] Failed to create subcases for incident {new_id}: {str(e)}")
-            import traceback
-            traceback.print_exc()
+        if save_mode == 'workflow':
+            try:
+                from backend.api_v2.services.case_creation_service import create_subcases_for_incident
+                create_subcases_for_incident(new_id, current_user=None)
+            except Exception as e:
+                print(f"[API V2 ADAPTER WARNING] Failed to create subcases for incident {new_id}: {str(e)}")
+                import traceback
+                traceback.print_exc()
 
         record_id = f"REC-{datetime.now().year}-{str(new_id).zfill(4)}"
 
@@ -390,8 +410,9 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
             "message_ar": "تم إنشاء السجل بنجاح",
             "record_id": record_id,
             "id": new_id,
-            "incident_id": new_id,  # For compatibility
-            "status_id": 3,
+            "incident_id": new_id,
+            "status_id": case_status_id,
+            "save_mode": save_mode,
             "created_at": datetime.now().isoformat()
         }
 
@@ -412,7 +433,13 @@ def create_record(data: Dict[str, Any]) -> Dict[str, Any]:
             conn.close()
 
 
-def update_record(record_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
+def update_record(record_id: int, data: Dict[str, Any], save_mode: str = 'workflow') -> Dict[str, Any]:
+    """
+    save_mode:
+      'workflow'  — existing behaviour (full validation + FSM)
+      'draft'     — skip validation, keep/set status=Draft
+      'complete'  — validate, promote to Ready to Send
+    """
     conn = None
     cursor = None
 
@@ -420,38 +447,7 @@ def update_record(record_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
         conn = get_connection()
         cursor = conn.cursor()
 
-        # DEBUG: Log incoming payload
-        print(f"\n{'='*60}")
-        print(f"[DEBUG] UPDATE RECORD {record_id}")
-        print(f"[DEBUG] Incoming payload keys: {list(data.keys())}")
-        print(f"[DEBUG] building = {data.get('building')}")
-        print(f"[DEBUG] building_id = {data.get('building_id')}")
-        print(f"[DEBUG] building_code = {data.get('building_code')}")
-        print(f"{'='*60}\n")
-
-        # Validation
-        required_fields = [
-            'complaint_text',
-            'feedback_received_date',
-            'issuing_department_id',
-            'domain_id',
-            'category_id',
-            'subcategory_id',
-            'classification_id',
-            'severity_id',
-            'stage_id',
-            'harm_id',
-            'requires_explanation',
-            'clinical_risk_type_id',
-            'feedback_intent_type_id',
-            'immediate_action',
-            'taken_action',
-            'patient_name',
-            'is_inpatient',
-            'source_id'
-        ]
-        
-        # Load current FSM state + ClinicalRiskTypeID
+        # Load current FSM state
         cursor.execute(
             "SELECT CaseStatusID, ExplanationStatusID, ClinicalRiskTypeID FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID = ?",
             (record_id,)
@@ -459,54 +455,57 @@ def update_record(record_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
         row = cursor.fetchone()
         if not row:
             return {"success": False, "error": "NOT_FOUND", "message": "Record not found"}
-        
+
         current_case_status_id = row.CaseStatusID
         current_explanation_status_id = row.ExplanationStatusID
         current_clinical_risk_type_id = row.ClinicalRiskTypeID
 
-        # Fix: Allow False/0 values, only reject None/empty string
-        for field in required_fields:
-            if field not in data or data[field] is None or data[field] == "":
-                return {
-                    "success": False,
-                    "error": "VALIDATION_ERROR",
-                    "message": f"{field.replace('_', ' ').title()} is required",
-                    "message_ar": f"حقل {field} مطلوب",
-                    "field": field
-                }
-        
-        # Building: Require either building_id, building_code, or existing building in DB
-        # Fetch existing building as fallback before validation
-        existing_building_id_prefetch = None
-        try:
-            cursor.execute(
-                "SELECT BuildingID FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID = ?",
-                (record_id,)
-            )
-            brow = cursor.fetchone()
-            if brow:
-                existing_building_id_prefetch = brow.BuildingID
-        except Exception:
-            pass
+        # --- Draft: skip all validation ---
+        if save_mode == 'draft':
+            pass  # fall through to update
 
-        if not data.get('building_id') and not data.get('building_code') and not existing_building_id_prefetch:
-            return {
-                "success": False,
-                "error": "VALIDATION_ERROR",
-                "message": "Either building_id or building_code is required",
-                "message_ar": "يجب توفير رقم المبنى أو رمز المبنى",
-                "field": "building_id"
-            }
-        
-        # Block changing Clinical Risk Type
-        if data.get('clinical_risk_type_id') is not None and int(data.get('clinical_risk_type_id')) != int(current_clinical_risk_type_id):
-            return {
-                "success": False,
-                "error": "IMMUTABLE_FIELD",
-                "message": "Clinical Risk Type cannot be changed after creation",
-                "message_ar": "لا يمكن تغيير نوع المخاطر السريرية بعد الإنشاء",
-                "field": "clinical_risk_type_id"
-            }
+        elif save_mode in ('workflow', 'complete'):
+            required_fields = [
+                'complaint_text', 'feedback_received_date', 'issuing_department_id',
+                'domain_id', 'category_id', 'subcategory_id', 'classification_id',
+                'severity_id', 'stage_id', 'harm_id', 'requires_explanation',
+                'clinical_risk_type_id', 'feedback_intent_type_id',
+                'immediate_action', 'taken_action', 'patient_name', 'is_inpatient', 'source_id'
+            ]
+
+            for field in required_fields:
+                if field not in data or data[field] is None or data[field] == "":
+                    if save_mode == 'complete':
+                        return {
+                            "success": False,
+                            "error": "VALIDATION_ERROR",
+                            "message": f"{field.replace('_', ' ').title()} is required",
+                            "message_ar": f"حقل {field} مطلوب",
+                            "field": field,
+                            "save_as_draft": True,
+                        }
+                    return {
+                        "success": False,
+                        "error": "VALIDATION_ERROR",
+                        "message": f"{field.replace('_', ' ').title()} is required",
+                        "message_ar": f"حقل {field} مطلوب",
+                        "field": field
+                    }
+
+            existing_building_id_prefetch = None
+            try:
+                cursor.execute("SELECT BuildingID FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID = ?", (record_id,))
+                brow = cursor.fetchone()
+                if brow:
+                    existing_building_id_prefetch = brow.BuildingID
+            except Exception:
+                pass
+
+            if not data.get('building_id') and not data.get('building_code') and not existing_building_id_prefetch:
+                return {"success": False, "error": "VALIDATION_ERROR", "message": "Either building_id or building_code is required", "field": "building_id"}
+
+            if data.get('clinical_risk_type_id') is not None and int(data.get('clinical_risk_type_id')) != int(current_clinical_risk_type_id):
+                return {"success": False, "error": "IMMUTABLE_FIELD", "message": "Clinical Risk Type cannot be changed after creation", "field": "clinical_risk_type_id"}
 
         # Validate foreign keys (same as create_record)
         validations = [
@@ -518,10 +517,20 @@ def update_record(record_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
         # -----------------------------
         # FSM TRANSITION LOGIC
         # -----------------------------
-        new_case_status_id = current_case_status_id
-        new_explanation_status_id = current_explanation_status_id
-
-        command = data.get("fsm_command")  # "submit_explanation" | "complete_actions" | "force_close"
+        # Status override for draft/complete save modes
+        # -----------------------------
+        if save_mode == 'draft':
+            new_case_status_id = DRAFT_STATUS_ID
+            new_explanation_status_id = current_explanation_status_id
+            command = None
+        elif save_mode == 'complete':
+            new_case_status_id = READY_TO_SEND_STATUS_ID
+            new_explanation_status_id = current_explanation_status_id
+            command = None
+        else:
+            new_case_status_id = current_case_status_id
+            new_explanation_status_id = current_explanation_status_id
+            command = data.get("fsm_command")  # "submit_explanation" | "complete_actions" | "force_close"
         
         # Protect terminal states - block FSM transitions on closed cases
         if current_case_status_id == 3 and command:  # CaseStatusID = 3 is Closed
@@ -881,6 +890,39 @@ def update_record(record_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
                     primary_assigned = True
                 print(f"[DEBUG] Updated {len(doc_list)} doctors for record {record_id}")
 
+        # -----------------------------
+        # Sync parent APP_Incident
+        # -----------------------------
+        cursor.execute(
+            "SELECT incident_id FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID = ?",
+            (record_id,)
+        )
+        inc_row = cursor.fetchone()
+        if inc_row and inc_row.incident_id:
+            cursor.execute(
+                """
+                UPDATE dbo.APP_Incident
+                SET
+                    patient_name        = ?,
+                    feedback_intent_type_id = ?,
+                    issuing_org_unit_id = ?,
+                    complaint_summary   = ?,
+                    building_id         = ?,
+                    is_inpatient        = ?
+                WHERE incident_id = ?
+                """,
+                (
+                    data.get('patient_name'),
+                    data.get('feedback_intent_type_id'),
+                    data.get('issuing_department_id'),
+                    data.get('complaint_text'),
+                    building_id,
+                    is_inpatient_val,
+                    inc_row.incident_id,
+                )
+            )
+            print(f"[DEBUG] Synced APP_Incident {inc_row.incident_id} for case {record_id}")
+
         conn.commit()
 
         # ML INSERT HOOK (SAFE / NON-BLOCKING)
@@ -918,10 +960,10 @@ def update_record(record_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
             conn.close()
 
 
-def create_incident_with_cases(payload: Dict[str, Any]) -> Dict[str, Any]:
+def create_incident_with_cases(payload: Dict[str, Any], save_mode: str = 'workflow') -> Dict[str, Any]:
     """
     Create one parent incident with one or more operational cases.
-    Compatibility-first: each case is still created through legacy create_record flow.
+    save_mode: 'workflow' | 'draft' | 'complete'
     """
     common = payload.get("common", {}) or {}
     cases = payload.get("cases", []) or []
@@ -961,7 +1003,7 @@ def create_incident_with_cases(payload: Dict[str, Any]) -> Dict[str, Any]:
     created_cases: list[dict] = []
     for idx, case_data in enumerate(cases):
         target_ids = case_data.get("target_department_ids", [])
-        if len(target_ids) != 1:
+        if save_mode == 'workflow' and len(target_ids) != 1:
             return {
                 "success": False,
                 "error": "VALIDATION_ERROR",
@@ -984,9 +1026,17 @@ def create_incident_with_cases(payload: Dict[str, Any]) -> Dict[str, Any]:
             "employees": case_data.get("employees") or common.get("employees"),
         }
 
-        created = create_record(case_payload)
+        created = create_record(case_payload, save_mode=save_mode)
         if not created.get("success"):
-            return created
+            # For 'complete' mode with validation failure: save as draft instead
+            if save_mode == 'complete' and created.get("save_as_draft"):
+                created = create_record(case_payload, save_mode='draft')
+                if not created.get("success"):
+                    return created
+                created["demoted_to_draft"] = True
+                created["validation_message"] = "Saved as Draft — some required fields were missing"
+            else:
+                return created
 
         case_id = int(created["id"])
         assign_case_to_incident(case_id, incident_id)

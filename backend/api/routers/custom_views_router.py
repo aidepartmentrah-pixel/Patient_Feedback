@@ -21,6 +21,7 @@ router = APIRouter(prefix="/api/custom-views", tags=["Custom Views"])
 class CustomViewBase(BaseModel):
     view_name: Optional[str] = Field(None, alias="ViewName")
     # Show* flags (optional booleans)
+    ShowIncidentNumber: Optional[bool] = False
     ShowIncidentRequestCaseID: Optional[bool] = False
     ShowComplaintText: Optional[bool] = False
     ShowImmediateAction: Optional[bool] = False

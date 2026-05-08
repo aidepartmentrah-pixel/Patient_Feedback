@@ -11,6 +11,7 @@ from ..db_layer.custom_views import (
 
 
 SHOW_FIELDS = [
+    "ShowIncidentNumber",
     "ShowIncidentRequestCaseID",
     "ShowComplaintText",
     "ShowImmediateAction",

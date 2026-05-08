@@ -905,7 +905,7 @@ async def list_sections(
             FROM AdminsrationUnit s
             LEFT JOIN AdminsrationUnit d ON s.ParentID = d.UniqueID
             LEFT JOIN AdminsrationUnit a ON d.ParentID = a.UniqueID
-            WHERE s.Type = 3
+            WHERE s.Type = 324 AND s.Frozen = 0
             ORDER BY a.Name, d.Name, s.Name
             """
         )
@@ -936,7 +936,7 @@ async def list_departments_for_reassignment(
                 a.Name AS administration_name
             FROM AdminsrationUnit d
             LEFT JOIN AdminsrationUnit a ON d.ParentID = a.UniqueID
-            WHERE d.Type = 2
+            WHERE d.Type IN (323, 325) AND d.Frozen = 0
             ORDER BY a.Name, d.Name
             """
         )
@@ -973,9 +973,9 @@ async def update_section(
         if not row:
             conn.close()
             raise HTTPException(status_code=404, detail={"error": "NOT_FOUND", "message": f"Section {section_id} not found"})
-        if row.Type != 3:
+        if row.Type != 324:
             conn.close()
-            raise HTTPException(status_code=400, detail={"error": "NOT_SECTION", "message": "Unit is not a section (Type must be 3)"})
+            raise HTTPException(status_code=400, detail={"error": "NOT_SECTION", "message": "Unit is not a section (Type must be 324)"})
 
         new_name = request.name.strip()
         new_parent = request.parent_id if request.parent_id is not None else row.ParentID
@@ -984,9 +984,9 @@ async def update_section(
             # Verify the target department is Type=2
             cursor.execute("SELECT Type FROM AdminsrationUnit WHERE UniqueID = ?", new_parent)
             dept_row = cursor.fetchone()
-            if not dept_row or dept_row.Type != 2:
+            if not dept_row or dept_row.Type not in (323, 325):
                 conn.close()
-                raise HTTPException(status_code=400, detail={"error": "INVALID_DEPARTMENT", "message": "Target parent must be a department (Type=2)"})
+                raise HTTPException(status_code=400, detail={"error": "INVALID_DEPARTMENT", "message": "Target parent must be a department (Type=323 or 325)"})
 
         cursor.execute(
             "UPDATE AdminsrationUnit SET Name = ?, ParentID = ? WHERE UniqueID = ?",

@@ -1039,30 +1039,35 @@ def get_subcases_with_details_for_section() -> List[Dict[str, Any]]:
                 ic.SeverityID,
                 sev.SeverityName,
                 cat.CategoryName,
-                
+
+                -- Incident parent number (INC-XXXXXX)
+                inc.incident_number AS IncidentNumber,
+
                 -- Clinical Risk Type (for Red Flag / Never Event badges)
                 ic.ClinicalRiskTypeID,
                 CASE WHEN ic.ClinicalRiskTypeID = 2 THEN 1 ELSE 0 END AS IsRedFlag,
                 CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
-                
+
                 -- Seasonal Report Info (for SEASONAL_REPORT_RESPONSE)
                 sr.SeasonalReportID,
                 s.SeasonName
-                
+
             FROM dbo.APP_AdministrativeSubcase sub
-            LEFT JOIN dbo.AdminsrationUnit org 
+            LEFT JOIN dbo.AdminsrationUnit org
                 ON sub.TargetOrgUnitID = org.UniqueID
-            LEFT JOIN dbo.APP_IncidentCase ic 
+            LEFT JOIN dbo.APP_IncidentCase ic
                 ON sub.IncidentRequestCaseID = ic.IncidentRequestCaseID
-            LEFT JOIN dbo.APP_LOOKUP_SEVERITY sev 
+            LEFT JOIN dbo.APP_Incident inc
+                ON ic.incident_id = inc.incident_id
+            LEFT JOIN dbo.APP_LOOKUP_SEVERITY sev
                 ON ic.SeverityID = sev.SeverityID
-            LEFT JOIN dbo.APP_LOOKUP_CATEGORY cat 
+            LEFT JOIN dbo.APP_LOOKUP_CATEGORY cat
                 ON ic.CategoryID = cat.CategoryID
-            LEFT JOIN dbo.APP_SeasonalOrgUnitReport sr 
+            LEFT JOIN dbo.APP_SeasonalOrgUnitReport sr
                 ON sub.SeasonalReportID = sr.SeasonalReportID
             LEFT JOIN dbo.Season s
                 ON sr.SeasonID = s.UniqueID
-            
+
             WHERE sub.Status IN ('SUBMITTED_TO_SECTION', 'RETURNED_TO_SECTION_FOR_REVISION')
               AND sub.Status != 'FORCE_CLOSED'
             
@@ -1084,6 +1089,7 @@ def get_subcases_with_details_for_section() -> List[Dict[str, Any]]:
                 "org_unit_name": row.OrgUnitName,
                 "org_type": row.OrgType,
                 "incident_request_case_id": row.IncidentRequestCaseID,
+                "incident_number": row.IncidentNumber,
                 "case_description": row.CaseDescription,
                 "patient_name": row.PatientName,
                 "severity_id": row.SeverityID,
@@ -1094,9 +1100,9 @@ def get_subcases_with_details_for_section() -> List[Dict[str, Any]]:
                 "seasonal_report_id": row.SeasonalReportID,
                 "season_name": row.SeasonName
             })
-        
+
         return result
-    
+
     finally:
         cursor.close()
         conn.close()
@@ -1134,30 +1140,35 @@ def get_subcases_with_details_for_department() -> List[Dict[str, Any]]:
                 ic.SeverityID,
                 sev.SeverityName,
                 cat.CategoryName,
-                
+
+                -- Incident parent number (INC-XXXXXX)
+                inc.incident_number AS IncidentNumber,
+
                 -- Clinical Risk Type (for Red Flag / Never Event badges)
                 ic.ClinicalRiskTypeID,
                 CASE WHEN ic.ClinicalRiskTypeID = 2 THEN 1 ELSE 0 END AS IsRedFlag,
                 CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
-                
+
                 -- Seasonal Report Info (for SEASONAL_REPORT_RESPONSE)
                 sr.SeasonalReportID,
                 s.SeasonName
-                
+
             FROM dbo.APP_AdministrativeSubcase sub
-            LEFT JOIN dbo.AdminsrationUnit org 
+            LEFT JOIN dbo.AdminsrationUnit org
                 ON sub.TargetOrgUnitID = org.UniqueID
-            LEFT JOIN dbo.APP_IncidentCase ic 
+            LEFT JOIN dbo.APP_IncidentCase ic
                 ON sub.IncidentRequestCaseID = ic.IncidentRequestCaseID
-            LEFT JOIN dbo.APP_LOOKUP_SEVERITY sev 
+            LEFT JOIN dbo.APP_Incident inc
+                ON ic.incident_id = inc.incident_id
+            LEFT JOIN dbo.APP_LOOKUP_SEVERITY sev
                 ON ic.SeverityID = sev.SeverityID
-            LEFT JOIN dbo.APP_LOOKUP_CATEGORY cat 
+            LEFT JOIN dbo.APP_LOOKUP_CATEGORY cat
                 ON ic.CategoryID = cat.CategoryID
-            LEFT JOIN dbo.APP_SeasonalOrgUnitReport sr 
+            LEFT JOIN dbo.APP_SeasonalOrgUnitReport sr
                 ON sub.SeasonalReportID = sr.SeasonalReportID
             LEFT JOIN dbo.Season s
                 ON sr.SeasonID = s.UniqueID
-            
+
             WHERE sub.Status IN ('SECTION_ACCEPTED_PENDING_DEPT', 'RETURNED_TO_DEPT_FOR_REVISION')
               AND sub.Status != 'FORCE_CLOSED'
             
@@ -1179,6 +1190,7 @@ def get_subcases_with_details_for_department() -> List[Dict[str, Any]]:
                 "org_unit_name": row.OrgUnitName,
                 "org_type": row.OrgType,
                 "incident_request_case_id": row.IncidentRequestCaseID,
+                "incident_number": row.IncidentNumber,
                 "case_description": row.CaseDescription,
                 "patient_name": row.PatientName,
                 "severity_id": row.SeverityID,
@@ -1228,30 +1240,35 @@ def get_subcases_with_details_for_administration() -> List[Dict[str, Any]]:
                 ic.SeverityID,
                 sev.SeverityName,
                 cat.CategoryName,
-                
+
+                -- Incident parent number (INC-XXXXXX)
+                inc.incident_number AS IncidentNumber,
+
                 -- Clinical Risk Type (for Red Flag / Never Event badges)
                 ic.ClinicalRiskTypeID,
                 CASE WHEN ic.ClinicalRiskTypeID = 2 THEN 1 ELSE 0 END AS IsRedFlag,
                 CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
-                
+
                 -- Seasonal Report Info (for SEASONAL_REPORT_RESPONSE)
                 sr.SeasonalReportID,
                 s.SeasonName
-                
+
             FROM dbo.APP_AdministrativeSubcase sub
-            LEFT JOIN dbo.AdminsrationUnit org 
+            LEFT JOIN dbo.AdminsrationUnit org
                 ON sub.TargetOrgUnitID = org.UniqueID
-            LEFT JOIN dbo.APP_IncidentCase ic 
+            LEFT JOIN dbo.APP_IncidentCase ic
                 ON sub.IncidentRequestCaseID = ic.IncidentRequestCaseID
-            LEFT JOIN dbo.APP_LOOKUP_SEVERITY sev 
+            LEFT JOIN dbo.APP_Incident inc
+                ON ic.incident_id = inc.incident_id
+            LEFT JOIN dbo.APP_LOOKUP_SEVERITY sev
                 ON ic.SeverityID = sev.SeverityID
-            LEFT JOIN dbo.APP_LOOKUP_CATEGORY cat 
+            LEFT JOIN dbo.APP_LOOKUP_CATEGORY cat
                 ON ic.CategoryID = cat.CategoryID
-            LEFT JOIN dbo.APP_SeasonalOrgUnitReport sr 
+            LEFT JOIN dbo.APP_SeasonalOrgUnitReport sr
                 ON sub.SeasonalReportID = sr.SeasonalReportID
             LEFT JOIN dbo.Season s
                 ON sr.SeasonID = s.UniqueID
-            
+
             WHERE sub.Status = 'DEPT_ACCEPTED_PENDING_ADMIN'
               AND sub.Status != 'FORCE_CLOSED'
             
@@ -1273,6 +1290,7 @@ def get_subcases_with_details_for_administration() -> List[Dict[str, Any]]:
                 "org_unit_name": row.OrgUnitName,
                 "org_type": row.OrgType,
                 "incident_request_case_id": row.IncidentRequestCaseID,
+                "incident_number": row.IncidentNumber,
                 "case_description": row.CaseDescription,
                 "patient_name": row.PatientName,
                 "severity_id": row.SeverityID,

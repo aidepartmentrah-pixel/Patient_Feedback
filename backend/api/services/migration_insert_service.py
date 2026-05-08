@@ -17,6 +17,7 @@ from core.database import get_connection
 from api.db_layer.incident_case import create_incident_case
 from api.db_layer.incident_case_target_department import add_target_department
 from api.db_layer.incident_case_doctor import add_doctor_to_case
+from api.db_layer.incident_parent import create_incident_parent, assign_case_to_incident
 
 
 def create_record_migrated(
@@ -327,6 +328,19 @@ def create_record_migrated(
 
         new_id = create_incident_case(payload)
         print(f"[MIGRATION] Created case ID: {new_id}")
+
+        # Create Incident parent and link the case
+        incident_id = create_incident_parent({
+            "patient_name": data.get('patient_name'),
+            "feedback_intent_type_id": data.get('feedback_intent_type_id'),
+            "issuing_org_unit_id": data.get('issuing_department_id'),
+            "complaint_summary": data.get('complaint_text'),
+            "building_id": building_id,
+            "is_inpatient": is_inpatient_val,
+            "created_by_user_id": migrated_by_user_id,
+        })
+        assign_case_to_incident(new_id, incident_id)
+        print(f"[MIGRATION] Linked case {new_id} to incident {incident_id}")
 
         # -----------------------------
         # ML INSERT HOOK (SAFE / NON-BLOCKING)

@@ -5,7 +5,7 @@ API endpoints for creating new incident/feedback records.
 
 from fastapi import APIRouter, HTTPException, Body, Query, Path, Depends
 from pydantic import BaseModel, Field
-from typing import Optional, Any
+from typing import Optional, Any, List
 from datetime import date, datetime
 
 from ..dependencies.user_context import get_current_user
@@ -113,6 +113,7 @@ class CreateIncidentWithCasesRequest(BaseModel):
 
     common: IncidentCommonRequest
     cases: list[CreateRecordRequest]
+    save_mode: str = "workflow"  # 'workflow' | 'draft' | 'complete'
 
 
 # ==================== ENDPOINTS ====================
@@ -268,7 +269,9 @@ async def add_incident_with_cases(
     require_logged_in(current_user)
 
     try:
-        result = create_incident_with_cases(request.model_dump())
+        payload = request.model_dump()
+        save_mode = payload.pop("save_mode", "workflow")
+        result = create_incident_with_cases(payload, save_mode=save_mode)
 
         if not result.get("success", False):
             raise HTTPException(
@@ -344,10 +347,40 @@ async def get_record(
         )
 
 
+class UpdateRecordRequest(BaseModel):
+    """Update request — same fields as create but all optional for draft mode."""
+    complaint_text: Optional[str] = None
+    feedback_received_date: Optional[date] = None
+    issuing_department_id: Optional[int] = None
+    domain_id: Optional[int] = None
+    category_id: Optional[int] = None
+    subcategory_id: Optional[int] = None
+    classification_id: Optional[int] = None
+    severity_id: Optional[int] = None
+    stage_id: Optional[int] = None
+    harm_id: Optional[int] = None
+    requires_explanation: Optional[bool] = None
+    clinical_risk_type_id: Optional[int] = None
+    feedback_intent_type_id: Optional[int] = None
+    immediate_action: Optional[str] = None
+    taken_action: Optional[str] = None
+    patient_name: Optional[str] = None
+    is_inpatient: Optional[bool] = None
+    source_id: Optional[int] = None
+    building_id: Optional[int] = None
+    primary_doctor_name: Optional[str] = None
+    primary_worker_name: Optional[str] = None
+    doctors: Optional[list[dict[str, Any]]] = None
+    employees: Optional[list[dict[str, Any]]] = None
+    target_department_ids: Optional[list[int]] = None
+    fsm_command: Optional[str] = None
+    save_mode: Optional[str] = "workflow"
+
+
 @router.put("/{record_id}")
 async def update_record(
     record_id: int = Path(..., gt=0, description="Record ID to update"),
-    request: CreateRecordRequest = Body(...),
+    request: UpdateRecordRequest = Body(...),
     current_user: CurrentUser = Depends(get_current_user)
 ):
     """
@@ -389,26 +422,26 @@ async def update_record(
                 }
             )
         
-        # Convert request to dictionary
-        data = request.model_dump()
-        
-        # Map frontend field names to backend field names
-        # NOTE: is_inpatient must be boolean (true/false) - no "IN"/"OUT" strings
-        
+        # Convert request to dictionary, strip None values for partial draft updates
+        data = {k: v for k, v in request.model_dump().items() if v is not None or k in ('requires_explanation', 'is_inpatient')}
+        save_mode = data.pop("save_mode", "workflow") or "workflow"
+
         if 'building' in data and isinstance(data['building'], str):
-            # Convert building code to building_id if needed
-            # For now, just rename the field (building_code expected by service)
             data['building_code'] = data['building']
             del data['building']
-        
-        # Add record_id to data for update operation
+
         data['id'] = record_id
-        
-        # Import update function
+
         from ..services.insert_service import update_record as update_record_service
-        
-        # Call service to update record
-        result = update_record_service(record_id, data)
+
+        result = update_record_service(record_id, data, save_mode=save_mode)
+
+        # For 'complete' mode that fell back to draft
+        if not result.get("success") and result.get("save_as_draft"):
+            result = update_record_service(record_id, data, save_mode='draft')
+            if result.get("success"):
+                result["demoted_to_draft"] = True
+                result["validation_message"] = "Saved as Draft — some required fields were missing"
         
         if not result.get("success", False):
             raise HTTPException(
@@ -729,9 +762,9 @@ async def get_employee_endpoint(
     ```
     """
     require_logged_in(current_user)
-    
+
     result = get_employee_by_id(employee_id)
-    
+
     if not result.get("success", False):
         raise HTTPException(
             status_code=404,
@@ -740,5 +773,122 @@ async def get_employee_endpoint(
                 "message": result.get("error", "Employee not found")
             }
         )
-    
+
     return result
+
+
+# ==================== PUBLISH ENDPOINTS ====================
+
+@router.post("/publish/{case_id}")
+async def publish_case(
+    case_id: int = Path(..., gt=0),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Publish a Ready to Send complaint into the workflow lifecycle.
+    Changes status from Ready to Send → Submitted to Section and creates the workflow subcase.
+    Draft complaints are blocked.
+    """
+    require_logged_in(current_user)
+    from core.database import get_connection
+    from api.constants.case_statuses import DRAFT_STATUS_ID, READY_TO_SEND_STATUS_ID
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT CaseStatusID FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID = ?",
+            case_id
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail={"error": "NOT_FOUND", "message": f"Case {case_id} not found"})
+
+        if row.CaseStatusID == DRAFT_STATUS_ID:
+            raise HTTPException(status_code=400, detail={
+                "error": "DRAFT_BLOCKED",
+                "message": "Draft complaints cannot be published. Mark as Ready to Send first.",
+                "message_ar": "لا يمكن نشر المسودات. يجب وضع علامة 'جاهز للإرسال' أولاً"
+            })
+
+        if row.CaseStatusID != READY_TO_SEND_STATUS_ID:
+            raise HTTPException(status_code=400, detail={
+                "error": "INVALID_STATUS",
+                "message": "Only Ready to Send complaints can be published.",
+                "message_ar": "يمكن نشر الشكاوى الجاهزة للإرسال فقط"
+            })
+
+        # Create workflow subcase
+        try:
+            from api_v2.services.case_creation_service import create_subcases_for_incident
+            create_subcases_for_incident(case_id, current_user=None)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail={
+                "error": "SUBCASE_CREATION_FAILED",
+                "message": f"Failed to create workflow subcase: {str(e)}"
+            })
+
+        return {"success": True, "case_id": case_id, "message": "Complaint published to workflow"}
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
+class BulkPublishRequest(BaseModel):
+    case_ids: Optional[list[int]] = None  # None = publish ALL Ready to Send
+
+
+@router.post("/bulk-publish")
+async def bulk_publish(
+    request: BulkPublishRequest = Body(...),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Publish multiple Ready to Send complaints at once.
+    If case_ids is empty/null, publishes ALL Ready to Send complaints.
+    Draft complaints in the list are silently skipped.
+    """
+    require_logged_in(current_user)
+    from core.database import get_connection
+    from api.constants.case_statuses import READY_TO_SEND_STATUS_ID
+    from api_v2.services.case_creation_service import create_subcases_for_incident
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        if request.case_ids:
+            placeholders = ",".join("?" * len(request.case_ids))
+            cursor.execute(
+                f"SELECT IncidentRequestCaseID FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID IN ({placeholders}) AND CaseStatusID = ?",
+                *request.case_ids, READY_TO_SEND_STATUS_ID
+            )
+        else:
+            cursor.execute(
+                "SELECT IncidentRequestCaseID FROM dbo.APP_IncidentCase WHERE CaseStatusID = ?",
+                READY_TO_SEND_STATUS_ID
+            )
+
+        ids_to_publish = [r[0] for r in cursor.fetchall()]
+        published, failed = 0, 0
+        errors = []
+
+        for cid in ids_to_publish:
+            try:
+                create_subcases_for_incident(cid, current_user=None)
+                published += 1
+            except Exception as e:
+                failed += 1
+                errors.append({"case_id": cid, "error": str(e)})
+
+        return {
+            "success": True,
+            "published": published,
+            "failed": failed,
+            "errors": errors,
+            "message": f"Published {published} complaint(s)"
+        }
+
+    finally:
+        cursor.close()
+        conn.close()
