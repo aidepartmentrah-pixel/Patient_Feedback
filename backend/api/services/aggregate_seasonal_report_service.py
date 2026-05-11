@@ -11,9 +11,11 @@ with their incident counts and severity breakdowns in single queries.
 from typing import List, Dict, Any
 from datetime import date, datetime
 from io import BytesIO
+import os
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor, Mm
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+from docx.oxml.ns import qn
 
 from core.database import get_connection
 from core.table_config import HR_EMPLOYEES_TABLE, DOCTORS_TABLE
@@ -198,25 +200,45 @@ def generate_all_doctors_seasonal_word(
     
     # Generate Word document
     doc = Document()
-    
+
+    # Set default font to Traditional Arabic
+    style = doc.styles['Normal']
+    style.font.name = 'Calibri'
+    style.font.size = Pt(11)
+
     section = doc.sections[0]
     section.page_height = Mm(297)
     section.page_width = Mm(210)
-    
+
+    # ========== LOGO HEADER ==========
+    try:
+        logo_path = os.path.join(os.path.dirname(__file__), '..', '..', 'assets', 'logo.png')
+        if os.path.exists(logo_path):
+            section.header_distance = Inches(0.1)
+            header_section = section.header
+            header_para = header_section.paragraphs[0]
+            header_para.clear()
+            header_para.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT
+            run = header_para.add_run()
+            run.add_picture(logo_path, width=Inches(0.9))
+    except Exception as e:
+        print(f"[DOCTORS_SEASONAL] Could not add logo: {e}")
+
     # ========== TITLE ==========
     title = doc.add_heading('تقرير مقارنة الأطباء الموسمي', 0)
     title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     for run in title.runs:
         run.font.size = Pt(18)
-        run.font.name = 'Arial'
+        run.font.name = 'Calibri'
         run.font.bold = True
-    
+        run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
     subtitle = doc.add_heading('Seasonal Doctor Comparison Report', 1)
     subtitle.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     for run in subtitle.runs:
         run.font.size = Pt(14)
-        run.font.name = 'Arial'
-    
+        run.font.name = 'Calibri'
+
     # Period info
     period = doc.add_paragraph()
     period.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
@@ -224,22 +246,25 @@ def generate_all_doctors_seasonal_word(
         f'الفترة: {season_start.strftime("%Y-%m-%d")} إلى {season_end.strftime("%Y-%m-%d")}'
     )
     period_run.font.size = Pt(12)
-    period_run.font.name = 'Arial'
-    
+    period_run.font.name = 'Calibri'
+    period_run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
     # Total count
     count = doc.add_paragraph()
     count.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     count_run = count.add_run(f'عدد الأطباء الذين لديهم حالات: {len(doctor_reports)}')
     count_run.font.size = Pt(11)
-    count_run.font.name = 'Arial'
+    count_run.font.name = 'Calibri'
+    count_run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
     
     doc.add_paragraph()
     
     # ========== SUMMARY STATISTICS ==========
     summary_heading = doc.add_heading('الإحصائيات الإجمالية', 2)
     for run in summary_heading.runs:
-        run.font.name = 'Arial'
-    
+        run.font.name = 'Calibri'
+        run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
     total_all = sum(dr["total_incidents"] for dr in doctor_reports)
     total_complaints = sum(dr["total_complaints"] for dr in doctor_reports)
     total_praises = sum(dr["total_praises"] for dr in doctor_reports)
@@ -262,7 +287,7 @@ def generate_all_doctors_seasonal_word(
         ('شكاوى شدة منخفضة / Low Severity Complaints', str(total_low)),
         ('علامات حمراء / Red Flags', str(total_red)),
     ]
-    
+
     for idx, (label, value) in enumerate(summary_data):
         row = summary_table.rows[idx]
         row.cells[0].text = label
@@ -271,29 +296,31 @@ def generate_all_doctors_seasonal_word(
             for paragraph in cell.paragraphs:
                 for run in paragraph.runs:
                     run.font.size = Pt(11)
-                    run.font.name = 'Arial'
-    
+                    run.font.name = 'Calibri'
+                    run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
     doc.add_paragraph()
-    
+
     # ========== COMPARISON TABLE ==========
     comparison_heading = doc.add_heading('جدول المقارنة - مرتب حسب عدد الحالات', 2)
     for run in comparison_heading.runs:
-        run.font.name = 'Arial'
-    
+        run.font.name = 'Calibri'
+        run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
     note = doc.add_paragraph()
     note_run = note.add_run('(الأطباء ذوي العدد الأكبر من الحالات يظهرون أولاً)')
     note_run.font.size = Pt(9)
-    note_run.font.name = 'Arial'
-    note_run.font.italic = True
+    note_run.font.name = 'Calibri'
     note_run.font.color.rgb = RGBColor(100, 100, 100)
-    
+    note_run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
     # Legend for complaints vs praises
     legend = doc.add_paragraph()
     legend_run = legend.add_run('الشكاوى = فرصة تحسين + نقد/اقتراح + آخر | التنويهات = إيجابية فقط (بدون شدة)')
     legend_run.font.size = Pt(8)
-    legend_run.font.name = 'Arial'
-    legend_run.font.italic = True
+    legend_run.font.name = 'Calibri'
     legend_run.font.color.rgb = RGBColor(80, 80, 80)
+    legend_run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
     
     table = doc.add_table(rows=1, cols=9)
     table.style = 'Light Grid Accent 1'
@@ -312,12 +339,13 @@ def generate_all_doctors_seasonal_word(
             for run in paragraph.runs:
                 run.font.bold = True
                 run.font.size = Pt(9)
-                run.font.name = 'Arial'
-    
+                run.font.name = 'Calibri'
+                run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
     for idx, doctor in enumerate(doctor_reports, 1):
         row = table.add_row()
         cells = row.cells
-        
+
         row_data = [
             str(idx),
             doctor["name"],
@@ -329,28 +357,28 @@ def generate_all_doctors_seasonal_word(
             str(doctor["red_flags"]),
             str(doctor["total_praises"])
         ]
-        
+
         for cell_idx, value in enumerate(row_data):
             cells[cell_idx].text = value
             for paragraph in cells[cell_idx].paragraphs:
                 paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
                 for run in paragraph.runs:
                     run.font.size = Pt(9)
-                    run.font.name = 'Arial'
-                    # Highlight praises column in green
+                    run.font.name = 'Calibri'
+                    run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
                     if cell_idx == 8 and int(value) > 0:
                         run.font.color.rgb = RGBColor(0, 128, 0)
-    
+
     doc.add_paragraph()
-    
+
     # ========== FOOTER ==========
     footer = doc.add_paragraph()
     footer.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     footer_run = footer.add_run(f'تم الإنشاء في: {datetime.now().strftime("%Y-%m-%d %H:%M")}')
     footer_run.font.size = Pt(9)
-    footer_run.font.name = 'Arial'
-    footer_run.font.italic = True
+    footer_run.font.name = 'Calibri'
     footer_run.font.color.rgb = RGBColor(128, 128, 128)
+    footer_run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
     
     buffer = BytesIO()
     doc.save(buffer)
@@ -381,25 +409,45 @@ def generate_all_workers_seasonal_word(
     
     # Generate Word document
     doc = Document()
-    
+
+    # Set default font to Traditional Arabic
+    style = doc.styles['Normal']
+    style.font.name = 'Calibri'
+    style.font.size = Pt(11)
+
     section = doc.sections[0]
     section.page_height = Mm(297)
     section.page_width = Mm(210)
-    
+
+    # ========== LOGO HEADER ==========
+    try:
+        logo_path = os.path.join(os.path.dirname(__file__), '..', '..', 'assets', 'logo.png')
+        if os.path.exists(logo_path):
+            section.header_distance = Inches(0.1)
+            header_section = section.header
+            header_para = header_section.paragraphs[0]
+            header_para.clear()
+            header_para.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT
+            run = header_para.add_run()
+            run.add_picture(logo_path, width=Inches(0.9))
+    except Exception as e:
+        print(f"[WORKERS_SEASONAL] Could not add logo: {e}")
+
     # ========== TITLE ==========
     title = doc.add_heading('تقرير مقارنة الموظفين الموسمي', 0)
     title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     for run in title.runs:
         run.font.size = Pt(18)
-        run.font.name = 'Arial'
+        run.font.name = 'Calibri'
         run.font.bold = True
-    
+        run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
     subtitle = doc.add_heading('Seasonal Worker Comparison Report', 1)
     subtitle.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     for run in subtitle.runs:
         run.font.size = Pt(14)
-        run.font.name = 'Arial'
-    
+        run.font.name = 'Calibri'
+
     # Period info
     period = doc.add_paragraph()
     period.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
@@ -407,22 +455,25 @@ def generate_all_workers_seasonal_word(
         f'الفترة: {season_start.strftime("%Y-%m-%d")} إلى {season_end.strftime("%Y-%m-%d")}'
     )
     period_run.font.size = Pt(12)
-    period_run.font.name = 'Arial'
-    
+    period_run.font.name = 'Calibri'
+    period_run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
     # Total count
     count = doc.add_paragraph()
     count.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     count_run = count.add_run(f'عدد الموظفين الذين لديهم حالات: {len(worker_reports)}')
     count_run.font.size = Pt(11)
-    count_run.font.name = 'Arial'
+    count_run.font.name = 'Calibri'
+    count_run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
     
     doc.add_paragraph()
     
     # ========== SUMMARY STATISTICS ==========
     summary_heading = doc.add_heading('الإحصائيات الإجمالية', 2)
     for run in summary_heading.runs:
-        run.font.name = 'Arial'
-    
+        run.font.name = 'Calibri'
+        run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
     total_all = sum(wr["total_incidents"] for wr in worker_reports)
     total_complaints = sum(wr["total_complaints"] for wr in worker_reports)
     total_praises = sum(wr["total_praises"] for wr in worker_reports)
@@ -445,7 +496,7 @@ def generate_all_workers_seasonal_word(
         ('شكاوى شدة منخفضة / Low Severity Complaints', str(total_low)),
         ('علامات حمراء / Red Flags', str(total_red)),
     ]
-    
+
     for idx, (label, value) in enumerate(summary_data):
         row = summary_table.rows[idx]
         row.cells[0].text = label
@@ -454,29 +505,31 @@ def generate_all_workers_seasonal_word(
             for paragraph in cell.paragraphs:
                 for run in paragraph.runs:
                     run.font.size = Pt(11)
-                    run.font.name = 'Arial'
-    
+                    run.font.name = 'Calibri'
+                    run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
     doc.add_paragraph()
-    
+
     # ========== COMPARISON TABLE ==========
     comparison_heading = doc.add_heading('جدول المقارنة - مرتب حسب عدد الحالات', 2)
     for run in comparison_heading.runs:
-        run.font.name = 'Arial'
-    
+        run.font.name = 'Calibri'
+        run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
     note = doc.add_paragraph()
     note_run = note.add_run('(الموظفون ذوي العدد الأكبر من الحالات يظهرون أولاً)')
     note_run.font.size = Pt(9)
-    note_run.font.name = 'Arial'
-    note_run.font.italic = True
+    note_run.font.name = 'Calibri'
     note_run.font.color.rgb = RGBColor(100, 100, 100)
-    
+    note_run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
     # Legend for complaints vs praises
     legend = doc.add_paragraph()
     legend_run = legend.add_run('الشكاوى = فرصة تحسين + نقد/اقتراح + آخر | التنويهات = إيجابية فقط (بدون شدة)')
     legend_run.font.size = Pt(8)
-    legend_run.font.name = 'Arial'
-    legend_run.font.italic = True
+    legend_run.font.name = 'Calibri'
     legend_run.font.color.rgb = RGBColor(80, 80, 80)
+    legend_run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
     
     table = doc.add_table(rows=1, cols=9)
     table.style = 'Light Grid Accent 1'
@@ -495,12 +548,13 @@ def generate_all_workers_seasonal_word(
             for run in paragraph.runs:
                 run.font.bold = True
                 run.font.size = Pt(9)
-                run.font.name = 'Arial'
-    
+                run.font.name = 'Calibri'
+                run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
     for idx, worker in enumerate(worker_reports, 1):
         row = table.add_row()
         cells = row.cells
-        
+
         row_data = [
             str(idx),
             worker["name"],
@@ -512,28 +566,28 @@ def generate_all_workers_seasonal_word(
             str(worker["red_flags"]),
             str(worker["total_praises"])
         ]
-        
+
         for cell_idx, value in enumerate(row_data):
             cells[cell_idx].text = value
             for paragraph in cells[cell_idx].paragraphs:
                 paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
                 for run in paragraph.runs:
                     run.font.size = Pt(9)
-                    run.font.name = 'Arial'
-                    # Highlight praises column in green
+                    run.font.name = 'Calibri'
+                    run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
                     if cell_idx == 8 and int(value) > 0:
                         run.font.color.rgb = RGBColor(0, 128, 0)
-    
+
     doc.add_paragraph()
-    
+
     # ========== FOOTER ==========
     footer = doc.add_paragraph()
     footer.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     footer_run = footer.add_run(f'تم الإنشاء في: {datetime.now().strftime("%Y-%m-%d %H:%M")}')
     footer_run.font.size = Pt(9)
-    footer_run.font.name = 'Arial'
-    footer_run.font.italic = True
+    footer_run.font.name = 'Calibri'
     footer_run.font.color.rgb = RGBColor(128, 128, 128)
+    footer_run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
     
     buffer = BytesIO()
     doc.save(buffer)

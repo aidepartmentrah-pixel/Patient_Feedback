@@ -16,11 +16,12 @@ This report aggregates:
 from typing import List, Dict, Any
 from datetime import date, datetime
 from io import BytesIO
+import os
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor, Mm, Cm
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.enum.table import WD_TABLE_ALIGNMENT
-from docx.oxml.ns import nsdecls
+from docx.oxml.ns import nsdecls, qn
 from docx.oxml import parse_xml
 
 # For chart generation
@@ -370,8 +371,9 @@ def _format_table_header(table, headers: List[str], color_hex: str = "667eea"):
             for run in paragraph.runs:
                 run.font.bold = True
                 run.font.size = Pt(11)
-                run.font.name = 'Arial'
+                run.font.name = 'Calibri'
                 run.font.color.rgb = RGBColor(255, 255, 255)
+                run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
 
 
 def _generate_rca_pie_chart(rca_stats: Dict[str, Any]) -> BytesIO:
@@ -627,82 +629,97 @@ def generate_patient_feedback_seasonal_word(
     
     # Create document
     doc = Document()
-    
+
+    # Set default font to Traditional Arabic
+    style = doc.styles['Normal']
+    style.font.name = 'Calibri'
+    style.font.size = Pt(11)
+
     # Page setup
     section = doc.sections[0]
     section.page_height = Mm(297)
     section.page_width = Mm(210)
     section.left_margin = Cm(2)
     section.right_margin = Cm(2)
-    
+
+    # ========== LOGO HEADER ==========
+    try:
+        logo_path = os.path.join(os.path.dirname(__file__), '..', '..', 'assets', 'logo.png')
+        if os.path.exists(logo_path):
+            section.header_distance = Inches(0.1)
+            header_section = section.header
+            header_para = header_section.paragraphs[0]
+            header_para.clear()
+            header_para.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT
+            run = header_para.add_run()
+            run.add_picture(logo_path, width=Inches(0.9))
+    except Exception as e:
+        print(f"[PATIENT_FEEDBACK_SEASONAL] Could not add logo: {e}")
+
     # ========== TITLE PAGE ==========
     doc.add_paragraph()
-    
+
     title_ar = doc.add_heading('تقرير ملاحظات المرضى الموسمي', 0)
     title_ar.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     for run in title_ar.runs:
         run.font.size = Pt(22)
-        run.font.name = 'Arial'
+        run.font.name = 'Calibri'
         run.font.bold = True
         run.font.color.rgb = RGBColor(102, 126, 234)
-    
+        run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
     title_en = doc.add_heading('Patient Feedback Seasonal Report', 1)
     title_en.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     for run in title_en.runs:
         run.font.size = Pt(16)
-        run.font.name = 'Arial'
+        run.font.name = 'Calibri'
         run.font.color.rgb = RGBColor(118, 75, 162)
-    
+
     subtitle = doc.add_paragraph()
     subtitle.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     sub_run = subtitle.add_run('تحليل الأسباب الجذرية ورضا المرضى')
     sub_run.font.size = Pt(14)
-    sub_run.font.name = 'Arial'
+    sub_run.font.name = 'Calibri'
     sub_run.font.color.rgb = RGBColor(100, 100, 100)
-    
+    sub_run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
     subtitle2 = doc.add_paragraph()
     subtitle2.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     sub_run2 = subtitle2.add_run('Root Cause Analysis & Patient Satisfaction')
     sub_run2.font.size = Pt(12)
-    sub_run2.font.name = 'Arial'
-    sub_run2.font.italic = True
+    sub_run2.font.name = 'Calibri'
     sub_run2.font.color.rgb = RGBColor(100, 100, 100)
-    
+
     doc.add_paragraph()
-    
-    # Period info
+
+    # Period info — keep as a single Arabic line to avoid LTR/RTL number collision
     period = doc.add_paragraph()
     period.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     period_run = period.add_run(
-        f'الفترة: {season_start.strftime("%Y-%m-%d")} إلى {season_end.strftime("%Y-%m-%d")}'
+        f'{season_start.strftime("%Y-%m-%d")} — {season_end.strftime("%Y-%m-%d")} :الفترة'
     )
     period_run.font.size = Pt(12)
-    period_run.font.name = 'Arial'
+    period_run.font.name = 'Calibri'
     period_run.font.bold = True
-    
-    period_en = doc.add_paragraph()
-    period_en.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-    period_en_run = period_en.add_run(
-        f'Period: {season_start.strftime("%B %d, %Y")} to {season_end.strftime("%B %d, %Y")}'
-    )
-    period_en_run.font.size = Pt(11)
-    period_en_run.font.name = 'Arial'
-    
+    period_run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
     # Generation timestamp
     gen_time = doc.add_paragraph()
     gen_time.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-    gen_run = gen_time.add_run(f'تم الإنشاء: {datetime.now().strftime("%Y-%m-%d %H:%M")}')
+    gen_run = gen_time.add_run(f'{datetime.now().strftime("%Y-%m-%d %H:%M")} :تم الإنشاء')
     gen_run.font.size = Pt(9)
-    gen_run.font.name = 'Arial'
+    gen_run.font.name = 'Calibri'
     gen_run.font.color.rgb = RGBColor(128, 128, 128)
+    gen_run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
     
     doc.add_page_break()
     
     # ========== EXECUTIVE SUMMARY ==========
     summary_heading = doc.add_heading('الملخص التنفيذي / Executive Summary', 1)
     for run in summary_heading.runs:
-        run.font.name = 'Arial'
+        run.font.name = 'Calibri'
         run.font.color.rgb = RGBColor(102, 126, 234)
+        run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
     
     # Summary metrics table
     summary_table = doc.add_table(rows=6, cols=3)
@@ -733,14 +750,14 @@ def generate_patient_feedback_seasonal_word(
                 paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
                 for run in paragraph.runs:
                     run.font.size = Pt(10)
-                    run.font.name = 'Arial'
+                    run.font.name = 'Calibri'
     
     doc.add_paragraph()
     
     # ========== RCA ANALYSIS SECTION ==========
     rca_heading = doc.add_heading('تحليل الأسباب الجذرية / Root Cause Analysis', 1)
     for run in rca_heading.runs:
-        run.font.name = 'Arial'
+        run.font.name = 'Calibri'
         run.font.color.rgb = RGBColor(102, 126, 234)
     
     # RCA Introduction paragraph
@@ -751,7 +768,7 @@ def generate_patient_feedback_seasonal_word(
         "يشمل التحليل أربع فئات رئيسية: الكوادر البشرية، العمليات، المعدات، والبيئة."
     )
     rca_intro_run.font.size = Pt(11)
-    rca_intro_run.font.name = 'Arial'
+    rca_intro_run.font.name = 'Calibri'
     rca_intro.paragraph_format.line_spacing = 1.5
     
     doc.add_paragraph()
@@ -761,7 +778,7 @@ def generate_patient_feedback_seasonal_word(
     if pie_chart:
         chart_heading = doc.add_heading('الرسم البياني لتوزيع الأسباب / Cause Distribution Chart', 2)
         for run in chart_heading.runs:
-            run.font.name = 'Arial'
+            run.font.name = 'Calibri'
         
         # Center the chart
         chart_para = doc.add_paragraph()
@@ -774,7 +791,7 @@ def generate_patient_feedback_seasonal_word(
     # ========== RCA CAUSE TYPE OVERVIEW TABLE ==========
     cause_subheading = doc.add_heading('ملخص أنواع الأسباب / Cause Type Summary', 2)
     for run in cause_subheading.runs:
-        run.font.name = 'Arial'
+        run.font.name = 'Calibri'
     
     cause_table = doc.add_table(rows=5, cols=4)
     cause_table.style = 'Table Grid'
@@ -815,14 +832,14 @@ def generate_patient_feedback_seasonal_word(
                 paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
                 for run in paragraph.runs:
                     run.font.size = Pt(10)
-                    run.font.name = 'Arial'
+                    run.font.name = 'Calibri'
     
     doc.add_paragraph()
     
     # ========== DETAILED STAFF SUB-CAUSES ==========
     staff_subheading = doc.add_heading('تفصيل أسباب الكوادر البشرية / Staff Causes Breakdown', 2)
     for run in staff_subheading.runs:
-        run.font.name = 'Arial'
+        run.font.name = 'Calibri'
     
     staff_subcauses = rca_stats.get('staff_subcauses', {})
     staff_chart = _generate_subcause_bar_chart(
@@ -853,14 +870,14 @@ def generate_patient_feedback_seasonal_word(
                 paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
                 for run in paragraph.runs:
                     run.font.size = Pt(9)
-                    run.font.name = 'Arial'
+                    run.font.name = 'Calibri'
     
     doc.add_paragraph()
     
     # ========== DETAILED PROCESS SUB-CAUSES ==========
     process_subheading = doc.add_heading('تفصيل أسباب العمليات / Process Causes Breakdown', 2)
     for run in process_subheading.runs:
-        run.font.name = 'Arial'
+        run.font.name = 'Calibri'
     
     process_subcauses = rca_stats.get('process_subcauses', {})
     process_chart = _generate_subcause_bar_chart(
@@ -891,14 +908,14 @@ def generate_patient_feedback_seasonal_word(
                 paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
                 for run in paragraph.runs:
                     run.font.size = Pt(9)
-                    run.font.name = 'Arial'
+                    run.font.name = 'Calibri'
     
     doc.add_paragraph()
     
     # ========== DETAILED EQUIPMENT SUB-CAUSES ==========
     equip_subheading = doc.add_heading('تفصيل أسباب المعدات / Equipment Causes Breakdown', 2)
     for run in equip_subheading.runs:
-        run.font.name = 'Arial'
+        run.font.name = 'Calibri'
     
     equipment_subcauses = rca_stats.get('equipment_subcauses', {})
     equip_chart = _generate_subcause_bar_chart(
@@ -929,14 +946,14 @@ def generate_patient_feedback_seasonal_word(
                 paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
                 for run in paragraph.runs:
                     run.font.size = Pt(9)
-                    run.font.name = 'Arial'
+                    run.font.name = 'Calibri'
     
     doc.add_paragraph()
     
     # ========== DETAILED ENVIRONMENT SUB-CAUSES ==========
     env_subheading = doc.add_heading('تفصيل أسباب البيئة / Environment Causes Breakdown', 2)
     for run in env_subheading.runs:
-        run.font.name = 'Arial'
+        run.font.name = 'Calibri'
     
     environment_subcauses = rca_stats.get('environment_subcauses', {})
     env_chart = _generate_subcause_bar_chart(
@@ -967,14 +984,14 @@ def generate_patient_feedback_seasonal_word(
                 paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
                 for run in paragraph.runs:
                     run.font.size = Pt(9)
-                    run.font.name = 'Arial'
+                    run.font.name = 'Calibri'
     
     doc.add_paragraph()
     
     # ========== PREVENTIVE MEASURES ANALYSIS ==========
     prevent_subheading = doc.add_heading('تحليل الإجراءات الوقائية / Preventive Measures Analysis', 2)
     for run in prevent_subheading.runs:
-        run.font.name = 'Arial'
+        run.font.name = 'Calibri'
     
     # Preventive measures chart
     preventive_measures = rca_stats.get('preventive_measures_detail', {})
@@ -1016,14 +1033,14 @@ def generate_patient_feedback_seasonal_word(
                 paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
                 for run in paragraph.runs:
                     run.font.size = Pt(10)
-                    run.font.name = 'Arial'
+                    run.font.name = 'Calibri'
     
     doc.add_paragraph()
     
     # Detailed preventive measures table
     prev_detail_subheading = doc.add_heading('تفصيل الإجراءات الوقائية المقترحة / Detailed Preventive Measures', 3)
     for run in prev_detail_subheading.runs:
-        run.font.name = 'Arial'
+        run.font.name = 'Calibri'
     
     prev_detail_table = doc.add_table(rows=len(preventive_measures) + 1, cols=3)
     prev_detail_table.style = 'Table Grid'
@@ -1041,14 +1058,14 @@ def generate_patient_feedback_seasonal_word(
                 paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
                 for run in paragraph.runs:
                     run.font.size = Pt(9)
-                    run.font.name = 'Arial'
+                    run.font.name = 'Calibri'
     
     doc.add_paragraph()
     
     # ========== RCA INSIGHTS AND RECOMMENDATIONS ==========
     insights_heading = doc.add_heading('التحليل والتوصيات / Analysis & Recommendations', 2)
     for run in insights_heading.runs:
-        run.font.name = 'Arial'
+        run.font.name = 'Calibri'
         run.font.color.rgb = RGBColor(102, 126, 234)
     
     # Generate insights
@@ -1061,13 +1078,13 @@ def generate_patient_feedback_seasonal_word(
             rec_run = rec_para.add_run(insight)
             rec_run.font.bold = True
             rec_run.font.size = Pt(11)
-            rec_run.font.name = 'Arial'
+            rec_run.font.name = 'Calibri'
             rec_run.font.color.rgb = RGBColor(76, 175, 80)
         elif insight:
             insight_para = doc.add_paragraph()
             insight_run = insight_para.add_run(insight)
             insight_run.font.size = Pt(10)
-            insight_run.font.name = 'Arial'
+            insight_run.font.name = 'Calibri'
             insight_para.paragraph_format.line_spacing = 1.3
     
     doc.add_paragraph()
@@ -1076,13 +1093,13 @@ def generate_patient_feedback_seasonal_word(
     # ========== SATISFACTION SECTION ==========
     sat_heading = doc.add_heading('رضا المرضى / Patient Satisfaction', 1)
     for run in sat_heading.runs:
-        run.font.name = 'Arial'
+        run.font.name = 'Calibri'
         run.font.color.rgb = RGBColor(102, 126, 234)
     
     # Satisfaction by Status
     status_subheading = doc.add_heading('توزيع حسب حالة الرضا / Distribution by Satisfaction Status', 2)
     for run in status_subheading.runs:
-        run.font.name = 'Arial'
+        run.font.name = 'Calibri'
     
     status_table = doc.add_table(rows=len(satisfaction_stats['by_status']) + 2, cols=4)
     status_table.style = 'Table Grid'
@@ -1115,7 +1132,7 @@ def generate_patient_feedback_seasonal_word(
                 paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
                 for run in paragraph.runs:
                     run.font.size = Pt(10)
-                    run.font.name = 'Arial'
+                    run.font.name = 'Calibri'
     
     # Add row for cases without satisfaction
     no_sat_row = status_table.rows[-1]
@@ -1131,14 +1148,14 @@ def generate_patient_feedback_seasonal_word(
             paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
             for run in paragraph.runs:
                 run.font.size = Pt(10)
-                run.font.name = 'Arial'
+                run.font.name = 'Calibri'
     
     doc.add_paragraph()
     
     # Feedback Follow-up Stats
     followup_subheading = doc.add_heading('متابعة ملاحظات المرضى / Patient Feedback Follow-up', 2)
     for run in followup_subheading.runs:
-        run.font.name = 'Arial'
+        run.font.name = 'Calibri'
     
     followup_table = doc.add_table(rows=3, cols=2)
     followup_table.style = 'Table Grid'
@@ -1160,7 +1177,7 @@ def generate_patient_feedback_seasonal_word(
                 paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
                 for run in paragraph.runs:
                     run.font.size = Pt(10)
-                    run.font.name = 'Arial'
+                    run.font.name = 'Calibri'
     
     doc.add_paragraph()
     
@@ -1168,7 +1185,7 @@ def generate_patient_feedback_seasonal_word(
     if rca_stats['by_department']:
         dept_heading = doc.add_heading('تحليل RCA حسب القسم / RCA Analysis by Department', 1)
         for run in dept_heading.runs:
-            run.font.name = 'Arial'
+            run.font.name = 'Calibri'
             run.font.color.rgb = RGBColor(102, 126, 234)
         
         dept_table = doc.add_table(rows=len(rca_stats['by_department']) + 1, cols=6)
@@ -1191,7 +1208,7 @@ def generate_patient_feedback_seasonal_word(
                     paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
                     for run in paragraph.runs:
                         run.font.size = Pt(9)
-                        run.font.name = 'Arial'
+                        run.font.name = 'Calibri'
     
     # ========== FOOTER ==========
     doc.add_paragraph()
@@ -1201,9 +1218,9 @@ def generate_patient_feedback_seasonal_word(
     footer.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     footer_run = footer.add_run('— نهاية التقرير / End of Report —')
     footer_run.font.size = Pt(10)
-    footer_run.font.name = 'Arial'
-    footer_run.font.italic = True
+    footer_run.font.name = 'Calibri'
     footer_run.font.color.rgb = RGBColor(128, 128, 128)
+    footer_run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
     
     # Save to bytes
     buffer = BytesIO()

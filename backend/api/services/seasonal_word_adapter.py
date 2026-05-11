@@ -11,6 +11,7 @@ Architecture:
 """
 
 from typing import Dict, Any
+import os
 from docx import Document
 from docx.shared import Pt, Inches, RGBColor, Mm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -508,7 +509,7 @@ class SeasonalWordAdapter:
             bytes: Word document content in Arabic with hospital branding
         """
         doc = Document()
-        
+
         # Document setup - A4 Portrait
         section = doc.sections[0]
         section.page_height = Mm(297)
@@ -518,13 +519,29 @@ class SeasonalWordAdapter:
         section.right_margin = Mm(20)
         section.top_margin = Mm(20)
         section.bottom_margin = Mm(20)
-        
-        # Set default font for Arabic support
+
+        # Set default font
         style = doc.styles['Normal']
         font = style.font
-        font.name = 'Arial'
+        font.name = 'Calibri'
         font.size = Pt(11)
-        
+
+        # ============================================================
+        # LOGO HEADER
+        # ============================================================
+        try:
+            logo_path = os.path.join(os.path.dirname(__file__), '..', '..', 'assets', 'logo.png')
+            if os.path.exists(logo_path):
+                section.header_distance = Inches(0.1)
+                header_section = section.header
+                header_para = header_section.paragraphs[0]
+                header_para.clear()
+                header_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                run = header_para.add_run()
+                run.add_picture(logo_path, width=Inches(0.9))
+        except Exception as e:
+            print(f"[PATIENT_HISTORY] Could not add logo: {e}")
+
         # ============================================================
         # TITLE (Arabic)
         # ============================================================
@@ -532,13 +549,17 @@ class SeasonalWordAdapter:
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
         title_run = title.runs[0]
         title_run.font.size = Pt(16)
+        title_run.font.name = 'Calibri'
         title_run.bold = True
-        
+        title_run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
         # Subtitle
         subtitle = doc.add_paragraph('نظام ملاحظات المرضى')
         subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
         subtitle.runs[0].font.size = Pt(12)
+        subtitle.runs[0].font.name = 'Calibri'
         subtitle.runs[0].font.color.rgb = RGBColor(100, 100, 100)
+        subtitle.runs[0]._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
         
         doc.add_paragraph()  # Spacing
         
@@ -547,8 +568,11 @@ class SeasonalWordAdapter:
         # ============================================================
         patient = data.get('patient', {})
         
-        doc.add_heading('معلومات المريض', level=2)
-        
+        info_heading = doc.add_heading('معلومات المريض', level=2)
+        for r in info_heading.runs:
+            r.font.name = 'Calibri'
+            r._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
         patient_table = doc.add_table(rows=4, cols=2)
         patient_table.style = 'Light Grid Accent 1'
         
@@ -571,7 +595,10 @@ class SeasonalWordAdapter:
         # ============================================================
         incidents = data.get('incidents', [])
         
-        doc.add_heading('سجل الشكاوى', level=2)
+        complaints_heading = doc.add_heading('سجل الشكاوى', level=2)
+        for r in complaints_heading.runs:
+            r.font.name = 'Calibri'
+            r._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
         
         if incidents:
             # Create table with header
@@ -593,43 +620,49 @@ class SeasonalWordAdapter:
                     for run in paragraph.runs:
                         run.font.bold = True
                         run.font.size = Pt(10)
-            
+                        run.font.name = 'Calibri'
+                        run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
             # Data rows
             for idx, incident in enumerate(incidents, start=1):
                 row_cells = complaints_table.rows[idx].cells
-                
+
                 row_cells[0].text = str(incident.get('Date', 'N/A'))
                 row_cells[1].text = str(incident.get('Department', 'غير محدد'))
                 row_cells[2].text = str(incident.get('Category', 'غير محدد'))
                 row_cells[3].text = str(incident.get('Severity', 'غير محدد'))
                 row_cells[4].text = str(incident.get('Status', 'مفتوح'))
-                
-                # Complaint text - truncate if too long
+
                 complaint_text = str(incident.get('ComplaintText', 'لا يوجد نص'))
                 if len(complaint_text) > 100:
                     complaint_text = complaint_text[:97] + '...'
                 row_cells[5].text = complaint_text
-                
-                # Set font size for data cells
+
                 for cell in row_cells:
                     for paragraph in cell.paragraphs:
                         for run in paragraph.runs:
                             run.font.size = Pt(9)
+                            run.font.name = 'Calibri'
+                            run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
         else:
-            doc.add_paragraph('لا توجد شكاوى مسجلة لهذا المريض.')
-        
-        doc.add_paragraph()  # Spacing
-        
+            no_complaints = doc.add_paragraph('لا توجد شكاوى مسجلة لهذا المريض.')
+            no_complaints.runs[0].font.name = 'Calibri'
+            no_complaints.runs[0]._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
+        doc.add_paragraph()
+
         # ============================================================
         # EXPORT METADATA (Arabic)
         # ============================================================
         export_date = data.get('export_date', 'N/A')
-        
-        metadata_para = doc.add_paragraph(f'تاريخ التصدير: {export_date}')
+
+        metadata_para = doc.add_paragraph(f'{export_date} :تاريخ التصدير')
         metadata_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         metadata_para.runs[0].font.size = Pt(9)
+        metadata_para.runs[0].font.name = 'Calibri'
         metadata_para.runs[0].font.color.rgb = RGBColor(128, 128, 128)
-        
+        metadata_para.runs[0]._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
         # ============================================================
         # FOOTER NOTE
         # ============================================================
@@ -637,7 +670,9 @@ class SeasonalWordAdapter:
         footer_note = doc.add_paragraph('تم إنشاؤه بواسطة نظام ملاحظات المرضى')
         footer_note.alignment = WD_ALIGN_PARAGRAPH.CENTER
         footer_note.runs[0].font.size = Pt(9)
+        footer_note.runs[0].font.name = 'Calibri'
         footer_note.runs[0].font.color.rgb = RGBColor(128, 128, 128)
+        footer_note.runs[0]._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
         
         # Save to bytes
         buffer = io.BytesIO()

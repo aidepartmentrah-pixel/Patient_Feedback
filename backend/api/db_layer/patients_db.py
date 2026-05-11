@@ -955,12 +955,16 @@ def get_patient_incidents_for_export(
             SELECT
                 ic.IncidentRequestCaseID as RecordID,
                 CONVERT(VARCHAR(10), COALESCE(ic.CreatedAt, ic.FeedbackRecievedDate), 23) as Date,
-                CAST(COALESCE(ic.IssuingOrgUnitID, 0) AS VARCHAR(50)) as Department,
-                CAST(COALESCE(ic.CategoryID, 0) AS VARCHAR(50)) as Category,
-                CAST(COALESCE(ic.SeverityID, 0) AS VARCHAR(50)) as Severity,
-                CAST(COALESCE(ic.CaseStatusID, 0) AS VARCHAR(50)) as Status,
+                COALESCE(org.Name, 'غير محدد') as Department,
+                COALESCE(cat.CategoryName, 'غير محدد') as Category,
+                COALESCE(sev.SeverityName, 'غير محدد') as Severity,
+                COALESCE(cs.Name, 'غير محدد') as Status,
                 ic.ComplaintText
             FROM dbo.APP_IncidentCase ic
+            LEFT JOIN dbo.AdminsrationUnit org ON ic.IssuingOrgUnitID = org.UniqueID
+            LEFT JOIN dbo.APP_LOOKUP_CATEGORY cat ON ic.CategoryID = cat.CategoryID
+            LEFT JOIN dbo.APP_LOOKUP_SEVERITY sev ON ic.SeverityID = sev.SeverityID
+            LEFT JOIN dbo.APP_LOOKUP_CASE_STATUS cs ON ic.CaseStatusID = cs.CaseStatusID
             WHERE {where_clause}
             ORDER BY COALESCE(ic.FeedbackRecievedDate, ic.CreatedAt) DESC
         """

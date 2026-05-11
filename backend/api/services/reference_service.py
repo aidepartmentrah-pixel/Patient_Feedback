@@ -568,6 +568,57 @@ def get_case_statuses() -> Dict[str, Any]:
             conn.close()
 
 
+def get_target_departments() -> Dict[str, Any]:
+    """Get all departments/divisions that are parents of sections (Type 323 or 325)."""
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT d.UniqueID as id, d.Name as name, d.ParentID as administration_id, a.Name as administration_name
+            FROM AdminsrationUnit d
+            LEFT JOIN AdminsrationUnit a ON a.UniqueID = d.ParentID
+            WHERE d.Type IN (323, 325) AND d.Frozen = 0
+            ORDER BY a.Name, d.Name
+        """)
+        rows = cursor.fetchall()
+        cols = [c[0] for c in cursor.description]
+        return {"target_departments": [dict(zip(cols, row)) for row in rows]}
+    except Exception as e:
+        return {"target_departments": [], "error": f"Failed to fetch target departments: {str(e)}"}
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def get_target_administrations() -> Dict[str, Any]:
+    """Get all top-level administrations (Type 323)."""
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT UniqueID as id, Name as name
+            FROM AdminsrationUnit
+            WHERE Type = 323 AND Frozen = 0
+            ORDER BY Name
+        """)
+        rows = cursor.fetchall()
+        cols = [c[0] for c in cursor.description]
+        return {"target_administrations": [dict(zip(cols, row)) for row in rows]}
+    except Exception as e:
+        return {"target_administrations": [], "error": f"Failed to fetch target administrations: {str(e)}"}
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
 def get_all_reference_data() -> Dict[str, Any]:
     """Get all reference data in a single call."""
     return {
@@ -584,5 +635,7 @@ def get_all_reference_data() -> Dict[str, Any]:
         **get_explanation_statuses(),
         **get_clinical_risk_types(),
         **get_feedback_intent_types(),
-        **get_buildings()
+        **get_buildings(),
+        **get_target_departments(),
+        **get_target_administrations(),
     }
