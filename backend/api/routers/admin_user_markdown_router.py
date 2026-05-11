@@ -14,7 +14,8 @@ from datetime import datetime
 
 # Import existing auth dependencies
 from ..services.auth_service import get_current_user, CurrentUser
-from ..utils.guards import require_software_admin
+from ..utils.guards import require_software_admin, require_role
+from core.constants.roles import SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR
 
 # Reuse existing credential service from MODULE 5.4
 from ..services.user_credentials_service import get_all_user_credentials_service
@@ -61,7 +62,7 @@ def export_user_credentials_as_markdown(
     - MUST be disabled before production deployment
     """
     # Check SOFTWARE_ADMIN permission
-    require_software_admin(current_user)
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR])
     
     # Get credentials from existing service (MODULE 5.4)
     credentials = get_all_user_credentials_service()
@@ -126,7 +127,7 @@ def export_user_credentials_as_word(
     from docx.oxml.ns import qn
     from docx.oxml import OxmlElement
 
-    require_software_admin(current_user)
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR])
     credentials = get_all_user_credentials_service()
 
     # ── Document setup ──────────────────────────────────────────────

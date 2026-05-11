@@ -140,36 +140,10 @@ def require_role(current_user: CurrentUser, allowed_roles: list[str]) -> None:
 
 def require_software_admin(current_user: CurrentUser) -> None:
     """
-    Require SOFTWARE_ADMIN role.
-    
-    Software Administrators have full system access. This is the highest
-    privilege role in the system.
-    
-    Permissions:
-    - Full system access
-    - User management
-    - System configuration
-    - All data access
-    
-    Args:
-        current_user: Authenticated user
-    
-    Raises:
-        HTTPException(403): If user is not a SOFTWARE_ADMIN
-    
-    Example:
-        ```python
-        @router.delete("/users/{user_id}")
-        def delete_user(
-            user_id: int,
-            current_user: CurrentUser = Depends(get_current_user)
-        ):
-            require_software_admin(current_user)
-            # Only SOFTWARE_ADMIN can delete users
-            return delete_user_service(user_id)
-        ```
+    Require SOFTWARE_ADMIN or COMPLAINT_SUPERVISOR role.
+    COMPLAINT_SUPERVISOR has been granted full system access equivalent to SOFTWARE_ADMIN.
     """
-    require_role(current_user, [SOFTWARE_ADMIN])
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR])
 
 
 def require_worker(current_user: CurrentUser) -> None:
