@@ -764,7 +764,7 @@ def get_incident_responses(
             cursor = conn.cursor()
             placeholders = ','.join('?' * len(unit_ids))
             cursor.execute(
-                f"SELECT UniqueID, Name FROM dbo.APP_OrgUnit WHERE UniqueID IN ({placeholders})",
+                f"SELECT UniqueID, Name FROM dbo.AdminsrationUnit WHERE UniqueID IN ({placeholders})",
                 unit_ids
             )
             unit_names = {row.UniqueID: row.Name for row in cursor.fetchall()}
