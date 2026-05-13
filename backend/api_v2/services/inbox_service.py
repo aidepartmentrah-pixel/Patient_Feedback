@@ -49,12 +49,6 @@ STATUS_ROLE_MAP = {
     "COMPLAINT_SUPERVISOR": [
         "SECTION_DENIED"
     ],
-    # UNIVERSAL_SECTION: Operational bridge role - sees all section-level subcases
-    # No scope filter applied - can see subcases across all sections/leaf departments
-    "UNIVERSAL_SECTION": [
-        "SUBMITTED_TO_SECTION",
-        "RETURNED_TO_SECTION_FOR_REVISION"
-    ]
 }
 
 
@@ -111,8 +105,6 @@ def get_inbox(current_user) -> List[Dict[str, Any]]:
             return get_administration_inbox(current_user)
         elif primary_role == 'COMPLAINT_SUPERVISOR':
             return get_complaint_supervisor_inbox(current_user)
-        elif primary_role == 'UNIVERSAL_SECTION':
-            return get_universal_section_inbox(current_user)
         else:
             # All other roles (SOFTWARE_ADMIN, etc.)
             # return empty inbox - no workflow responsibility under Model A
@@ -163,60 +155,6 @@ def get_section_inbox(current_user) -> List[Dict[str, Any]]:
     # Build inbox items with allowed actions
     inbox_items = []
     for subcase in filtered_subcases:
-        item = _build_inbox_item(subcase, current_user)
-        inbox_items.append(item)
-    
-    return inbox_items
-
-
-def get_universal_section_inbox(current_user) -> List[Dict[str, Any]]:
-    """
-    Get inbox for Universal Section Administrator role.
-    
-    OPERATIONAL BRIDGE ROLE:
-    - Sees ALL subcases at section level (no scope filter)
-    - Can process subcases across all sections and leaf departments in one login
-    - Used during early adoption when individual section admins are not yet ready
-    
-    Returns subcases with same statuses as SECTION_ADMIN:
-    - SUBMITTED_TO_SECTION
-    - RETURNED_TO_SECTION_FOR_REVISION
-    
-    IMPORTANT: This role SKIPS the scope filter deliberately.
-    Normal section admins only see their assigned org units.
-    UNIVERSAL_SECTION sees everything at section level.
-    
-    Args:
-        current_user: User object with UNIVERSAL_SECTION role
-        
-    Returns:
-        List of inbox items (dictionaries) with allowed actions
-        
-    Raises:
-        ValueError: If user is not a Universal Section Administrator
-    """
-    # Role assertion
-    if not current_user.scopes or current_user.scopes[0].role_code != 'UNIVERSAL_SECTION':
-        raise ValueError("User must be a Universal Section Administrator to access this inbox")
-    
-    # Get subcases pending for section from DB layer
-    # Same statuses as SECTION_ADMIN
-    subcases = administrative_subcase_db.get_subcases_pending_for_section()
-    
-    # =========================================================================
-    # NO SCOPE FILTER — This is the key difference from get_section_inbox
-    # =========================================================================
-    # UNIVERSAL_SECTION deliberately bypasses scope filtering to see ALL
-    # section-level subcases. This is the intended operational shortcut.
-    # Normal security is preserved because:
-    # 1. Only users with UNIVERSAL_SECTION role reach this path
-    # 2. This role is only assigned to trusted complaint supervisors
-    # 3. All actions are still logged with user_id
-    # =========================================================================
-    
-    # Build inbox items with allowed actions (includes direct_approve)
-    inbox_items = []
-    for subcase in subcases:
         item = _build_inbox_item(subcase, current_user)
         inbox_items.append(item)
     
@@ -650,15 +588,15 @@ def _apply_scope_filter(subcases: List[Any], current_user) -> List[Any]:
         # Subcases from DB layer are dicts, not objects
         target_org_unit_id = subcase.get('target_org_unit_id')
         status = subcase.get('status', '')
-        
-        # Skip force-closed cases (shouldn't appear in inbox queries, but defensive)
-        if status == 'FORCE_CLOSED':
+
+        # Skip any force-closed case (defensive — these must never appear in active inboxes)
+        if status in ('FORCE_CLOSED', 'FORCE_CLOSED_DRAFT', 'FORCE_CLOSED_COMPLETE'):
             continue
-        
+
         # Security check: only include if target is in allowed scope
         if target_org_unit_id in allowed_unit_ids:
             filtered.append(subcase)
-    
+
     return filtered
 
 
@@ -788,17 +726,6 @@ def _compute_allowed_actions(subcase: Dict[str, Any], current_user) -> List[str]
                 subcase.get('section_explanation_text')
                 or subcase.get('section_rejection_text')
             ):
-                actions.append("view_response")
-            return actions
-        else:
-            return ["view"]
-    
-    # UNIVERSAL_SECTION actions - Operational bridge role
-    # Same as SECTION_ADMIN but adds "direct_approve" to skip workflow levels
-    elif role_code == 'UNIVERSAL_SECTION':
-        if status in ['SUBMITTED_TO_SECTION', 'RETURNED_TO_SECTION_FOR_REVISION']:
-            actions = ["view", "submit_response", "reject", "direct_approve"]
-            if status == 'RETURNED_TO_SECTION_FOR_REVISION' and _has_response:
                 actions.append("view_response")
             return actions
         else:

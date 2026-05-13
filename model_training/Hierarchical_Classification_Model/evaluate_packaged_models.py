@@ -11,7 +11,7 @@ from package_models import predict_embedding
 # ============================================================
 
 HERE = Path(__file__).resolve().parent
-DB_PATH = HERE.parent / "patient_feedback_ml.db"
+DB_PATH = HERE.parent.parent / "models_directory" / "patient_feedback_ml.db"
 TEST_TABLE = "table_feedback_test"
 
 EMBED_COL = "embedding_text1"

@@ -26,7 +26,6 @@ from . import org_tree_service
 SOFTWARE_ADMIN = "SOFTWARE_ADMIN"
 COMPLAINT_SUPERVISOR = "COMPLAINT_SUPERVISOR"
 WORKER = "WORKER"
-UNIVERSAL_SECTION = "UNIVERSAL_SECTION"
 
 # Org unit types
 ORG_TYPE_SECTION = "SECTION"
@@ -56,7 +55,6 @@ def resolve_user_scope(current_user: CurrentUser) -> Set[int]:
     - SOFTWARE_ADMIN: System administrator
     - COMPLAINT_SUPERVISOR: Supervises all complaints hospital-wide
     - WORKER: Handles complaints from any organizational unit
-    - UNIVERSAL_SECTION: Universal section admin with hospital-wide access
     
     Args:
         current_user: The authenticated user with role-scope assignments
@@ -77,7 +75,7 @@ def resolve_user_scope(current_user: CurrentUser) -> Set[int]:
     # - WORKER: Can handle complaints from any organizational unit
     
     for scope in current_user.scopes:
-        if scope.role_code in [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR, WORKER, UNIVERSAL_SECTION]:
+        if scope.role_code in [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR, WORKER]:
             # Full-access roles get access to ALL org units
             full_tree = org_tree_service.get_full_tree()
             all_unit_ids = {unit["UniqueID"] for unit in full_tree}

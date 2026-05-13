@@ -25,7 +25,6 @@ PRIVILEGED_VIEWER_ROLES = [
     "SOFTWARE_ADMIN",
     "COMPLAINT_SUPERVISOR",
     "ADMINISTRATION_ADMIN",
-    "UNIVERSAL_SECTION",  # Operational bridge role - can view all incidents
 ]
 
 

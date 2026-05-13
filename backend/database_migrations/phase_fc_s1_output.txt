@@ -1,0 +1,96 @@
+Changed database context to 'IncidentManager'.
+============================================================
+FC-S1: Force Close Overhaul â€” Database Foundation
+============================================================
+ 
+PART 1: Adding new subcase statuses...
+
+(1 rows affected)
+  âœ… FORCE_CLOSED_DRAFT added
+
+(1 rows affected)
+  âœ… FORCE_CLOSED_COMPLETE added
+ 
+PART 2: Force close header fields on APP_AdministrativeSubcase...
+  â? ï¸?  ForceClosedAt already exists. Skipping.
+  â? ï¸?  ForceClosedByUserID already exists. Skipping.
+  â? ï¸?  ForceCloseReason already exists. Skipping.
+  â? ï¸?  FK_AdministrativeSubcase_ForceClosedByUser already exists. Skipping.
+ 
+PART 3: Per-level ownership fields on APP_AdministrativeSubcase...
+  âœ… SectionEnteredByUserID added
+  âœ… SectionEnteredForRole added
+  âœ… SectionEntryMode added
+  âœ… SectionEntryTimestamp added
+  âœ… DepartmentEnteredByUserID added
+  âœ… DepartmentEnteredForRole added
+  âœ… DepartmentEntryMode added
+  âœ… DepartmentEntryTimestamp added
+  âœ… AdministrationEnteredByUserID added
+  âœ… AdministrationEnteredForRole added
+  âœ… AdministrationEntryMode added
+  âœ… AdministrationEntryTimestamp added
+ 
+PART 4: Ownership fields on APP_SubcaseActionItem...
+  âœ… EnteredByUserID added
+  âœ… EnteredForRole added
+  âœ… EntryMode added
+  âœ… EntryTimestamp added
+ 
+============================================================
+VERIFICATION
+============================================================
+ 
+--- APP_Lookup_SubcaseStatus (all statuses) ---
+StatusCode                                         StatusNameEn                                                                                         DisplayOrder IsFinal IsActive
+-------------------------------------------------- ---------------------------------------------------------------------------------------------------- ------------ ------- --------
+SUBMITTED_TO_SECTION                               Submitted to Section                                                                                            1       0        1
+SECTION_DENIED                                     Section Denied                                                                                                  2       0        1
+SECTION_ACCEPTED_PENDING_DEPT                      Section Accepted - Pending Department                                                                           3       0        1
+DEPT_REJECTED                                      Department Rejected                                                                                             4       0        1
+DEPT_ACCEPTED_PENDING_ADMIN                        Department Accepted - Pending Administration                                                                    5       0        1
+ADMIN_REJECTED                                     Administration Rejected                                                                                         6       0        1
+ADMIN_APPROVED                                     Administration Approved                                                                                         7       0        1
+CLOSED                                             Closed                                                                                                          8       1        1
+FORCE_CLOSED                                       Force Closed                                                                                                    9       1        1
+FORCE_CLOSED_DRAFT                                 Force Closed - Draft                                                                                           10       0        1
+FORCE_CLOSED_COMPLETE                              Force Closed - Complete                                                                                        11       1        1
+
+(11 rows affected)
+ 
+--- APP_AdministrativeSubcase columns (ownership + force close) ---
+name                                                                                                                             data_type                                                                                                                        is_nullable
+-------------------------------------------------------------------------------------------------------------------------------- -------------------------------------------------------------------------------------------------------------------------------- -----------
+AdministrationEnteredByUserID                                                                                                    int                                                                                                                                        1
+AdministrationEnteredForRole                                                                                                     nvarchar                                                                                                                                   1
+AdministrationEntryMode                                                                                                          nvarchar                                                                                                                                   1
+AdministrationEntryTimestamp                                                                                                     datetime                                                                                                                                   1
+DepartmentEnteredByUserID                                                                                                        int                                                                                                                                        1
+DepartmentEnteredForRole                                                                                                         nvarchar                                                                                                                                   1
+DepartmentEntryMode                                                                                                              nvarchar                                                                                                                                   1
+DepartmentEntryTimestamp                                                                                                         datetime                                                                                                                                   1
+ForceClosedAt                                                                                                                    datetime                                                                                                                                   1
+ForceClosedByUserID                                                                                                              int                                                                                                                                        1
+ForceCloseReason                                                                                                                 nvarchar                                                                                                                                   1
+SectionEnteredByUserID                                                                                                           int                                                                                                                                        1
+SectionEnteredForRole                                                                                                            nvarchar                                                                                                                                   1
+SectionEntryMode                                                                                                                 nvarchar                                                                                                                                   1
+SectionEntryTimestamp                                                                                                            datetime                                                                                                                                   1
+
+(15 rows affected)
+ 
+--- APP_SubcaseActionItem columns (ownership) ---
+name                                                                                                                             data_type                                                                                                                        is_nullable
+-------------------------------------------------------------------------------------------------------------------------------- -------------------------------------------------------------------------------------------------------------------------------- -----------
+EnteredByUserID                                                                                                                  int                                                                                                                                        1
+EnteredForRole                                                                                                                   nvarchar                                                                                                                                   1
+EntryMode                                                                                                                        nvarchar                                                                                                                                   1
+EntryTimestamp                                                                                                                   datetime                                                                                                                                   1
+
+(4 rows affected)
+ 
+============================================================
+FC-S1: Migration complete.
+Expected: 2 new statuses, 15 new columns on APP_AdministrativeSubcase,
+          4 new columns on APP_SubcaseActionItem.
+============================================================

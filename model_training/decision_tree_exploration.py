@@ -1,10 +1,11 @@
 import pandas as pd
 import sqlite3
+from pathlib import Path
 
 # ---------------------------------------------------------
 # 1. CONNECT TO SQLITE DATABASE
 # ---------------------------------------------------------
-DB_PATH = r"C:\Users\IT\Documents\GitHub Repository\Patient_Feedback\model_training\patient_feedback_ml.db"
+DB_PATH = Path(__file__).resolve().parent.parent / "models_directory" / "patient_feedback_ml.db"
 
 conn = sqlite3.connect(DB_PATH)
 

@@ -1,10 +1,11 @@
 import sqlite3
+from pathlib import Path
 import pandas as pd
 
 # ============================
 # 1. CONNECT TO SQLITE DATABASE
 # ============================
-DB_PATH = "patient_feedback_ml.db"
+DB_PATH = str(Path(__file__).resolve().parent.parent / "models_directory" / "patient_feedback_ml.db")
 TABLE = "patient_feedback_encoded"
 
 conn = sqlite3.connect(DB_PATH)

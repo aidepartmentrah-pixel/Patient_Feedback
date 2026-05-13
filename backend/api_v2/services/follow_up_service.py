@@ -96,7 +96,6 @@ def _assert_user_can_modify(action_item: Dict[str, Any], subcase: Dict[str, Any]
     privileged_roles = [
         "COMPLAINT_SUPERVISOR", "SOFTWARE_ADMIN", "WORKER",
         "SECTION_ADMIN", "DEPARTMENT_ADMIN", "ADMINISTRATION_ADMIN",
-        "UNIVERSAL_SECTION"
     ]
     if user_role in privileged_roles:
         return

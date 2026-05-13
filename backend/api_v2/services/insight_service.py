@@ -301,6 +301,37 @@ def get_grouped_inbox_for_admin(current_user: CurrentUser) -> List[Dict[str, Any
     return groups
 
 
+def get_force_closed_cases(current_user: CurrentUser, status: str) -> List[Dict[str, Any]]:
+    """
+    Return force-closed subcases for the Insight page tabs.
+
+    Authorization: COMPLAINT_SUPERVISOR and WORKER only.
+    Returns all force-closed subcases (not scope-filtered — supervisors need full visibility).
+
+    Args:
+        current_user: Authenticated user
+        status: 'FORCE_CLOSED_DRAFT' or 'FORCE_CLOSED_COMPLETE'
+
+    Returns:
+        List of subcase dicts with case details and force-close metadata.
+    """
+    from fastapi import HTTPException
+
+    allowed_roles = {'COMPLAINT_SUPERVISOR', 'WORKER'}
+    user_roles = {s.role_code for s in current_user.scopes} if current_user.scopes else set()
+    if not user_roles & allowed_roles:
+        raise HTTPException(
+            status_code=403,
+            detail="Only COMPLAINT_SUPERVISOR or WORKER can view force-closed cases."
+        )
+
+    valid_statuses = {'FORCE_CLOSED_DRAFT', 'FORCE_CLOSED_COMPLETE'}
+    if status not in valid_statuses:
+        raise HTTPException(status_code=400, detail=f"status must be one of {valid_statuses}")
+
+    return administrative_subcase_db.get_force_closed_subcases(status)
+
+
 def _apply_scope_filter_to_subcases(subcases: List[Dict], current_user: CurrentUser) -> List[Dict]:
     """
     Filter subcases by user's allowed_unit_ids (Phase 2.5 scope engine).

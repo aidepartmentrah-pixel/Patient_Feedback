@@ -1,12 +1,13 @@
 import pandas as pd
 import torch
+from pathlib import Path
 from sklearn.preprocessing import LabelEncoder
 import os
 
 # ======================================
 # ✅ CONFIG
 # ======================================
-DB_PATH = r"C:\Users\IT\Documents\GitHub Repository\Patient_Feedback\model_training\patient_feedback_ml.db"
+DB_PATH = Path(__file__).resolve().parent.parent.parent / "models_directory" / "patient_feedback_ml.db"
 TRAIN_TABLE = "table_feedback_train"
 TEST_TABLE = "table_feedback_test"
 TEXT_COL = "complaint_text"  # or whatever column contains the Arabic text

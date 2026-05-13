@@ -31,7 +31,7 @@ HERE = Path(__file__).resolve().parent
 PRED_DIR = HERE / "predictions"
 PRED_DIR.mkdir(exist_ok=True)
 
-DB_PATH = HERE.parent / "patient_feedback_ml.db"
+DB_PATH = HERE.parent.parent / "models_directory" / "patient_feedback_ml.db"
 
 TRAIN_TABLE = "table_feedback_train"
 TEST_TABLE = "table_feedback_test"

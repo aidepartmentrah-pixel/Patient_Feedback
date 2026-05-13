@@ -104,6 +104,21 @@ def _replace_action_items(
         )
 
 
+def _is_force_close_data_complete(subcase: Dict[str, Any]) -> bool:
+    """
+    Return True if all three workflow-level explanations are present.
+
+    Used at force-close time to decide whether to land on
+    FORCE_CLOSED_DRAFT (missing data) or FORCE_CLOSED_COMPLETE (all present).
+    Also used by complete_force_closed_draft() to gate the transition.
+    """
+    return bool(
+        subcase.get('section_explanation_text')
+        and subcase.get('department_explanation_text')
+        and subcase.get('administration_explanation_text')
+    )
+
+
 # ============================================================
 # RESPONSE VIEWER (read-only)
 # ============================================================
@@ -157,7 +172,12 @@ _RESPONSE_EXISTS_STATUSES = {
     'ADMIN_APPROVED',
     'SECTION_DENIED',
     'FORCE_CLOSED',
+    'FORCE_CLOSED_DRAFT',
+    'FORCE_CLOSED_COMPLETE',
 }
+
+# All statuses that represent a force-closed case (any variant).
+_FORCE_CLOSED_STATUSES = {'FORCE_CLOSED', 'FORCE_CLOSED_DRAFT', 'FORCE_CLOSED_COMPLETE'}
 
 
 def get_subcase_response(subcase_id: int, current_user) -> Dict[str, Any]:
@@ -821,52 +841,78 @@ def force_close_subcase(
     subcase_id: int,
     reason_text: str,
     current_user
-) -> None:
+) -> str:
     """
     Force close a subcase from any non-terminal state.
     Administrative override that bypasses normal workflow.
-    
-    Status transition: ANY (except terminal) -> FORCE_CLOSED (TERMINAL)
-    
+
+    Status transition:
+      ANY (except terminal) -> FORCE_CLOSED_DRAFT  (data incomplete)
+      ANY (except terminal) -> FORCE_CLOSED_COMPLETE (all explanations present)
+
+    Authorization: COMPLAINT_SUPERVISOR and WORKER only.
+
     Args:
         subcase_id: Subcase ID
         reason_text: Reason for force closing
         current_user: Current user object (must have user_id attribute)
-    
+
+    Returns:
+        The new status string ('FORCE_CLOSED_DRAFT' or 'FORCE_CLOSED_COMPLETE')
+
     Raises:
+        HTTPException(403): If user is not COMPLAINT_SUPERVISOR or WORKER
         Exception: If user is None, subcase not found, or already in terminal state
     """
     if current_user is None:
         raise Exception("current_user cannot be None")
-    
+
+    role_code = (
+        current_user.scopes[0].role_code
+        if current_user.scopes
+        else None
+    )
+    if role_code not in ('COMPLAINT_SUPERVISOR', 'WORKER'):
+        raise HTTPException(
+            status_code=403,
+            detail="Only COMPLAINT_SUPERVISOR or WORKER can force close cases."
+        )
+
     subcase = _load_subcase_or_fail(subcase_id)
-    
-    # Check if already in a terminal closed state
+
     current_status = subcase.get('status')
-    if current_status in ['CLOSED', 'FORCE_CLOSED']:
+    if current_status in _FORCE_CLOSED_STATUSES or current_status == 'CLOSED':
         raise Exception(
             f"Cannot force close subcase {subcase_id}: "
             f"already in terminal state '{current_status}'"
         )
-    
-    # Use the new force_close_subcase_with_tracking function
+
+    new_status = (
+        'FORCE_CLOSED_COMPLETE'
+        if _is_force_close_data_complete(subcase)
+        else 'FORCE_CLOSED_DRAFT'
+    )
+
     updated = administrative_subcase_db.force_close_subcase_with_tracking(
         subcase_id=subcase_id,
         force_closed_by_user_id=current_user.user_id,
-        force_close_reason=reason_text
+        force_close_reason=reason_text,
+        new_status=new_status
     )
     if not updated:
         raise Exception(
             f"Failed to update subcase {subcase_id} in database. "
             "The record may have been modified by another user."
         )
-    
-    # PARALLEL ACTION ITEM TRANSITION: Cancel all non-final action items
+
+    # Cancel all non-final action items
     action_item_subcase_db.bulk_update_action_items_status_by_subcase(
         subcase_id=subcase_id,
         to_status='CANCELLED',
         updated_by_user_id=current_user.user_id
     )
+
+    return new_status
 
 
 def force_close_incident(
@@ -876,81 +922,98 @@ def force_close_incident(
 ) -> Dict[str, Any]:
     """
     Force close an incident and ALL its subcases.
-    
+
     This is the main entry point for the force-close feature.
     Closes:
-    1. All subcases (regardless of status)
+    1. All subcases (regardless of status) → FORCE_CLOSED_DRAFT or FORCE_CLOSED_COMPLETE
     2. The main incident record (sets force_close tracking)
-    
+
+    Authorization: COMPLAINT_SUPERVISOR and WORKER only.
+
     Args:
         incident_id: Incident ID
         reason_text: Reason for force closing (min 10 chars)
         current_user: Current user object (must have user_id attribute)
-    
+
     Returns:
         Dictionary with:
         - success: True
         - incident_id: Incident ID
-        - incident_status: New status
-        - subcases_closed: List of subcase IDs closed
+        - subcases_closed: List of {subcase_id, new_status}
         - total_subcases_closed: Count
         - closed_at: Timestamp
         - closed_by: Username
         - reason: Reason text
-    
+
     Raises:
+        HTTPException(403): If user is not COMPLAINT_SUPERVISOR or WORKER
         Exception: If validation fails
     """
     if current_user is None:
         raise Exception("current_user cannot be None")
-    
-    # Validate reason length
+
+    role_code = (
+        current_user.scopes[0].role_code
+        if current_user.scopes
+        else None
+    )
+    if role_code not in ('COMPLAINT_SUPERVISOR', 'WORKER'):
+        raise HTTPException(
+            status_code=403,
+            detail="Only COMPLAINT_SUPERVISOR or WORKER can force close cases."
+        )
+
     if not reason_text or len(reason_text) < 10:
         raise Exception("Reason is required and must be at least 10 characters")
-    
-    # Get all subcases for this incident
+
     subcases = administrative_subcase_db.get_subcases_by_incident(incident_id)
-    
-    # Close each subcase
+
     closed_subcase_ids = []
     for subcase in subcases:
         subcase_id = subcase['subcase_id']
         current_status = subcase.get('status')
-        
-        # Skip if already force closed (idempotent)
-        if current_status == 'FORCE_CLOSED':
-            closed_subcase_ids.append(subcase_id)
+
+        # Idempotent: already in a force-closed state — record it but skip DB write
+        if current_status in _FORCE_CLOSED_STATUSES:
+            closed_subcase_ids.append({
+                "subcase_id": subcase_id,
+                "new_status": current_status
+            })
             continue
-        
-        # Force close the subcase
+
+        new_status = (
+            'FORCE_CLOSED_COMPLETE'
+            if _is_force_close_data_complete(subcase)
+            else 'FORCE_CLOSED_DRAFT'
+        )
+
         administrative_subcase_db.force_close_subcase_with_tracking(
             subcase_id=subcase_id,
             force_closed_by_user_id=current_user.user_id,
-            force_close_reason=reason_text
+            force_close_reason=reason_text,
+            new_status=new_status
         )
-        
-        # PARALLEL ACTION ITEM TRANSITION: Cancel all non-final action items
+
         action_item_subcase_db.bulk_update_action_items_status_by_subcase(
             subcase_id=subcase_id,
             to_status='CANCELLED',
             updated_by_user_id=current_user.user_id
         )
-        closed_subcase_ids.append(subcase_id)
-    
-    # Update the incident record with force_close tracking
-    # (This requires adding a similar function in incident_case.py)
+        closed_subcase_ids.append({
+            "subcase_id": subcase_id,
+            "new_status": new_status
+        })
+
     from backend.api.db_layer import incident_case
     incident_case.update_force_close_tracking(
         incident_id=incident_id,
         force_closed_by_user_id=current_user.user_id,
         force_close_reason=reason_text
     )
-    
-    # Return result summary
+
     return {
         "success": True,
         "incident_id": incident_id,
-        "incident_status": "FORCE_CLOSED",
         "subcases_closed": closed_subcase_ids,
         "total_subcases_closed": len(closed_subcase_ids),
         "closed_at": datetime.now().isoformat(),
@@ -960,116 +1023,263 @@ def force_close_incident(
 
 
 # ============================================================
-# UNIVERSAL SECTION: DIRECT APPROVAL TO ADMIN
+# FORCE CLOSE: DRAFT → COMPLETE TRANSITION
 # ============================================================
 
-def direct_approve_to_admin(
+def complete_force_closed_draft(
     subcase_id: int,
-    explanation_text: str,
-    action_items: List[Dict[str, Any]],
-    current_user,
-    rca_feedback: Optional[Dict[str, Any]] = None
+    current_user
 ) -> None:
     """
-    UNIVERSAL_SECTION direct approval: Submit response + approve directly to ADMIN_APPROVED.
-    
-    This is an operational bridge function that allows UNIVERSAL_SECTION role
-    to bypass the normal multi-level workflow and approve directly.
-    
-    Status transition: SUBMITTED_TO_SECTION or RETURNED_TO_SECTION_FOR_REVISION -> ADMIN_APPROVED
-    
-    What this does:
-    1. Validates user has UNIVERSAL_SECTION role
-    2. Validates subcase is in appropriate status
-    3. Sets the section explanation text
-    4. Creates RCA feedback record (mandatory)
-    5. Creates action items in ADMIN_APPROVED status
-    6. Transitions subcase directly to ADMIN_APPROVED
-    
+    Transition a FORCE_CLOSED_DRAFT subcase to FORCE_CLOSED_COMPLETE.
+
+    Called after all required data has been filled in by COMPLAINT_SUPERVISOR
+    or WORKER via the manual intervention API (Session 3).
+
+    Authorization: COMPLAINT_SUPERVISOR and WORKER only.
+
+    Status transition: FORCE_CLOSED_DRAFT -> FORCE_CLOSED_COMPLETE
+
     Args:
         subcase_id: Subcase ID
-        explanation_text: Explanation text for the case
-        action_items: List of action items to create
-        current_user: Current user object (must have UNIVERSAL_SECTION role)
-        rca_feedback: RCA feedback data with Cause_* and Preventive_* fields (mandatory)
-    
+        current_user: Current user object (must have user_id attribute)
+
     Raises:
-        Exception: If user is None, not UNIVERSAL_SECTION, subcase not found, status invalid, or RCA missing
+        HTTPException(403): If user is not COMPLAINT_SUPERVISOR or WORKER
+        Exception: If subcase not found, not in FORCE_CLOSED_DRAFT, or data still incomplete
     """
     if current_user is None:
         raise Exception("current_user cannot be None")
-    
-    # RCA is mandatory for direct approval
-    if rca_feedback is None:
-        raise Exception("RCA feedback is required for direct approval")
-    
-    # Validate UNIVERSAL_SECTION role
-    if not hasattr(current_user, 'scopes') or not current_user.scopes:
-        raise Exception("User must have UNIVERSAL_SECTION role for direct approval")
-    
-    role_code = current_user.scopes[0].role_code
-    if role_code != 'UNIVERSAL_SECTION':
-        raise Exception(f"User must have UNIVERSAL_SECTION role for direct approval, got {role_code}")
-    
-    # Load subcase and validate status
+
+    role_code = (
+        current_user.scopes[0].role_code
+        if current_user.scopes
+        else None
+    )
+    if role_code not in ('COMPLAINT_SUPERVISOR', 'WORKER'):
+        raise HTTPException(
+            status_code=403,
+            detail="Only COMPLAINT_SUPERVISOR or WORKER can complete a force-closed draft."
+        )
+
     subcase = _load_subcase_or_fail(subcase_id)
-    _assert_status(subcase, ['SUBMITTED_TO_SECTION', 'RETURNED_TO_SECTION_FOR_REVISION'])
-    
-    # Get incident ID for RCA linkage
-    incident_id = subcase.get('incident_request_case_id')
-    if not incident_id:
-        raise Exception(f"Subcase {subcase_id} has no linked incident case")
-    
-    # Check if RCA already exists for this incident (prevent duplicates)
-    # Note: RCA table uses IncidentRequestCaseID as primary key, so only one RCA per incident
-    existing_rca = incident_case_feedback.get_incident_case_feedback(incident_id)
-    
-    # Set section explanation text
-    if explanation_text:
-        administrative_subcase_db.update_section_explanation(
-            subcase_id=subcase_id,
-            text=explanation_text,
-            updated_by_user_id=current_user.user_id
+    _assert_status(subcase, ['FORCE_CLOSED_DRAFT'])
+
+    if not _is_force_close_data_complete(subcase):
+        raise Exception(
+            f"Subcase {subcase_id} is still missing required explanation data. "
+            "All three levels (section, department, administration) must be filled "
+            "before transitioning to FORCE_CLOSED_COMPLETE."
         )
-    
-    # Create RCA feedback record linked to subcase (only if not already existing for this incident)
-    # Note: Table uses IncidentRequestCaseID as PK, so only one RCA per incident is allowed
-    # Use try/except to handle race conditions when multiple subcases are processed in parallel
-    if not existing_rca:
-        try:
-            incident_case_feedback.create_subcase_rca_feedback(
-                subcase_id=subcase_id,
-                incident_id=incident_id,
-                feedback_data=rca_feedback,
-                created_by_user_id=current_user.user_id
-            )
-        except Exception as e:
-            # Ignore duplicate key errors - another concurrent request already created the RCA
-            if "duplicate key" not in str(e).lower() and "primary key" not in str(e).lower():
-                raise  # Re-raise if it's a different error
-    
-    # Clear any existing action items for this subcase and create new ones
-    existing_items = action_item_subcase_db.get_action_items_by_subcase(subcase_id)
-    for item in existing_items:
-        action_item_subcase_db.delete_action_item(item['action_item_id'])
-    
-    # Create new action items directly in ADMIN_APPROVED status
-    for item in action_items:
-        action_item_subcase_db.create_action_item(
-            subcase_id=subcase_id,
-            title=item['title'],
-            description=item.get('description', ''),
-            created_by_user_id=current_user.user_id,
-            due_date=item.get('due_date'),
-            initial_status='ADMIN_APPROVED'  # Skip workflow, go directly to approved
-        )
-    
-    # Transition subcase directly to ADMIN_APPROVED
+
     administrative_subcase_db.update_subcase_status(
         subcase_id=subcase_id,
-        new_status='ADMIN_APPROVED',
+        new_status='FORCE_CLOSED_COMPLETE',
         updated_by_user_id=current_user.user_id
     )
+
+
+# ============================================================
+# MANUAL INTERVENTION: FILL ON BEHALF
+# ============================================================
+
+# Statuses where no further data filling is meaningful.
+_FILL_BLOCKED_STATUSES = {'FORCE_CLOSED_COMPLETE', 'ADMIN_APPROVED', 'SECTION_DENIED'}
+
+# Maps level name to (entered_for_role, db_fill_fn)
+_LEVEL_CONFIG = {
+    'section': {
+        'entered_for_role': 'SECTION_ADMIN',
+        'db_fn': lambda: administrative_subcase_db.fill_section_on_behalf,
+    },
+    'department': {
+        'entered_for_role': 'DEPARTMENT_ADMIN',
+        'db_fn': lambda: administrative_subcase_db.fill_department_on_behalf,
+    },
+    'administration': {
+        'entered_for_role': 'ADMINISTRATION_ADMIN',
+        'db_fn': lambda: administrative_subcase_db.fill_administration_on_behalf,
+    },
+}
+
+
+def fill_explanation_on_behalf(
+    subcase_id: int,
+    level: str,
+    explanation_text: str,
+    current_user,
+    action_items: Optional[List[Dict[str, Any]]] = None
+) -> str:
+    """
+    Fill a section/department/administration explanation on behalf of the
+    role that normally owns that level.
+
+    Allowed callers: COMPLAINT_SUPERVISOR and WORKER.
+    Works on both active subcases and FORCE_CLOSED_DRAFT subcases.
+    Overwrite is always permitted for these roles.
+
+    Sequential unlock (data-driven):
+      - department: section_explanation_text must already be present
+      - administration: department_explanation_text must already be present
+
+    entry_mode returned:
+      - 'FORCE_CLOSE_INTERVENTION' when subcase is in a force-closed status
+      - 'ON_BEHALF' otherwise
+
+    For ON_BEHALF mode only, the workflow status is advanced after the fill:
+      - section fill  → SECTION_ACCEPTED_PENDING_DEPT (+ action_items DRAFT→SUBMITTED_TO_DEPT)
+      - department fill → DEPT_ACCEPTED_PENDING_ADMIN  (+ action_items SUBMITTED_TO_DEPT→SUBMITTED_TO_ADMIN)
+      - administration fill → ADMIN_APPROVED            (+ action_items SUBMITTED_TO_ADMIN→ADMIN_APPROVED)
+
+    action_items is only used at the section level in ON_BEHALF mode.
+
+    Args:
+        subcase_id: Subcase ID
+        level: 'section', 'department', or 'administration'
+        explanation_text: Text to write
+        current_user: Authenticated user
+        action_items: Optional list of action items for section fill
+            [{"title": str, "description": str, "due_date": str|None, "assigned_to_user_id": int|None}, ...]
+
+    Returns:
+        entry_mode string ('ON_BEHALF' or 'FORCE_CLOSE_INTERVENTION')
+
+    Raises:
+        HTTPException(403): Wrong role
+        HTTPException(404): Subcase not found
+        HTTPException(400): Subcase is in a terminal state, sequential unlock
+                            violation, unknown level, or DB write failed
+    """
+    if current_user is None:
+        raise HTTPException(status_code=403, detail="Not authenticated")
+
+    role_code = (
+        current_user.scopes[0].role_code
+        if current_user.scopes
+        else None
+    )
+    if role_code not in ('COMPLAINT_SUPERVISOR', 'WORKER'):
+        raise HTTPException(
+            status_code=403,
+            detail="Only COMPLAINT_SUPERVISOR or WORKER can fill data on behalf of other roles."
+        )
+
+    if level not in _LEVEL_CONFIG:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown level '{level}'. Must be 'section', 'department', or 'administration'."
+        )
+
+    subcase = administrative_subcase_db.get_subcase_by_id(subcase_id)
+    if subcase is None:
+        raise HTTPException(status_code=404, detail=f"Subcase {subcase_id} not found")
+
+    current_status = subcase.get('status')
+    if current_status in _FILL_BLOCKED_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Subcase {subcase_id} is in status '{current_status}' — "
+                "no further data can be filled."
+            )
+        )
+
+    # Sequential unlock
+    if level == 'department' and not subcase.get('section_explanation_text'):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Cannot fill department data on subcase {subcase_id}: "
+                "section explanation must be filled first."
+            )
+        )
+    if level == 'administration' and not subcase.get('department_explanation_text'):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Cannot fill administration data on subcase {subcase_id}: "
+                "department explanation must be filled first."
+            )
+        )
+
+    entry_mode = (
+        'FORCE_CLOSE_INTERVENTION'
+        if current_status in _FORCE_CLOSED_STATUSES
+        else 'ON_BEHALF'
+    )
+
+    cfg = _LEVEL_CONFIG[level]
+    db_fn = cfg['db_fn']()
+    updated = db_fn(
+        subcase_id=subcase_id,
+        text=explanation_text,
+        entered_by_user_id=current_user.user_id,
+        entered_for_role=cfg['entered_for_role'],
+        entry_mode=entry_mode
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to update subcase {subcase_id}. The record may not exist."
+        )
+
+    # For active workflow cases only: advance status and mirror action item transitions.
+    # Guards ensure we only advance forward — never regress an already-progressed case.
+    if entry_mode == 'ON_BEHALF':
+        if level == 'section' and current_status in (
+            'SUBMITTED_TO_SECTION', 'RETURNED_TO_SECTION_FOR_REVISION'
+        ):
+            if action_items:
+                for item in action_items:
+                    action_item_subcase_db.create_action_item(
+                        subcase_id=subcase_id,
+                        title=item['title'],
+                        description=item['description'],
+                        created_by_user_id=current_user.user_id,
+                        due_date=item.get('due_date'),
+                        initial_status='DRAFT',
+                        assigned_to_user_id=item.get('assigned_to_user_id')
+                    )
+            action_item_subcase_db.bulk_update_action_items_status_by_subcase(
+                subcase_id=subcase_id,
+                to_status='SUBMITTED_TO_DEPT',
+                updated_by_user_id=current_user.user_id,
+                from_statuses=['DRAFT']
+            )
+            administrative_subcase_db.update_subcase_status(
+                subcase_id=subcase_id,
+                new_status='SECTION_ACCEPTED_PENDING_DEPT',
+                updated_by_user_id=current_user.user_id
+            )
+        elif level == 'department' and current_status in (
+            'SECTION_ACCEPTED_PENDING_DEPT', 'RETURNED_TO_DEPT_FOR_REVISION'
+        ):
+            action_item_subcase_db.bulk_update_action_items_status_by_subcase(
+                subcase_id=subcase_id,
+                to_status='SUBMITTED_TO_ADMIN',
+                updated_by_user_id=current_user.user_id,
+                from_statuses=['SUBMITTED_TO_DEPT']
+            )
+            administrative_subcase_db.update_subcase_status(
+                subcase_id=subcase_id,
+                new_status='DEPT_ACCEPTED_PENDING_ADMIN',
+                updated_by_user_id=current_user.user_id
+            )
+        elif level == 'administration' and current_status == 'DEPT_ACCEPTED_PENDING_ADMIN':
+            action_item_subcase_db.bulk_update_action_items_status_by_subcase(
+                subcase_id=subcase_id,
+                to_status='ADMIN_APPROVED',
+                updated_by_user_id=current_user.user_id,
+                from_statuses=['SUBMITTED_TO_ADMIN']
+            )
+            administrative_subcase_db.update_subcase_status(
+                subcase_id=subcase_id,
+                new_status='ADMIN_APPROVED',
+                updated_by_user_id=current_user.user_id
+            )
+
+    return entry_mode
+
 
 
 

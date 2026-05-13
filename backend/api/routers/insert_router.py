@@ -777,6 +777,49 @@ async def get_employee_endpoint(
     return result
 
 
+# ==================== DRAFT STATUS ENDPOINTS ====================
+
+@router.post("/mark-ready/{case_id}")
+async def mark_ready_to_send(
+    case_id: int = Path(..., gt=0),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Transition a Draft complaint to Ready to Send.
+    Only moves status from Draft → Ready to Send; does NOT publish into workflow.
+    """
+    require_logged_in(current_user)
+    from core.database import get_connection
+    from api.constants.case_statuses import DRAFT_STATUS_ID, READY_TO_SEND_STATUS_ID
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT CaseStatusID FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID = ?",
+            case_id
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail={"error": "NOT_FOUND", "message": f"Case {case_id} not found"})
+
+        if row.CaseStatusID != DRAFT_STATUS_ID:
+            raise HTTPException(status_code=400, detail={
+                "error": "INVALID_STATUS",
+                "message": "Only Draft complaints can be marked as Ready to Send.",
+            })
+
+        cursor.execute(
+            "UPDATE dbo.APP_IncidentCase SET CaseStatusID = ? WHERE IncidentRequestCaseID = ?",
+            READY_TO_SEND_STATUS_ID, case_id
+        )
+        conn.commit()
+        return {"success": True, "case_id": case_id, "message": "Marked as Ready to Send"}
+    finally:
+        cursor.close()
+        conn.close()
+
+
 # ==================== PUBLISH ENDPOINTS ====================
 
 @router.post("/publish/{case_id}")
@@ -791,7 +834,7 @@ async def publish_case(
     """
     require_logged_in(current_user)
     from core.database import get_connection
-    from api.constants.case_statuses import DRAFT_STATUS_ID, READY_TO_SEND_STATUS_ID
+    from api.constants.case_statuses import DRAFT_STATUS_ID, READY_TO_SEND_STATUS_ID, OPEN_STATUS_ID
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -828,6 +871,12 @@ async def publish_case(
                 "message": f"Failed to create workflow subcase: {str(e)}"
             })
 
+        cursor.execute(
+            "UPDATE dbo.APP_IncidentCase SET CaseStatusID = ? WHERE IncidentRequestCaseID = ?",
+            OPEN_STATUS_ID, case_id
+        )
+        conn.commit()
+
         return {"success": True, "case_id": case_id, "message": "Complaint published to workflow"}
 
     finally:
@@ -851,7 +900,7 @@ async def bulk_publish(
     """
     require_logged_in(current_user)
     from core.database import get_connection
-    from api.constants.case_statuses import READY_TO_SEND_STATUS_ID
+    from api.constants.case_statuses import READY_TO_SEND_STATUS_ID, OPEN_STATUS_ID
     from api_v2.services.case_creation_service import create_subcases_for_incident
 
     conn = get_connection()
@@ -876,6 +925,11 @@ async def bulk_publish(
         for cid in ids_to_publish:
             try:
                 create_subcases_for_incident(cid, current_user=None)
+                cursor.execute(
+                    "UPDATE dbo.APP_IncidentCase SET CaseStatusID = ? WHERE IncidentRequestCaseID = ?",
+                    OPEN_STATUS_ID, cid
+                )
+                conn.commit()
                 published += 1
             except Exception as e:
                 failed += 1

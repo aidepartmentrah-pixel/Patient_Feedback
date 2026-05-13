@@ -904,7 +904,7 @@ def update_force_close_tracking(
     Update force close tracking fields for a subcase.
     
     Sets ForceClosedAt, ForceClosedByUserID, and ForceCloseReason.
-    Should be called when transitioning to FORCE_CLOSED status.
+    Does NOT update Status — use force_close_subcase_with_tracking for that.
     
     Args:
         subcase_id: Subcase ID
@@ -948,30 +948,31 @@ def update_force_close_tracking(
 def force_close_subcase_with_tracking(
     subcase_id: int,
     force_closed_by_user_id: int,
-    force_close_reason: str
+    force_close_reason: str,
+    new_status: str
 ) -> bool:
     """
     Force close a subcase with full tracking (status + tracking fields).
-    
-    This is a convenience function that:
-    1. Updates status to FORCE_CLOSED
-    2. Sets force close tracking fields
-    
+
+    Caller must pass new_status explicitly — either 'FORCE_CLOSED_DRAFT'
+    (data incomplete) or 'FORCE_CLOSED_COMPLETE' (all data present).
+
     Args:
         subcase_id: Subcase ID
         force_closed_by_user_id: User ID who force closed the subcase
         force_close_reason: Reason for force closing
-    
+        new_status: Target status ('FORCE_CLOSED_DRAFT' or 'FORCE_CLOSED_COMPLETE')
+
     Returns:
         True if updated, False if subcase not found
     """
     conn = get_connection()
     cursor = conn.cursor()
-    
+
     try:
         query = """
             UPDATE dbo.APP_AdministrativeSubcase
-            SET Status = 'FORCE_CLOSED',
+            SET Status = ?,
                 ForceClosedAt = ?,
                 ForceClosedByUserID = ?,
                 ForceCloseReason = ?,
@@ -981,6 +982,7 @@ def force_close_subcase_with_tracking(
         """
         
         cursor.execute(query, (
+            new_status,
             datetime.now(),
             force_closed_by_user_id,
             force_close_reason,
@@ -988,10 +990,10 @@ def force_close_subcase_with_tracking(
             force_closed_by_user_id,
             subcase_id
         ))
-        
+
         conn.commit()
         return cursor.rowcount > 0
-    
+
     finally:
         cursor.close()
         conn.close()
@@ -1069,7 +1071,7 @@ def get_subcases_with_details_for_section() -> List[Dict[str, Any]]:
                 ON sr.SeasonID = s.UniqueID
 
             WHERE sub.Status IN ('SUBMITTED_TO_SECTION', 'RETURNED_TO_SECTION_FOR_REVISION')
-              AND sub.Status != 'FORCE_CLOSED'
+              AND sub.Status NOT IN ('FORCE_CLOSED', 'FORCE_CLOSED_DRAFT', 'FORCE_CLOSED_COMPLETE')
             
             ORDER BY WaitingDays DESC
         """
@@ -1170,7 +1172,7 @@ def get_subcases_with_details_for_department() -> List[Dict[str, Any]]:
                 ON sr.SeasonID = s.UniqueID
 
             WHERE sub.Status IN ('SECTION_ACCEPTED_PENDING_DEPT', 'RETURNED_TO_DEPT_FOR_REVISION')
-              AND sub.Status != 'FORCE_CLOSED'
+              AND sub.Status NOT IN ('FORCE_CLOSED', 'FORCE_CLOSED_DRAFT', 'FORCE_CLOSED_COMPLETE')
             
             ORDER BY WaitingDays DESC
         """
@@ -1270,7 +1272,7 @@ def get_subcases_with_details_for_administration() -> List[Dict[str, Any]]:
                 ON sr.SeasonID = s.UniqueID
 
             WHERE sub.Status = 'DEPT_ACCEPTED_PENDING_ADMIN'
-              AND sub.Status != 'FORCE_CLOSED'
+              AND sub.Status NOT IN ('FORCE_CLOSED', 'FORCE_CLOSED_DRAFT', 'FORCE_CLOSED_COMPLETE')
             
             ORDER BY WaitingDays DESC
         """
@@ -1395,7 +1397,7 @@ def get_subcases_by_statuses(status_codes: List[str]) -> List[Dict[str, Any]]:
 def get_subcases_archived_for_section() -> List[Dict[str, Any]]:
     """
     Fetch subcases that have moved past the section stage.
-    
+
     These are cases the section admin processed (accepted or rejected).
     Statuses: All statuses that come AFTER section stage:
     - SECTION_ACCEPTED_PENDING_DEPT: Section approved, now at department
@@ -1403,8 +1405,10 @@ def get_subcases_archived_for_section() -> List[Dict[str, Any]]:
     - DEPT_ACCEPTED_PENDING_ADMIN: Department approved, now at admin
     - ADMIN_APPROVED: Final approval (workflow complete)
     - SECTION_DENIED: Section rejected (terminal)
-    - FORCE_CLOSED: Forcibly closed (terminal)
-    
+    - FORCE_CLOSED: Legacy forcibly closed (terminal)
+    - FORCE_CLOSED_DRAFT: Force closed, data not yet complete
+    - FORCE_CLOSED_COMPLETE: Force closed, all data filled (terminal)
+
     Returns:
         List of subcase dicts ordered by UpdatedAt DESC
     """
@@ -1414,7 +1418,9 @@ def get_subcases_archived_for_section() -> List[Dict[str, Any]]:
         "DEPT_ACCEPTED_PENDING_ADMIN",
         "ADMIN_APPROVED",
         "SECTION_DENIED",
-        "FORCE_CLOSED"
+        "FORCE_CLOSED",
+        "FORCE_CLOSED_DRAFT",
+        "FORCE_CLOSED_COMPLETE"
     ]
     return get_subcases_by_statuses(archive_statuses)
 
@@ -1422,14 +1428,16 @@ def get_subcases_archived_for_section() -> List[Dict[str, Any]]:
 def get_subcases_archived_for_department() -> List[Dict[str, Any]]:
     """
     Fetch subcases that have moved past the department stage.
-    
+
     These are cases the department admin processed (accepted or rejected).
     Statuses: All statuses that come AFTER department stage:
     - DEPT_ACCEPTED_PENDING_ADMIN: Department approved, now at admin
     - ADMIN_APPROVED: Final approval (workflow complete)
     - RETURNED_TO_SECTION_FOR_REVISION: Dept sent back to section (still dept processed it)
-    - FORCE_CLOSED: Forcibly closed (terminal)
-    
+    - FORCE_CLOSED: Legacy forcibly closed (terminal)
+    - FORCE_CLOSED_DRAFT: Force closed, data not yet complete
+    - FORCE_CLOSED_COMPLETE: Force closed, all data filled (terminal)
+
     Returns:
         List of subcase dicts ordered by UpdatedAt DESC
     """
@@ -1437,7 +1445,9 @@ def get_subcases_archived_for_department() -> List[Dict[str, Any]]:
         "DEPT_ACCEPTED_PENDING_ADMIN",
         "ADMIN_APPROVED",
         "RETURNED_TO_SECTION_FOR_REVISION",
-        "FORCE_CLOSED"
+        "FORCE_CLOSED",
+        "FORCE_CLOSED_DRAFT",
+        "FORCE_CLOSED_COMPLETE"
     ]
     return get_subcases_by_statuses(archive_statuses)
 
@@ -1445,19 +1455,23 @@ def get_subcases_archived_for_department() -> List[Dict[str, Any]]:
 def get_subcases_archived_for_administration() -> List[Dict[str, Any]]:
     """
     Fetch subcases that have moved past the administration stage.
-    
+
     These are cases the admin processed (approved or force-closed).
     Statuses: Terminal statuses:
     - ADMIN_APPROVED: Final approval (workflow complete)
-    - FORCE_CLOSED: Forcibly closed (terminal)
+    - FORCE_CLOSED: Legacy forcibly closed (terminal)
+    - FORCE_CLOSED_DRAFT: Force closed, data not yet complete
+    - FORCE_CLOSED_COMPLETE: Force closed, all data filled (terminal)
     - RETURNED_TO_DEPT_FOR_REVISION: Admin sent back to department (still admin processed it)
-    
+
     Returns:
         List of subcase dicts ordered by UpdatedAt DESC
     """
     archive_statuses = [
         "ADMIN_APPROVED",
         "FORCE_CLOSED",
+        "FORCE_CLOSED_DRAFT",
+        "FORCE_CLOSED_COMPLETE",
         "RETURNED_TO_DEPT_FOR_REVISION"
     ]
     return get_subcases_by_statuses(archive_statuses)
@@ -1522,6 +1536,355 @@ def check_user_has_subcase_for_incident(incident_id: int, allowed_unit_ids: set)
         
         return row[0] > 0 if row else False
     
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ============================================================
+# MANUAL INTERVENTION: ON-BEHALF FILLS (ownership tracked)
+# ============================================================
+
+def fill_section_on_behalf(
+    subcase_id: int,
+    text: str,
+    entered_by_user_id: int,
+    entered_for_role: str,
+    entry_mode: str
+) -> bool:
+    """
+    Write section explanation text with full ownership tracking.
+    Used by COMPLAINT_SUPERVISOR / WORKER filling on behalf of SECTION_ADMIN.
+
+    entry_mode: 'ON_BEHALF' (active subcase) or 'FORCE_CLOSE_INTERVENTION' (force-closed)
+
+    Returns True if updated, False if subcase not found.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        query = """
+            UPDATE dbo.APP_AdministrativeSubcase
+            SET SectionExplanationText    = ?,
+                SectionEnteredByUserID    = ?,
+                SectionEnteredForRole     = ?,
+                SectionEntryMode          = ?,
+                SectionEntryTimestamp     = ?,
+                UpdatedAt                 = ?,
+                UpdatedByUserID           = ?
+            WHERE SubcaseID = ?
+        """
+        now = datetime.now()
+        cursor.execute(query, (
+            text,
+            entered_by_user_id,
+            entered_for_role,
+            entry_mode,
+            now,
+            now,
+            entered_by_user_id,
+            subcase_id
+        ))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def fill_department_on_behalf(
+    subcase_id: int,
+    text: str,
+    entered_by_user_id: int,
+    entered_for_role: str,
+    entry_mode: str
+) -> bool:
+    """
+    Write department explanation text with full ownership tracking.
+    Used by COMPLAINT_SUPERVISOR / WORKER filling on behalf of DEPARTMENT_ADMIN.
+
+    entry_mode: 'ON_BEHALF' (active subcase) or 'FORCE_CLOSE_INTERVENTION' (force-closed)
+
+    Returns True if updated, False if subcase not found.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        query = """
+            UPDATE dbo.APP_AdministrativeSubcase
+            SET DepartmentExplanationText    = ?,
+                DepartmentEnteredByUserID    = ?,
+                DepartmentEnteredForRole     = ?,
+                DepartmentEntryMode          = ?,
+                DepartmentEntryTimestamp     = ?,
+                UpdatedAt                    = ?,
+                UpdatedByUserID              = ?
+            WHERE SubcaseID = ?
+        """
+        now = datetime.now()
+        cursor.execute(query, (
+            text,
+            entered_by_user_id,
+            entered_for_role,
+            entry_mode,
+            now,
+            now,
+            entered_by_user_id,
+            subcase_id
+        ))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def fill_administration_on_behalf(
+    subcase_id: int,
+    text: str,
+    entered_by_user_id: int,
+    entered_for_role: str,
+    entry_mode: str
+) -> bool:
+    """
+    Write administration explanation text with full ownership tracking.
+    Used by COMPLAINT_SUPERVISOR / WORKER filling on behalf of ADMINISTRATION_ADMIN.
+
+    entry_mode: 'ON_BEHALF' (active subcase) or 'FORCE_CLOSE_INTERVENTION' (force-closed)
+
+    Returns True if updated, False if subcase not found.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        query = """
+            UPDATE dbo.APP_AdministrativeSubcase
+            SET AdministrationExplanationText    = ?,
+                AdministrationEnteredByUserID    = ?,
+                AdministrationEnteredForRole     = ?,
+                AdministrationEntryMode          = ?,
+                AdministrationEntryTimestamp     = ?,
+                UpdatedAt                        = ?,
+                UpdatedByUserID                  = ?
+            WHERE SubcaseID = ?
+        """
+        now = datetime.now()
+        cursor.execute(query, (
+            text,
+            entered_by_user_id,
+            entered_for_role,
+            entry_mode,
+            now,
+            now,
+            entered_by_user_id,
+            subcase_id
+        ))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_force_closed_subcases(status: str) -> List[Dict[str, Any]]:
+    """
+    Fetch force-closed subcases with full details for the Insight page tabs.
+
+    Args:
+        status: 'FORCE_CLOSED_DRAFT' or 'FORCE_CLOSED_COMPLETE'
+
+    Returns:
+        List of subcase dicts with case details, org unit info, and force-close metadata.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        query = """
+            SELECT
+                sub.SubcaseID,
+                sub.CaseType,
+                sub.Status,
+                sub.CreatedAt,
+                sub.ForceClosedAt,
+                sub.ForceCloseReason,
+                DATEDIFF(day, sub.CreatedAt, GETDATE()) AS WaitingDays,
+
+                -- Org Unit Info
+                org.UniqueID AS TargetOrgUnitID,
+                org.Name AS OrgUnitName,
+                org.Type AS OrgType,
+
+                -- Incident Case Info
+                ic.IncidentRequestCaseID,
+                ic.ComplaintText AS CaseDescription,
+                ic.PatientName,
+                ic.SeverityID,
+                sev.SeverityName,
+                cat.CategoryName,
+                inc.incident_number AS IncidentNumber,
+                CASE WHEN ic.ClinicalRiskTypeID = 2 THEN 1 ELSE 0 END AS IsRedFlag,
+                CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
+
+                -- Seasonal Report Info
+                sr.SeasonalReportID,
+                s.SeasonName
+
+            FROM dbo.APP_AdministrativeSubcase sub
+            LEFT JOIN dbo.AdminsrationUnit org
+                ON sub.TargetOrgUnitID = org.UniqueID
+            LEFT JOIN dbo.APP_IncidentCase ic
+                ON sub.IncidentRequestCaseID = ic.IncidentRequestCaseID
+            LEFT JOIN dbo.APP_Incident inc
+                ON ic.incident_id = inc.incident_id
+            LEFT JOIN dbo.APP_LOOKUP_SEVERITY sev
+                ON ic.SeverityID = sev.SeverityID
+            LEFT JOIN dbo.APP_LOOKUP_CATEGORY cat
+                ON ic.CategoryID = cat.CategoryID
+            LEFT JOIN dbo.APP_SeasonalOrgUnitReport sr
+                ON sub.SeasonalReportID = sr.SeasonalReportID
+            LEFT JOIN dbo.Season s
+                ON sr.SeasonID = s.UniqueID
+
+            WHERE sub.Status = ?
+            ORDER BY sub.ForceClosedAt DESC
+        """
+
+        cursor.execute(query, (status,))
+        rows = cursor.fetchall()
+
+        result = []
+        for row in rows:
+            result.append({
+                "subcase_id": row.SubcaseID,
+                "case_type": row.CaseType,
+                "status": row.Status,
+                "created_at": str(row.CreatedAt) if row.CreatedAt else None,
+                "force_closed_at": str(row.ForceClosedAt) if row.ForceClosedAt else None,
+                "force_close_reason": row.ForceCloseReason,
+                "waiting_days": row.WaitingDays,
+                "target_org_unit_id": row.TargetOrgUnitID,
+                "org_unit_name": row.OrgUnitName,
+                "org_type": row.OrgType,
+                "incident_request_case_id": row.IncidentRequestCaseID,
+                "incident_number": row.IncidentNumber,
+                "case_description": row.CaseDescription,
+                "patient_name": row.PatientName,
+                "severity_id": row.SeverityID,
+                "severity": row.SeverityName,
+                "category": row.CategoryName,
+                "is_red_flag": bool(row.IsRedFlag) if row.IsRedFlag is not None else False,
+                "is_never_event": bool(row.IsNeverEvent) if row.IsNeverEvent is not None else False,
+                "seasonal_report_id": row.SeasonalReportID,
+                "season_name": row.SeasonName,
+            })
+
+        return result
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_subcase_fill_state(subcase_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Return the full manual-fill state for a subcase including ownership tracking
+    for each level (Section, Department, Administration).
+
+    Joins APP_Users three times to resolve entered_by usernames.
+
+    Returns None if subcase not found.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        query = """
+            SELECT
+                sub.SubcaseID,
+                sub.Status,
+                sub.IncidentRequestCaseID,
+                sub.ForceCloseReason,
+                sub.ForceClosedAt,
+
+                -- Section
+                sub.SectionExplanationText,
+                sub.SectionEnteredForRole,
+                sub.SectionEntryMode,
+                sub.SectionEntryTimestamp,
+                u_sec.Username   AS SectionEnteredByUsername,
+                u_sec.DisplayName AS SectionEnteredByDisplayName,
+
+                -- Department
+                sub.DepartmentExplanationText,
+                sub.DepartmentEnteredForRole,
+                sub.DepartmentEntryMode,
+                sub.DepartmentEntryTimestamp,
+                u_dep.Username   AS DepartmentEnteredByUsername,
+                u_dep.DisplayName AS DepartmentEnteredByDisplayName,
+
+                -- Administration
+                sub.AdministrationExplanationText,
+                sub.AdministrationEnteredForRole,
+                sub.AdministrationEntryMode,
+                sub.AdministrationEntryTimestamp,
+                u_adm.Username   AS AdministrationEnteredByUsername,
+                u_adm.DisplayName AS AdministrationEnteredByDisplayName,
+
+                -- Force-closed-by user
+                u_fc.Username   AS ForceClosedByUsername,
+                u_fc.DisplayName AS ForceClosedByDisplayName
+
+            FROM dbo.APP_AdministrativeSubcase sub
+            LEFT JOIN dbo.APP_Users u_sec
+                ON sub.SectionEnteredByUserID = u_sec.UserID
+            LEFT JOIN dbo.APP_Users u_dep
+                ON sub.DepartmentEnteredByUserID = u_dep.UserID
+            LEFT JOIN dbo.APP_Users u_adm
+                ON sub.AdministrationEnteredByUserID = u_adm.UserID
+            LEFT JOIN dbo.APP_Users u_fc
+                ON sub.ForceClosedByUserID = u_fc.UserID
+            WHERE sub.SubcaseID = ?
+        """
+        cursor.execute(query, (subcase_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+
+        def _username(uname, dname):
+            return dname if dname else (uname if uname else None)
+
+        def _ts(val):
+            return val.isoformat() if val and hasattr(val, 'isoformat') else (str(val) if val else None)
+
+        return {
+            "subcase_id": row.SubcaseID,
+            "status": row.Status,
+            "incident_id": row.IncidentRequestCaseID,
+            "force_close_reason": row.ForceCloseReason,
+            "force_closed_at": _ts(row.ForceClosedAt),
+            "force_closed_by": _username(row.ForceClosedByUsername, row.ForceClosedByDisplayName),
+            "section": {
+                "explanation_text": row.SectionExplanationText,
+                "entered_by": _username(row.SectionEnteredByUsername, row.SectionEnteredByDisplayName),
+                "entered_for_role": row.SectionEnteredForRole,
+                "entry_mode": row.SectionEntryMode,
+                "entry_timestamp": _ts(row.SectionEntryTimestamp),
+            },
+            "department": {
+                "explanation_text": row.DepartmentExplanationText,
+                "entered_by": _username(row.DepartmentEnteredByUsername, row.DepartmentEnteredByDisplayName),
+                "entered_for_role": row.DepartmentEnteredForRole,
+                "entry_mode": row.DepartmentEntryMode,
+                "entry_timestamp": _ts(row.DepartmentEntryTimestamp),
+            },
+            "administration": {
+                "explanation_text": row.AdministrationExplanationText,
+                "entered_by": _username(row.AdministrationEnteredByUsername, row.AdministrationEnteredByDisplayName),
+                "entered_for_role": row.AdministrationEnteredForRole,
+                "entry_mode": row.AdministrationEntryMode,
+                "entry_timestamp": _ts(row.AdministrationEntryTimestamp),
+            },
+        }
     finally:
         cursor.close()
         conn.close()

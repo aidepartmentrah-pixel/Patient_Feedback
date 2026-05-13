@@ -34,13 +34,6 @@ DEPARTMENT_ADMIN = "DEPARTMENT_ADMIN"
 # Has broad administrative access across the organization
 ADMINISTRATION_ADMIN = "ADMINISTRATION_ADMIN"
 
-# Universal Section - Operational bridge role
-# Combines all section/department admin capabilities in one login
-# Can see ALL subcases targeting sections and leaf departments (no scope filter)
-# Can directly approve from submitted_to_section to admin_approved
-# Used during early adoption when individual section admins are not yet ready
-UNIVERSAL_SECTION = "UNIVERSAL_SECTION"
-
 
 # ==================== ROLE SETS ====================
 
@@ -52,7 +45,6 @@ ALL_ROLES = [
     SECTION_ADMIN,
     DEPARTMENT_ADMIN,
     ADMINISTRATION_ADMIN,
-    UNIVERSAL_SECTION,
 ]
 
 # Administrative roles (can manage users and settings)
@@ -61,7 +53,6 @@ ADMIN_ROLES = [
     SECTION_ADMIN,
     DEPARTMENT_ADMIN,
     ADMINISTRATION_ADMIN,
-    UNIVERSAL_SECTION,
 ]
 
 # Supervisor roles (can oversee and approve)
@@ -71,7 +62,6 @@ SUPERVISOR_ROLES = [
     SECTION_ADMIN,
     DEPARTMENT_ADMIN,
     ADMINISTRATION_ADMIN,
-    UNIVERSAL_SECTION,
 ]
 
 # Worker-level roles (can handle complaints)
@@ -86,7 +76,6 @@ WORKER_ROLES = [
 # Higher roles in the list have more privileges
 ROLE_HIERARCHY = [
     SOFTWARE_ADMIN,         # Highest privilege
-    UNIVERSAL_SECTION,      # Operational bridge - high privilege
     ADMINISTRATION_ADMIN,
     DEPARTMENT_ADMIN,
     SECTION_ADMIN,
@@ -175,6 +164,5 @@ def get_role_display_name(role_code: str) -> str:
         SECTION_ADMIN: "Section Administrator",
         DEPARTMENT_ADMIN: "Department Administrator",
         ADMINISTRATION_ADMIN: "Administration Administrator",
-        UNIVERSAL_SECTION: "Universal Section Administrator",
     }
     return role_names.get(role_code, role_code)

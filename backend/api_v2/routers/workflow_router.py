@@ -415,11 +415,10 @@ def act_on_case(
     - OVERRIDE: Override response at department or administration level
     - FORCE_CLOSE: Force close subcase (administration only)
     - REOPEN: Complaint supervisor reopens a SECTION_DENIED case
-    - DIRECT_APPROVE: UNIVERSAL_SECTION bypasses workflow to approve directly
-    
+
     Request body:
     {
-        "action": "SUBMIT_RESPONSE" | "REJECT" | "APPROVE" | "OVERRIDE" | "FORCE_CLOSE" | "REOPEN" | "DIRECT_APPROVE",
+        "action": "SUBMIT_RESPONSE" | "REJECT" | "APPROVE" | "OVERRIDE" | "FORCE_CLOSE" | "REOPEN",
         "payload": {
             "explanation_text": "string (optional)",
             "rejection_text": "string (optional)",
@@ -444,8 +443,9 @@ def act_on_case(
     if not subcase:
         raise HTTPException(status_code=404, detail=f"Subcase {subcase_id} not found")
     
-    # Block all actions on force-closed subcases
-    if subcase.get('status') == 'FORCE_CLOSED':
+    # Block all workflow actions on force-closed subcases (any variant)
+    _fc_statuses = ('FORCE_CLOSED', 'FORCE_CLOSED_DRAFT', 'FORCE_CLOSED_COMPLETE')
+    if subcase.get('status') in _fc_statuses:
         raise HTTPException(
             status_code=400,
             detail="Cannot perform actions on force-closed cases. This case was administratively closed."
@@ -589,14 +589,14 @@ def act_on_case(
         raise HTTPException(status_code=400, detail=f"Override failed at all levels: {'; '.join(errors)}")
     
     elif action == "FORCE_CLOSE":
-        # Force close (administration only)
+        # Force close — COMPLAINT_SUPERVISOR and WORKER only (enforced in service)
         reason = payload.get("reason", "")
-        case_response_service.force_close_subcase(
+        new_status = case_response_service.force_close_subcase(
             subcase_id=subcase_id,
             reason_text=reason,
             current_user=current_user
         )
-        return {"success": True}
+        return {"success": True, "new_status": new_status}
     
     elif action == "REOPEN":
         # Complaint Supervisor reopens a SECTION_DENIED case
@@ -605,21 +605,6 @@ def act_on_case(
             subcase_id=subcase_id,
             rejection_text=rejection_text,
             current_user=current_user
-        )
-        return {"success": True}
-    
-    elif action == "DIRECT_APPROVE":
-        # UNIVERSAL_SECTION: Direct approval bypassing normal workflow
-        # Transitions: SUBMITTED_TO_SECTION or RETURNED_TO_SECTION_FOR_REVISION -> ADMIN_APPROVED
-        explanation_text = payload.get("explanation_text", "")
-        action_items = payload.get("action_items", [])
-        rca_feedback = payload.get("rca_feedback", None)
-        case_response_service.direct_approve_to_admin(
-            subcase_id=subcase_id,
-            explanation_text=explanation_text,
-            action_items=action_items,
-            current_user=current_user,
-            rca_feedback=rca_feedback
         )
         return {"success": True}
     
@@ -638,56 +623,54 @@ def force_close_case_and_subcases(
     current_user: CurrentUser = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
-    Force close an incident and ALL its subcases (Administrative).
-    
+    Force close an incident and ALL its subcases.
+
     This endpoint allows authorized roles to administratively close cases that are:
     - Stuck in workflow
     - Duplicates
     - Need immediate closure
-    
+
     Authorization:
-    - SOFTWARE_ADMIN: Full administrative access
-    - WORKER: Administrative access for case management
     - COMPLAINT_SUPERVISOR: Supervisory access for case oversight
-    
+    - WORKER: Administrative access for case management
+
     All other roles will receive 403 Forbidden.
-    
+
     Request Body:
     {
         "reason": "Reason for force closing (min 10 characters)"
     }
-    
+
     Response:
     {
         "success": true,
         "incident_id": 123,
-        "incident_status": "FORCE_CLOSED",
-        "subcases_closed": [456, 457, 458],
+        "subcases_closed": [{"subcase_id": 456, "new_status": "FORCE_CLOSED_DRAFT"}, ...],
         "total_subcases_closed": 3,
         "closed_at": "2026-02-10T15:30:00Z",
         "closed_by": "admin_user",
         "reason": "Duplicate case - merged with incident #12345"
     }
-    
+
     Error Responses:
-    - 403: User does not have permission (not SOFTWARE_ADMIN, WORKER, or COMPLAINT_SUPERVISOR)
+    - 403: User does not have permission (not COMPLAINT_SUPERVISOR or WORKER)
     - 404: Incident not found
     - 400: Invalid request (reason too short, etc.)
     """
-    # Authorization check: Only SOFTWARE_ADMIN, WORKER, COMPLAINT_SUPERVISOR
+    # Authorization check: COMPLAINT_SUPERVISOR and WORKER only
     if not current_user or not current_user.scopes:
         raise HTTPException(
             status_code=403,
-            detail="Insufficient permissions. Only SOFTWARE_ADMIN, WORKER, or COMPLAINT_SUPERVISOR can force close cases."
+            detail="Insufficient permissions. Only COMPLAINT_SUPERVISOR or WORKER can force close cases."
         )
-    
+
     primary_role = current_user.scopes[0].role_code
-    allowed_roles = ['SOFTWARE_ADMIN', 'WORKER', 'COMPLAINT_SUPERVISOR']
-    
+    allowed_roles = ['COMPLAINT_SUPERVISOR', 'WORKER']
+
     if primary_role not in allowed_roles:
         raise HTTPException(
             status_code=403,
-            detail=f"Insufficient permissions. Only SOFTWARE_ADMIN, WORKER, or COMPLAINT_SUPERVISOR can force close cases. Your role: {primary_role}"
+            detail=f"Insufficient permissions. Only COMPLAINT_SUPERVISOR or WORKER can force close cases. Your role: {primary_role}"
         )
     
     # Extract reason from body
@@ -724,3 +707,313 @@ def force_close_case_and_subcases(
         )
 
 
+# ============================================================
+# INCIDENT RESPONSE SUMMARY (all subcases + responses for one incident)
+# ============================================================
+
+@router.get("/incident/{incident_id}/responses")
+def get_incident_responses(
+    incident_id: int,
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Return all subcases for an incident, each with their submitted
+    explanation texts and action items. Used by Table View's "View Responses" feature.
+
+    Authorization: scope check — user must have at least one subcase's org unit in scope,
+    OR be COMPLAINT_SUPERVISOR / SOFTWARE_ADMIN.
+
+    Response:
+    {
+        "incident_id": 123,
+        "subcases": [
+            {
+                "subcase_id": 1,
+                "target_org_unit_id": 10,
+                "target_org_unit_name": "...",
+                "status": "ADMIN_APPROVED",
+                "section_explanation": "..." | null,
+                "department_explanation": "..." | null,
+                "administration_explanation": "..." | null,
+                "action_items": [{"title", "description", "due_date", "status"}]
+            }
+        ]
+    }
+    """
+    from backend.api_v2.db_layer import administrative_subcase_db, action_item_subcase_db
+    from backend.core.database import get_connection
+
+    role_code = (
+        current_user.scopes[0].role_code
+        if current_user and current_user.scopes
+        else None
+    )
+    privileged = role_code in ('COMPLAINT_SUPERVISOR', 'SOFTWARE_ADMIN', 'WORKER')
+    allowed_unit_ids = getattr(current_user, 'allowed_unit_ids', None) or set()
+
+    subcases = administrative_subcase_db.get_subcases_by_incident(incident_id)
+    if not subcases:
+        return {"incident_id": incident_id, "subcases": []}
+
+    # Resolve org unit names in one query
+    unit_ids = list({sc.get('target_org_unit_id') for sc in subcases if sc.get('target_org_unit_id')})
+    unit_names: dict = {}
+    if unit_ids:
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+            placeholders = ','.join('?' * len(unit_ids))
+            cursor.execute(
+                f"SELECT UniqueID, Name FROM dbo.APP_OrgUnit WHERE UniqueID IN ({placeholders})",
+                unit_ids
+            )
+            unit_names = {row.UniqueID: row.Name for row in cursor.fetchall()}
+        finally:
+            conn.close()
+
+    result = []
+    for sc in subcases:
+        sc_unit = sc.get('target_org_unit_id')
+        if not privileged and sc_unit not in allowed_unit_ids:
+            continue
+
+        raw_items = action_item_subcase_db.get_action_items_by_subcase(sc['subcase_id'])
+        action_items = [
+            {
+                "title": item.get('title'),
+                "description": item.get('description'),
+                "due_date": item['due_date'].isoformat() if item.get('due_date') else None,
+                "status": item.get('status'),
+            }
+            for item in raw_items
+        ]
+        result.append({
+            "subcase_id": sc['subcase_id'],
+            "target_org_unit_id": sc_unit,
+            "target_org_unit_name": unit_names.get(sc_unit) or f"Unit {sc_unit}",
+            "status": sc.get('status'),
+            "section_explanation": sc.get('section_explanation_text') or None,
+            "department_explanation": sc.get('department_explanation_text') or None,
+            "administration_explanation": sc.get('administration_explanation_text') or None,
+            "action_items": action_items,
+        })
+
+    return {"incident_id": incident_id, "subcases": result}
+
+
+# ============================================================
+# MANUAL INTERVENTION: FILL STATE (read)
+# ============================================================
+
+@router.get("/subcase/{subcase_id}/fill-state")
+def get_subcase_fill_state(
+    subcase_id: int,
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Return the current manual-fill state for a subcase.
+
+    Includes explanation texts for all three levels plus full ownership
+    metadata (who entered each level, on behalf of which role, when).
+
+    Authorization: COMPLAINT_SUPERVISOR and WORKER only.
+
+    Response (200):
+    {
+        "subcase_id": 123,
+        "status": "FORCE_CLOSED_DRAFT",
+        "incident_id": 456,
+        "force_close_reason": "...",
+        "force_closed_at": "2026-05-12T10:00:00",
+        "force_closed_by": "ali",
+        "section": {
+            "explanation_text": "...",
+            "entered_by": "sara",
+            "entered_for_role": "SECTION_ADMIN",
+            "entry_mode": "FORCE_CLOSE_INTERVENTION",
+            "entry_timestamp": "2026-05-12T11:00:00"
+        },
+        "department": { ... },
+        "administration": { ... }
+    }
+
+    Errors:
+        403 — caller is not COMPLAINT_SUPERVISOR or WORKER
+        404 — subcase not found
+    """
+    if not current_user or not current_user.scopes:
+        raise HTTPException(status_code=403, detail="Insufficient permissions.")
+    primary_role = current_user.scopes[0].role_code
+    if primary_role not in ('COMPLAINT_SUPERVISOR', 'WORKER'):
+        raise HTTPException(
+            status_code=403,
+            detail="Only COMPLAINT_SUPERVISOR or WORKER can access the manual fill state."
+        )
+    from backend.api_v2.db_layer import administrative_subcase_db
+    state = administrative_subcase_db.get_subcase_fill_state(subcase_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail=f"Subcase {subcase_id} not found.")
+    return state
+
+
+# ============================================================
+# MANUAL INTERVENTION: FILL ON BEHALF ENDPOINTS
+# ============================================================
+
+@router.post("/subcase/{subcase_id}/fill/section")
+def fill_section_on_behalf(
+    subcase_id: int,
+    body: Dict[str, Any],
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Fill the section explanation on behalf of SECTION_ADMIN.
+
+    Authorization: COMPLAINT_SUPERVISOR and WORKER only.
+    Works on active subcases and FORCE_CLOSED_DRAFT subcases.
+    Overwrite of existing data is permitted.
+
+    Sequential lock: none (section is always the first level).
+
+    Request body:
+    {
+        "explanation_text": "...",
+        "action_items": [{"title": "...", "description": "...", "due_date": "YYYY-MM-DD"}]  // optional
+    }
+
+    Response:
+    { "success": true, "subcase_id": 123, "level": "section",
+      "entry_mode": "ON_BEHALF" | "FORCE_CLOSE_INTERVENTION" }
+    """
+    explanation_text = body.get("explanation_text", "")
+    if not explanation_text:
+        raise HTTPException(status_code=400, detail="explanation_text is required")
+    action_items = body.get("action_items", []) or []
+    try:
+        entry_mode = case_response_service.fill_explanation_on_behalf(
+            subcase_id=subcase_id,
+            level="section",
+            explanation_text=explanation_text,
+            current_user=current_user,
+            action_items=action_items
+        )
+        return {"success": True, "subcase_id": subcase_id, "level": "section", "entry_mode": entry_mode}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/subcase/{subcase_id}/fill/department")
+def fill_department_on_behalf(
+    subcase_id: int,
+    body: Dict[str, Any],
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Fill the department explanation on behalf of DEPARTMENT_ADMIN.
+
+    Authorization: COMPLAINT_SUPERVISOR and WORKER only.
+    Works on active subcases and FORCE_CLOSED_DRAFT subcases.
+    Overwrite of existing data is permitted.
+
+    Sequential lock: section explanation must already be present.
+
+    Request body:
+    { "explanation_text": "..." }
+
+    Response:
+    { "success": true, "subcase_id": 123, "level": "department",
+      "entry_mode": "ON_BEHALF" | "FORCE_CLOSE_INTERVENTION" }
+    """
+    explanation_text = body.get("explanation_text", "")
+    if not explanation_text:
+        raise HTTPException(status_code=400, detail="explanation_text is required")
+    try:
+        entry_mode = case_response_service.fill_explanation_on_behalf(
+            subcase_id=subcase_id,
+            level="department",
+            explanation_text=explanation_text,
+            current_user=current_user
+        )
+        return {"success": True, "subcase_id": subcase_id, "level": "department", "entry_mode": entry_mode}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/subcase/{subcase_id}/fill/administration")
+def fill_administration_on_behalf(
+    subcase_id: int,
+    body: Dict[str, Any],
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Fill the administration explanation on behalf of ADMINISTRATION_ADMIN.
+
+    Authorization: COMPLAINT_SUPERVISOR and WORKER only.
+    Works on active subcases and FORCE_CLOSED_DRAFT subcases.
+    Overwrite of existing data is permitted.
+
+    Sequential lock: department explanation must already be present.
+
+    Request body:
+    { "explanation_text": "..." }
+
+    Response:
+    { "success": true, "subcase_id": 123, "level": "administration",
+      "entry_mode": "ON_BEHALF" | "FORCE_CLOSE_INTERVENTION" }
+    """
+    explanation_text = body.get("explanation_text", "")
+    if not explanation_text:
+        raise HTTPException(status_code=400, detail="explanation_text is required")
+    try:
+        entry_mode = case_response_service.fill_explanation_on_behalf(
+            subcase_id=subcase_id,
+            level="administration",
+            explanation_text=explanation_text,
+            current_user=current_user
+        )
+        return {"success": True, "subcase_id": subcase_id, "level": "administration", "entry_mode": entry_mode}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ============================================================
+# COMPLETE FORCE CLOSED DRAFT ENDPOINT
+# ============================================================
+
+@router.post("/subcase/{subcase_id}/complete-force-close")
+def complete_force_closed_draft(
+    subcase_id: int,
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Transition a FORCE_CLOSED_DRAFT subcase to FORCE_CLOSED_COMPLETE.
+
+    Called after all required data (section, department, administration
+    explanations) has been filled in via the manual intervention API.
+
+    Authorization: COMPLAINT_SUPERVISOR and WORKER only.
+
+    Error Responses:
+    - 403: User does not have permission
+    - 404: Subcase not found
+    - 400: Subcase is not in FORCE_CLOSED_DRAFT, or data is still incomplete
+    """
+    try:
+        case_response_service.complete_force_closed_draft(
+            subcase_id=subcase_id,
+            current_user=current_user
+        )
+        return {"success": True, "subcase_id": subcase_id, "new_status": "FORCE_CLOSED_COMPLETE"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )

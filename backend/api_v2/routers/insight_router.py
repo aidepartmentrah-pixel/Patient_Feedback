@@ -215,3 +215,20 @@ async def get_grouped_inbox_endpoint(
     - `subcases`: Array of subcases with full details including description, severity, waiting time
     """
     return insight_service.get_grouped_inbox_for_admin(current_user)
+
+
+@router.get("/force-closed")
+async def get_force_closed_cases_endpoint(
+    status: str,
+    current_user: CurrentUser = Depends(get_current_user)
+) -> List[Dict[str, Any]]:
+    """
+    List force-closed subcases for the Insight page tabs.
+
+    Query parameter:
+    - status: 'FORCE_CLOSED_DRAFT' or 'FORCE_CLOSED_COMPLETE'
+
+    Authorization: COMPLAINT_SUPERVISOR and WORKER only.
+    Returns all matching subcases (full visibility — no scope filter).
+    """
+    return insight_service.get_force_closed_cases(current_user, status)

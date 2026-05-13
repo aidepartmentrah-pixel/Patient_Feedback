@@ -1,9 +1,10 @@
 import sqlite3
 import pandas as pd
+from pathlib import Path
 from sklearn.model_selection import train_test_split
 
 # === 1. Database and table configuration ===
-DB_PATH = "patient_feedback_ml.db"   # path to your database
+DB_PATH = Path(__file__).resolve().parent.parent / "models_directory" / "patient_feedback_ml.db"
 SOURCE_TABLE = "patient_feedback_encoded"
 TRAIN_TABLE = "table_feedback_train"
 TEST_TABLE = "table_feedback_test"

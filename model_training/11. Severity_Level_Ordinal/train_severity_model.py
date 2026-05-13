@@ -1,5 +1,6 @@
 import sqlite3
 import numpy as np
+from pathlib import Path
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
@@ -12,7 +13,7 @@ import os
 
 # ---------------- CONFIG ----------------
 HERE = Path(__file__).resolve().parent
-DB_PATH = HERE.parent / "patient_feedback_ml.db"
+DB_PATH = HERE.parent.parent / "models_directory" / "patient_feedback_ml.db"
 
 TRAIN_TABLE = "table_feedback_train"     # <-- correct
 TEST_TABLE = "table_feedback_test"       # <-- correct

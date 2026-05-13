@@ -1,6 +1,7 @@
 import sqlite3
+from pathlib import Path
 
-DB_PATH = "patient_feedback_ml.db"
+DB_PATH = Path(__file__).resolve().parent.parent / "models_directory" / "patient_feedback_ml.db"
 
 TABLES = [
     "patient_feedback_encoded",

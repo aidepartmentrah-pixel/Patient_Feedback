@@ -41,7 +41,7 @@ import os
 
 # ---------------- CONFIG ----------------
 HERE = Path(__file__).resolve().parent
-DB_PATH = HERE.parent.parent / "patient_feedback_ml.db"   # ../../patient_feedback_ml.db
+DB_PATH = HERE.parent.parent.parent / "models_directory" / "patient_feedback_ml.db"
 TRAIN_TABLE = "table_feedback_train"
 TEST_TABLE = "table_feedback_test"
 EMBED_COL = "embedding_text1"
