@@ -201,11 +201,12 @@ def count_worker_incidents_by_severity(
                 COUNT(CASE WHEN s.SeverityName = 'Medium' THEN 1 END) as medium,
                 COUNT(CASE WHEN s.SeverityName = 'Low' THEN 1 END) as low
             FROM dbo.APP_IncidentCase ic
-            INNER JOIN dbo.APP_IncidentCaseEmployee ice 
+            INNER JOIN dbo.APP_IncidentCaseEmployee ice
                 ON ic.IncidentRequestCaseID = ice.IncidentRequestCaseID
-            LEFT JOIN dbo.APP_LOOKUP_SEVERITY s 
+            LEFT JOIN dbo.APP_LOOKUP_SEVERITY s
                 ON ic.SeverityID = s.SeverityID
             WHERE ice.EmployeeID = ?
+            AND ic.RecordTypeID = 1
             {date_filter}
         """
         
@@ -276,9 +277,10 @@ def count_worker_incidents_by_intent(
                 COUNT(CASE WHEN ic.FeedbackIntentTypeID = 3 THEN 1 END) as bad,
                 COUNT(CASE WHEN ic.FeedbackIntentTypeID IN (1, 4) THEN 1 END) as neutral
             FROM dbo.APP_IncidentCase ic
-            INNER JOIN dbo.APP_IncidentCaseEmployee ice 
+            INNER JOIN dbo.APP_IncidentCaseEmployee ice
                 ON ic.IncidentRequestCaseID = ice.IncidentRequestCaseID
             WHERE ice.EmployeeID = ?
+            AND ic.RecordTypeID = 1
             {date_filter}
         """
         
@@ -547,23 +549,23 @@ def count_worker_explanation_status(
         cursor = conn.cursor()
         
         # Build filter conditions - use APP_IncidentCaseEmployee junction
-        conditions = ["ice.EmployeeID = ?"]
+        conditions = ["ice.EmployeeID = ?", "ic.RecordTypeID = 1"]  # Explanation workflow is complaint-only
         params = [employee_id]
-        
+
         if status_id is not None:
             conditions.append("ic.ExplanationStatusID = ?")
             params.append(status_id)
-        
+
         if date_from:
             conditions.append("ic.FeedbackRecievedDate >= ?")
             params.append(date_from)
-        
+
         if date_to:
             conditions.append("ic.FeedbackRecievedDate <= ?")
             params.append(date_to)
-        
+
         where_clause = " AND ".join(conditions)
-        
+
         # Group by ExplanationStatusID to get counts per status
         query = f"""
             SELECT
@@ -653,42 +655,54 @@ def get_worker_metrics(
         total_incidents = summary_row[0] if summary_row else 0
         last_incident_date = summary_row[1] if summary_row else None
         
-        # Get severity breakdown
+        # Get severity breakdown (complaints only — severity is NULL for notices)
         cursor.execute(f"""
-            SELECT 
+            SELECT
                 COALESCE(sev.SeverityName, 'Unknown') as severity,
                 COUNT(DISTINCT ic.IncidentRequestCaseID) as count
             FROM dbo.APP_IncidentCase ic
-            INNER JOIN dbo.APP_IncidentCaseEmployee ice 
+            INNER JOIN dbo.APP_IncidentCaseEmployee ice
                 ON ic.IncidentRequestCaseID = ice.IncidentRequestCaseID
             LEFT JOIN dbo.APP_LOOKUP_SEVERITY sev ON ic.SeverityID = sev.SeverityID
-            WHERE {where_clause}
+            WHERE {where_clause} AND ic.RecordTypeID = 1
             GROUP BY sev.SeverityName
         """, params)
-        
+
         severity_breakdown = {}
         for row in cursor.fetchall():
             severity_breakdown[row[0]] = row[1]
-        
-        # Get category breakdown
+
+        # Get category breakdown (complaints only — category is NULL for notices)
         cursor.execute(f"""
-            SELECT 
+            SELECT
                 COALESCE(cat.CategoryName, 'Unknown') as category,
                 COUNT(DISTINCT ic.IncidentRequestCaseID) as count
             FROM dbo.APP_IncidentCase ic
-            INNER JOIN dbo.APP_IncidentCaseEmployee ice 
+            INNER JOIN dbo.APP_IncidentCaseEmployee ice
                 ON ic.IncidentRequestCaseID = ice.IncidentRequestCaseID
             LEFT JOIN dbo.APP_LOOKUP_CATEGORY cat ON ic.CategoryID = cat.CategoryID
-            WHERE {where_clause}
+            WHERE {where_clause} AND ic.RecordTypeID = 1
             GROUP BY cat.CategoryName
         """, params)
-        
+
         category_breakdown = {}
         for row in cursor.fetchall():
             category_breakdown[row[0]] = row[1]
-        
+
+        # Get notice count (additive — callers that don't read it are unaffected)
+        cursor.execute(f"""
+            SELECT COUNT(DISTINCT ic.IncidentRequestCaseID)
+            FROM dbo.APP_IncidentCase ic
+            INNER JOIN dbo.APP_IncidentCaseEmployee ice
+                ON ic.IncidentRequestCaseID = ice.IncidentRequestCaseID
+            WHERE {where_clause} AND ic.RecordTypeID = 2
+        """, params)
+        notice_row = cursor.fetchone()
+        total_notices = notice_row[0] if notice_row else 0
+
         return {
             "total_incidents": total_incidents,
+            "total_notices": total_notices,
             "last_incident_date": last_incident_date,
             "severity_breakdown": severity_breakdown,
             "category_breakdown": category_breakdown

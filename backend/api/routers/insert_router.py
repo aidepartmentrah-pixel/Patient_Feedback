@@ -31,30 +31,36 @@ router = APIRouter(prefix="/api/records", tags=["Records"])
 class CreateRecordRequest(BaseModel):
     """Request model for creating a new record."""
     
-    # Required fields
+    # Record type: 1=Complaint (default), 2=Notice
+    record_type_id: int = Field(1, ge=1, le=2, description="Record type (1=Complaint, 2=Notice)")
+
+    # Required for all record types
     complaint_text: str = Field(..., min_length=1, description="Full complaint/incident description")
     feedback_received_date: date = Field(..., description="Date the feedback was received")
     issuing_department_id: int = Field(..., gt=0, description="Issuing department ID (required)")
-    domain_id: int = Field(..., gt=0, description="Domain ID")
-    category_id: int = Field(..., gt=0, description="Category ID")
-    subcategory_id: int = Field(..., gt=0, description="Subcategory ID")
-    classification_id: int = Field(..., gt=0, description="Classification ID")
-    severity_id: int = Field(..., gt=0, description="Severity level ID")
-    stage_id: int = Field(..., gt=0, description="Care stage ID")
-    harm_id: int = Field(..., gt=0, description="Harm level ID")
-    clinical_risk_type_id: int = Field(..., ge=1, le=3, description="Clinical risk type (1=Standard, 2=Red Flag, 3=Never Event)")
-    feedback_intent_type_id: int = Field(
-        ...,
+    patient_name: str = Field(..., description="Patient name (required)")
+    source_id: int = Field(..., gt=0, description="Feedback source ID (required)")
+
+    # Required for Complaint (record_type_id=1), optional for Notice (record_type_id=2)
+    # Service layer enforces these for complaints; Pydantic accepts None for notices
+    domain_id: Optional[int] = Field(None, gt=0, description="Domain ID")
+    category_id: Optional[int] = Field(None, gt=0, description="Category ID")
+    subcategory_id: Optional[int] = Field(None, gt=0, description="Subcategory ID")
+    classification_id: Optional[int] = Field(None, gt=0, description="Classification ID")
+    severity_id: Optional[int] = Field(None, gt=0, description="Severity level ID")
+    stage_id: Optional[int] = Field(None, gt=0, description="Care stage ID")
+    harm_id: Optional[int] = Field(None, gt=0, description="Harm level ID")
+    clinical_risk_type_id: Optional[int] = Field(None, ge=1, le=3, description="Clinical risk type (1=Standard, 2=Red Flag, 3=Never Event)")
+    feedback_intent_type_id: Optional[int] = Field(
+        None,
         ge=1,
         le=2,
         description="Feedback intent type ID (1=Negative, 2=Positive)",
     )
-    requires_explanation: bool = Field(..., description="Whether the case requires explanation (required)")
-    immediate_action: str = Field(..., description="Immediate actions taken (required)")
-    taken_action: str = Field(..., description="Follow-up actions taken (required)")
-    patient_name: str = Field(..., description="Patient name (required)")
-    is_inpatient: bool = Field(..., description="Is inpatient (True) or outpatient (False) - required")
-    source_id: int = Field(..., gt=0, description="Feedback source ID (required)")
+    requires_explanation: Optional[bool] = Field(None, description="Whether the case requires explanation")
+    immediate_action: Optional[str] = Field(None, description="Immediate actions taken")
+    taken_action: Optional[str] = Field(None, description="Follow-up actions taken")
+    is_inpatient: Optional[bool] = Field(None, description="Is inpatient (True) or outpatient (False)")
     
     # Optional text fields - REMOVED (now required above)
     
@@ -840,7 +846,7 @@ async def publish_case(
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "SELECT CaseStatusID FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID = ?",
+            "SELECT CaseStatusID, RecordTypeID FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID = ?",
             case_id
         )
         row = cursor.fetchone()
@@ -861,15 +867,16 @@ async def publish_case(
                 "message_ar": "يمكن نشر الشكاوى الجاهزة للإرسال فقط"
             })
 
-        # Create workflow subcase
-        try:
-            from api_v2.services.case_creation_service import create_subcases_for_incident
-            create_subcases_for_incident(case_id, current_user=None)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail={
-                "error": "SUBCASE_CREATION_FAILED",
-                "message": f"Failed to create workflow subcase: {str(e)}"
-            })
+        # Create workflow subcase only for Complaints (Notices skip the RCA workflow)
+        if row.RecordTypeID != 2:
+            try:
+                from api_v2.services.case_creation_service import create_subcases_for_incident
+                create_subcases_for_incident(case_id, current_user=None)
+            except Exception as e:
+                raise HTTPException(status_code=500, detail={
+                    "error": "SUBCASE_CREATION_FAILED",
+                    "message": f"Failed to create workflow subcase: {str(e)}"
+                })
 
         cursor.execute(
             "UPDATE dbo.APP_IncidentCase SET CaseStatusID = ? WHERE IncidentRequestCaseID = ?",
@@ -909,22 +916,25 @@ async def bulk_publish(
         if request.case_ids:
             placeholders = ",".join("?" * len(request.case_ids))
             cursor.execute(
-                f"SELECT IncidentRequestCaseID FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID IN ({placeholders}) AND CaseStatusID = ?",
+                f"SELECT IncidentRequestCaseID, RecordTypeID FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID IN ({placeholders}) AND CaseStatusID = ?",
                 *request.case_ids, READY_TO_SEND_STATUS_ID
             )
         else:
             cursor.execute(
-                "SELECT IncidentRequestCaseID FROM dbo.APP_IncidentCase WHERE CaseStatusID = ?",
+                "SELECT IncidentRequestCaseID, RecordTypeID FROM dbo.APP_IncidentCase WHERE CaseStatusID = ?",
                 READY_TO_SEND_STATUS_ID
             )
 
-        ids_to_publish = [r[0] for r in cursor.fetchall()]
+        rows_to_publish = cursor.fetchall()
         published, failed = 0, 0
         errors = []
 
-        for cid in ids_to_publish:
+        for row in rows_to_publish:
+            cid = row[0]
+            record_type = row[1]
             try:
-                create_subcases_for_incident(cid, current_user=None)
+                if record_type != 2:  # Notices skip subcase creation
+                    create_subcases_for_incident(cid, current_user=None)
                 cursor.execute(
                     "UPDATE dbo.APP_IncidentCase SET CaseStatusID = ? WHERE IncidentRequestCaseID = ?",
                     OPEN_STATUS_ID, cid

@@ -61,7 +61,17 @@ def get_all_user_credentials_service() -> List[Dict[str, Any]]:
             }
             
             credentials.append(credential)
-        
+
+        # SOFTWARE_ADMIN is reserved as a technical/break-glass account and must not
+        # appear in operational credential exports.
+        credentials = [
+            c for c in credentials
+            if not (
+                str(c.get("username", "")).lower() == "software_admin"
+                or str(c.get("role", "")).upper() == "SOFTWARE_ADMIN"
+            )
+        ]
+
         return credentials
         
     finally:

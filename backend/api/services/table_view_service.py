@@ -389,6 +389,9 @@ def get_complaints_paginated(
             c.ExplanationStatusID as explanation_status_id,
             explanation_status.StatusName as explanation_status_name,
             
+            -- Record type (1=Complaint, 2=Notice)
+            c.RecordTypeID as record_type_id,
+
             -- Other fields
             c.ImmediateAction as immediate_action,
             c.TakenAction as taken_action,
@@ -750,6 +753,9 @@ def get_complaint_by_id(complaint_id: int) -> Optional[Dict[str, Any]]:
             -- Explanation Status
             c.ExplanationStatusID as explanation_status_id,
             explanation_status.StatusName as explanation_status_name,
+
+            -- Record type (1=Complaint, 2=Notice)
+            c.RecordTypeID as record_type_id,
 
             -- Incident parent fields (for draft prefill)
             c.incident_id as incident_id,

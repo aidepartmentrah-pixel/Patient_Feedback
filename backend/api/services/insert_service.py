@@ -36,26 +36,37 @@ def create_record(data: Dict[str, Any], save_mode: str = 'workflow') -> Dict[str
             # -----------------------------
             # Required fields validation
             # -----------------------------
-            required_fields = [
-                'complaint_text',
-                'feedback_received_date',
-                'issuing_department_id',
-                'domain_id',
-                'category_id',
-                'subcategory_id',
-                'classification_id',
-                'severity_id',
-                'stage_id',
-                'harm_id',
-                'requires_explanation',
-                'clinical_risk_type_id',
-                'feedback_intent_type_id',
-                'immediate_action',
-                'taken_action',
-                'patient_name',
-                'is_inpatient',
-                'source_id'
-            ]
+            _record_type_id = data.get('record_type_id', 1)
+
+            if _record_type_id == 2:  # Notice — no classification required
+                required_fields = [
+                    'complaint_text',
+                    'feedback_received_date',
+                    'issuing_department_id',
+                    'patient_name',
+                    'source_id',
+                ]
+            else:  # Complaint — full existing list unchanged
+                required_fields = [
+                    'complaint_text',
+                    'feedback_received_date',
+                    'issuing_department_id',
+                    'domain_id',
+                    'category_id',
+                    'subcategory_id',
+                    'classification_id',
+                    'severity_id',
+                    'stage_id',
+                    'harm_id',
+                    'requires_explanation',
+                    'clinical_risk_type_id',
+                    'feedback_intent_type_id',
+                    'immediate_action',
+                    'taken_action',
+                    'patient_name',
+                    'is_inpatient',
+                    'source_id',
+                ]
 
             for field in required_fields:
                 if field not in data or data[field] is None or data[field] == '':
@@ -77,8 +88,8 @@ def create_record(data: Dict[str, Any], save_mode: str = 'workflow') -> Dict[str
                         "field": field
                 }
 
-        # Building: Require either building_id or building_code (skip for draft)
-        if save_mode != 'draft' and not data.get('building_id') and not data.get('building_code'):
+        # Building: Require either building_id or building_code (skip for draft and notices)
+        if save_mode != 'draft' and data.get('record_type_id', 1) != 2 and not data.get('building_id') and not data.get('building_code'):
             return {
                 "success": False,
                 "error": "VALIDATION_ERROR",
@@ -273,6 +284,12 @@ def create_record(data: Dict[str, Any], save_mode: str = 'workflow') -> Dict[str
             case_status_id = READY_TO_SEND_STATUS_ID
             explanation_status_id = 4
             requires_explanation_bit = 0
+        elif data.get('record_type_id', 1) == 2:
+            # Notice: no RCA workflow, always open with no explanation required
+            case_status_id = 1  # Open
+            explanation_status_id = 4  # No Explanation Needed
+            requires_explanation_bit = 0
+
         else:
             # -----------------------------
             # FSM LOGIC: Explanation Workflow
@@ -320,6 +337,7 @@ def create_record(data: Dict[str, Any], save_mode: str = 'workflow') -> Dict[str
             "SourceID": data.get('source_id'),
             "ExplanationStatusID": explanation_status_id,
             "RequiresExplanation": requires_explanation_bit,
+            "RecordTypeID": data.get('record_type_id', 1),
         }
 
         new_id = create_incident_case(payload)
@@ -393,7 +411,7 @@ def create_record(data: Dict[str, Any], save_mode: str = 'workflow') -> Dict[str
         # API V2 ADAPTER HOOK — create workflow subcase
         # SKIPPED for draft/complete: subcase only created on publish
         # -------------------------------------------
-        if save_mode == 'workflow':
+        if save_mode == 'workflow' and data.get('record_type_id', 1) != 2:
             try:
                 from backend.api_v2.services.case_creation_service import create_subcases_for_incident
                 create_subcases_for_incident(new_id, current_user=None)

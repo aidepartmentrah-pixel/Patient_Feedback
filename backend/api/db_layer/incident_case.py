@@ -11,7 +11,7 @@ UPDATABLE_FIELDS = {
     "TakenAction",
     "FeedbackRecievedDate",
     "PatientName",
-    "isINPa tient",
+    "isINPatient",
     "ClinicalRiskTypeID",
     "FeedbackIntentTypeID",
     "BuildingID",
@@ -25,6 +25,7 @@ UPDATABLE_FIELDS = {
     "CaseStatusID",
     "SourceID",
     "RequiresExplanation",
+    "RecordTypeID",
 }
 
 
@@ -62,10 +63,11 @@ def create_incident_case(data: dict) -> int:
             CaseStatusID,
             SourceID,
             ExplanationStatusID,
-            RequiresExplanation
+            RequiresExplanation,
+            RecordTypeID
         )
         OUTPUT INSERTED.IncidentRequestCaseID
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         data.get("ComplaintText"),
         data.get("ImmediateAction") or "",
@@ -89,6 +91,7 @@ def create_incident_case(data: dict) -> int:
         data.get("SourceID"),
         data.get("ExplanationStatusID"),
         data.get("RequiresExplanation", 0),
+        data.get("RecordTypeID", 1),
     )
 
     incident_id = cursor.fetchone()[0]

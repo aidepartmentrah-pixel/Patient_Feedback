@@ -300,6 +300,7 @@ def get_doctor_statistics(
         WHERE icd.DoctorID = ?
         AND ic.FeedbackRecievedDate >= ?
         AND ic.FeedbackRecievedDate <= ?
+        AND ic.RecordTypeID = 1
     """
     
     try:
@@ -374,6 +375,7 @@ def get_doctor_category_breakdown(
         WHERE icd.DoctorID = ?
         AND ic.FeedbackRecievedDate >= ?
         AND ic.FeedbackRecievedDate <= ?
+        AND ic.RecordTypeID = 1
         GROUP BY cat.CategoryID, cat.CategoryName
         ORDER BY count DESC
     """
@@ -647,40 +649,51 @@ def get_doctor_metrics(
         total_incidents = summary_row[0] if summary_row else 0
         last_incident_date = summary_row[1] if summary_row else None
         
-        # Get severity breakdown
+        # Get severity breakdown (complaints only — severity is NULL for notices)
         cursor.execute(f"""
-            SELECT 
+            SELECT
                 COALESCE(sev.SeverityName, 'Unknown') as severity,
                 COUNT(DISTINCT ic.IncidentRequestCaseID) as count
             FROM dbo.APP_IncidentCase ic
             INNER JOIN dbo.APP_IncidentCaseDoctor icd ON ic.IncidentRequestCaseID = icd.IncidentRequestCaseID
             LEFT JOIN dbo.APP_LOOKUP_SEVERITY sev ON ic.SeverityID = sev.SeverityID
-            WHERE {where_clause}
+            WHERE {where_clause} AND ic.RecordTypeID = 1
             GROUP BY sev.SeverityName
         """, params)
-        
+
         severity_breakdown = {}
         for row in cursor.fetchall():
             severity_breakdown[row[0]] = row[1]
-        
-        # Get category breakdown
+
+        # Get category breakdown (complaints only — category is NULL for notices)
         cursor.execute(f"""
-            SELECT 
+            SELECT
                 COALESCE(cat.CategoryName, 'Unknown') as category,
                 COUNT(DISTINCT ic.IncidentRequestCaseID) as count
             FROM dbo.APP_IncidentCase ic
             INNER JOIN dbo.APP_IncidentCaseDoctor icd ON ic.IncidentRequestCaseID = icd.IncidentRequestCaseID
             LEFT JOIN dbo.APP_LOOKUP_CATEGORY cat ON ic.CategoryID = cat.CategoryID
-            WHERE {where_clause}
+            WHERE {where_clause} AND ic.RecordTypeID = 1
             GROUP BY cat.CategoryName
         """, params)
-        
+
         category_breakdown = {}
         for row in cursor.fetchall():
             category_breakdown[row[0]] = row[1]
-        
+
+        # Get notice count (additive — callers that don't read it are unaffected)
+        cursor.execute(f"""
+            SELECT COUNT(DISTINCT ic.IncidentRequestCaseID)
+            FROM dbo.APP_IncidentCase ic
+            INNER JOIN dbo.APP_IncidentCaseDoctor icd ON ic.IncidentRequestCaseID = icd.IncidentRequestCaseID
+            WHERE {where_clause} AND ic.RecordTypeID = 2
+        """, params)
+        notice_row = cursor.fetchone()
+        total_notices = notice_row[0] if notice_row else 0
+
         return {
             "total_incidents": total_incidents,
+            "total_notices": total_notices,
             "last_incident_date": last_incident_date,
             "severity_breakdown": severity_breakdown,
             "category_breakdown": category_breakdown

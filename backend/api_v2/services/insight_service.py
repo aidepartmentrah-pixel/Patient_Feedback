@@ -332,6 +332,83 @@ def get_force_closed_cases(current_user: CurrentUser, status: str) -> List[Dict[
     return administrative_subcase_db.get_force_closed_subcases(status)
 
 
+def generate_insight_word_export(
+    current_user: CurrentUser,
+    search_term: str = None,
+) -> bytes:
+    """
+    Gather current Insight page state and generate a Word document.
+
+    Fetches the same data as the Insight page (grouped inbox + force-closed cases),
+    applies an optional search filter, then calls the Word generator.
+
+    Args:
+        current_user: Authenticated user
+        search_term: Optional text filter (mirrors frontend search box)
+
+    Returns:
+        bytes of the generated .docx file
+    """
+    from .insight_word_generator import generate_insight_word_report
+
+    # Active cases (same data as grouped inbox tab)
+    grouped_inbox = get_grouped_inbox_for_admin(current_user)
+
+    # Apply search filter when requested (mirrors frontend filterBySearch logic)
+    if search_term and search_term.strip():
+        grouped_inbox = _apply_search_filter_to_inbox(grouped_inbox, search_term.strip())
+
+    # Force-closed cases — only for authorized roles; silently empty otherwise
+    fc_draft: List[Dict[str, Any]] = []
+    fc_complete: List[Dict[str, Any]] = []
+    try:
+        fc_draft = get_force_closed_cases(current_user, 'FORCE_CLOSED_DRAFT')
+    except Exception:
+        pass
+    try:
+        fc_complete = get_force_closed_cases(current_user, 'FORCE_CLOSED_COMPLETE')
+    except Exception:
+        pass
+
+    generated_by = (
+        current_user.display_name
+        or current_user.username
+        or 'النظام'
+    )
+
+    return generate_insight_word_report(
+        grouped_inbox=grouped_inbox,
+        fc_draft_cases=fc_draft,
+        fc_complete_cases=fc_complete,
+        generated_by=generated_by,
+    )
+
+
+def _apply_search_filter_to_inbox(
+    grouped_inbox: List[Dict], search_term: str
+) -> List[Dict]:
+    """
+    Filter grouped inbox subcases by a search term.
+    Mirrors the filterBySearch function in InsightPage.jsx.
+    """
+    term = search_term.lower()
+    result = []
+    for unit in grouped_inbox:
+        filtered = [
+            s for s in unit.get('subcases', [])
+            if (
+                term in (s.get('incident_number') or '').lower()
+                or term in str(s.get('incident_id') or '').lower()
+                or term in (s.get('patient_name') or '').lower()
+                or term in (s.get('case_description') or '').lower()
+                or term in (s.get('category') or '').lower()
+            )
+        ]
+        if filtered:
+            result.append({**unit, 'subcases': filtered, 'pending_count': len(filtered)})
+    return result
+
+
 def _apply_scope_filter_to_subcases(subcases: List[Dict], current_user: CurrentUser) -> List[Dict]:
     """
     Filter subcases by user's allowed_unit_ids (Phase 2.5 scope engine).

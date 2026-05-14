@@ -7,9 +7,12 @@ Provides KPI summary, distribution, trend, and stuck case insights.
 All endpoints are read-only and scope-filtered via allowed_unit_ids.
 """
 
+import io
+from datetime import datetime
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from backend.api.dependencies.user_context import get_current_user
 from backend.api.schemas.auth_models import CurrentUser
 from backend.api_v2.services import insight_service
@@ -215,6 +218,36 @@ async def get_grouped_inbox_endpoint(
     - `subcases`: Array of subcases with full details including description, severity, waiting time
     """
     return insight_service.get_grouped_inbox_for_admin(current_user)
+
+
+@router.get("/export-word")
+async def export_insight_word_report(
+    search_term: Optional[str] = None,
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Export the current Insight page operational state as a Word (.docx) document.
+
+    The report includes:
+    - Active cases grouped by Sections / Departments / Administrations
+    - Force-closed draft cases (data incomplete)
+    - Force-closed completed cases
+
+    Query Parameters:
+    - search_term: Optional text filter (mirrors the frontend search box)
+
+    The document is Arabic, right-to-left, Calibri font, with hospital logo.
+    """
+    docx_bytes = insight_service.generate_insight_word_export(
+        current_user=current_user,
+        search_term=search_term,
+    )
+    filename = f"insight_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
+    return StreamingResponse(
+        io.BytesIO(docx_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 @router.get("/force-closed")

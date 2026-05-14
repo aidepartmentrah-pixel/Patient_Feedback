@@ -210,7 +210,8 @@ def get_filtered_complaints(
     
     # Build WHERE clause
     where_parts = [date_filter]
-    
+    where_parts.append("AND ic.RecordTypeID = 1")  # Exclude Notices from complaint reports
+
     # Phase 2.5.7: Security boundary — filter by allowed_unit_ids (scope engine authority)
     if allowed_unit_ids:
         placeholders = ','.join(str(uid) for uid in allowed_unit_ids)
@@ -470,7 +471,9 @@ def get_monthly_statistics(
             WHERE td_filter.IncidentRequestCaseID = ic.IncidentRequestCaseID
             AND td_filter.DepartmentID IN ({target_placeholders})
         )"""
-    
+
+    date_filter += " AND ic.RecordTypeID = 1"  # Exclude Notices from complaint statistics
+
     # Summary stats
     summary_query = f"""
     SELECT 
@@ -658,15 +661,16 @@ def get_seasonal_hcat(
     
     # Build filters
     filter_parts = [f"ic.FeedbackRecievedDate BETWEEN '{start_date}' AND '{end_date}'"]
-    
+    filter_parts.append("ic.RecordTypeID = 1")  # Exclude Notices from seasonal complaint reports
+
     if building_id:
         filter_parts.append(f"ic.BuildingID = {building_id}")
-    
+
     # Generic tree-aware organizational filtering
     org_filter = build_org_filter_condition(building_id, idara_id, dayra_id, None)  # qism_id not used in seasonal
     if org_filter and org_filter != "1=1":
         filter_parts.append(org_filter)
-    
+
     where_clause = " AND ".join(filter_parts)
     
     # Total complaints in period
@@ -772,11 +776,12 @@ def get_bulk_summary(
     
     # Build additional filters
     filter_parts = [date_filter]
+    filter_parts.append("ic.RecordTypeID = 1")  # Exclude Notices from bulk export summary
     if building_id:
         filter_parts.append(f"ic.BuildingID = {building_id}")
-    
+
     where_clause = " AND ".join(filter_parts)
-    
+
     # Department summaries (based on target departments - count records, not distinct complaints)
     dept_query = f"""
     SELECT 

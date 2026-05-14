@@ -317,6 +317,50 @@ async def startup_stt_warmup():
         logger.warning("[STT WARMUP] Server will continue - first transcription may be slow")
 
 
+@app.on_event("startup")
+async def startup_db_reconnect_watcher():
+    """
+    Background task: if the backend started in bootstrap mode (SQL Server was
+    unreachable at startup), keep retrying the DB connection every 15 seconds.
+    When the connection succeeds, exit bootstrap mode automatically — no manual
+    restart required.
+    """
+    import asyncio
+    import logging
+    logger = logging.getLogger("db_reconnect")
+
+    if not bootstrap_module.BOOTSTRAP_MODE:
+        logger.info("[DB WATCHER] DB connected at startup — watcher idle")
+        return
+
+    logger.warning("[DB WATCHER] Started in BOOTSTRAP mode — will retry DB every 15 s")
+
+    async def _reconnect_loop():
+        attempt = 0
+        while bootstrap_module.BOOTSTRAP_MODE:
+            await asyncio.sleep(15)
+            attempt += 1
+            logger.info(f"[DB WATCHER] Attempt {attempt}: testing DB connection...")
+            try:
+                result = run_bootstrap_check()
+                if result:
+                    logger.info("[DB WATCHER] DB connection restored — exiting BOOTSTRAP mode")
+                    # Trigger ML warmup now that DB is available
+                    try:
+                        from models_directory.Classification_Models.package_models import classify_feedback
+                        classify_feedback(patient_text="Warmup.", text_2="", text_3="", Print=False)
+                        logger.info("[DB WATCHER] ML warmup completed after reconnect")
+                    except Exception as ml_e:
+                        logger.warning(f"[DB WATCHER] ML warmup skipped: {ml_e}")
+                    break
+                else:
+                    logger.warning(f"[DB WATCHER] Attempt {attempt}: DB still unreachable")
+            except Exception as e:
+                logger.warning(f"[DB WATCHER] Attempt {attempt}: error during check: {e}")
+
+    asyncio.create_task(_reconnect_loop())
+
+
 @app.get("/")
 def health_check():
     return {"status": "ok"}
