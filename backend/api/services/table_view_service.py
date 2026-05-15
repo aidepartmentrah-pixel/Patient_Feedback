@@ -799,20 +799,69 @@ def get_complaint_by_id(complaint_id: int) -> Optional[Dict[str, Any]]:
         if complaint.get('created_at'):
             complaint['created_at'] = complaint['created_at'].isoformat()
         
-        # Fetch target departments
+        # Fetch target departments.
+        # Uses OUTER APPLY to walk the hierarchy by Type rather than by position,
+        # so both depth-2 (Section directly under Administration) and depth-3
+        # (Section → Department → Administration) chains return correct labels.
+        # Self-referencing root nodes (ParentID = UniqueID for Administrations)
+        # are excluded from the upward walk via the != guard.
         target_dept_query = """
-            SELECT 
-                td.DepartmentID as section_id,
-                sec_unit.Name as section_name,
-                dept_unit.UniqueID as department_id,
-                dept_unit.Name as department_name,
-                admin_unit.UniqueID as administration_id,
-                admin_unit.Name as administration_name,
-                td.IsPrimary as is_primary
+            SELECT
+                td.IsPrimary AS is_primary,
+                hier.section_id,
+                hier.section_name,
+                hier.department_id,
+                hier.department_name,
+                hier.administration_id,
+                hier.administration_name
             FROM dbo.APP_IncidentCaseTargetDepartment td
-            LEFT JOIN dbo.AdminsrationUnit sec_unit ON td.DepartmentID = sec_unit.UniqueID      -- Section (leaf)
-            LEFT JOIN dbo.AdminsrationUnit dept_unit ON sec_unit.ParentID = dept_unit.UniqueID   -- Department (parent)
-            LEFT JOIN dbo.AdminsrationUnit admin_unit ON dept_unit.ParentID = admin_unit.UniqueID -- Administration (grandparent)
+            OUTER APPLY (
+                SELECT
+                    -- Section (Type=324): only when the stored target is itself a Section
+                    CASE WHEN target.Type = 324 THEN target.UniqueID ELSE NULL END AS section_id,
+                    CASE WHEN target.Type = 324 THEN target.Name    ELSE NULL END AS section_name,
+
+                    -- Department (Type=325): the stored target if it is a Department,
+                    --   or the parent of a Section if that parent is a Department
+                    CASE
+                        WHEN target.Type = 325 THEN target.UniqueID
+                        WHEN target.Type = 324 AND p1.Type = 325 THEN p1.UniqueID
+                        ELSE NULL
+                    END AS department_id,
+                    CASE
+                        WHEN target.Type = 325 THEN target.Name
+                        WHEN target.Type = 324 AND p1.Type = 325 THEN p1.Name
+                        ELSE NULL
+                    END AS department_name,
+
+                    -- Administration (Type=323): first ancestor of Type=323 walking upward
+                    CASE
+                        WHEN target.Type = 323 THEN target.UniqueID
+                        WHEN target.Type = 325 AND p1.Type = 323 THEN p1.UniqueID
+                        WHEN target.Type = 324 AND p1.Type = 323 THEN p1.UniqueID
+                        WHEN target.Type = 324 AND p1.Type = 325 AND p2.Type = 323 THEN p2.UniqueID
+                        ELSE NULL
+                    END AS administration_id,
+                    CASE
+                        WHEN target.Type = 323 THEN target.Name
+                        WHEN target.Type = 325 AND p1.Type = 323 THEN p1.Name
+                        WHEN target.Type = 324 AND p1.Type = 323 THEN p1.Name
+                        WHEN target.Type = 324 AND p1.Type = 325 AND p2.Type = 323 THEN p2.Name
+                        ELSE NULL
+                    END AS administration_name
+
+                FROM dbo.AdminsrationUnit target
+                -- p1: direct parent, skip self-referencing roots
+                LEFT JOIN dbo.AdminsrationUnit p1
+                    ON target.ParentID = p1.UniqueID
+                    AND target.ParentID != target.UniqueID
+                -- p2: grandparent, skip self-referencing roots
+                LEFT JOIN dbo.AdminsrationUnit p2
+                    ON p1.ParentID = p2.UniqueID
+                    AND p1.ParentID IS NOT NULL
+                    AND p1.ParentID != p1.UniqueID
+                WHERE target.UniqueID = td.DepartmentID
+            ) AS hier
             WHERE td.IncidentRequestCaseID = ?
             ORDER BY td.IsPrimary DESC, td.DepartmentID
         """

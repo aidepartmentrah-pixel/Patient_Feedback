@@ -401,7 +401,7 @@ def act_on_case(
     subcase_id: int,
     body: Dict[str, Any],
     current_user: CurrentUser = Depends(get_current_user)
-) -> Dict[str, bool]:
+) -> Dict[str, Any]:
     """
     Unified workflow action endpoint for subcase state transitions.
     

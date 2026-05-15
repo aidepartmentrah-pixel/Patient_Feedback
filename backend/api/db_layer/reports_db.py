@@ -378,20 +378,55 @@ def get_filtered_complaints(
             if isinstance(complaint['created_at'], datetime):
                 complaint['created_at'] = complaint['created_at'].isoformat()
         
-        # Fetch target departments for this complaint (same logic as single complaint endpoint)
+        # Fetch target departments — type-aware hierarchy walk (mirrors table_view_service).
         target_dept_query = """
-            SELECT 
-                td.DepartmentID as section_id,
-                sec_unit.Name as section_name,
-                dept_unit.UniqueID as department_id,
-                dept_unit.Name as department_name,
-                admin_unit.UniqueID as administration_id,
-                admin_unit.Name as administration_name,
-                td.IsPrimary as is_primary
+            SELECT
+                td.IsPrimary AS is_primary,
+                hier.section_id,
+                hier.section_name,
+                hier.department_id,
+                hier.department_name,
+                hier.administration_id,
+                hier.administration_name
             FROM dbo.APP_IncidentCaseTargetDepartment td
-            LEFT JOIN dbo.AdminsrationUnit sec_unit ON td.DepartmentID = sec_unit.UniqueID      -- Section (leaf)
-            LEFT JOIN dbo.AdminsrationUnit dept_unit ON sec_unit.ParentID = dept_unit.UniqueID   -- Department (parent)
-            LEFT JOIN dbo.AdminsrationUnit admin_unit ON dept_unit.ParentID = admin_unit.UniqueID -- Administration (grandparent)
+            OUTER APPLY (
+                SELECT
+                    CASE WHEN target.Type = 324 THEN target.UniqueID ELSE NULL END AS section_id,
+                    CASE WHEN target.Type = 324 THEN target.Name    ELSE NULL END AS section_name,
+                    CASE
+                        WHEN target.Type = 325 THEN target.UniqueID
+                        WHEN target.Type = 324 AND p1.Type = 325 THEN p1.UniqueID
+                        ELSE NULL
+                    END AS department_id,
+                    CASE
+                        WHEN target.Type = 325 THEN target.Name
+                        WHEN target.Type = 324 AND p1.Type = 325 THEN p1.Name
+                        ELSE NULL
+                    END AS department_name,
+                    CASE
+                        WHEN target.Type = 323 THEN target.UniqueID
+                        WHEN target.Type = 325 AND p1.Type = 323 THEN p1.UniqueID
+                        WHEN target.Type = 324 AND p1.Type = 323 THEN p1.UniqueID
+                        WHEN target.Type = 324 AND p1.Type = 325 AND p2.Type = 323 THEN p2.UniqueID
+                        ELSE NULL
+                    END AS administration_id,
+                    CASE
+                        WHEN target.Type = 323 THEN target.Name
+                        WHEN target.Type = 325 AND p1.Type = 323 THEN p1.Name
+                        WHEN target.Type = 324 AND p1.Type = 323 THEN p1.Name
+                        WHEN target.Type = 324 AND p1.Type = 325 AND p2.Type = 323 THEN p2.Name
+                        ELSE NULL
+                    END AS administration_name
+                FROM dbo.AdminsrationUnit target
+                LEFT JOIN dbo.AdminsrationUnit p1
+                    ON target.ParentID = p1.UniqueID
+                    AND target.ParentID != target.UniqueID
+                LEFT JOIN dbo.AdminsrationUnit p2
+                    ON p1.ParentID = p2.UniqueID
+                    AND p1.ParentID IS NOT NULL
+                    AND p1.ParentID != p1.UniqueID
+                WHERE target.UniqueID = td.DepartmentID
+            ) AS hier
             WHERE td.IncidentRequestCaseID = ?
             ORDER BY td.DepartmentID
         """

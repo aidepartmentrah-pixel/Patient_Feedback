@@ -82,24 +82,44 @@ def create_subcases_for_incident(incident_id: int, current_user) -> None:
     
     try:
         query = """
-            SELECT DepartmentID
-            FROM dbo.APP_IncidentCaseTargetDepartment
-            WHERE IncidentRequestCaseID = ?
+            SELECT td.DepartmentID, au.Type AS OrgUnitType, au.Name AS OrgUnitName
+            FROM dbo.APP_IncidentCaseTargetDepartment td
+            LEFT JOIN dbo.AdminsrationUnit au ON td.DepartmentID = au.UniqueID
+            WHERE td.IncidentRequestCaseID = ?
         """
-        
+
         cursor.execute(query, (incident_id,))
         rows = cursor.fetchall()
-        
+
         for row in rows:
+            org_type = row.OrgUnitType
+            org_name = row.OrgUnitName
+            dept_id = row.DepartmentID
+
+            # Guard: routing target should always be a Section (Type=324).
+            # Type=325 (Department) or Type=323 (Administration) targets mean the
+            # case was routed to the wrong level — the workflow starts at
+            # SUBMITTED_TO_SECTION regardless, so Fill Data will show Section as
+            # empty and Insight will group the case under the wrong org-type bucket.
+            if org_type != 324:
+                type_label = {323: 'ADMINISTRATION', 325: 'DEPARTMENT'}.get(org_type, f'UNKNOWN(type={org_type})')
+                logger.warning(
+                    "[ROUTING_LEVEL_MISMATCH] incident_id=%d routed to OrgUnit %d '%s' "
+                    "(Type=%s) — expected Type=324 (SECTION). "
+                    "Subcase will start at SUBMITTED_TO_SECTION but the target is not a Section. "
+                    "This may cause Insight grouping and Fill Data hierarchy to be inconsistent.",
+                    incident_id, dept_id, org_name or '?', type_label
+                )
+
             _create_subcase(
                 case_type='INCIDENT_RESPONSE',
                 incident_id=incident_id,
                 seasonal_report_id=None,
-                target_org_unit_id=row.DepartmentID,
+                target_org_unit_id=dept_id,
                 created_by_user_id=user_id,
                 initial_status='SUBMITTED_TO_SECTION'
             )
-    
+
     finally:
         cursor.close()
         conn.close()

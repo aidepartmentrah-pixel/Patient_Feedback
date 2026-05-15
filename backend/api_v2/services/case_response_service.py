@@ -1225,7 +1225,22 @@ def fill_explanation_on_behalf(
 
     # For active workflow cases only: advance status and mirror action item transitions.
     # Guards ensure we only advance forward — never regress an already-progressed case.
-    if entry_mode == 'ON_BEHALF':
+    if entry_mode == 'FORCE_CLOSE_INTERVENTION':
+        # Force-close fills do not advance workflow status or transition action items.
+        # Action items are created at DRAFT and remain there for follow-up tracking.
+        if level == 'section' and action_items:
+            for item in action_items:
+                action_item_subcase_db.create_action_item(
+                    subcase_id=subcase_id,
+                    title=item['title'],
+                    description=item['description'],
+                    created_by_user_id=current_user.user_id,
+                    due_date=item.get('due_date'),
+                    initial_status='DRAFT',
+                    assigned_to_user_id=item.get('assigned_to_user_id')
+                )
+
+    elif entry_mode == 'ON_BEHALF':
         if level == 'section' and current_status in (
             'SUBMITTED_TO_SECTION', 'RETURNED_TO_SECTION_FOR_REVISION'
         ):
