@@ -275,13 +275,30 @@ def get_grouped_inbox_for_admin(current_user: CurrentUser) -> List[Dict[str, Any
     # Default to section if no role (defensive)
     role_code = current_user.scopes[0].role_code if current_user.scopes else None
     
-    # Get subcases from appropriate DB query
-    if role_code == 'DEPARTMENT_ADMIN':
+    # Get subcases from appropriate DB query.
+    # Role-specific admins see only their own workflow stage (mirrors Inbox behaviour).
+    # Supervisory roles (COMPLAINT_SUPERVISOR, WORKER, SOFTWARE_ADMIN) see all three
+    # active pipeline stages so the Insight page reflects the full operational truth.
+    if role_code == 'SECTION_ADMIN':
+        raw_subcases = administrative_subcase_db.get_subcases_with_details_for_section()
+    elif role_code == 'DEPARTMENT_ADMIN':
         raw_subcases = administrative_subcase_db.get_subcases_with_details_for_department()
     elif role_code == 'ADMINISTRATION_ADMIN':
         raw_subcases = administrative_subcase_db.get_subcases_with_details_for_administration()
-    else:  # Default to section (SECTION_ADMIN or fallback)
-        raw_subcases = administrative_subcase_db.get_subcases_with_details_for_section()
+    else:
+        # COMPLAINT_SUPERVISOR, WORKER, SOFTWARE_ADMIN: full-pipeline supervisory view.
+        # Merge all three active stages then deduplicate by subcase_id as a defensive
+        # guard against any edge-case where a subcase could appear in more than one list.
+        section_cases = administrative_subcase_db.get_subcases_with_details_for_section()
+        dept_cases    = administrative_subcase_db.get_subcases_with_details_for_department()
+        admin_cases   = administrative_subcase_db.get_subcases_with_details_for_administration()
+        seen_ids: set = set()
+        raw_subcases = []
+        for subcase in section_cases + dept_cases + admin_cases:
+            sid = subcase.get('subcase_id')
+            if sid not in seen_ids:
+                seen_ids.add(sid)
+                raw_subcases.append(subcase)
     
     # Apply scope filtering - only show org units user has access to
     filtered_subcases = _apply_scope_filter_to_subcases(raw_subcases, current_user)
@@ -392,13 +409,22 @@ def _apply_search_filter_to_inbox(
     Mirrors the filterBySearch function in InsightPage.jsx.
     """
     term = search_term.lower()
+    # Strip "case #" or "case#" prefix so "Case #144" matches by case number
+    case_num_term = None
+    if term.startswith('case #'):
+        case_num_term = term[6:].strip()
+    elif term.startswith('case#'):
+        case_num_term = term[5:].strip()
+
     result = []
     for unit in grouped_inbox:
         filtered = [
             s for s in unit.get('subcases', [])
             if (
                 term in (s.get('incident_number') or '').lower()
-                or term in str(s.get('incident_id') or '').lower()
+                or term in str(s.get('incident_request_case_id') or '').lower()
+                or term in str(s.get('seasonal_report_id') or '').lower()
+                or (case_num_term is not None and case_num_term in str(s.get('incident_request_case_id') or '').lower())
                 or term in (s.get('patient_name') or '').lower()
                 or term in (s.get('case_description') or '').lower()
                 or term in (s.get('category') or '').lower()
@@ -439,8 +465,8 @@ def _apply_scope_filter_to_subcases(subcases: List[Dict], current_user: CurrentU
         target_org_unit_id = subcase.get('target_org_unit_id')
         status = subcase.get('status', '')
         
-        # Skip force-closed cases (defensive filter)
-        if status == 'FORCE_CLOSED':
+        # Skip force-closed cases (defensive filter) — matches inbox_service._apply_scope_filter
+        if status in ('FORCE_CLOSED', 'FORCE_CLOSED_DRAFT', 'FORCE_CLOSED_COMPLETE'):
             continue
         
         # Security check: only include if target is in allowed scope
@@ -452,21 +478,27 @@ def _apply_scope_filter_to_subcases(subcases: List[Dict], current_user: CurrentU
 
 def _group_subcases_by_org_unit(subcases: List[Dict]) -> Dict[int, List[Dict]]:
     """
-    Group subcases by target_org_unit_id.
-    
-    Args:
-        subcases: List of subcase dicts
-        
-    Returns:
-        Dictionary: { org_unit_id: [subcase1, subcase2, ...] }
+    Group subcases by responsible_org_unit_id — the entity that currently owns
+    the pending response, not the original target section.
+
+    For section-stage cases: responsible == target (the section itself).
+    For department-stage cases: responsible == parent department of the section.
+    For administration-stage cases: responsible == grandparent administration.
+
+    Falls back to target_org_unit_id if responsible_org_unit_id is absent,
+    which keeps older data or edge-cases safe.
     """
     grouped = defaultdict(list)
-    
+
     for subcase in subcases:
-        org_unit_id = subcase.get('target_org_unit_id')
+        # Use responsible entity as the grouping key; fall back to target for safety
+        org_unit_id = (
+            subcase.get('responsible_org_unit_id')
+            or subcase.get('target_org_unit_id')
+        )
         if org_unit_id:
             grouped[org_unit_id].append(subcase)
-    
+
     return dict(grouped)
 
 
@@ -490,17 +522,35 @@ def _build_section_group(org_unit_id: int, subcases: List[Dict]) -> Dict[str, An
         324: 'SECTION',
         325: 'DEPARTMENT',
     }
-    
-    # Get org unit info from first subcase (all have same org unit)
+
+    # Read from the responsible org unit fields, which reflect the entity that
+    # currently owns the pending response (section, department, or administration).
+    # Fall back to target org unit fields for safety with older data.
     first_subcase = subcases[0] if subcases else {}
-    org_unit_name = first_subcase.get('org_unit_name', f'Org Unit {org_unit_id}')
-    raw_org_type = first_subcase.get('org_type')
-    
-    # Convert numeric org_type to string enum
-    org_type = ORG_TYPE_MAP.get(raw_org_type, 'SECTION')  # Default to SECTION
-    
-    # Look up supervisor name
-    supervisor_name = administrative_subcase_db.get_supervisor_name_for_org_unit(org_unit_id)
+    org_unit_name = (
+        first_subcase.get('responsible_org_unit_name')
+        or first_subcase.get('org_unit_name')
+        or f'Org Unit {org_unit_id}'
+    )
+    raw_org_type = (
+        first_subcase.get('responsible_org_type')
+        or first_subcase.get('org_type')
+    )
+
+    # Convert numeric org_type to string enum; default to SECTION for safety
+    org_type = ORG_TYPE_MAP.get(raw_org_type, 'SECTION')
+
+    # Look up the supervisor for the responsible entity, filtered by the correct
+    # role so only the admin assigned to that org unit type is returned.
+    ORG_TYPE_TO_ROLE = {
+        'SECTION': 'SECTION_ADMIN',
+        'DEPARTMENT': 'DEPARTMENT_ADMIN',
+        'ADMINISTRATION': 'ADMINISTRATION_ADMIN',
+    }
+    expected_role = ORG_TYPE_TO_ROLE.get(org_type)
+    supervisor_name = administrative_subcase_db.get_supervisor_name_for_org_unit(
+        org_unit_id, expected_role
+    )
     if not supervisor_name:
         supervisor_name = "Unassigned"
     

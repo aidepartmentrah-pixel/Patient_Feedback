@@ -607,7 +607,15 @@ def act_on_case(
             current_user=current_user
         )
         return {"success": True}
-    
+
+    elif action == "ACCEPT_COMPLAINT":
+        # Section admin accepts complaint with constant text, no action items, no RCA
+        case_response_service.accept_section_complaint(
+            subcase_id=subcase_id,
+            current_user=current_user
+        )
+        return {"success": True}
+
     else:
         raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
 

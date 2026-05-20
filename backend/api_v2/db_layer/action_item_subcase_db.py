@@ -267,38 +267,55 @@ def get_action_items_by_status(status_code: str) -> List[Dict[str, Any]]:
 def get_action_items_by_assigned_user(user_id: int) -> List[Dict[str, Any]]:
     """
     Fetch all action items assigned to a specific user.
-    
+    Joins subcase + incident tables to include case context fields.
+
     Returns:
         List of action item dicts
     """
     conn = get_connection()
     cursor = conn.cursor()
-    
+
     try:
         query = """
-            SELECT 
-                ActionItemID,
-                SubcaseID,
-                Status,
-                Title,
-                Description,
-                DueDate,
-                AssignedToUserID,
-                StartedAt,
-                CompletedAt,
-                VerifiedAt,
-                CreatedAt,
-                CreatedByUserID,
-                UpdatedAt,
-                UpdatedByUserID
-            FROM dbo.APP_SubcaseActionItem
-            WHERE AssignedToUserID = ?
-            ORDER BY DueDate ASC, CreatedAt DESC
+            SELECT
+                ai.ActionItemID,
+                ai.SubcaseID,
+                ai.Status,
+                ai.Title,
+                ai.Description,
+                ai.DueDate,
+                ai.AssignedToUserID,
+                ai.StartedAt,
+                ai.CompletedAt,
+                ai.VerifiedAt,
+                ai.CreatedAt,
+                ai.CreatedByUserID,
+                ai.UpdatedAt,
+                ai.UpdatedByUserID,
+                s.TargetOrgUnitID,
+                s.CaseType,
+                s.IncidentRequestCaseID,
+                s.SeasonalReportID,
+                ou.Name AS OrgUnitName,
+                ic.ComplaintText AS CaseDescription,
+                ic.PatientName,
+                inc.incident_number AS IncidentNumber,
+                sev.SeverityName,
+                cat.CategoryName
+            FROM dbo.APP_SubcaseActionItem ai
+            INNER JOIN dbo.APP_AdministrativeSubcase s ON ai.SubcaseID = s.SubcaseID
+            LEFT JOIN dbo.AdminsrationUnit ou ON s.TargetOrgUnitID = ou.UniqueID
+            LEFT JOIN dbo.APP_IncidentCase ic ON s.IncidentRequestCaseID = ic.IncidentRequestCaseID
+            LEFT JOIN dbo.APP_Incident inc ON ic.incident_id = inc.incident_id
+            LEFT JOIN dbo.APP_LOOKUP_SEVERITY sev ON ic.SeverityID = sev.SeverityID
+            LEFT JOIN dbo.APP_LOOKUP_CATEGORY cat ON ic.CategoryID = cat.CategoryID
+            WHERE ai.AssignedToUserID = ?
+            ORDER BY ai.DueDate ASC, ai.CreatedAt DESC
         """
-        
+
         cursor.execute(query, (user_id,))
         rows = cursor.fetchall()
-        
+
         return [
             {
                 "action_item_id": row.ActionItemID,
@@ -314,11 +331,21 @@ def get_action_items_by_assigned_user(user_id: int) -> List[Dict[str, Any]]:
                 "created_at": row.CreatedAt,
                 "created_by_user_id": row.CreatedByUserID,
                 "updated_at": row.UpdatedAt,
-                "updated_by_user_id": row.UpdatedByUserID
+                "updated_by_user_id": row.UpdatedByUserID,
+                "target_org_unit_id": row.TargetOrgUnitID,
+                "case_type": row.CaseType,
+                "incident_request_case_id": row.IncidentRequestCaseID,
+                "seasonal_report_id": row.SeasonalReportID,
+                "org_unit_name": row.OrgUnitName,
+                "case_description": row.CaseDescription,
+                "patient_name": row.PatientName,
+                "incident_number": row.IncidentNumber,
+                "severity_name": row.SeverityName,
+                "category_name": row.CategoryName,
             }
             for row in rows
         ]
-    
+
     finally:
         cursor.close()
         conn.close()
@@ -353,7 +380,7 @@ def get_action_items_by_scope(allowed_unit_ids: List[int], actionable_only: bool
             status_filter = "AND ai.Status IN ('ADMIN_APPROVED', 'IN_PROGRESS')"
         
         query = f"""
-            SELECT 
+            SELECT
                 ai.ActionItemID,
                 ai.SubcaseID,
                 ai.Status,
@@ -371,17 +398,28 @@ def get_action_items_by_scope(allowed_unit_ids: List[int], actionable_only: bool
                 s.TargetOrgUnitID,
                 s.CaseType,
                 s.IncidentRequestCaseID,
-                s.SeasonalReportID
+                s.SeasonalReportID,
+                ou.Name AS OrgUnitName,
+                ic.ComplaintText AS CaseDescription,
+                ic.PatientName,
+                inc.incident_number AS IncidentNumber,
+                sev.SeverityName,
+                cat.CategoryName
             FROM dbo.APP_SubcaseActionItem ai
             INNER JOIN dbo.APP_AdministrativeSubcase s ON ai.SubcaseID = s.SubcaseID
+            LEFT JOIN dbo.AdminsrationUnit ou ON s.TargetOrgUnitID = ou.UniqueID
+            LEFT JOIN dbo.APP_IncidentCase ic ON s.IncidentRequestCaseID = ic.IncidentRequestCaseID
+            LEFT JOIN dbo.APP_Incident inc ON ic.incident_id = inc.incident_id
+            LEFT JOIN dbo.APP_LOOKUP_SEVERITY sev ON ic.SeverityID = sev.SeverityID
+            LEFT JOIN dbo.APP_LOOKUP_CATEGORY cat ON ic.CategoryID = cat.CategoryID
             WHERE s.TargetOrgUnitID IN ({placeholders})
             {status_filter}
             ORDER BY ai.DueDate ASC, ai.CreatedAt DESC
         """
-        
+
         cursor.execute(query, list(allowed_unit_ids))
         rows = cursor.fetchall()
-        
+
         return [
             {
                 "action_item_id": row.ActionItemID,
@@ -401,7 +439,13 @@ def get_action_items_by_scope(allowed_unit_ids: List[int], actionable_only: bool
                 "target_org_unit_id": row.TargetOrgUnitID,
                 "case_type": row.CaseType,
                 "incident_request_case_id": row.IncidentRequestCaseID,
-                "seasonal_report_id": row.SeasonalReportID
+                "seasonal_report_id": row.SeasonalReportID,
+                "org_unit_name": row.OrgUnitName,
+                "case_description": row.CaseDescription,
+                "patient_name": row.PatientName,
+                "incident_number": row.IncidentNumber,
+                "severity_name": row.SeverityName,
+                "category_name": row.CategoryName,
             }
             for row in rows
         ]

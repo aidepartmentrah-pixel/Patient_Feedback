@@ -1,0 +1,312 @@
+"""
+Import DB Layer — Hospital Data Intake Pipeline
+Pure SQL operations only. No business logic.
+"""
+
+from typing import Dict, Any, List, Optional, Tuple
+from datetime import datetime, date
+from core.database import get_connection
+from core.table_config import HR_EMPLOYEES_TABLE, PATIENT_ADMISSION_TABLE
+
+
+# ============================================================
+# LOOKUP LOADING
+# ============================================================
+
+def load_all_lookups() -> Dict[str, Any]:
+    """
+    Load every lookup table into memory for validation.
+    Returns two structures per category:
+      - maps:  {lowercase_name: id}  — for validation
+      - lists: [name, ...]           — for template dropdowns (ordered)
+    Also returns classification_chains: {classification_id: {domain_id, category_id, subcategory_id}}
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    maps = {}
+    lists = {}
+
+    try:
+        # Feedback Intent Types
+        cursor.execute("SELECT FeedbackIntentTypeID, NameAr FROM dbo.APP_LOOKUP_FEEDBACK_INTENT_TYPE WHERE IsActive=1 ORDER BY DisplayOrder")
+        rows = cursor.fetchall()
+        maps["feedback_types"] = {(r.NameAr or "").lower().strip(): r.FeedbackIntentTypeID for r in rows if r.NameAr}
+        lists["feedback_types"] = [r.NameAr for r in rows if r.NameAr]
+
+        # Sources
+        cursor.execute("SELECT SourceID, SourceNameAr FROM dbo.APP_LOOKUP_SOURCE WHERE IsActive=1 ORDER BY DisplayOrder")
+        rows = cursor.fetchall()
+        maps["sources"] = {(r.SourceNameAr or "").lower().strip(): r.SourceID for r in rows if r.SourceNameAr}
+        lists["sources"] = [r.SourceNameAr for r in rows if r.SourceNameAr]
+
+        # Org Units (shared for issuing dept and target dept)
+        cursor.execute("SELECT UniqueID, Name FROM dbo.AdminsrationUnit WHERE Frozen=0 ORDER BY Name")
+        rows = cursor.fetchall()
+        maps["org_units"] = {(r.Name or "").lower().strip(): r.UniqueID for r in rows if r.Name}
+        lists["org_units"] = [r.Name for r in rows if r.Name]
+
+        # Domains
+        cursor.execute("SELECT DomainID, DomainName FROM dbo.APP_LOOKUP_DOMAIN ORDER BY DomainOrder")
+        rows = cursor.fetchall()
+        maps["domains"] = {(r.DomainName or "").lower().strip(): r.DomainID for r in rows if r.DomainName}
+        lists["domains"] = [r.DomainName for r in rows if r.DomainName]
+
+        # Categories
+        cursor.execute("SELECT CategoryID, CategoryName FROM dbo.APP_LOOKUP_CATEGORY ORDER BY CategoryOrder")
+        rows = cursor.fetchall()
+        maps["categories"] = {(r.CategoryName or "").lower().strip(): r.CategoryID for r in rows if r.CategoryName}
+        lists["categories"] = [r.CategoryName for r in rows if r.CategoryName]
+
+        # Subcategories
+        cursor.execute("SELECT SubCategoryID, SubCategoryName FROM dbo.APP_LOOKUP_SUBCATEGORY ORDER BY SubCategoryName")
+        rows = cursor.fetchall()
+        maps["subcategories"] = {(r.SubCategoryName or "").lower().strip(): r.SubCategoryID for r in rows if r.SubCategoryName}
+        lists["subcategories"] = [r.SubCategoryName for r in rows if r.SubCategoryName]
+
+        # Classifications + chain data (domain/category/subcategory per classification)
+        cursor.execute("""
+            SELECT c.ClassificationID, c.Classification_AR, c.SubCategoryID,
+                   s.CategoryID, cat.DomainID
+            FROM dbo.APP_LOOKUP_CLASSIFICATION c
+            JOIN dbo.APP_LOOKUP_SUBCATEGORY s ON c.SubCategoryID = s.SubCategoryID
+            JOIN dbo.APP_LOOKUP_CATEGORY cat ON s.CategoryID = cat.CategoryID
+            WHERE c.IsActive = 1
+            ORDER BY c.Classification_AR
+        """)
+        rows = cursor.fetchall()
+        classification_map = {}
+        classification_chains = {}
+        classification_list = []
+        for r in rows:
+            name_key = (r.Classification_AR or "").lower().strip()
+            if name_key:
+                if name_key not in classification_map:
+                    classification_map[name_key] = r.ClassificationID
+                    classification_list.append(r.Classification_AR)
+            classification_chains[r.ClassificationID] = {
+                "domain_id": r.DomainID,
+                "category_id": r.CategoryID,
+                "subcategory_id": r.SubCategoryID,
+            }
+        maps["classifications"] = classification_map
+        lists["classifications"] = classification_list
+        maps["classification_chains"] = classification_chains
+
+        # Severities
+        cursor.execute("SELECT SeverityID, SeverityName FROM dbo.APP_LOOKUP_SEVERITY ORDER BY SeverityID")
+        rows = cursor.fetchall()
+        maps["severities"] = {(r.SeverityName or "").lower().strip(): r.SeverityID for r in rows if r.SeverityName}
+        lists["severities"] = [r.SeverityName for r in rows if r.SeverityName]
+
+        # Stages
+        cursor.execute("SELECT StageID, StageName FROM dbo.APP_LOOKUP_CASE_STAGE ORDER BY StageOrder")
+        rows = cursor.fetchall()
+        maps["stages"] = {(r.StageName or "").lower().strip(): r.StageID for r in rows if r.StageName}
+        lists["stages"] = [r.StageName for r in rows if r.StageName]
+
+        # Harm Levels
+        cursor.execute("SELECT HarmID, HarmLevel FROM dbo.APP_LOOKUP_HARM_LEVEL ORDER BY SeverityOrder")
+        rows = cursor.fetchall()
+        maps["harm_levels"] = {(r.HarmLevel or "").lower().strip(): r.HarmID for r in rows if r.HarmLevel}
+        lists["harm_levels"] = [r.HarmLevel for r in rows if r.HarmLevel]
+
+        # Clinical Risk Types
+        cursor.execute("SELECT ClinicalRiskTypeID, Name FROM dbo.APP_LOOKUP_CLINICAL_RISK_TYPE WHERE IsActive=1 ORDER BY DisplayOrder")
+        rows = cursor.fetchall()
+        maps["risk_types"] = {(r.Name or "").lower().strip(): r.ClinicalRiskTypeID for r in rows if r.Name}
+        lists["risk_types"] = [r.Name for r in rows if r.Name]
+
+        # Buildings
+        cursor.execute("SELECT BuildingID, BuildingName FROM dbo.APP_LOOKUP_BUILDING ORDER BY BuildingCode")
+        rows = cursor.fetchall()
+        maps["buildings"] = {(r.BuildingName or "").lower().strip(): r.BuildingID for r in rows if r.BuildingName}
+        lists["buildings"] = [r.BuildingName for r in rows if r.BuildingName]
+
+        # Doctors
+        cursor.execute("SELECT DoctorID, DoctorName FROM dbo.APP_LOOKUP_DOCTOR WHERE IsActive=1 ORDER BY DoctorName")
+        rows = cursor.fetchall()
+        maps["doctors"] = {(r.DoctorName or "").lower().strip(): r.DoctorID for r in rows if r.DoctorName}
+        lists["doctors"] = [r.DoctorName for r in rows if r.DoctorName]
+
+    finally:
+        cursor.close()
+        conn.close()
+
+    return {"maps": maps, "lists": lists}
+
+
+# ============================================================
+# PATIENT MATCHING
+# ============================================================
+
+def count_patient_exact(full_name: str, cursor) -> int:
+    """Count exact FullName matches across both patient tables."""
+    cursor.execute(f"""
+        SELECT COUNT(*) FROM (
+            SELECT FullName FROM {PATIENT_ADMISSION_TABLE} WHERE FullName = ?
+            UNION ALL
+            SELECT FullName FROM dbo.APP_RESERVE_PATIENT WHERE FullName = ?
+        ) AS combined
+    """, (full_name, full_name))
+    return cursor.fetchone()[0]
+
+
+def create_reserve_patient(full_name: str, created_by_user_id: int, cursor) -> None:
+    """Insert a minimal patient record into APP_RESERVE_PATIENT."""
+    # Only the first part of the name goes to FirstName; store full name in FullName
+    parts = full_name.strip().split()
+    first = parts[0] if parts else full_name
+    rest = " ".join(parts[1:]) if len(parts) > 1 else None
+
+    cursor.execute("""
+        INSERT INTO dbo.APP_RESERVE_PATIENT
+            (FirstName, MiddleName, FullName, SystemTime)
+        VALUES (?, ?, ?, GETDATE())
+    """, (first, rest, full_name))
+
+
+# ============================================================
+# WORKER MATCHING (per-query — HR view may be large)
+# ============================================================
+
+def find_worker_by_name(full_name: str) -> Optional[int]:
+    """Return EmployeeID for exact FullName match, or None."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            f"SELECT EmployeeID FROM {HR_EMPLOYEES_TABLE} WHERE FullName = ?",
+            (full_name,)
+        )
+        rows = cursor.fetchall()
+        if len(rows) == 1:
+            return rows[0].EmployeeID
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ============================================================
+# INSERT OPERATIONS (all accept an open cursor for transactions)
+# ============================================================
+
+def insert_incident(
+    patient_name: str,
+    feedback_intent_type_id: Optional[int],
+    issuing_org_unit_id: Optional[int],
+    building_id: Optional[int],
+    is_inpatient: bool,
+    created_by_user_id: int,
+    cursor,
+) -> int:
+    cursor.execute("""
+        INSERT INTO dbo.APP_Incident
+            (patient_name, feedback_intent_type_id, issuing_org_unit_id,
+             building_id, is_inpatient, created_by_user_id)
+        OUTPUT INSERTED.incident_id
+        VALUES (?,?,?,?,?,?)
+    """, (patient_name, feedback_intent_type_id, issuing_org_unit_id,
+          building_id, int(is_inpatient), created_by_user_id))
+    return cursor.fetchone()[0]
+
+
+def insert_case(
+    incident_id: int,
+    complaint_text: str,
+    immediate_action: Optional[str],
+    taken_action: Optional[str],
+    feedback_date: date,
+    patient_name: str,
+    issuing_org_unit_id: Optional[int],
+    created_by_user_id: int,
+    is_inpatient: bool,
+    clinical_risk_type_id: Optional[int],
+    feedback_intent_type_id: Optional[int],
+    building_id: Optional[int],
+    domain_id: Optional[int],
+    category_id: Optional[int],
+    subcategory_id: Optional[int],
+    classification_id: Optional[int],
+    severity_id: Optional[int],
+    stage_id: Optional[int],
+    harm_id: Optional[int],
+    source_id: Optional[int],
+    cursor,
+) -> int:
+    cursor.execute("""
+        INSERT INTO dbo.APP_IncidentCase
+            (incident_id, ComplaintText, ImmediateAction, TakenAction,
+             FeedbackRecievedDate, PatientName, IssuingOrgUnitID,
+             CreatedByUserID, isINPatient, ClinicalRiskTypeID,
+             FeedbackIntentTypeID, BuildingID, DomainID, CategoryID,
+             SubCategoryID, ClassificationID, SeverityID, StageID,
+             HarmLevelID, CaseStatusID, SourceID, ExplanationStatusID, RequiresExplanation)
+        OUTPUT INSERTED.IncidentRequestCaseID
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,4,0)
+    """, (
+        incident_id, complaint_text, immediate_action, taken_action,
+        feedback_date, patient_name, issuing_org_unit_id,
+        created_by_user_id, int(is_inpatient), clinical_risk_type_id,
+        feedback_intent_type_id, building_id, domain_id, category_id,
+        subcategory_id, classification_id, severity_id, stage_id,
+        harm_id, source_id
+    ))
+    return cursor.fetchone()[0]
+
+
+def insert_target_dept(
+    case_id: int,
+    dept_id: int,
+    is_primary: bool,
+    assigned_by_user_id: int,
+    cursor,
+) -> None:
+    cursor.execute("""
+        INSERT INTO dbo.APP_IncidentCaseTargetDepartment
+            (IncidentRequestCaseID, DepartmentID, IsPrimary, AssignedByUserID)
+        VALUES (?,?,?,?)
+    """, (case_id, dept_id, int(is_primary), assigned_by_user_id))
+
+
+def insert_subcase_draft(
+    case_id: int,
+    target_org_unit_id: int,
+    created_by_user_id: int,
+    cursor,
+) -> int:
+    cursor.execute("""
+        INSERT INTO dbo.APP_AdministrativeSubcase
+            (CaseType, IncidentRequestCaseID, SeasonalReportID,
+             TargetOrgUnitID, Status, CreatedAt, CreatedByUserID)
+        OUTPUT INSERTED.SubcaseID
+        VALUES ('INCIDENT_RESPONSE', ?, NULL, ?, 'DRAFT', GETDATE(), ?)
+    """, (case_id, target_org_unit_id, created_by_user_id))
+    return cursor.fetchone()[0]
+
+
+def insert_case_doctor(
+    case_id: int,
+    doctor_id: int,
+    doctor_name: str,
+    assigned_by_user_id: int,
+    cursor,
+) -> None:
+    cursor.execute("""
+        INSERT INTO dbo.APP_IncidentCaseDoctor
+            (IncidentRequestCaseID, DoctorID, DoctorName, IsPrimary, AssignedByUserID)
+        VALUES (?,?,?,0,?)
+    """, (case_id, doctor_id, doctor_name, assigned_by_user_id))
+
+
+def insert_case_employee(
+    case_id: int,
+    employee_id: int,
+    assigned_by_user_id: int,
+    cursor,
+) -> None:
+    cursor.execute("""
+        INSERT INTO dbo.APP_IncidentCaseEmployee
+            (IncidentRequestCaseID, EmployeeID, AssignedByUserID, IsPrimary, AssignedAt)
+        VALUES (?,?,?,0,GETDATE())
+    """, (case_id, employee_id, assigned_by_user_id))

@@ -34,8 +34,8 @@ class CreateRecordRequest(BaseModel):
     # Record type: 1=Complaint (default), 2=Notice
     record_type_id: int = Field(1, ge=1, le=2, description="Record type (1=Complaint, 2=Notice)")
 
-    # Required for all record types
-    complaint_text: str = Field(..., min_length=1, description="Full complaint/incident description")
+    # Required for Complaints (enforced at service layer); optional at router level to allow Notice submissions
+    complaint_text: Optional[str] = Field(None, description="Full complaint/incident description")
     feedback_received_date: date = Field(..., description="Date the feedback was received")
     issuing_department_id: int = Field(..., gt=0, description="Issuing department ID (required)")
     patient_name: str = Field(..., description="Patient name (required)")
@@ -867,16 +867,14 @@ async def publish_case(
                 "message_ar": "يمكن نشر الشكاوى الجاهزة للإرسال فقط"
             })
 
-        # Create workflow subcase only for Complaints (Notices skip the RCA workflow)
-        if row.RecordTypeID != 2:
-            try:
-                from api_v2.services.case_creation_service import create_subcases_for_incident
-                create_subcases_for_incident(case_id, current_user=None)
-            except Exception as e:
-                raise HTTPException(status_code=500, detail={
-                    "error": "SUBCASE_CREATION_FAILED",
-                    "message": f"Failed to create workflow subcase: {str(e)}"
-                })
+        try:
+            from api_v2.services.case_creation_service import create_subcases_for_incident
+            create_subcases_for_incident(case_id, current_user=None)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail={
+                "error": "SUBCASE_CREATION_FAILED",
+                "message": f"Failed to create workflow subcase: {str(e)}"
+            })
 
         cursor.execute(
             "UPDATE dbo.APP_IncidentCase SET CaseStatusID = ? WHERE IncidentRequestCaseID = ?",
@@ -933,8 +931,7 @@ async def bulk_publish(
             cid = row[0]
             record_type = row[1]
             try:
-                if record_type != 2:  # Notices skip subcase creation
-                    create_subcases_for_incident(cid, current_user=None)
+                create_subcases_for_incident(cid, current_user=None)
                 cursor.execute(
                     "UPDATE dbo.APP_IncidentCase SET CaseStatusID = ? WHERE IncidentRequestCaseID = ?",
                     OPEN_STATUS_ID, cid

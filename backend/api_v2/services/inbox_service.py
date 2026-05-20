@@ -666,39 +666,38 @@ def _compute_allowed_actions(subcase: Dict[str, Any], current_user) -> List[str]
     # SECTION_ADMIN actions
     if role_code == 'SECTION_ADMIN':
         if status in ['SUBMITTED_TO_SECTION', 'RETURNED_TO_SECTION_FOR_REVISION']:
-            actions = ["view", "submit_response", "reject"]
-            # Section admin can re-view their previous response when
-            # the case has been returned for revision.
+            actions = ["view", "submit_response", "accept_complaint", "reject"]
+            # Section admin can re-view their previous response when returned for revision.
             if status == 'RETURNED_TO_SECTION_FOR_REVISION' and _has_response:
                 actions.append("view_response")
             return actions
         else:
             return ["view"]
-    
+
     # DEPARTMENT_ADMIN actions
     elif role_code == 'DEPARTMENT_ADMIN':
         if status in ['SECTION_ACCEPTED_PENDING_DEPT', 'RETURNED_TO_DEPT_FOR_REVISION']:
-            actions = ["view", "accept", "reject"]
+            actions = ["view", "accept", "override", "reject"]
             if _has_response:
                 actions.append("view_response")
             return actions
         else:
             return ["view"]
-    
+
     # ADMINISTRATION_ADMIN actions
     elif role_code == 'ADMINISTRATION_ADMIN':
         if status == 'DEPT_ACCEPTED_PENDING_ADMIN':
-            actions = ["view", "accept", "reject"]
+            actions = ["view", "accept", "override", "reject"]
             if _has_response:
                 actions.append("view_response")
             return actions
         else:
             return ["view"]
-    
+
     # SOFTWARE_ADMIN actions - Final-stage authority only, no section/dept override
     elif role_code == 'SOFTWARE_ADMIN':
         if status == 'DEPT_ACCEPTED_PENDING_ADMIN':
-            actions = ["view", "accept", "reject"]
+            actions = ["view", "accept", "override", "reject"]
             if _has_response:
                 actions.append("view_response")
             return actions
@@ -758,6 +757,7 @@ def _build_inbox_item(subcase: Dict[str, Any], current_user) -> Dict[str, Any]:
         "subcase_id": subcase.get('subcase_id'),
         "case_type": subcase.get('case_type'),
         "incident_id": subcase.get('incident_request_case_id'),
+        "incident_number": subcase.get('incident_number'),
         "seasonal_report_id": subcase.get('seasonal_report_id'),
         "target_org_unit_id": subcase.get('target_org_unit_id'),
         "target_org_unit_name": subcase.get('org_unit_name'),
@@ -787,6 +787,7 @@ def _build_archive_item(subcase: Dict[str, Any]) -> Dict[str, Any]:
         "subcase_id": subcase.get('subcase_id'),
         "case_type": subcase.get('case_type'),
         "incident_id": subcase.get('incident_request_case_id'),
+        "incident_number": subcase.get('incident_number'),
         "seasonal_report_id": subcase.get('seasonal_report_id'),
         "target_org_unit_id": subcase.get('target_org_unit_id'),
         "target_org_unit_name": subcase.get('org_unit_name'),

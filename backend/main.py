@@ -67,12 +67,16 @@ from api.routers.admin_user_management_router import router as admin_user_manage
 from api.routers.admin_section_admin_recreate_router import router as admin_section_admin_recreate_router
 # Phase B: Settings Users Router (user management CRUD operations)
 from api.routers.settings_users_router import router as settings_users_router
+# Classification Management Router (Settings — add/rename/freeze classifications)
+from api.routers.classification_mgmt_router import router as classification_mgmt_router
 # Phase K: Migration Router (legacy case migration endpoints)
 from api.routers.migration_router import router as migration_router
 # Organization Unit Router (specialized organization unit selection endpoints)
 from api.routers.org_unit_router import router as org_unit_router
 # Bootstrap Configuration Router (password-protected, no DB auth needed)
 from api.routers.config_router import router as config_router
+# Import Pipeline Router (template download + Excel upload)
+from api.routers.import_router import router as import_router
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
@@ -191,12 +195,15 @@ app.include_router(admin_user_management_router)
 app.include_router(admin_section_admin_recreate_router)
 # Phase B: Settings Users Router (user management CRUD operations)
 app.include_router(settings_users_router)
+# Classification Management Router (Settings)
+app.include_router(classification_mgmt_router)
 # Phase K: Migration Router (legacy case migration endpoints)
 app.include_router(migration_router)
 # Organization Unit Router (specialized organization unit selection endpoints)
 app.include_router(org_unit_router)
 # Bootstrap Configuration Router (password-protected, no DB auth needed)
 app.include_router(config_router)
+app.include_router(import_router)
 
 
 # ==================== BOOTSTRAP MIDDLEWARE ====================

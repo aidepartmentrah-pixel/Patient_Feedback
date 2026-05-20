@@ -213,29 +213,47 @@ def get_subcategories(category_id: Optional[int] = None) -> Dict[str, Any]:
             conn.close()
 
 
-def get_classifications(subcategory_id: Optional[int] = None) -> Dict[str, Any]:
-    """Get classifications, optionally filtered by subcategory."""
+def get_classifications(subcategory_id: Optional[int] = None, active_only: bool = True) -> Dict[str, Any]:
+    """Get classifications, optionally filtered by subcategory. Frozen (IsActive=0) excluded by default."""
     conn = None
     cursor = None
-    
+
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        
+
         if subcategory_id:
-            cursor.execute("""
-                SELECT ClassificationID, SubCategoryID, Classification_EN, Classification_AR
-                FROM APP_LOOKUP_CLASSIFICATION
-                WHERE SubCategoryID = ?
-                ORDER BY Classification_EN
-            """, (subcategory_id,))
+            if active_only:
+                cursor.execute(
+                    "SELECT ClassificationID, SubCategoryID, Classification_EN, Classification_AR "
+                    "FROM APP_LOOKUP_CLASSIFICATION "
+                    "WHERE SubCategoryID = ? AND IsActive = 1 "
+                    "ORDER BY Classification_AR",
+                    (subcategory_id,),
+                )
+            else:
+                cursor.execute(
+                    "SELECT ClassificationID, SubCategoryID, Classification_EN, Classification_AR "
+                    "FROM APP_LOOKUP_CLASSIFICATION "
+                    "WHERE SubCategoryID = ? "
+                    "ORDER BY Classification_AR",
+                    (subcategory_id,),
+                )
         else:
-            cursor.execute("""
-                SELECT ClassificationID, SubCategoryID, Classification_EN, Classification_AR
-                FROM APP_LOOKUP_CLASSIFICATION
-                ORDER BY Classification_EN
-            """)
-        
+            if active_only:
+                cursor.execute(
+                    "SELECT ClassificationID, SubCategoryID, Classification_EN, Classification_AR "
+                    "FROM APP_LOOKUP_CLASSIFICATION "
+                    "WHERE IsActive = 1 "
+                    "ORDER BY Classification_AR"
+                )
+            else:
+                cursor.execute(
+                    "SELECT ClassificationID, SubCategoryID, Classification_EN, Classification_AR "
+                    "FROM APP_LOOKUP_CLASSIFICATION "
+                    "ORDER BY Classification_AR"
+                )
+
         classifications = []
         for row in cursor.fetchall():
             classifications.append({
@@ -244,9 +262,9 @@ def get_classifications(subcategory_id: Optional[int] = None) -> Dict[str, Any]:
                 "name_en": row.Classification_EN or row.Classification_AR,
                 "name_ar": row.Classification_AR
             })
-        
+
         return {"classifications": classifications}
-        
+
     except Exception as e:
         return {
             "classifications": [],

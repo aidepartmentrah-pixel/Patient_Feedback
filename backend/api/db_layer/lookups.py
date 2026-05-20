@@ -102,21 +102,18 @@ def get_subcategories(category_id: int | None = None) -> list[dict]:
 def get_classifications(subcategory_id: int | None = None) -> list[dict]:
     if subcategory_id:
         return _fetch_all(
-            """
-            SELECT ClassificationID, SubCategoryID, Classification_AR, Classification_EN
-            FROM dbo.APP_LOOKUP_CLASSIFICATION
-            WHERE SubCategoryID = ?
-            ORDER BY Classification_AR
-            """,
+            "SELECT ClassificationID, SubCategoryID, Classification_AR, Classification_EN "
+            "FROM dbo.APP_LOOKUP_CLASSIFICATION "
+            "WHERE SubCategoryID = ? AND IsActive = 1 "
+            "ORDER BY Classification_AR",
             (subcategory_id,),
         )
 
     return _fetch_all(
-        """
-        SELECT ClassificationID, SubCategoryID, Classification_AR, Classification_EN
-        FROM dbo.APP_LOOKUP_CLASSIFICATION
-        ORDER BY Classification_AR
-        """
+        "SELECT ClassificationID, SubCategoryID, Classification_AR, Classification_EN "
+        "FROM dbo.APP_LOOKUP_CLASSIFICATION "
+        "WHERE IsActive = 1 "
+        "ORDER BY Classification_AR"
     )
 
 

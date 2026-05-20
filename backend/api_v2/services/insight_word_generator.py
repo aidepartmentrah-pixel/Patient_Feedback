@@ -225,6 +225,7 @@ def _render_active_cases(doc: Document, grouped_inbox: List[Dict[str, Any]]):
 
             cols = [
                 "رقم الحادثة",
+                "رقم الحالة",
                 "اسم المريض",
                 "التصنيف",
                 "الخطورة",
@@ -246,8 +247,10 @@ def _render_active_cases(doc: Document, grouped_inbox: List[Dict[str, Any]]):
                 row_cells = tbl.rows[ri].cells
                 incident_num = (subcase.get('incident_number') or
                                 subcase.get('incident_id') or '—')
+                case_num = subcase.get('incident_request_case_id') or subcase.get('seasonal_report_id') or '—'
                 values = [
                     incident_num,
+                    str(case_num),
                     subcase.get('patient_name', '—'),
                     subcase.get('category', '—'),
                     _severity_arabic(subcase.get('severity', '')),
@@ -275,6 +278,7 @@ def _render_fc_section(doc: Document, cases: List[Dict[str, Any]],
 
     cols = [
         "رقم الحادثة",
+        "رقم الحالة",
         "اسم المريض",
         "الوحدة المستهدفة",
         "سبب الإغلاق",
@@ -292,13 +296,14 @@ def _render_fc_section(doc: Document, cases: List[Dict[str, Any]],
 
     for ri, case in enumerate(cases, start=1):
         row_cells = tbl.rows[ri].cells
-        incident_num = (case.get('incident_number') or
-                        case.get('incident_request_case_id') or '—')
+        incident_num = case.get('incident_number') or '—'
+        case_num = case.get('incident_request_case_id') or case.get('seasonal_report_id') or '—'
         fc_date = _format_date(case.get('force_closed_at') or case.get('created_at'))
         reason = case.get('force_close_reason') or '—'
         alt_bg = 'F9F9F9' if ri % 2 == 0 else None
         values = [
             incident_num,
+            str(case_num),
             case.get('patient_name', '—'),
             case.get('org_unit_name', '—'),
             reason,

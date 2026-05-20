@@ -298,9 +298,54 @@ def get_subcase_response(subcase_id: int, current_user) -> Dict[str, Any]:
     return result
 
 
+# Constant text written by all quick-accept paths
+ACCEPT_TEXT = 'قبول الشكوى'
+
+
 # ============================================================
 # SECTION-LEVEL ACTIONS
 # ============================================================
+
+
+def accept_section_complaint(
+    subcase_id: int,
+    current_user
+) -> None:
+    """
+    Section Administrator accepts complaint with a simple acknowledgement.
+
+    No action items, no RCA required.
+    Writes the constant text 'قبول الشكوى' to SectionExplanationText.
+
+    Status transition:
+    - SUBMITTED_TO_SECTION            -> SECTION_ACCEPTED_PENDING_DEPT
+    - RETURNED_TO_SECTION_FOR_REVISION -> SECTION_ACCEPTED_PENDING_DEPT
+    """
+    if current_user is None:
+        raise Exception("current_user cannot be None")
+
+    subcase = _load_subcase_or_fail(subcase_id)
+    _assert_status(subcase, ['SUBMITTED_TO_SECTION', 'RETURNED_TO_SECTION_FOR_REVISION'])
+
+    administrative_subcase_db.update_section_explanation(
+        subcase_id=subcase_id,
+        text=ACCEPT_TEXT,
+        updated_by_user_id=current_user.user_id
+    )
+
+    administrative_subcase_db.update_subcase_status(
+        subcase_id=subcase_id,
+        new_status='SECTION_ACCEPTED_PENDING_DEPT',
+        updated_by_user_id=current_user.user_id
+    )
+
+    # Transition any DRAFT action items forward (normally zero on this path)
+    action_item_subcase_db.bulk_update_action_items_status_by_subcase(
+        subcase_id=subcase_id,
+        to_status='SUBMITTED_TO_DEPT',
+        updated_by_user_id=current_user.user_id,
+        from_statuses=['DRAFT']
+    )
 
 
 def submit_section_response(
@@ -554,16 +599,22 @@ def approve_department(
     
     subcase = _load_subcase_or_fail(subcase_id)
     _assert_status(subcase, ['SECTION_ACCEPTED_PENDING_DEPT', 'RETURNED_TO_DEPT_FOR_REVISION'])
-    
+
+    # Write acceptance text so the field is never left empty
+    administrative_subcase_db.update_department_explanation(
+        subcase_id=subcase_id,
+        text=ACCEPT_TEXT,
+        updated_by_user_id=current_user.user_id
+    )
+
     # Transition to next workflow stage
     administrative_subcase_db.update_subcase_status(
         subcase_id=subcase_id,
         new_status='DEPT_ACCEPTED_PENDING_ADMIN',
         updated_by_user_id=current_user.user_id
     )
-    
+
     # PARALLEL ACTION ITEM TRANSITION: SUBMITTED_TO_DEPT -> SUBMITTED_TO_ADMIN
-    # Action items follow the subcase through the approval pipeline
     action_item_subcase_db.bulk_update_action_items_status_by_subcase(
         subcase_id=subcase_id,
         to_status='SUBMITTED_TO_ADMIN',
@@ -708,16 +759,22 @@ def approve_administration(
     
     subcase = _load_subcase_or_fail(subcase_id)
     _assert_status(subcase, ['DEPT_ACCEPTED_PENDING_ADMIN'])
-    
+
+    # Write acceptance text so the field is never left empty
+    administrative_subcase_db.update_administration_explanation(
+        subcase_id=subcase_id,
+        text=ACCEPT_TEXT,
+        updated_by_user_id=current_user.user_id
+    )
+
     # Transition to final approval state
     administrative_subcase_db.update_subcase_status(
         subcase_id=subcase_id,
         new_status='ADMIN_APPROVED',
         updated_by_user_id=current_user.user_id
     )
-    
+
     # PARALLEL ACTION ITEM TRANSITION: SUBMITTED_TO_ADMIN -> ADMIN_APPROVED
-    # Action items are now approved and ready for execution (follow-up / calendar)
     action_item_subcase_db.bulk_update_action_items_status_by_subcase(
         subcase_id=subcase_id,
         to_status='ADMIN_APPROVED',

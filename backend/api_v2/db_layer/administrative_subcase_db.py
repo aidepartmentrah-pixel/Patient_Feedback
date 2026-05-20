@@ -414,7 +414,7 @@ def get_subcases_by_status(status_code: str) -> List[Dict[str, Any]]:
     
     try:
         query = """
-            SELECT 
+            SELECT
                 sub.SubcaseID,
                 sub.CaseType,
                 sub.IncidentRequestCaseID,
@@ -431,17 +431,22 @@ def get_subcases_by_status(status_code: str) -> List[Dict[str, Any]]:
                 sub.CreatedAt,
                 sub.CreatedByUserID,
                 sub.UpdatedAt,
-                sub.UpdatedByUserID
+                sub.UpdatedByUserID,
+                inc.incident_number AS IncidentNumber
             FROM dbo.APP_AdministrativeSubcase sub
             LEFT JOIN dbo.AdminsrationUnit org
                 ON sub.TargetOrgUnitID = org.UniqueID
+            LEFT JOIN dbo.APP_IncidentCase ic
+                ON sub.IncidentRequestCaseID = ic.IncidentRequestCaseID
+            LEFT JOIN dbo.APP_Incident inc
+                ON ic.incident_id = inc.incident_id
             WHERE sub.Status = ?
             ORDER BY sub.CreatedAt DESC
         """
-        
+
         cursor.execute(query, (status_code,))
         rows = cursor.fetchall()
-        
+
         return [
             {
                 "subcase_id": row.SubcaseID,
@@ -460,7 +465,8 @@ def get_subcases_by_status(status_code: str) -> List[Dict[str, Any]]:
                 "created_at": row.CreatedAt,
                 "created_by_user_id": row.CreatedByUserID,
                 "updated_at": row.UpdatedAt,
-                "updated_by_user_id": row.UpdatedByUserID
+                "updated_by_user_id": row.UpdatedByUserID,
+                "incident_number": row.IncidentNumber,
             }
             for row in rows
         ]
@@ -1029,11 +1035,16 @@ def get_subcases_with_details_for_section() -> List[Dict[str, Any]]:
                 sub.CreatedAt,
                 DATEDIFF(day, sub.CreatedAt, GETDATE()) AS WaitingDays,
                 
-                -- Org Unit Info
+                -- Target Org Unit (the original section always)
                 org.UniqueID AS TargetOrgUnitID,
                 org.Name AS OrgUnitName,
                 org.Type AS OrgType,
-                
+
+                -- Responsible Org Unit: for section-stage cases the section IS the responsible entity
+                org.UniqueID AS ResponsibleOrgUnitID,
+                org.Name AS ResponsibleOrgUnitName,
+                org.Type AS ResponsibleOrgType,
+
                 -- Incident Case Info (for INCIDENT_RESPONSE)
                 ic.IncidentRequestCaseID,
                 ic.ComplaintText AS CaseDescription,
@@ -1072,13 +1083,13 @@ def get_subcases_with_details_for_section() -> List[Dict[str, Any]]:
 
             WHERE sub.Status IN ('SUBMITTED_TO_SECTION', 'RETURNED_TO_SECTION_FOR_REVISION')
               AND sub.Status NOT IN ('FORCE_CLOSED', 'FORCE_CLOSED_DRAFT', 'FORCE_CLOSED_COMPLETE')
-            
+
             ORDER BY WaitingDays DESC
         """
-        
+
         cursor.execute(query)
         rows = cursor.fetchall()
-        
+
         result = []
         for row in rows:
             result.append({
@@ -1090,6 +1101,9 @@ def get_subcases_with_details_for_section() -> List[Dict[str, Any]]:
                 "target_org_unit_id": row.TargetOrgUnitID,
                 "org_unit_name": row.OrgUnitName,
                 "org_type": row.OrgType,
+                "responsible_org_unit_id": row.ResponsibleOrgUnitID,
+                "responsible_org_unit_name": row.ResponsibleOrgUnitName,
+                "responsible_org_type": row.ResponsibleOrgType,
                 "incident_request_case_id": row.IncidentRequestCaseID,
                 "incident_number": row.IncidentNumber,
                 "case_description": row.CaseDescription,
@@ -1113,28 +1127,37 @@ def get_subcases_with_details_for_section() -> List[Dict[str, Any]]:
 def get_subcases_with_details_for_department() -> List[Dict[str, Any]]:
     """
     Fetch subcases for department admin WITH full details for Insight page.
-    
-    Same structure as get_subcases_with_details_for_section but filters for:
-    - SECTION_ACCEPTED_PENDING_DEPT
-    - RETURNED_TO_DEPT_FOR_REVISION
+
+    Filters for SECTION_ACCEPTED_PENDING_DEPT and RETURNED_TO_DEPT_FOR_REVISION.
+
+    The responsible org unit is the DEPARTMENT (parent of the target section),
+    because the section has already responded and the department now owns the case.
+    The target section is preserved for scope filtering; the parent department is
+    used for Insight grouping and supervisor lookup.
     """
     conn = get_connection()
     cursor = conn.cursor()
-    
+
     try:
         query = """
-            SELECT 
+            SELECT
                 sub.SubcaseID,
                 sub.CaseType,
                 sub.Status,
                 sub.CreatedAt,
                 DATEDIFF(day, sub.CreatedAt, GETDATE()) AS WaitingDays,
-                
-                -- Org Unit Info
+
+                -- Target Org Unit (the original section — used for scope filtering)
                 org.UniqueID AS TargetOrgUnitID,
                 org.Name AS OrgUnitName,
                 org.Type AS OrgType,
-                
+
+                -- Responsible Org Unit: the department (parent of the section)
+                -- This is the entity that currently owns the pending response.
+                dept.UniqueID AS ResponsibleOrgUnitID,
+                dept.Name AS ResponsibleOrgUnitName,
+                dept.Type AS ResponsibleOrgType,
+
                 -- Incident Case Info (for INCIDENT_RESPONSE)
                 ic.IncidentRequestCaseID,
                 ic.ComplaintText AS CaseDescription,
@@ -1158,6 +1181,9 @@ def get_subcases_with_details_for_department() -> List[Dict[str, Any]]:
             FROM dbo.APP_AdministrativeSubcase sub
             LEFT JOIN dbo.AdminsrationUnit org
                 ON sub.TargetOrgUnitID = org.UniqueID
+            -- Join parent to resolve the responsible department
+            LEFT JOIN dbo.AdminsrationUnit dept
+                ON org.ParentID = dept.UniqueID
             LEFT JOIN dbo.APP_IncidentCase ic
                 ON sub.IncidentRequestCaseID = ic.IncidentRequestCaseID
             LEFT JOIN dbo.APP_Incident inc
@@ -1173,13 +1199,13 @@ def get_subcases_with_details_for_department() -> List[Dict[str, Any]]:
 
             WHERE sub.Status IN ('SECTION_ACCEPTED_PENDING_DEPT', 'RETURNED_TO_DEPT_FOR_REVISION')
               AND sub.Status NOT IN ('FORCE_CLOSED', 'FORCE_CLOSED_DRAFT', 'FORCE_CLOSED_COMPLETE')
-            
+
             ORDER BY WaitingDays DESC
         """
-        
+
         cursor.execute(query)
         rows = cursor.fetchall()
-        
+
         result = []
         for row in rows:
             result.append({
@@ -1191,6 +1217,9 @@ def get_subcases_with_details_for_department() -> List[Dict[str, Any]]:
                 "target_org_unit_id": row.TargetOrgUnitID,
                 "org_unit_name": row.OrgUnitName,
                 "org_type": row.OrgType,
+                "responsible_org_unit_id": row.ResponsibleOrgUnitID,
+                "responsible_org_unit_name": row.ResponsibleOrgUnitName,
+                "responsible_org_type": row.ResponsibleOrgType,
                 "incident_request_case_id": row.IncidentRequestCaseID,
                 "incident_number": row.IncidentNumber,
                 "case_description": row.CaseDescription,
@@ -1203,9 +1232,9 @@ def get_subcases_with_details_for_department() -> List[Dict[str, Any]]:
                 "seasonal_report_id": row.SeasonalReportID,
                 "season_name": row.SeasonName
             })
-        
+
         return result
-    
+
     finally:
         cursor.close()
         conn.close()
@@ -1214,27 +1243,36 @@ def get_subcases_with_details_for_department() -> List[Dict[str, Any]]:
 def get_subcases_with_details_for_administration() -> List[Dict[str, Any]]:
     """
     Fetch subcases for administration admin WITH full details for Insight page.
-    
-    Same structure as get_subcases_with_details_for_section but filters for:
-    - DEPT_ACCEPTED_PENDING_ADMIN
+
+    Filters for DEPT_ACCEPTED_PENDING_ADMIN.
+
+    The responsible org unit is the ADMINISTRATION (grandparent of the target section:
+    section → department → administration), because both section and department have
+    already responded and the administration now owns the pending response.
     """
     conn = get_connection()
     cursor = conn.cursor()
-    
+
     try:
         query = """
-            SELECT 
+            SELECT
                 sub.SubcaseID,
                 sub.CaseType,
                 sub.Status,
                 sub.CreatedAt,
                 DATEDIFF(day, sub.CreatedAt, GETDATE()) AS WaitingDays,
-                
-                -- Org Unit Info
+
+                -- Target Org Unit (the original section — used for scope filtering)
                 org.UniqueID AS TargetOrgUnitID,
                 org.Name AS OrgUnitName,
                 org.Type AS OrgType,
-                
+
+                -- Responsible Org Unit: the administration (grandparent of the section)
+                -- section.ParentID → department → department.ParentID → administration
+                admin_unit.UniqueID AS ResponsibleOrgUnitID,
+                admin_unit.Name AS ResponsibleOrgUnitName,
+                admin_unit.Type AS ResponsibleOrgType,
+
                 -- Incident Case Info (for INCIDENT_RESPONSE)
                 ic.IncidentRequestCaseID,
                 ic.ComplaintText AS CaseDescription,
@@ -1258,6 +1296,12 @@ def get_subcases_with_details_for_administration() -> List[Dict[str, Any]]:
             FROM dbo.APP_AdministrativeSubcase sub
             LEFT JOIN dbo.AdminsrationUnit org
                 ON sub.TargetOrgUnitID = org.UniqueID
+            -- First hop: section → department
+            LEFT JOIN dbo.AdminsrationUnit dept
+                ON org.ParentID = dept.UniqueID
+            -- Second hop: department → administration
+            LEFT JOIN dbo.AdminsrationUnit admin_unit
+                ON dept.ParentID = admin_unit.UniqueID
             LEFT JOIN dbo.APP_IncidentCase ic
                 ON sub.IncidentRequestCaseID = ic.IncidentRequestCaseID
             LEFT JOIN dbo.APP_Incident inc
@@ -1273,13 +1317,13 @@ def get_subcases_with_details_for_administration() -> List[Dict[str, Any]]:
 
             WHERE sub.Status = 'DEPT_ACCEPTED_PENDING_ADMIN'
               AND sub.Status NOT IN ('FORCE_CLOSED', 'FORCE_CLOSED_DRAFT', 'FORCE_CLOSED_COMPLETE')
-            
+
             ORDER BY WaitingDays DESC
         """
-        
+
         cursor.execute(query)
         rows = cursor.fetchall()
-        
+
         result = []
         for row in rows:
             result.append({
@@ -1291,6 +1335,9 @@ def get_subcases_with_details_for_administration() -> List[Dict[str, Any]]:
                 "target_org_unit_id": row.TargetOrgUnitID,
                 "org_unit_name": row.OrgUnitName,
                 "org_type": row.OrgType,
+                "responsible_org_unit_id": row.ResponsibleOrgUnitID,
+                "responsible_org_unit_name": row.ResponsibleOrgUnitName,
+                "responsible_org_type": row.ResponsibleOrgType,
                 "incident_request_case_id": row.IncidentRequestCaseID,
                 "incident_number": row.IncidentNumber,
                 "case_description": row.CaseDescription,
@@ -1303,9 +1350,9 @@ def get_subcases_with_details_for_administration() -> List[Dict[str, Any]]:
                 "seasonal_report_id": row.SeasonalReportID,
                 "season_name": row.SeasonName
             })
-        
+
         return result
-    
+
     finally:
         cursor.close()
         conn.close()
@@ -1334,7 +1381,7 @@ def get_subcases_by_statuses(status_codes: List[str]) -> List[Dict[str, Any]]:
         # Build parameterized IN clause
         placeholders = ','.join(['?' for _ in status_codes])
         query = f"""
-            SELECT 
+            SELECT
                 sub.SubcaseID,
                 sub.CaseType,
                 sub.IncidentRequestCaseID,
@@ -1351,17 +1398,22 @@ def get_subcases_by_statuses(status_codes: List[str]) -> List[Dict[str, Any]]:
                 sub.CreatedAt,
                 sub.CreatedByUserID,
                 sub.UpdatedAt,
-                sub.UpdatedByUserID
+                sub.UpdatedByUserID,
+                inc.incident_number AS IncidentNumber
             FROM dbo.APP_AdministrativeSubcase sub
             LEFT JOIN dbo.AdminsrationUnit org
                 ON sub.TargetOrgUnitID = org.UniqueID
+            LEFT JOIN dbo.APP_IncidentCase ic
+                ON sub.IncidentRequestCaseID = ic.IncidentRequestCaseID
+            LEFT JOIN dbo.APP_Incident inc
+                ON ic.incident_id = inc.incident_id
             WHERE sub.Status IN ({placeholders})
             ORDER BY sub.UpdatedAt DESC
         """
-        
+
         cursor.execute(query, status_codes)
         rows = cursor.fetchall()
-        
+
         return [
             {
                 "subcase_id": row.SubcaseID,
@@ -1380,7 +1432,8 @@ def get_subcases_by_statuses(status_codes: List[str]) -> List[Dict[str, Any]]:
                 "created_at": row.CreatedAt,
                 "created_by_user_id": row.CreatedByUserID,
                 "updated_at": row.UpdatedAt,
-                "updated_by_user_id": row.UpdatedByUserID
+                "updated_by_user_id": row.UpdatedByUserID,
+                "incident_number": row.IncidentNumber,
             }
             for row in rows
         ]
@@ -1890,45 +1943,71 @@ def get_subcase_fill_state(subcase_id: int) -> Optional[Dict[str, Any]]:
         conn.close()
 
 
-def get_supervisor_name_for_org_unit(org_unit_id: int) -> Optional[str]:
+def get_supervisor_name_for_org_unit(
+    org_unit_id: int,
+    expected_role_code: Optional[str] = None
+) -> Optional[str]:
     """
     Lookup supervisor/admin name for a given org unit.
-    
-    Queries APP_Users + APP_UserRoleScope to find admin assigned to this unit.
-    Returns DisplayName or Username.
-    Returns None if no admin assigned.
-    
+
+    Queries APP_Users + APP_UserRoleScope to find the admin assigned to this unit.
+    When expected_role_code is supplied (e.g. 'SECTION_ADMIN'), only users with
+    that role are considered.  This prevents a DEPARTMENT_ADMIN who has downward
+    scope visibility into child sections from being returned as the supervisor for
+    a section-level org unit.
+
     Args:
         org_unit_id: Organizational unit ID
-    
+        expected_role_code: Optional role code to restrict the lookup (e.g.
+            'SECTION_ADMIN', 'DEPARTMENT_ADMIN', 'ADMINISTRATION_ADMIN').
+            When None, any active user linked to the unit is returned (legacy
+            behaviour, kept as fallback).
+
     Returns:
         Supervisor name (DisplayName or Username) or None if not found
     """
     conn = get_connection()
     cursor = conn.cursor()
-    
+
     try:
-        query = """
-            SELECT TOP 1 
-                u.DisplayName,
-                u.Username
-            FROM dbo.APP_Users u
-            INNER JOIN dbo.APP_UserRoleScope urs
-                ON u.UserID = urs.UserID
-            WHERE urs.OrgUnitID = ?
-              AND u.IsActive = 1
-            ORDER BY u.UserID
-        """
-        
-        cursor.execute(query, (org_unit_id,))
+        if expected_role_code:
+            query = """
+                SELECT TOP 1
+                    u.DisplayName,
+                    u.Username
+                FROM dbo.APP_Users u
+                INNER JOIN dbo.APP_UserRoleScope urs
+                    ON u.UserID = urs.UserID
+                INNER JOIN dbo.APP_Roles r
+                    ON urs.RoleID = r.RoleID
+                WHERE urs.OrgUnitID = ?
+                  AND u.IsActive = 1
+                  AND r.RoleCode = ?
+                ORDER BY u.UserID
+            """
+            cursor.execute(query, (org_unit_id, expected_role_code))
+        else:
+            query = """
+                SELECT TOP 1
+                    u.DisplayName,
+                    u.Username
+                FROM dbo.APP_Users u
+                INNER JOIN dbo.APP_UserRoleScope urs
+                    ON u.UserID = urs.UserID
+                WHERE urs.OrgUnitID = ?
+                  AND u.IsActive = 1
+                ORDER BY u.UserID
+            """
+            cursor.execute(query, (org_unit_id,))
+
         row = cursor.fetchone()
-        
+
         if row:
             # Prefer DisplayName, fallback to Username
             return row.DisplayName if row.DisplayName else row.Username
-        
+
         return None
-    
+
     finally:
         cursor.close()
         conn.close()

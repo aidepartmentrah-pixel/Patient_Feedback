@@ -284,12 +284,6 @@ def create_record(data: Dict[str, Any], save_mode: str = 'workflow') -> Dict[str
             case_status_id = READY_TO_SEND_STATUS_ID
             explanation_status_id = 4
             requires_explanation_bit = 0
-        elif data.get('record_type_id', 1) == 2:
-            # Notice: no RCA workflow, always open with no explanation required
-            case_status_id = 1  # Open
-            explanation_status_id = 4  # No Explanation Needed
-            requires_explanation_bit = 0
-
         else:
             # -----------------------------
             # FSM LOGIC: Explanation Workflow
@@ -411,7 +405,7 @@ def create_record(data: Dict[str, Any], save_mode: str = 'workflow') -> Dict[str
         # API V2 ADAPTER HOOK — create workflow subcase
         # SKIPPED for draft/complete: subcase only created on publish
         # -------------------------------------------
-        if save_mode == 'workflow' and data.get('record_type_id', 1) != 2:
+        if save_mode == 'workflow':
             try:
                 from backend.api_v2.services.case_creation_service import create_subcases_for_incident
                 create_subcases_for_incident(new_id, current_user=None)

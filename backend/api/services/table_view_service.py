@@ -207,14 +207,17 @@ def get_complaints_paginated(
     
     # Free-text search
     if search:
+        search = search.strip()
+    if search:
         search_condition = """(
-            CAST(c.IncidentRequestCaseID AS VARCHAR) LIKE ? 
-            OR c.PatientName LIKE ? 
+            CAST(c.IncidentRequestCaseID AS VARCHAR) LIKE ?
+            OR c.PatientName LIKE ?
             OR c.ComplaintText LIKE ?
+            OR i.incident_number LIKE ?
         )"""
         where_conditions.append(search_condition)
         search_param = f"%{search}%"
-        params.extend([search_param, search_param, search_param])
+        params.extend([search_param, search_param, search_param, search_param])
     
     # Organizational unit filter
     if issuing_org_unit_id:
@@ -392,6 +395,11 @@ def get_complaints_paginated(
             -- Record type (1=Complaint, 2=Notice)
             c.RecordTypeID as record_type_id,
 
+            -- Subcase answers (most recent subcase per case)
+            subcase_ans.SectionExplanationText as section_answer,
+            subcase_ans.DepartmentExplanationText as department_answer,
+            subcase_ans.AdministrationExplanationText as administration_answer,
+
             -- Other fields
             c.ImmediateAction as immediate_action,
             c.TakenAction as taken_action,
@@ -414,6 +422,15 @@ def get_complaints_paginated(
         LEFT JOIN APP_LOOKUP_SOURCE source ON c.SourceID = source.SourceID
         LEFT JOIN APP_LOOKUP_EXPLANATION_STATUS explanation_status ON c.ExplanationStatusID = explanation_status.StatusID
         LEFT JOIN dbo.APP_Incident i ON c.incident_id = i.incident_id
+        OUTER APPLY (
+            SELECT TOP 1
+                SectionExplanationText,
+                DepartmentExplanationText,
+                AdministrationExplanationText
+            FROM dbo.APP_AdministrativeSubcase
+            WHERE IncidentRequestCaseID = c.IncidentRequestCaseID
+            ORDER BY CreatedAt DESC
+        ) subcase_ans
         {where_clause}
         {order_by_clause}
         OFFSET ? ROWS
@@ -427,6 +444,7 @@ def get_complaints_paginated(
     count_query = f"""
         SELECT COUNT(*) as total
         FROM dbo.APP_IncidentCase c
+        LEFT JOIN dbo.APP_Incident i ON c.incident_id = i.incident_id
         {where_clause}
     """
     
@@ -969,15 +987,18 @@ def get_complaints_count(
     params = []
     
     if search:
+        search = search.strip()
+    if search:
         search_condition = """(
-            CAST(c.IncidentRequestCaseID AS VARCHAR) LIKE ? 
-            OR c.PatientName LIKE ? 
+            CAST(c.IncidentRequestCaseID AS VARCHAR) LIKE ?
+            OR c.PatientName LIKE ?
             OR c.ComplaintText LIKE ?
+            OR i.incident_number LIKE ?
         )"""
         where_conditions.append(search_condition)
         search_param = f"%{search}%"
-        params.extend([search_param, search_param, search_param])
-    
+        params.extend([search_param, search_param, search_param, search_param])
+
     if issuing_org_unit_id:
         where_conditions.append("c.IssuingOrgUnitID = ?")
         params.append(issuing_org_unit_id)
@@ -1057,12 +1078,13 @@ def get_complaints_count(
     query = f"""
         SELECT COUNT(*) as total
         FROM dbo.APP_IncidentCase c
+        LEFT JOIN dbo.APP_Incident i ON c.incident_id = i.incident_id
         {where_clause}
     """
-    
+
     conn = get_connection()
     cursor = conn.cursor()
-    
+
     try:
         cursor.execute(query, params)
         total_count = cursor.fetchone().total
@@ -1203,7 +1225,10 @@ def export_complaints_excel(
             stage.StageName as stage_name,
             harm.HarmLevel as harm_level,
             status.Name as status_name,
-            risk_type.Name as feedback_risk_type
+            risk_type.Name as feedback_risk_type,
+            export_subcase.SectionExplanationText as section_answer,
+            export_subcase.DepartmentExplanationText as department_answer,
+            export_subcase.AdministrationExplanationText as administration_answer
         FROM dbo.APP_IncidentCase c
         LEFT JOIN AdminsrationUnit issuing_org ON c.IssuingOrgUnitID = issuing_org.UniqueID
         OUTER APPLY (
@@ -1212,6 +1237,15 @@ def export_complaints_excel(
             JOIN dbo.AdminsrationUnit au ON td.DepartmentID = au.UniqueID
             WHERE td.IncidentRequestCaseID = c.IncidentRequestCaseID
         ) target_depts
+        OUTER APPLY (
+            SELECT TOP 1
+                SectionExplanationText,
+                DepartmentExplanationText,
+                AdministrationExplanationText
+            FROM dbo.APP_AdministrativeSubcase
+            WHERE IncidentRequestCaseID = c.IncidentRequestCaseID
+            ORDER BY CreatedAt DESC
+        ) export_subcase
         LEFT JOIN APP_LOOKUP_DOMAIN domain ON c.DomainID = domain.DomainID
         LEFT JOIN APP_LOOKUP_CATEGORY category ON c.CategoryID = category.CategoryID
         LEFT JOIN APP_LOOKUP_SUBCATEGORY subcat ON c.SubCategoryID = subcat.SubCategoryID
@@ -1269,7 +1303,10 @@ def export_complaints_excel(
             'stage_name': 'Stage',
             'harm_level': 'Harm',
             'status_name': 'Status',
-            'feedback_risk_type': 'FeedbackRiskType'
+            'feedback_risk_type': 'FeedbackRiskType',
+            'section_answer': 'جواب القسم',
+            'department_answer': 'جواب الدائرة',
+            'administration_answer': 'جواب الإدارة',
         }
         
         for col_idx, col_name in enumerate(columns, start=1):
@@ -1296,7 +1333,7 @@ def export_complaints_excel(
         # Auto-adjust column widths
         for col_idx, col_name in enumerate(columns, start=1):
             column_letter = ws.cell(row=1, column=col_idx).column_letter
-            if col_name in ['complaint_text', 'immediate_action', 'taken_action']:
+            if col_name in ['complaint_text', 'immediate_action', 'taken_action', 'section_answer', 'department_answer', 'administration_answer']:
                 ws.column_dimensions[column_letter].width = 50
             elif col_name in ['patient_name', 'issuing_org_unit_name', 'concerned_org_unit_name', 'classification_name']:
                 ws.column_dimensions[column_letter].width = 25

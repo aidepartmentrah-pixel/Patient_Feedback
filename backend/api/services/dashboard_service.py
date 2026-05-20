@@ -328,6 +328,8 @@ def _compute_metrics(incidents, force_closed_subcase_count: int = 0):
             "relational": 0,
         },
         "redFlags": 0,
+        "neverEvents": 0,
+        "ordinary": 0,
     }
 
     for i in incidents:
@@ -368,11 +370,15 @@ def _compute_metrics(incidents, force_closed_subcase_count: int = 0):
             metrics["domainBreakdown"]["relational"] += 1
 
         # -------------------------
-        # Red flags
+        # Clinical risk type: Red Flag / Never Event / Ordinary
         # -------------------------
         clinical_risk_type_id = i.get("ClinicalRiskTypeID")
         if clinical_risk_type_id == 2:
             metrics["redFlags"] += 1
+        elif clinical_risk_type_id == 3:
+            metrics["neverEvents"] += 1
+        else:
+            metrics["ordinary"] += 1
 
     return metrics
 

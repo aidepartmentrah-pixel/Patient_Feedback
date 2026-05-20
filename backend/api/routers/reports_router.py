@@ -842,6 +842,76 @@ async def export_monthly_report(
         })
 
 
+# ============================================================
+# WORKFLOW ACTIVITY REPORT
+# ============================================================
+
+class WorkflowActivityExportRequest(BaseModel):
+    start_date: str = Field(..., description="YYYY-MM-DD inclusive start date")
+    end_date: str = Field(..., description="YYYY-MM-DD inclusive end date")
+    scope: str = Field("hospital", description="hospital | administration | department | section")
+    administration_ids: Optional[str] = Field(None, description="Comma-separated admin IDs, or None for all")
+    department_ids: Optional[str] = Field(None, description="Comma-separated dept IDs, or None for all")
+    section_ids: Optional[str] = Field(None, description="Comma-separated section IDs, or None for all")
+    hospital_id: Optional[int] = Field(1, description="Root hospital ID for scope expansion")
+
+
+@router.post("/workflow-activity/export")
+async def export_workflow_activity_report(
+    request: WorkflowActivityExportRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Export Section Workflow Activity Report as a Word (.docx) document.
+
+    Returns one .docx containing cases, responses/explanations, action items,
+    due dates, and action item completion status for the requested scope and period.
+    """
+    from datetime import date as date_type
+    from ..services.workflow_activity_report_service import build_workflow_activity_report
+    from ..services.workflow_activity_word_formatter import generate_workflow_activity_word
+
+    try:
+        start_date = date_type.fromisoformat(request.start_date)
+        end_date = date_type.fromisoformat(request.end_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid date format: {exc}")
+
+    if start_date > end_date:
+        raise HTTPException(status_code=400, detail="start_date must be before end_date")
+
+    def _parse_ids(raw: Optional[str]) -> Optional[list]:
+        if not raw or raw.strip() == "":
+            return None
+        try:
+            return [int(x.strip()) for x in raw.split(",") if x.strip()]
+        except ValueError:
+            return None
+
+    report_data = build_workflow_activity_report(
+        start_date=start_date,
+        end_date=end_date,
+        scope=request.scope,
+        administration_ids=_parse_ids(request.administration_ids),
+        department_ids=_parse_ids(request.department_ids),
+        section_ids=_parse_ids(request.section_ids),
+        hospital_id=request.hospital_id or 1,
+        generated_by=getattr(current_user, "display_name", "System"),
+    )
+
+    docx_bytes = generate_workflow_activity_word(report_data)
+
+    filename = (
+        f"workflow_activity_{request.scope}_{request.start_date}_to_{request.end_date}.docx"
+    )
+
+    return Response(
+        content=docx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/download/{export_id}")
 async def download_export(export_id: str):
     """
