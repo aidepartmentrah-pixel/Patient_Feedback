@@ -69,6 +69,8 @@ from api.routers.admin_section_admin_recreate_router import router as admin_sect
 from api.routers.settings_users_router import router as settings_users_router
 # Classification Management Router (Settings — add/rename/freeze classifications)
 from api.routers.classification_mgmt_router import router as classification_mgmt_router
+# Report Config Router (institutional header/footer/report-code metadata)
+from api.routers.report_config_router import router as report_config_router
 # Phase K: Migration Router (legacy case migration endpoints)
 from api.routers.migration_router import router as migration_router
 # Organization Unit Router (specialized organization unit selection endpoints)
@@ -77,6 +79,12 @@ from api.routers.org_unit_router import router as org_unit_router
 from api.routers.config_router import router as config_router
 # Import Pipeline Router (template download + Excel upload)
 from api.routers.import_router import router as import_router
+# Policy Metrics Refactor: 4-card org-unit policy management + classification-aware evaluator
+from api.routers.policy_router import router as policy_router
+# RCA Settings Router (manage categories and suggestions)
+from api.routers.rca_settings_router import router as rca_settings_router
+# RCA Inbox Router (section inbox RCA read/save)
+from api_v2.routers.rca_inbox_router import router as rca_inbox_router
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
@@ -197,6 +205,7 @@ app.include_router(admin_section_admin_recreate_router)
 app.include_router(settings_users_router)
 # Classification Management Router (Settings)
 app.include_router(classification_mgmt_router)
+app.include_router(report_config_router)
 # Phase K: Migration Router (legacy case migration endpoints)
 app.include_router(migration_router)
 # Organization Unit Router (specialized organization unit selection endpoints)
@@ -204,6 +213,9 @@ app.include_router(org_unit_router)
 # Bootstrap Configuration Router (password-protected, no DB auth needed)
 app.include_router(config_router)
 app.include_router(import_router)
+app.include_router(policy_router)
+app.include_router(rca_settings_router)
+app.include_router(rca_inbox_router)
 
 
 # ==================== BOOTSTRAP MIDDLEWARE ====================

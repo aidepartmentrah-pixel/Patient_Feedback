@@ -380,9 +380,8 @@ def submit_section_response(
     if current_user is None:
         raise Exception("current_user cannot be None")
     
-    # RCA is mandatory for section submissions
-    if rca_feedback is None:
-        raise Exception("RCA feedback is required for section response submission")
+    # RCA feedback is optional — new flow saves structured selections separately
+    # via APP_SubcaseRCASuggestionSelection; old boolean feedback still accepted if provided
     
     subcase = _load_subcase_or_fail(subcase_id)
     
@@ -414,9 +413,8 @@ def submit_section_response(
                 assigned_to_user_id=item.get('assigned_to_user_id')
             )
     
-    # Create RCA feedback record linked to subcase (only if not already existing for this incident)
-    # Use try/except to handle race conditions when multiple subcases are processed in parallel
-    if not existing_rca:
+    # Save legacy boolean RCA feedback if provided (old flow kept for backward compat)
+    if rca_feedback is not None and not existing_rca:
         try:
             incident_case_feedback.create_subcase_rca_feedback(
                 subcase_id=subcase_id,
@@ -425,9 +423,8 @@ def submit_section_response(
                 created_by_user_id=current_user.user_id
             )
         except Exception as e:
-            # Ignore duplicate key errors - another concurrent request already created the RCA
             if "duplicate key" not in str(e).lower() and "primary key" not in str(e).lower():
-                raise  # Re-raise if it's a different error
+                raise
     
     # Update section explanation
     administrative_subcase_db.update_section_explanation(
@@ -744,21 +741,39 @@ def approve_administration(
 ) -> None:
     """
     Administration Administrator approves the case.
-    
-    Status transition: DEPT_ACCEPTED_PENDING_ADMIN -> ADMIN_APPROVED
-    
+
+    Status transition for administrative complaint subcases (ClinicalRiskTypeID=1):
+        DEPT_ACCEPTED_PENDING_ADMIN -> WAITING_PATIENT_SERVICES_DECISION
+        Action items are left untouched (per spec).
+
+    Status transition for all other case types (Notice, Improvement Opportunity,
+    Seasonal Report):
+        DEPT_ACCEPTED_PENDING_ADMIN -> ADMIN_APPROVED
+        Action items: SUBMITTED_TO_ADMIN -> ADMIN_APPROVED (existing behaviour).
+
     Args:
         subcase_id: Subcase ID
         current_user: Current user object (must have user_id attribute)
-    
+
     Raises:
         Exception: If user is None, subcase not found, or status invalid
     """
     if current_user is None:
         raise Exception("current_user cannot be None")
-    
+
     subcase = _load_subcase_or_fail(subcase_id)
     _assert_status(subcase, ['DEPT_ACCEPTED_PENDING_ADMIN'])
+
+    # Detect whether this is an administrative complaint subcase.
+    # ClinicalRiskTypeID == 1 means ordinary complaint (not Notice=2, not Never Event=3).
+    # Seasonal-report subcases have no incident_request_case_id → is_complaint stays False.
+    is_complaint = False
+    incident_id = subcase.get('incident_request_case_id')
+    if incident_id:
+        from backend.api.db_layer import incident_case as incident_case_db
+        incident = incident_case_db.get_incident_case_by_id(incident_id)
+        if incident and incident.get('ClinicalRiskTypeID') == 1:
+            is_complaint = True
 
     # Write acceptance text so the field is never left empty
     administrative_subcase_db.update_administration_explanation(
@@ -767,19 +782,73 @@ def approve_administration(
         updated_by_user_id=current_user.user_id
     )
 
-    # Transition to final approval state
-    administrative_subcase_db.update_subcase_status(
-        subcase_id=subcase_id,
-        new_status='ADMIN_APPROVED',
-        updated_by_user_id=current_user.user_id
-    )
+    if is_complaint:
+        # Complaint path: hand off to Patient Services for the scientific decision.
+        # Action items remain at SUBMITTED_TO_ADMIN — do NOT transition them here.
+        administrative_subcase_db.update_subcase_status(
+            subcase_id=subcase_id,
+            new_status='WAITING_PATIENT_SERVICES_DECISION',
+            updated_by_user_id=current_user.user_id
+        )
+    else:
+        # Non-complaint path (Notice / Improvement Opportunity / Seasonal Report):
+        # go straight to ADMIN_APPROVED and advance action items as before.
+        administrative_subcase_db.update_subcase_status(
+            subcase_id=subcase_id,
+            new_status='ADMIN_APPROVED',
+            updated_by_user_id=current_user.user_id
+        )
+        # PARALLEL ACTION ITEM TRANSITION: SUBMITTED_TO_ADMIN -> ADMIN_APPROVED
+        action_item_subcase_db.bulk_update_action_items_status_by_subcase(
+            subcase_id=subcase_id,
+            to_status='ADMIN_APPROVED',
+            updated_by_user_id=current_user.user_id,
+            from_statuses=['SUBMITTED_TO_ADMIN']
+        )
 
-    # PARALLEL ACTION ITEM TRANSITION: SUBMITTED_TO_ADMIN -> ADMIN_APPROVED
-    action_item_subcase_db.bulk_update_action_items_status_by_subcase(
+
+def save_patient_services_decision(
+    subcase_id: int,
+    decision_text: str,
+    current_user
+) -> None:
+    """
+    Complaint Supervisor records the Patient Services scientific decision.
+
+    قرار خدمات المرضى بحسب المراجع العلميّة
+
+    Allowed on:
+        WAITING_PATIENT_SERVICES_DECISION  (first save)
+        PATIENT_SERVICES_DECISION_COMPLETED (re-edit — decision_at preserved)
+
+    Status transition:
+        * -> PATIENT_SERVICES_DECISION_COMPLETED
+
+    Action items: untouched.
+
+    Args:
+        subcase_id:    Subcase ID
+        decision_text: The decision text (must not be blank)
+        current_user:  User object with user_id attribute
+
+    Raises:
+        Exception: If user is None, decision_text is blank, or status invalid
+    """
+    if current_user is None:
+        raise Exception("current_user cannot be None")
+    if not decision_text or not decision_text.strip():
+        raise Exception("decision_text cannot be empty")
+
+    subcase = _load_subcase_or_fail(subcase_id)
+    _assert_status(subcase, [
+        'WAITING_PATIENT_SERVICES_DECISION',
+        'PATIENT_SERVICES_DECISION_COMPLETED',  # allow re-edit
+    ])
+
+    administrative_subcase_db.save_patient_services_decision(
         subcase_id=subcase_id,
-        to_status='ADMIN_APPROVED',
-        updated_by_user_id=current_user.user_id,
-        from_statuses=['SUBMITTED_TO_ADMIN']
+        decision_text=decision_text.strip(),
+        user_id=current_user.user_id
     )
 
 
@@ -844,50 +913,72 @@ def override_administration(
 ) -> None:
     """
     Administration Administrator overrides action items with their own.
-    
-    Status transition: DEPT_ACCEPTED_PENDING_ADMIN -> ADMIN_APPROVED
-    
+
+    Status transition for administrative complaint subcases (ClinicalRiskTypeID=1):
+        DEPT_ACCEPTED_PENDING_ADMIN -> WAITING_PATIENT_SERVICES_DECISION
+        Action items replaced but left at DRAFT (not transitioned to ADMIN_APPROVED).
+
+    Status transition for all other case types:
+        DEPT_ACCEPTED_PENDING_ADMIN -> ADMIN_APPROVED
+        Action items replaced and transitioned DRAFT -> ADMIN_APPROVED (existing behaviour).
+
     Args:
         subcase_id: Subcase ID
         explanation_text: Administration's explanation text
         action_items: List of replacement action items (DRAFT status)
             [{"title": str, "description": str, "due_date": str or None}, ...]
         current_user: Current user object (must have user_id attribute)
-    
+
     Raises:
         Exception: If user is None, subcase not found, or status invalid
     """
     if current_user is None:
         raise Exception("current_user cannot be None")
-    
+
     subcase = _load_subcase_or_fail(subcase_id)
     _assert_status(subcase, ['DEPT_ACCEPTED_PENDING_ADMIN'])
-    
-    # Replace all action items
+
+    # Detect complaint subcase (same logic as approve_administration)
+    is_complaint = False
+    incident_id = subcase.get('incident_request_case_id')
+    if incident_id:
+        from backend.api.db_layer import incident_case as incident_case_db
+        incident = incident_case_db.get_incident_case_by_id(incident_id)
+        if incident and incident.get('ClinicalRiskTypeID') == 1:
+            is_complaint = True
+
+    # Replace all action items (always — admin creates their own set)
     _replace_action_items(subcase_id, action_items, current_user)
-    
+
     # Update administration explanation
     administrative_subcase_db.update_administration_explanation(
         subcase_id=subcase_id,
         text=explanation_text,
         updated_by_user_id=current_user.user_id
     )
-    
-    # Transition to final approval state
-    administrative_subcase_db.update_subcase_status(
-        subcase_id=subcase_id,
-        new_status='ADMIN_APPROVED',
-        updated_by_user_id=current_user.user_id
-    )
-    
-    # PARALLEL ACTION ITEM TRANSITION: DRAFT -> ADMIN_APPROVED
-    # Admin override creates new items as DRAFT, then approves them directly
-    action_item_subcase_db.bulk_update_action_items_status_by_subcase(
-        subcase_id=subcase_id,
-        to_status='ADMIN_APPROVED',
-        updated_by_user_id=current_user.user_id,
-        from_statuses=['DRAFT']
-    )
+
+    if is_complaint:
+        # Complaint path: hand off to Patient Services.
+        # Action items stay at DRAFT — do NOT transition them here.
+        administrative_subcase_db.update_subcase_status(
+            subcase_id=subcase_id,
+            new_status='WAITING_PATIENT_SERVICES_DECISION',
+            updated_by_user_id=current_user.user_id
+        )
+    else:
+        # Non-complaint path: transition to final approval and advance action items.
+        administrative_subcase_db.update_subcase_status(
+            subcase_id=subcase_id,
+            new_status='ADMIN_APPROVED',
+            updated_by_user_id=current_user.user_id
+        )
+        # PARALLEL ACTION ITEM TRANSITION: DRAFT -> ADMIN_APPROVED
+        action_item_subcase_db.bulk_update_action_items_status_by_subcase(
+            subcase_id=subcase_id,
+            to_status='ADMIN_APPROVED',
+            updated_by_user_id=current_user.user_id,
+            from_statuses=['DRAFT']
+        )
 
 
 # ============================================================

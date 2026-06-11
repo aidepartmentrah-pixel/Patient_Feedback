@@ -1,5 +1,6 @@
 {
     "deployment_mode": "offline",
+    "password_mode": "test",
     "database": {
         "host": "127.0.0.1",
         "port": 1433,
@@ -29,6 +30,8 @@
             "http://127.0.0.1:5173",
             "http://170.70.32.34",
             "https://170.70.32.34",
+            "http://10.0.20.38",
+            "https://10.0.20.38",
             "http://HCAT",
             "https://HCAT",
             "http://hcat.alrassoul.net",

@@ -616,6 +616,16 @@ def act_on_case(
         )
         return {"success": True}
 
+    elif action == "SAVE_PATIENT_SERVICES_DECISION":
+        # Complaint Supervisor records قرار خدمات المرضى بحسب المراجع العلميّة
+        decision_text = payload.get("decision_text", "")
+        case_response_service.save_patient_services_decision(
+            subcase_id=subcase_id,
+            decision_text=decision_text,
+            current_user=current_user
+        )
+        return {"success": True}
+
     else:
         raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
 

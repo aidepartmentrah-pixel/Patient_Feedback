@@ -228,6 +228,10 @@ async def export_insight_word_report(
     """
     Export the current Insight page operational state as a Word (.docx) document.
 
+    Authorization: blocked for organizational viewer roles (SECTION_ADMIN,
+    DEPARTMENT_ADMIN, ADMINISTRATION_ADMIN). Only supervisory/operational roles
+    may export.
+
     The report includes:
     - Active cases grouped by Sections / Departments / Administrations
     - Force-closed draft cases (data incomplete)
@@ -238,6 +242,16 @@ async def export_insight_word_report(
 
     The document is Arabic, right-to-left, Calibri font, with hospital logo.
     """
+    from fastapi import HTTPException
+    _ORG_VIEWER_ROLES = {"SECTION_ADMIN", "DEPARTMENT_ADMIN", "ADMINISTRATION_ADMIN"}
+    _EXPORT_ALLOWED_ROLES = {"SOFTWARE_ADMIN", "COMPLAINT_SUPERVISOR", "WORKER"}
+    user_roles = {s.role_code for s in current_user.scopes} if current_user.scopes else set()
+    if not user_roles & _EXPORT_ALLOWED_ROLES:
+        raise HTTPException(
+            status_code=403,
+            detail="Export is not available for organizational viewer roles."
+        )
+
     docx_bytes = insight_service.generate_insight_word_export(
         current_user=current_user,
         search_term=search_term,
@@ -265,3 +279,18 @@ async def get_force_closed_cases_endpoint(
     Returns all matching subcases (full visibility — no scope filter).
     """
     return insight_service.get_force_closed_cases(current_user, status)
+
+
+@router.get("/patient-services-pending")
+async def get_patient_services_pending_endpoint(
+    current_user: CurrentUser = Depends(get_current_user)
+) -> List[Dict[str, Any]]:
+    """
+    List administrative complaint subcases waiting for the Patient Services
+    scientific decision (قرار خدمات المرضى بحسب المراجع العلميّة).
+
+    Status: WAITING_PATIENT_SERVICES_DECISION
+    Used by the Insight / Workflow page to render the pending-decision section.
+    Scope-filtered via Phase 2.5 allowed_unit_ids.
+    """
+    return insight_service.get_patient_services_pending(current_user)

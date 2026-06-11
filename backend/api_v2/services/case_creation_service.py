@@ -18,6 +18,29 @@ from api.services.notification_service import (
 # Configure logger
 logger = logging.getLogger(__name__)
 
+# Org unit type codes (AdminsrationUnit.Type)
+_ORG_TYPE_SECTION = 324
+_ORG_TYPE_DEPARTMENT = 325
+_ORG_TYPE_ADMINISTRATION = 323
+
+
+def get_initial_subcase_status_for_target_org_type(org_type: int) -> str:
+    """
+    Return the correct initial APP_AdministrativeSubcase.Status for a given
+    target org unit type.
+
+    Section (324)        → SUBMITTED_TO_SECTION          (enters section inbox)
+    Department (325)     → SECTION_ACCEPTED_PENDING_DEPT (enters department inbox directly)
+    Administration (323) → DEPT_ACCEPTED_PENDING_ADMIN   (enters admin inbox directly)
+    """
+    if org_type == _ORG_TYPE_SECTION:
+        return "SUBMITTED_TO_SECTION"
+    if org_type == _ORG_TYPE_DEPARTMENT:
+        return "SECTION_ACCEPTED_PENDING_DEPT"
+    if org_type == _ORG_TYPE_ADMINISTRATION:
+        return "DEPT_ACCEPTED_PENDING_ADMIN"
+    raise ValueError(f"Unsupported TargetOrgUnit type for workflow routing: {org_type}")
+
 
 def _create_subcase(
     case_type: str,
@@ -96,20 +119,11 @@ def create_subcases_for_incident(incident_id: int, current_user) -> None:
             org_name = row.OrgUnitName
             dept_id = row.DepartmentID
 
-            # Guard: routing target should always be a Section (Type=324).
-            # Type=325 (Department) or Type=323 (Administration) targets mean the
-            # case was routed to the wrong level — the workflow starts at
-            # SUBMITTED_TO_SECTION regardless, so Fill Data will show Section as
-            # empty and Insight will group the case under the wrong org-type bucket.
-            if org_type != 324:
-                type_label = {323: 'ADMINISTRATION', 325: 'DEPARTMENT'}.get(org_type, f'UNKNOWN(type={org_type})')
-                logger.warning(
-                    "[ROUTING_LEVEL_MISMATCH] incident_id=%d routed to OrgUnit %d '%s' "
-                    "(Type=%s) — expected Type=324 (SECTION). "
-                    "Subcase will start at SUBMITTED_TO_SECTION but the target is not a Section. "
-                    "This may cause Insight grouping and Fill Data hierarchy to be inconsistent.",
-                    incident_id, dept_id, org_name or '?', type_label
-                )
+            initial_status = get_initial_subcase_status_for_target_org_type(org_type)
+            logger.info(
+                "[ROUTING] incident_id=%d → OrgUnit %d '%s' (Type=%d) → initial_status=%s",
+                incident_id, dept_id, org_name or '?', org_type, initial_status
+            )
 
             _create_subcase(
                 case_type='INCIDENT_RESPONSE',
@@ -117,7 +131,7 @@ def create_subcases_for_incident(incident_id: int, current_user) -> None:
                 seasonal_report_id=None,
                 target_org_unit_id=dept_id,
                 created_by_user_id=user_id,
-                initial_status='SUBMITTED_TO_SECTION'
+                initial_status=initial_status
             )
 
     finally:

@@ -40,191 +40,92 @@ rcParams['font.family'] = ['Arial', 'DejaVu Sans', 'sans-serif']
 
 def _fetch_rca_statistics(season_start: date, season_end: date) -> Dict[str, Any]:
     """
-    Fetch RCA (Root Cause Analysis) statistics for the seasonal period.
-    
-    Returns breakdown by cause type, individual sub-causes, preventability, and department.
+    Fetch structured RCA statistics from the new APP_SubcaseRCASuggestionSelection model.
+
+    Returns per-category breakdowns of selected causes and corrective action suggestions,
+    grouped and counted for the seasonal period.
     """
     conn = None
     cursor = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        
-        # Enhanced RCA statistics query with detailed sub-cause breakdown
+
         query = """
             SELECT
-                COUNT(*) as total_rca_records,
-                -- Staff causes aggregate
-                SUM(CASE WHEN (
-                    f.Cause_Staff_Training = 1 OR f.Cause_Staff_Incentives = 1 OR 
-                    f.Cause_Staff_Competency = 1 OR f.Cause_Staff_Understaffed = 1 OR 
-                    f.Cause_Staff_NonCompliance = 1 OR f.Cause_Staff_NoCoordination = 1 OR 
-                    f.Cause_Staff_Other = 1
-                ) THEN 1 ELSE 0 END) as staff_causes,
-                -- Process causes aggregate
-                SUM(CASE WHEN (
-                    f.Cause_Process_NotComprehensive = 1 OR f.Cause_Process_Unclear = 1 OR 
-                    f.Cause_Process_MissingProtocol = 1 OR f.Cause_Process_Other = 1
-                ) THEN 1 ELSE 0 END) as process_causes,
-                -- Equipment causes aggregate
-                SUM(CASE WHEN (
-                    f.Cause_Equipment_NotAvailable = 1 OR f.Cause_Equipment_SystemIncomplete = 1 OR 
-                    f.Cause_Equipment_HardToApply = 1 OR f.Cause_Equipment_Other = 1
-                ) THEN 1 ELSE 0 END) as equipment_causes,
-                -- Environment causes aggregate
-                SUM(CASE WHEN (
-                    f.Cause_Environment_PlaceNature = 1 OR f.Cause_Environment_Surroundings = 1 OR 
-                    f.Cause_Environment_WorkConditions = 1 OR f.Cause_Environment_Other = 1
-                ) THEN 1 ELSE 0 END) as environment_causes,
-                -- Preventive measures aggregate
-                SUM(CASE WHEN (
-                    f.Preventive_MonthlyMeetings = 1 OR f.Preventive_TrainingPrograms = 1 OR 
-                    f.Preventive_IncreaseStaff = 1 OR f.Preventive_MMCommitteeActions = 1 OR 
-                    f.Preventive_Other = 1
-                ) THEN 1 ELSE 0 END) as has_preventive_measures,
-                SUM(CASE WHEN (
-                    COALESCE(f.Preventive_MonthlyMeetings, 0) = 0 AND 
-                    COALESCE(f.Preventive_TrainingPrograms, 0) = 0 AND 
-                    COALESCE(f.Preventive_IncreaseStaff, 0) = 0 AND 
-                    COALESCE(f.Preventive_MMCommitteeActions, 0) = 0 AND 
-                    COALESCE(f.Preventive_Other, 0) = 0
-                ) THEN 1 ELSE 0 END) as no_preventive_measures,
-                -- Individual Staff sub-causes
-                SUM(CAST(COALESCE(f.Cause_Staff_Training, 0) AS INT)) as staff_training,
-                SUM(CAST(COALESCE(f.Cause_Staff_Incentives, 0) AS INT)) as staff_incentives,
-                SUM(CAST(COALESCE(f.Cause_Staff_Competency, 0) AS INT)) as staff_competency,
-                SUM(CAST(COALESCE(f.Cause_Staff_Understaffed, 0) AS INT)) as staff_understaffed,
-                SUM(CAST(COALESCE(f.Cause_Staff_NonCompliance, 0) AS INT)) as staff_noncompliance,
-                SUM(CAST(COALESCE(f.Cause_Staff_NoCoordination, 0) AS INT)) as staff_nocoordination,
-                SUM(CAST(COALESCE(f.Cause_Staff_Other, 0) AS INT)) as staff_other,
-                -- Individual Process sub-causes
-                SUM(CAST(COALESCE(f.Cause_Process_NotComprehensive, 0) AS INT)) as process_notcomprehensive,
-                SUM(CAST(COALESCE(f.Cause_Process_Unclear, 0) AS INT)) as process_unclear,
-                SUM(CAST(COALESCE(f.Cause_Process_MissingProtocol, 0) AS INT)) as process_missingprotocol,
-                SUM(CAST(COALESCE(f.Cause_Process_Other, 0) AS INT)) as process_other,
-                -- Individual Equipment sub-causes
-                SUM(CAST(COALESCE(f.Cause_Equipment_NotAvailable, 0) AS INT)) as equipment_notavailable,
-                SUM(CAST(COALESCE(f.Cause_Equipment_SystemIncomplete, 0) AS INT)) as equipment_systemincomplete,
-                SUM(CAST(COALESCE(f.Cause_Equipment_HardToApply, 0) AS INT)) as equipment_hardtoapply,
-                SUM(CAST(COALESCE(f.Cause_Equipment_Other, 0) AS INT)) as equipment_other,
-                -- Individual Environment sub-causes
-                SUM(CAST(COALESCE(f.Cause_Environment_PlaceNature, 0) AS INT)) as environment_placenature,
-                SUM(CAST(COALESCE(f.Cause_Environment_Surroundings, 0) AS INT)) as environment_surroundings,
-                SUM(CAST(COALESCE(f.Cause_Environment_WorkConditions, 0) AS INT)) as environment_workconditions,
-                SUM(CAST(COALESCE(f.Cause_Environment_Other, 0) AS INT)) as environment_other,
-                -- Individual Preventive measures
-                SUM(CAST(COALESCE(f.Preventive_MonthlyMeetings, 0) AS INT)) as preventive_monthlymeetings,
-                SUM(CAST(COALESCE(f.Preventive_TrainingPrograms, 0) AS INT)) as preventive_trainingprograms,
-                SUM(CAST(COALESCE(f.Preventive_IncreaseStaff, 0) AS INT)) as preventive_increasestaff,
-                SUM(CAST(COALESCE(f.Preventive_MMCommitteeActions, 0) AS INT)) as preventive_mmcommitteeactions,
-                SUM(CAST(COALESCE(f.Preventive_Other, 0) AS INT)) as preventive_other
-            FROM dbo.APP_IncidentCaseFeedback f
-            INNER JOIN dbo.APP_AdministrativeSubcase sub ON f.AdministrativeSubcaseID = sub.SubcaseID
-            INNER JOIN dbo.APP_IncidentCase ic ON sub.IncidentRequestCaseID = ic.IncidentRequestCaseID
-            WHERE f.AdministrativeSubcaseID IS NOT NULL
-              AND CONVERT(DATE, ic.FeedbackRecievedDate) >= ?
+                cat.CategoryID,
+                cat.CategoryNameAr,
+                cat.CategoryNameEn,
+                cat.SortOrder AS CatSort,
+                sug.SuggestionID,
+                sug.SuggestionType,
+                sug.SuggestionTextAr,
+                sug.SuggestionTextEn,
+                sug.SortOrder AS SugSort,
+                COUNT(DISTINCT sel.SubcaseID) AS SelectionCount
+            FROM dbo.APP_SubcaseRCASuggestionSelection sel
+            JOIN dbo.APP_RCASuggestion sug
+                ON sel.SuggestionID = sug.SuggestionID
+            JOIN dbo.APP_RCAFactorCategory cat
+                ON sug.CategoryID = cat.CategoryID
+            JOIN dbo.APP_AdministrativeSubcase sub
+                ON sel.SubcaseID = sub.SubcaseID
+            JOIN dbo.APP_IncidentCase ic
+                ON sub.IncidentRequestCaseID = ic.IncidentRequestCaseID
+            WHERE CONVERT(DATE, ic.FeedbackRecievedDate) >= ?
               AND CONVERT(DATE, ic.FeedbackRecievedDate) <= ?
+            GROUP BY
+                cat.CategoryID, cat.CategoryNameAr, cat.CategoryNameEn, cat.SortOrder,
+                sug.SuggestionID, sug.SuggestionType,
+                sug.SuggestionTextAr, sug.SuggestionTextEn, sug.SortOrder
+            ORDER BY cat.SortOrder, cat.CategoryID, sug.SortOrder, sug.SuggestionID
         """
         cursor.execute(query, (season_start.isoformat(), season_end.isoformat()))
-        row = cursor.fetchone()
-        
-        total = row[0] or 0
-        stats = {
-            "total_rca_records": total,
-            "by_cause_type": {
-                "staff": row[1] or 0,
-                "process": row[2] or 0,
-                "equipment": row[3] or 0,
-                "environment": row[4] or 0
-            },
-            "preventability": {
-                "has_preventive_measures": row[5] or 0,
-                "no_preventive_measures": row[6] or 0
-            },
-            # Detailed sub-cause breakdown
-            "staff_subcauses": {
-                "التدريب (Training)": row[7] or 0,
-                "الحوافز (Incentives)": row[8] or 0,
-                "الكفاءة (Competency)": row[9] or 0,
-                "نقص الموظفين (Understaffed)": row[10] or 0,
-                "عدم الالتزام (Non-Compliance)": row[11] or 0,
-                "عدم التنسيق (No Coordination)": row[12] or 0,
-                "أخرى (Other)": row[13] or 0
-            },
-            "process_subcauses": {
-                "غير شامل (Not Comprehensive)": row[14] or 0,
-                "غير واضح (Unclear)": row[15] or 0,
-                "بروتوكول مفقود (Missing Protocol)": row[16] or 0,
-                "أخرى (Other)": row[17] or 0
-            },
-            "equipment_subcauses": {
-                "غير متوفر (Not Available)": row[18] or 0,
-                "نظام غير مكتمل (System Incomplete)": row[19] or 0,
-                "صعب التطبيق (Hard to Apply)": row[20] or 0,
-                "أخرى (Other)": row[21] or 0
-            },
-            "environment_subcauses": {
-                "طبيعة المكان (Place Nature)": row[22] or 0,
-                "المحيط (Surroundings)": row[23] or 0,
-                "ظروف العمل (Work Conditions)": row[24] or 0,
-                "أخرى (Other)": row[25] or 0
-            },
-            "preventive_measures_detail": {
-                "اجتماعات شهرية (Monthly Meetings)": row[26] or 0,
-                "برامج تدريبية (Training Programs)": row[27] or 0,
-                "زيادة الموظفين (Increase Staff)": row[28] or 0,
-                "إجراءات لجنة MM (MM Committee Actions)": row[29] or 0,
-                "أخرى (Other)": row[30] or 0
-            }
-        }
-        
-        # RCA by department query
-        dept_query = """
-            SELECT
-                COALESCE(ou.Name, 'غير محدد') as department,
-                COUNT(*) as rca_count,
-                SUM(CASE WHEN (
-                    f.Cause_Staff_Training = 1 OR f.Cause_Staff_Incentives = 1 OR 
-                    f.Cause_Staff_Competency = 1 OR f.Cause_Staff_Understaffed = 1 OR 
-                    f.Cause_Staff_NonCompliance = 1 OR f.Cause_Staff_NoCoordination = 1 OR 
-                    f.Cause_Staff_Other = 1
-                ) THEN 1 ELSE 0 END) as staff,
-                SUM(CASE WHEN (
-                    f.Cause_Process_NotComprehensive = 1 OR f.Cause_Process_Unclear = 1 OR 
-                    f.Cause_Process_MissingProtocol = 1 OR f.Cause_Process_Other = 1
-                ) THEN 1 ELSE 0 END) as process,
-                SUM(CASE WHEN (
-                    f.Cause_Equipment_NotAvailable = 1 OR f.Cause_Equipment_SystemIncomplete = 1 OR 
-                    f.Cause_Equipment_HardToApply = 1 OR f.Cause_Equipment_Other = 1
-                ) THEN 1 ELSE 0 END) as equipment,
-                SUM(CASE WHEN (
-                    f.Cause_Environment_PlaceNature = 1 OR f.Cause_Environment_Surroundings = 1 OR 
-                    f.Cause_Environment_WorkConditions = 1 OR f.Cause_Environment_Other = 1
-                ) THEN 1 ELSE 0 END) as environment
-            FROM dbo.APP_IncidentCaseFeedback f
-            INNER JOIN dbo.APP_AdministrativeSubcase sub ON f.AdministrativeSubcaseID = sub.SubcaseID
-            INNER JOIN dbo.APP_IncidentCase ic ON sub.IncidentRequestCaseID = ic.IncidentRequestCaseID
-            LEFT JOIN dbo.AdminsrationUnit ou WITH (NOLOCK) ON sub.TargetOrgUnitID = ou.UniqueID
-            WHERE f.AdministrativeSubcaseID IS NOT NULL
-              AND CONVERT(DATE, ic.FeedbackRecievedDate) >= ?
+        rows = cursor.fetchall()
+
+        # Count distinct subcases with any selection
+        count_query = """
+            SELECT COUNT(DISTINCT sel.SubcaseID)
+            FROM dbo.APP_SubcaseRCASuggestionSelection sel
+            JOIN dbo.APP_AdministrativeSubcase sub ON sel.SubcaseID = sub.SubcaseID
+            JOIN dbo.APP_IncidentCase ic ON sub.IncidentRequestCaseID = ic.IncidentRequestCaseID
+            WHERE CONVERT(DATE, ic.FeedbackRecievedDate) >= ?
               AND CONVERT(DATE, ic.FeedbackRecievedDate) <= ?
-            GROUP BY COALESCE(ou.Name, 'غير محدد')
-            ORDER BY COUNT(*) DESC
         """
-        cursor.execute(dept_query, (season_start.isoformat(), season_end.isoformat()))
-        
-        stats["by_department"] = []
-        for row in cursor.fetchall():
-            stats["by_department"].append({
-                "department": row[0],
-                "rca_count": row[1],
-                "staff": row[2],
-                "process": row[3],
-                "equipment": row[4],
-                "environment": row[5]
-            })
-        
-        return stats
+        cursor.execute(count_query, (season_start.isoformat(), season_end.isoformat()))
+        total_subcases_row = cursor.fetchone()
+        total_subcases_with_selections = total_subcases_row[0] if total_subcases_row else 0
+
+        # Build per-category structure
+        from collections import OrderedDict
+        categories: dict = OrderedDict()
+        for row in rows:
+            (cat_id, cat_name_ar, cat_name_en, cat_sort,
+             sug_id, sug_type, sug_text_ar, sug_text_en,
+             sug_sort, count) = row
+
+            if cat_id not in categories:
+                categories[cat_id] = {
+                    "category_id": cat_id,
+                    "category_name_ar": cat_name_ar or cat_name_en or "",
+                    "category_name_en": cat_name_en or "",
+                    "causes": [],
+                    "action_items": [],
+                }
+            item = {
+                "text_ar": sug_text_ar or "",
+                "text_en": sug_text_en or "",
+                "count": count or 0,
+            }
+            if sug_type == "CAUSE":
+                categories[cat_id]["causes"].append(item)
+            else:
+                categories[cat_id]["action_items"].append(item)
+
+        return {
+            "total_subcases_with_selections": total_subcases_with_selections,
+            "by_category": list(categories.values()),
+        }
     finally:
         if cursor:
             cursor.close()
@@ -737,7 +638,7 @@ def generate_patient_feedback_seasonal_word(
         ('حالات مع رضا المريض / Cases with Satisfaction', 
          str(satisfaction_stats['cases_with_satisfaction']), 
          f"{satisfaction_stats['coverage_percentage']}%"),
-        ('سجلات RCA الإجمالية / Total RCA Records', str(rca_stats['total_rca_records']), '-'),
+        ('الحالات مع اختيارات RCA / Subcases with RCA Selections', str(rca_stats['total_subcases_with_selections']), '-'),
     ]
     
     for idx, (metric, value, pct) in enumerate(summary_data):
@@ -754,340 +655,86 @@ def generate_patient_feedback_seasonal_word(
     
     doc.add_paragraph()
     
-    # ========== RCA ANALYSIS SECTION ==========
+    # ========== RCA CAUSES SECTION (DB-driven) ==========
     rca_heading = doc.add_heading('تحليل الأسباب الجذرية / Root Cause Analysis', 1)
     for run in rca_heading.runs:
         run.font.name = 'Calibri'
         run.font.color.rgb = RGBColor(102, 126, 234)
-    
-    # RCA Introduction paragraph
+        run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
     rca_intro = doc.add_paragraph()
     rca_intro_run = rca_intro.add_run(
-        f"يوضح هذا القسم التحليل الشامل للأسباب الجذرية (RCA) لعدد {rca_stats['total_rca_records']} "
-        f"حالة تم تحليلها خلال الفترة من {season_start.strftime('%Y-%m-%d')} إلى {season_end.strftime('%Y-%m-%d')}. "
-        "يشمل التحليل أربع فئات رئيسية: الكوادر البشرية، العمليات، المعدات، والبيئة."
+        f"يوضح هذا القسم الأسباب الجذرية المختارة لعدد "
+        f"{rca_stats['total_subcases_with_selections']} "
+        f"حالة فرعية خلال الفترة من {season_start.strftime('%Y-%m-%d')} "
+        f"إلى {season_end.strftime('%Y-%m-%d')}."
     )
     rca_intro_run.font.size = Pt(11)
     rca_intro_run.font.name = 'Calibri'
     rca_intro.paragraph_format.line_spacing = 1.5
-    
+
     doc.add_paragraph()
-    
-    # ========== RCA PIE CHART ==========
-    pie_chart = _generate_rca_pie_chart(rca_stats)
-    if pie_chart:
-        chart_heading = doc.add_heading('الرسم البياني لتوزيع الأسباب / Cause Distribution Chart', 2)
-        for run in chart_heading.runs:
-            run.font.name = 'Calibri'
-        
-        # Center the chart
-        chart_para = doc.add_paragraph()
-        chart_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-        chart_run = chart_para.add_run()
-        chart_run.add_picture(pie_chart, width=Inches(5.5))
-        
-        doc.add_paragraph()
-    
-    # ========== RCA CAUSE TYPE OVERVIEW TABLE ==========
-    cause_subheading = doc.add_heading('ملخص أنواع الأسباب / Cause Type Summary', 2)
-    for run in cause_subheading.runs:
-        run.font.name = 'Calibri'
-    
-    cause_table = doc.add_table(rows=5, cols=4)
-    cause_table.style = 'Table Grid'
-    cause_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    
-    _format_table_header(cause_table, ['نوع السبب / Cause Type', 'العدد / Count', 'النسبة / Percentage', 'الوصف / Description'])
-    
-    total_causes = (rca_stats['by_cause_type']['staff'] + 
-                   rca_stats['by_cause_type']['process'] + 
-                   rca_stats['by_cause_type']['equipment'] + 
-                   rca_stats['by_cause_type']['environment']) or 1
-    
-    cause_data = [
-        ('الطاقم / Staff', rca_stats['by_cause_type']['staff'], 'أسباب متعلقة بالموظفين'),
-        ('العملية / Process', rca_stats['by_cause_type']['process'], 'أسباب متعلقة بالإجراءات'),
-        ('المعدات / Equipment', rca_stats['by_cause_type']['equipment'], 'أسباب متعلقة بالأجهزة'),
-        ('البيئة / Environment', rca_stats['by_cause_type']['environment'], 'أسباب متعلقة بالبيئة'),
-    ]
-    
-    cause_colors = {
-        'الطاقم / Staff': 'FFE5E5',
-        'العملية / Process': 'FFF3E5',
-        'المعدات / Equipment': 'E5F0FF',
-        'البيئة / Environment': 'E5FFE5'
-    }
-    
-    for idx, (cause_type, count, desc) in enumerate(cause_data):
-        row = cause_table.rows[idx + 1]
-        row.cells[0].text = cause_type
-        row.cells[1].text = str(count)
-        row.cells[2].text = f"{round(count / total_causes * 100, 1)}%"
-        row.cells[3].text = desc
-        
-        _set_cell_shading(row.cells[0], cause_colors[cause_type])
-        
-        for cell in row.cells:
-            for paragraph in cell.paragraphs:
-                paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-                for run in paragraph.runs:
-                    run.font.size = Pt(10)
-                    run.font.name = 'Calibri'
-    
-    doc.add_paragraph()
-    
-    # ========== DETAILED STAFF SUB-CAUSES ==========
-    staff_subheading = doc.add_heading('تفصيل أسباب الكوادر البشرية / Staff Causes Breakdown', 2)
-    for run in staff_subheading.runs:
-        run.font.name = 'Calibri'
-    
-    staff_subcauses = rca_stats.get('staff_subcauses', {})
-    staff_chart = _generate_subcause_bar_chart(
-        staff_subcauses, 
-        'Staff Sub-Causes Analysis\nتحليل أسباب الكوادر البشرية', 
-        '#667eea'
-    )
-    if staff_chart:
-        chart_para = doc.add_paragraph()
-        chart_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-        chart_run = chart_para.add_run()
-        chart_run.add_picture(staff_chart, width=Inches(5.5))
-    
-    # Staff sub-causes table
-    staff_table = doc.add_table(rows=len(staff_subcauses) + 1, cols=3)
-    staff_table.style = 'Table Grid'
-    staff_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    _format_table_header(staff_table, ['السبب الفرعي / Sub-Cause', 'العدد / Count', 'النسبة / Percentage'], "667eea")
-    
-    staff_total = sum(staff_subcauses.values()) or 1
-    for idx, (subcause, count) in enumerate(staff_subcauses.items()):
-        row = staff_table.rows[idx + 1]
-        row.cells[0].text = subcause
-        row.cells[1].text = str(count)
-        row.cells[2].text = f"{round(count / staff_total * 100, 1)}%"
-        for cell in row.cells:
-            for paragraph in cell.paragraphs:
-                paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-                for run in paragraph.runs:
-                    run.font.size = Pt(9)
-                    run.font.name = 'Calibri'
-    
-    doc.add_paragraph()
-    
-    # ========== DETAILED PROCESS SUB-CAUSES ==========
-    process_subheading = doc.add_heading('تفصيل أسباب العمليات / Process Causes Breakdown', 2)
-    for run in process_subheading.runs:
-        run.font.name = 'Calibri'
-    
-    process_subcauses = rca_stats.get('process_subcauses', {})
-    process_chart = _generate_subcause_bar_chart(
-        process_subcauses,
-        'Process Sub-Causes Analysis\nتحليل أسباب العمليات',
-        '#FF9800'
-    )
-    if process_chart:
-        chart_para = doc.add_paragraph()
-        chart_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-        chart_run = chart_para.add_run()
-        chart_run.add_picture(process_chart, width=Inches(5.5))
-    
-    # Process sub-causes table
-    process_table = doc.add_table(rows=len(process_subcauses) + 1, cols=3)
-    process_table.style = 'Table Grid'
-    process_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    _format_table_header(process_table, ['السبب الفرعي / Sub-Cause', 'العدد / Count', 'النسبة / Percentage'], "FF9800")
-    
-    process_total = sum(process_subcauses.values()) or 1
-    for idx, (subcause, count) in enumerate(process_subcauses.items()):
-        row = process_table.rows[idx + 1]
-        row.cells[0].text = subcause
-        row.cells[1].text = str(count)
-        row.cells[2].text = f"{round(count / process_total * 100, 1)}%"
-        for cell in row.cells:
-            for paragraph in cell.paragraphs:
-                paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-                for run in paragraph.runs:
-                    run.font.size = Pt(9)
-                    run.font.name = 'Calibri'
-    
-    doc.add_paragraph()
-    
-    # ========== DETAILED EQUIPMENT SUB-CAUSES ==========
-    equip_subheading = doc.add_heading('تفصيل أسباب المعدات / Equipment Causes Breakdown', 2)
-    for run in equip_subheading.runs:
-        run.font.name = 'Calibri'
-    
-    equipment_subcauses = rca_stats.get('equipment_subcauses', {})
-    equip_chart = _generate_subcause_bar_chart(
-        equipment_subcauses,
-        'Equipment Sub-Causes Analysis\nتحليل أسباب المعدات',
-        '#E91E63'
-    )
-    if equip_chart:
-        chart_para = doc.add_paragraph()
-        chart_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-        chart_run = chart_para.add_run()
-        chart_run.add_picture(equip_chart, width=Inches(5.5))
-    
-    # Equipment sub-causes table
-    equip_table = doc.add_table(rows=len(equipment_subcauses) + 1, cols=3)
-    equip_table.style = 'Table Grid'
-    equip_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    _format_table_header(equip_table, ['السبب الفرعي / Sub-Cause', 'العدد / Count', 'النسبة / Percentage'], "E91E63")
-    
-    equip_total = sum(equipment_subcauses.values()) or 1
-    for idx, (subcause, count) in enumerate(equipment_subcauses.items()):
-        row = equip_table.rows[idx + 1]
-        row.cells[0].text = subcause
-        row.cells[1].text = str(count)
-        row.cells[2].text = f"{round(count / equip_total * 100, 1)}%"
-        for cell in row.cells:
-            for paragraph in cell.paragraphs:
-                paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-                for run in paragraph.runs:
-                    run.font.size = Pt(9)
-                    run.font.name = 'Calibri'
-    
-    doc.add_paragraph()
-    
-    # ========== DETAILED ENVIRONMENT SUB-CAUSES ==========
-    env_subheading = doc.add_heading('تفصيل أسباب البيئة / Environment Causes Breakdown', 2)
-    for run in env_subheading.runs:
-        run.font.name = 'Calibri'
-    
-    environment_subcauses = rca_stats.get('environment_subcauses', {})
-    env_chart = _generate_subcause_bar_chart(
-        environment_subcauses,
-        'Environment Sub-Causes Analysis\nتحليل أسباب البيئة',
-        '#4CAF50'
-    )
-    if env_chart:
-        chart_para = doc.add_paragraph()
-        chart_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-        chart_run = chart_para.add_run()
-        chart_run.add_picture(env_chart, width=Inches(5.5))
-    
-    # Environment sub-causes table
-    env_table = doc.add_table(rows=len(environment_subcauses) + 1, cols=3)
-    env_table.style = 'Table Grid'
-    env_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    _format_table_header(env_table, ['السبب الفرعي / Sub-Cause', 'العدد / Count', 'النسبة / Percentage'], "4CAF50")
-    
-    env_total = sum(environment_subcauses.values()) or 1
-    for idx, (subcause, count) in enumerate(environment_subcauses.items()):
-        row = env_table.rows[idx + 1]
-        row.cells[0].text = subcause
-        row.cells[1].text = str(count)
-        row.cells[2].text = f"{round(count / env_total * 100, 1)}%"
-        for cell in row.cells:
-            for paragraph in cell.paragraphs:
-                paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-                for run in paragraph.runs:
-                    run.font.size = Pt(9)
-                    run.font.name = 'Calibri'
-    
-    doc.add_paragraph()
-    
-    # ========== PREVENTIVE MEASURES ANALYSIS ==========
-    prevent_subheading = doc.add_heading('تحليل الإجراءات الوقائية / Preventive Measures Analysis', 2)
-    for run in prevent_subheading.runs:
-        run.font.name = 'Calibri'
-    
-    # Preventive measures chart
-    preventive_measures = rca_stats.get('preventive_measures_detail', {})
-    prev_chart = _generate_preventive_measures_chart(preventive_measures)
-    if prev_chart:
-        chart_para = doc.add_paragraph()
-        chart_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-        chart_run = chart_para.add_run()
-        chart_run.add_picture(prev_chart, width=Inches(5.5))
-    
-    # Preventive measures summary table
-    prevent_table = doc.add_table(rows=3, cols=3)
-    prevent_table.style = 'Table Grid'
-    prevent_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    
-    _format_table_header(prevent_table, ['التصنيف / Classification', 'العدد / Count', 'النسبة / Percentage'])
-    
-    total_prevent = (rca_stats['preventability']['has_preventive_measures'] + 
-                    rca_stats['preventability']['no_preventive_measures']) or 1
-    
-    prevent_data = [
-        ('لديه إجراءات وقائية / Has Preventive Measures', rca_stats['preventability']['has_preventive_measures']),
-        ('بدون إجراءات وقائية / No Preventive Measures', rca_stats['preventability']['no_preventive_measures']),
-    ]
-    
-    for idx, (classification, count) in enumerate(prevent_data):
-        row = prevent_table.rows[idx + 1]
-        row.cells[0].text = classification
-        row.cells[1].text = str(count)
-        row.cells[2].text = f"{round(count / total_prevent * 100, 1)}%"
-        
-        if 'Has Preventive' in classification:
-            _set_cell_shading(row.cells[0], 'E5FFE5')
-        else:
-            _set_cell_shading(row.cells[0], 'FFE5E5')
-        
-        for cell in row.cells:
-            for paragraph in cell.paragraphs:
-                paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-                for run in paragraph.runs:
-                    run.font.size = Pt(10)
-                    run.font.name = 'Calibri'
-    
-    doc.add_paragraph()
-    
-    # Detailed preventive measures table
-    prev_detail_subheading = doc.add_heading('تفصيل الإجراءات الوقائية المقترحة / Detailed Preventive Measures', 3)
-    for run in prev_detail_subheading.runs:
-        run.font.name = 'Calibri'
-    
-    prev_detail_table = doc.add_table(rows=len(preventive_measures) + 1, cols=3)
-    prev_detail_table.style = 'Table Grid'
-    prev_detail_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    _format_table_header(prev_detail_table, ['الإجراء الوقائي / Preventive Measure', 'العدد / Count', 'النسبة / Percentage'], "4CAF50")
-    
-    prev_total = sum(preventive_measures.values()) or 1
-    for idx, (measure, count) in enumerate(preventive_measures.items()):
-        row = prev_detail_table.rows[idx + 1]
-        row.cells[0].text = measure
-        row.cells[1].text = str(count)
-        row.cells[2].text = f"{round(count / prev_total * 100, 1)}%"
-        for cell in row.cells:
-            for paragraph in cell.paragraphs:
-                paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-                for run in paragraph.runs:
-                    run.font.size = Pt(9)
-                    run.font.name = 'Calibri'
-    
-    doc.add_paragraph()
-    
-    # ========== RCA INSIGHTS AND RECOMMENDATIONS ==========
-    insights_heading = doc.add_heading('التحليل والتوصيات / Analysis & Recommendations', 2)
-    for run in insights_heading.runs:
-        run.font.name = 'Calibri'
-        run.font.color.rgb = RGBColor(102, 126, 234)
-    
-    # Generate insights
-    insights = _get_rca_insights(rca_stats)
-    
-    for insight in insights:
-        if insight.startswith("التوصيات"):
-            # Make recommendations header bold
-            rec_para = doc.add_paragraph()
-            rec_run = rec_para.add_run(insight)
-            rec_run.font.bold = True
-            rec_run.font.size = Pt(11)
-            rec_run.font.name = 'Calibri'
-            rec_run.font.color.rgb = RGBColor(76, 175, 80)
-        elif insight:
-            insight_para = doc.add_paragraph()
-            insight_run = insight_para.add_run(insight)
-            insight_run.font.size = Pt(10)
-            insight_run.font.name = 'Calibri'
-            insight_para.paragraph_format.line_spacing = 1.3
-    
-    doc.add_paragraph()
+
+    by_category = rca_stats.get('by_category', [])
+    if not by_category:
+        no_data = doc.add_paragraph()
+        no_data_run = no_data.add_run('لا توجد بيانات RCA لهذه الفترة / No RCA data for this period')
+        no_data_run.font.size = Pt(11)
+        no_data_run.font.name = 'Calibri'
+        no_data_run.font.color.rgb = RGBColor(150, 150, 150)
+        no_data_run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+    else:
+        def _add_suggestion_table(items: list, color_hex: str, col_label: str):
+            if not items:
+                return
+            tbl = doc.add_table(rows=len(items) + 1, cols=3)
+            tbl.style = 'Table Grid'
+            tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+            _format_table_header(tbl, [col_label, 'النص / Text', 'عدد الاختيارات / Count'], color_hex)
+            total = sum(i['count'] for i in items) or 1
+            for idx, item in enumerate(items):
+                row = tbl.rows[idx + 1]
+                row.cells[0].text = str(idx + 1)
+                row.cells[1].text = item['text_ar'] or item['text_en'] or ''
+                row.cells[2].text = str(item['count'])
+                for cell in row.cells:
+                    for para in cell.paragraphs:
+                        para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+                        for run in para.runs:
+                            run.font.size = Pt(10)
+                            run.font.name = 'Calibri'
+                            run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
+        for cat in by_category:
+            cat_heading = doc.add_heading(
+                f"{cat['category_name_ar']} / {cat['category_name_en']}", 2
+            )
+            for run in cat_heading.runs:
+                run.font.name = 'Calibri'
+                run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+
+            if cat['causes']:
+                causes_label = doc.add_paragraph()
+                causes_lbl_run = causes_label.add_run('العوامل المسبّبة المختارة')
+                causes_lbl_run.font.bold = True
+                causes_lbl_run.font.size = Pt(11)
+                causes_lbl_run.font.name = 'Calibri'
+                causes_lbl_run.font.color.rgb = RGBColor(180, 90, 0)
+                causes_lbl_run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+                _add_suggestion_table(cat['causes'], 'F5A623', '#')
+
+            if cat['action_items']:
+                actions_label = doc.add_paragraph()
+                actions_lbl_run = actions_label.add_run('الإجراءات التصحيحية المقترحة المختارة')
+                actions_lbl_run.font.bold = True
+                actions_lbl_run.font.size = Pt(11)
+                actions_lbl_run.font.name = 'Calibri'
+                actions_lbl_run.font.color.rgb = RGBColor(0, 90, 180)
+                actions_lbl_run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+                _add_suggestion_table(cat['action_items'], '667eea', '#')
+
+            doc.add_paragraph()
+
     doc.add_page_break()
     
     # ========== SATISFACTION SECTION ==========
@@ -1180,35 +827,6 @@ def generate_patient_feedback_seasonal_word(
                     run.font.name = 'Calibri'
     
     doc.add_paragraph()
-    
-    # ========== RCA BY DEPARTMENT ==========
-    if rca_stats['by_department']:
-        dept_heading = doc.add_heading('تحليل RCA حسب القسم / RCA Analysis by Department', 1)
-        for run in dept_heading.runs:
-            run.font.name = 'Calibri'
-            run.font.color.rgb = RGBColor(102, 126, 234)
-        
-        dept_table = doc.add_table(rows=len(rca_stats['by_department']) + 1, cols=6)
-        dept_table.style = 'Table Grid'
-        dept_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        
-        _format_table_header(dept_table, ['القسم / Department', 'المجموع', 'طاقم', 'عملية', 'معدات', 'بيئة'])
-        
-        for idx, dept in enumerate(rca_stats['by_department']):
-            row = dept_table.rows[idx + 1]
-            row.cells[0].text = dept['department']
-            row.cells[1].text = str(dept['rca_count'])
-            row.cells[2].text = str(dept['staff'])
-            row.cells[3].text = str(dept['process'])
-            row.cells[4].text = str(dept['equipment'])
-            row.cells[5].text = str(dept['environment'])
-            
-            for cell in row.cells:
-                for paragraph in cell.paragraphs:
-                    paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-                    for run in paragraph.runs:
-                        run.font.size = Pt(9)
-                        run.font.name = 'Calibri'
     
     # ========== FOOTER ==========
     doc.add_paragraph()

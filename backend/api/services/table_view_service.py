@@ -173,6 +173,7 @@ def get_complaints_paginated(
     page_size: int = 50,
     view: str = "complete",
     tab: Optional[str] = None,  # 'preparation' | 'workflow' | None
+    restrict_to_unit_ids: Optional[set] = None,  # org-scoped viewer enforcement
 ) -> Dict[str, Any]:
     """
     Fetch paginated complaints with search and filtering.
@@ -223,7 +224,23 @@ def get_complaints_paginated(
     if issuing_org_unit_id:
         where_conditions.append("c.IssuingOrgUnitID = ?")
         params.append(issuing_org_unit_id)
-    
+
+    # Role-based scope enforcement: org viewer roles see only cases TARGETED AT their unit(s).
+    # Uses APP_IncidentCaseTargetDepartment so a SECTION_ADMIN sees every complaint
+    # that concerns their section, not just complaints that originated from it.
+    if restrict_to_unit_ids is not None:
+        if not restrict_to_unit_ids:
+            # Empty set means no accessible units — return nothing
+            where_conditions.append("1=0")
+        else:
+            placeholders = ",".join("?" * len(restrict_to_unit_ids))
+            where_conditions.append(
+                f"EXISTS (SELECT 1 FROM dbo.APP_IncidentCaseTargetDepartment td_scope"
+                f" WHERE td_scope.IncidentRequestCaseID = c.IncidentRequestCaseID"
+                f" AND td_scope.DepartmentID IN ({placeholders}))"
+            )
+            params.extend(list(restrict_to_unit_ids))
+
     # Domain filter
     if domain_id:
         where_conditions.append("c.DomainID = ?")
@@ -975,6 +992,7 @@ def get_complaints_count(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     tab: Optional[str] = None,
+    restrict_to_unit_ids: Optional[set] = None,
 ) -> Dict[str, Any]:
     """
     Get count of complaints matching filters (for export preview).
@@ -1002,6 +1020,18 @@ def get_complaints_count(
     if issuing_org_unit_id:
         where_conditions.append("c.IssuingOrgUnitID = ?")
         params.append(issuing_org_unit_id)
+
+    if restrict_to_unit_ids is not None:
+        if not restrict_to_unit_ids:
+            where_conditions.append("1=0")
+        else:
+            placeholders = ",".join("?" * len(restrict_to_unit_ids))
+            where_conditions.append(
+                f"EXISTS (SELECT 1 FROM dbo.APP_IncidentCaseTargetDepartment td_scope"
+                f" WHERE td_scope.IncidentRequestCaseID = c.IncidentRequestCaseID"
+                f" AND td_scope.DepartmentID IN ({placeholders}))"
+            )
+            params.extend(list(restrict_to_unit_ids))
 
     if target_department_id:
         where_conditions.append("""
@@ -1126,7 +1156,8 @@ def export_complaints_excel(
     year: Optional[int] = None,
     month: Optional[int] = None,
     start_date: Optional[str] = None,
-    end_date: Optional[str] = None
+    end_date: Optional[str] = None,
+    restrict_to_unit_ids: Optional[set] = None,
 ) -> BytesIO:
     """
     Export filtered complaints as Excel file.
@@ -1151,19 +1182,31 @@ def export_complaints_excel(
     if issuing_org_unit_id:
         where_conditions.append("c.IssuingOrgUnitID = ?")
         params.append(issuing_org_unit_id)
-    
+
+    if restrict_to_unit_ids is not None:
+        if not restrict_to_unit_ids:
+            where_conditions.append("1=0")
+        else:
+            placeholders = ",".join("?" * len(restrict_to_unit_ids))
+            where_conditions.append(
+                f"EXISTS (SELECT 1 FROM dbo.APP_IncidentCaseTargetDepartment td_scope"
+                f" WHERE td_scope.IncidentRequestCaseID = c.IncidentRequestCaseID"
+                f" AND td_scope.DepartmentID IN ({placeholders}))"
+            )
+            params.extend(list(restrict_to_unit_ids))
+
     if domain_id:
         where_conditions.append("c.DomainID = ?")
         params.append(domain_id)
-    
+
     if category_id:
         where_conditions.append("c.CategoryID = ?")
         params.append(category_id)
-    
+
     if severity_id:
         where_conditions.append("c.SeverityID = ?")
         params.append(severity_id)
-    
+
     if stage_id:
         where_conditions.append("c.StageID = ?")
         params.append(stage_id)
@@ -1364,19 +1407,20 @@ def export_complaints(
     filters: Dict[str, Any],
     columns: List[str],
     include_patient_identifiers: bool = False,
-    language: str = 'en'
+    language: str = 'en',
+    restrict_to_unit_ids: Optional[set] = None,
 ) -> Dict[str, Any]:
     """
     Export filtered complaints as CSV or JSON.
-    
+
     NOTE: This function prepares export metadata. Actual file generation
     should be handled by a background job or streaming response.
     """
     if export_format not in ['csv', 'json']:
         raise ValueError("Format must be 'csv' or 'json'")
-    
-    # Get count of records to export
-    count_result = get_complaints_count(**filters)
+
+    # Get count of records to export (scoped to user's org unit)
+    count_result = get_complaints_count(**filters, restrict_to_unit_ids=restrict_to_unit_ids)
     record_count = count_result['total_count']
     
     # Generate export ID (timestamp-based)

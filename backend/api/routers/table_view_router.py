@@ -4,11 +4,13 @@ FastAPI endpoints for the TableView page (main operational data table).
 """
 
 from datetime import datetime
-from fastapi import APIRouter, Query, HTTPException, Body, Path, UploadFile, File
+from fastapi import APIRouter, Query, HTTPException, Body, Path, UploadFile, File, Depends
 from fastapi.responses import StreamingResponse
 from typing import Optional, List, Dict, Any, Literal
 from pydantic import BaseModel
 
+from ..dependencies.user_context import get_current_user
+from ..schemas.auth_models import CurrentUser
 from ..services.table_view_service import (
     get_complaints_paginated,
     get_filter_options,
@@ -23,6 +25,9 @@ from ..db_layer.incident_case import soft_delete_incident_case, hard_delete_inci
 
 
 router = APIRouter(prefix="/api/complaints", tags=["Table View"])
+
+# Roles that see all records with no org-unit restriction
+_FULL_ACCESS_ROLES = {"SOFTWARE_ADMIN", "COMPLAINT_SUPERVISOR", "WORKER"}
 
 
 # ==================== REQUEST/RESPONSE MODELS ====================
@@ -60,7 +65,8 @@ async def get_complaints(
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(50, ge=1, le=500, description="Results per page (1-500)"),
     view: str = Query("complete", description="View preset (complete, simplified)"),
-    tab: Optional[str] = Query(None, description="Tab filter: 'preparation' | 'workflow'")
+    tab: Optional[str] = Query(None, description="Tab filter: 'preparation' | 'workflow'"),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     Fetch paginated complaints with search and filtering.
@@ -80,6 +86,11 @@ async def get_complaints(
     - `view`: Current view preset
     """
     try:
+        # Org-scoped roles may only see their own unit subtree
+        user_roles = set(current_user.roles)
+        is_full_access = bool(user_roles & _FULL_ACCESS_ROLES)
+        restrict_to_unit_ids = None if is_full_access else current_user.allowed_unit_ids
+
         result = get_complaints_paginated(
             search=search,
             issuing_org_unit_id=issuing_org_unit_id,
@@ -102,6 +113,7 @@ async def get_complaints(
             page_size=page_size,
             view=view,
             tab=tab,
+            restrict_to_unit_ids=restrict_to_unit_ids,
         )
         return result
     except ValueError as e:
@@ -221,7 +233,8 @@ async def export_complaints_to_excel(
     year: Optional[int] = Query(None),
     month: Optional[int] = Query(None, ge=1, le=12),
     start_date: Optional[str] = Query(None),
-    end_date: Optional[str] = Query(None)
+    end_date: Optional[str] = Query(None),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     Export filtered complaints as Excel file.
@@ -243,6 +256,11 @@ async def export_complaints_to_excel(
     try:
         from datetime import datetime
         
+        # Resolve org scope restriction
+        user_roles = set(current_user.roles)
+        is_full_access = bool(user_roles & _FULL_ACCESS_ROLES)
+        restrict_to_unit_ids = None if is_full_access else current_user.allowed_unit_ids
+
         # Generate Excel file
         excel_file = export_complaints_excel(
             search=search,
@@ -256,7 +274,8 @@ async def export_complaints_to_excel(
             year=year,
             month=month,
             start_date=start_date,
-            end_date=end_date
+            end_date=end_date,
+            restrict_to_unit_ids=restrict_to_unit_ids,
         )
         
         # Generate filename with timestamp
@@ -322,7 +341,10 @@ async def get_single_complaint(complaint_id: int):
 
 
 @router.post("/export")
-async def export_filtered_complaints(request: ExportRequest = Body(...)):
+async def export_filtered_complaints(
+    request: ExportRequest = Body(...),
+    current_user: CurrentUser = Depends(get_current_user),
+):
     """
     Export filtered complaints as CSV or JSON.
     
@@ -366,12 +388,17 @@ async def export_filtered_complaints(request: ExportRequest = Body(...)):
     - 400: Invalid format or parameters
     """
     try:
+        user_roles = set(current_user.roles)
+        is_full_access = bool(user_roles & _FULL_ACCESS_ROLES)
+        restrict_to_unit_ids = None if is_full_access else current_user.allowed_unit_ids
+
         result = export_complaints(
             export_format=request.format,
             filters=request.filters,
             columns=request.columns,
             include_patient_identifiers=request.include_patient_identifiers,
-            language=request.language
+            language=request.language,
+            restrict_to_unit_ids=restrict_to_unit_ids,
         )
         return result
     except ValueError as e:

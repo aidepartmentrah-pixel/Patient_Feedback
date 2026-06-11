@@ -1596,7 +1596,7 @@ class ReportsService:
         def _safe(v):
             """Convert dimension values to int (python-docx requirement)"""
             return int(v)
-        
+
         def sanitize_value(value):
             """Convert value to string, handling dates and None"""
             try:
@@ -1609,13 +1609,18 @@ class ReportsService:
                 return str(value)
             except:
                 return ""
-        
+
         def normalize_text(text: str) -> str:
             """Normalize text for Word table cells - remove manual line breaks"""
             text = str(text)
             text = text.replace("\r\n", "\n").replace("\r", "\n")
             lines = [l.strip() for l in text.split("\n") if l.strip()]
             return " ".join(lines)
+
+        def is_arabic(text: str) -> bool:
+            """Returns True if text contains Arabic characters."""
+            import re
+            return bool(re.search(r'[؀-ۿ]', str(text) if text else ''))
         
         # Normalize data source
         try:
@@ -1625,12 +1630,23 @@ class ReportsService:
                 rows = report_data
             else:
                 rows = []
-            
+
             if not isinstance(rows, list):
                 rows = []
         except:
             rows = []
-        
+
+        # Load institutional config once (header title, subtitle, footer, report code)
+        try:
+            from ..db_layer.report_config_db import get_report_config
+            _cfg = get_report_config()
+        except Exception:
+            _cfg = {}
+        _header_title    = _cfg.get("header_title",    "نموذج التقرير الشهري لفرص التحسين والإجراءات التصحيحية الواردة من المرضى وذويهم")
+        _header_subtitle = _cfg.get("header_subtitle", "(إصدار رسمي — للاستخدام الإداري والجودة)")
+        _footer_text     = _cfg.get("footer_text",     "نؤمن أن الإبتكار لا يكون فقط في التقنيات، بل في أسلوب الخدمة والتواصل والتعاطف… فلنبتكر معًا تجربة ذات أثر طيب")
+        _report_code     = _cfg.get("report_code",     "")
+
         # Create Word document
         doc = Document()
         
@@ -1662,8 +1678,22 @@ class ReportsService:
             Department = report_department or "—"
             Section = report_section or "—"
             print(f"[DOCX EXPORT] Using parameters: admin={Administration}, dept={Department}, section={Section}")
+        elif report_entity_name:
+            # Use the filter entity name — avoids showing the wrong issuing-section from row[0]
+            Administration = "—"
+            Department = "—"
+            Section = "—"
+            if report_entity_type == "section":
+                Section = report_entity_name
+            elif report_entity_type == "department":
+                Department = report_entity_name
+            elif report_entity_type in ("administration", "all_administrations"):
+                Administration = report_entity_name
+            else:
+                Administration = report_entity_name
+            print(f"[DOCX EXPORT] Using entity name: {report_entity_name} ({report_entity_type})")
         else:
-            # Fallback: extract from first row if parameters not provided
+            # Fallback: extract from first row if no filter info provided (hospital-level report)
             Administration = "—"
             Department = "—"
             Section = "—"
@@ -1689,181 +1719,141 @@ class ReportsService:
             except:
                 pass
         
-        # ========== ADD LOGO TO WORD HEADER (TOP RIGHT) ==========
-
+        # ========== REAL DOCUMENT HEADER (repeats on every page) ==========
+        import os
         try:
-            import os
             logo_path = os.path.join(os.path.dirname(__file__), '..', '..', 'assets', 'logo.png')
+
+            # Increase top margin to accommodate compact header
+            section.top_margin = _safe(Mm(50))
+            section.header_distance = _safe(Mm(5))
+
+            hdr = section.header
+
+            # Logo — right-aligned in first paragraph
+            logo_para = hdr.paragraphs[0]
+            logo_para.clear()
+            logo_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            logo_para.paragraph_format.space_after = int(Pt(2))
             if os.path.exists(logo_path):
-                section = doc.sections[0]
+                logo_run = logo_para.add_run()
+                logo_run.add_picture(logo_path, width=Inches(0.7))
 
-                # Make header compact
-                section.header_distance = Inches(0.1)
+            # Title
+            hdr_title_para = hdr.add_paragraph()
+            hdr_title_run = hdr_title_para.add_run(_header_title)
+            hdr_title_run.font.size = int(Pt(13))
+            hdr_title_run.font.bold = True
+            hdr_title_run.font.name = 'Traditional Arabic'
+            hdr_title_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+            hdr_title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            hdr_title_para.paragraph_format.space_after = int(Pt(1))
 
-                header = section.header
+            # Subtitle
+            hdr_sub_para = hdr.add_paragraph()
+            hdr_sub_run = hdr_sub_para.add_run(_header_subtitle)
+            hdr_sub_run.font.size = int(Pt(10))
+            hdr_sub_run.font.name = 'Traditional Arabic'
+            hdr_sub_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+            hdr_sub_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            hdr_sub_para.paragraph_format.space_after = int(Pt(1))
 
-                # Use only one paragraph and clear it
-                header_para = header.paragraphs[0]
-                header_para.clear()
-                header_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            # Period
+            hdr_period_para = hdr.add_paragraph()
+            hdr_period_run = hdr_period_para.add_run(f"الشهر المعني: من {start_date} إلى {end_date}")
+            hdr_period_run.font.size = int(Pt(10))
+            hdr_period_run.font.bold = True
+            hdr_period_run.font.name = 'Traditional Arabic'
+            hdr_period_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+            hdr_period_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            hdr_period_para.paragraph_format.space_after = int(Pt(1))
 
-                run = header_para.add_run()
-                run.add_picture(logo_path, width=Inches(0.9))
+            # Admin / Dept / Section on one compact line
+            hdr_dept_para = hdr.add_paragraph()
+            hdr_dept_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            hdr_dept_para.paragraph_format.space_after = int(Pt(2))
+            for i, (lbl, val) in enumerate([
+                ("الإدارة: ", Administration),
+                ("الدائرة: ", Department),
+                ("القسم المعني: ", Section),
+            ]):
+                if i > 0:
+                    sep_r = hdr_dept_para.add_run("   |   ")
+                    sep_r.font.size = int(Pt(10))
+                    sep_r.font.name = 'Traditional Arabic'
+                    sep_r._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+                lbl_r = hdr_dept_para.add_run(lbl)
+                lbl_r.font.size = int(Pt(10))
+                lbl_r.font.bold = True
+                lbl_r.font.name = 'Traditional Arabic'
+                lbl_r._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+                val_r = hdr_dept_para.add_run(str(val))
+                val_r.font.size = int(Pt(10))
+                val_r.font.name = 'Traditional Arabic'
+                val_r._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
 
-        except:
-            pass
-        
-        # ========== DOCUMENT HEADER TEXT (BODY) ==========
-        
-        # Title (big, bold, centered)
-        # Title (big, bold, centered)
-        title_para = doc.add_paragraph()
-        title_run = title_para.add_run("نموذج التقرير الشهري لفرص التحسين والإجراءات التصحيحية الواردة من المرضى وذويهم")
-        title_run.font.size = int(Pt(21))
-        title_run.font.bold = True
-        title_run.font.name = 'Traditional Arabic'
-        title_run.italic = False
-        title_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
-        title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        title_para.space_after = int(Pt(3))  # Space after title
-        
-        # Subtitle (smaller, centered)
-        subtitle_para = doc.add_paragraph()
-        subtitle_run = subtitle_para.add_run("(إصدار رسمي — للاستخدام الإداري والجودة)")
-        subtitle_run.font.size = int(Pt(14))
-        subtitle_run.font.name = 'Traditional Arabic'
-        subtitle_run.italic = False
-        subtitle_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
-        subtitle_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        subtitle_para.space_after = int(Pt(6))  # More space after subtitle
-        
-        # Period line (centered, bold)
-        period_para = doc.add_paragraph()
-        period_run = period_para.add_run(f"الشهر المعني: من {start_date} إلى {end_date}")
-        period_run.font.size = int(Pt(12))
-        period_run.font.bold = True
-        period_run.font.name = 'Traditional Arabic'
-        period_run.italic = False
-        period_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
-        period_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        period_para.space_after = int(Pt(3))
-        
-        # Department line (3-column table for proper RTL alignment)
-        dept_table = doc.add_table(rows=1, cols=3)
-        
-        # Remove all table borders
-        dept_tbl = dept_table._element
-        dept_tblPr = dept_tbl.tblPr
-        if dept_tblPr is None:
-            dept_tblPr = OxmlElement('w:tblPr')
-            dept_tbl.insert(0, dept_tblPr)
-        
-        # Remove borders
-        dept_tblBorders = OxmlElement('w:tblBorders')
-        for border_name in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
-            border_elem = OxmlElement(f'w:{border_name}')
-            border_elem.set(qn('w:val'), 'nil')
-            dept_tblBorders.append(border_elem)
-        dept_tblPr.append(dept_tblBorders)
-        
-        # Center the table horizontally
-        dept_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        dept_tblJc = OxmlElement('w:jc')
-        dept_tblJc.set(qn('w:val'), 'center')
-        dept_tblPr.append(dept_tblJc)
-        
-        # Set table width to 70% of usable page width
-        section = doc.sections[0]
-        usable_width = section.page_width - section.left_margin - section.right_margin
-        target_width = int(usable_width * 0.7)
-        col_width = int(target_width / 3)
-        
-        for i in range(3):
-            dept_table.columns[i].width = col_width
-        
-        # Fill the cells with department data (bold labels + normal values)
-        dept_cells = dept_table.rows[0].cells
-        dept_data = [
-            ("الإدارة: ", Administration),
-            ("الدائرة: ", Department), 
-            ("القسم المعني: ", Section)
-        ]
-        
-        for i, (label, value) in enumerate(dept_data):
-            cell = dept_cells[i]
-            
-            # Clear existing content and create custom paragraph
-            cell.text = ""
-            paragraph = cell.paragraphs[0]
-            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            paragraph.paragraph_format.right_to_left = True
-            paragraph.space_after = int(Pt(6))
-            
-            # Add bold label run
-            label_run = paragraph.add_run(label)
-            label_run.font.bold = True
-            label_run.font.size = int(Pt(15))
-            label_run.font.name = 'Traditional Arabic'
-            label_run.italic = False
-            label_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
-            
-            # Add normal value run
-            value_run = paragraph.add_run(str(value))
-            value_run.font.bold = False
-            value_run.font.size = int(Pt(15))
-            value_run.font.name = 'Traditional Arabic'
-            value_run.italic = False
-            value_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
-        
-        # Visual separator line (bottom border)
-        separator_para = doc.add_paragraph()
-        separator_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        # Add bottom border to paragraph
-        try:
-            pPr = separator_para._element.get_or_add_pPr()
-            pBdr = OxmlElement('w:pBdr')
-            bottom = OxmlElement('w:bottom')
-            bottom.set(qn('w:val'), 'single')
-            bottom.set(qn('w:sz'), '12')  # Border width
-            bottom.set(qn('w:space'), '1')
-            bottom.set(qn('w:color'), '4472C4')  # Hospital blue color
-            pBdr.append(bottom)
-            pPr.append(pBdr)
-        except:
-            pass
-        
-        # Spacer after header        
+            # Report code — shown only when configured
+            if _report_code:
+                hdr_code_para = hdr.add_paragraph()
+                hdr_code_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                hdr_code_para.paragraph_format.space_after = int(Pt(2))
+                code_lbl = hdr_code_para.add_run("رمز التقرير: ")
+                code_lbl.font.size = int(Pt(10))
+                code_lbl.font.bold = True
+                code_lbl.font.name = 'Traditional Arabic'
+                code_lbl._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+                code_val = hdr_code_para.add_run(_report_code)
+                code_val.font.size = int(Pt(10))
+                code_val.font.name = 'Traditional Arabic'
+                code_val._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+
+            # Blue separator line
+            hdr_sep_para = hdr.add_paragraph()
+            hdr_sep_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            _pPr = hdr_sep_para._element.get_or_add_pPr()
+            _pBdr = OxmlElement('w:pBdr')
+            _bot = OxmlElement('w:bottom')
+            _bot.set(qn('w:val'), 'single')
+            _bot.set(qn('w:sz'), '12')
+            _bot.set(qn('w:space'), '1')
+            _bot.set(qn('w:color'), '4472C4')
+            _pBdr.append(_bot)
+            _pPr.append(_pBdr)
+
+        except Exception as _hdr_err:
+            print(f"[DOCX] Header setup error: {_hdr_err}")
+
         # ========== END OF HEADER ==========
         
-        # Define columns (19 columns with behavior)
-        # Format: (header, field, is_vertical, width_ratio)
-        # 
-        # is_vertical=True: Narrow metadata columns with 90° rotated headers
-        # is_vertical=False: Wide content columns with horizontal wrapped text
-        # 
-        # Width ratios:
-        # - Narrow columns: 0.6 to 1.2 (metadata fields)
-        # - Wide columns: 3.0, 4.0, 8.0 (content fields)
+        # Define columns (23 columns with behavior)
+        # Format: (header_label, field_name, is_vertical, width_ratio)
+        # is_vertical=True  → narrow column, header rotated 90°
+        # is_vertical=False → wide content column, horizontal text
+        # Column classes: S=0.360, M=0.750, L-narrow=0.660, L-equal=1.050, XL-large=3.380, XL-mid=2.000, XL-small=1.400
         columns = [
-            ("تاريخ تلقي الملاحظة", "received_date", True, 0.353),     # 0.53 / 1.5
-            ("الرقم", "id", True, 0.267),                               # 0.4 / 1.5
-            ("P. Full Name", "patient_name", True, 0.444),             # 0.6666 / 1.5
-            ("قسم الصادر", "section_name", True, 0.444),
-            ("الإدارة", "administration_name", True, 0.353),
-            ("القسم المعني", "department_name", True, 0.444),
-            ("المصدر", "source_name", True, 0.353),
-            ("النوع", "feedback_intent_type_name", True, 0.353),
-            ("Domain", "domain_name", True, 0.444),
-            ("Category", "category_name", True, 0.444),
-            ("Sub-Category", "subcategory_name", True, 0.444),
-            ("Target Departments", "target_departments_display", True, 0.8),
-            ("Classification", "classification_name_en", True, 0.8),   # 1.2 / 1.5
-            ("محتوى الشكوى (Raw Content)", "complaint_text", False, 3.555),   # 8.0 / 1.5
-            ("Immediate Action (خدمات المرضى+القسم)", "immediate_action", False, 2.667), # 4.0 / 1.5
-            ("الإجراءات المتخذة (القسم/الدائرة/الإدارة)", "taken_action", False, 2.0),   # 3.0 / 1.5
-            ("Severity", "severity_name", True, 0.311),                       # 0.4666 / 1.5
-            ("Stage", "stage_name", True, 0.353),                             # 0.53 / 1.5
-            ("Harm", "harm_level", True, 0.267)                               # 0.4 / 1.5
+            ("تاريخ الاستلام",        "received_date",                 True,  0.360),  # S
+            ("رقم الحادثة",           "incident_id",                   True,  0.360),  # S
+            ("رقم الحالة",            "id",                            True,  0.360),  # S
+            ("P. Full Name",         "patient_name",                  True,  0.360),  # S
+            ("قسم الصّادر",           "section_name",                  True,  0.750),  # M — issuing section
+            ("قسم معني",              "target_section_name",           True,  0.750),  # M — target section
+            ("دائرة معنيّة",           "target_department_name",        True,  0.750),  # M — target department
+            ("إدارة معنيّة",           "target_administration_name",    True,  0.750),  # M — target administration
+            ("المصدر",                "source_name",                   True,  0.360),  # S
+            ("النوع",                 "feedback_intent_type_name_ar",  True,  0.360),  # S
+            ("Domain",               "domain_name",                   True,  0.360),  # S
+            ("Category",             "category_name",                 True,  0.360),  # S
+            ("Sub-Category",         "subcategory_name",              True,  0.750),  # M
+            ("التصنيف (عربي)",        "classification_name",           True,  1.050),  # L-equal, AR first
+            ("Classification (EN)",  "classification_name_en",        True,  1.703),  # L-EN-XL (+30%)
+            ("محتوى الشكوى",          "complaint_text",                False, 3.380),  # XL-large
+            ("Immediate Action",     "immediate_action",              False, 2.000),  # XL-mid
+            ("الإجراءات المتخذة",      "taken_action",                  False, 1.400),  # XL-small
+            ("Severity",             "severity_name",                 True,  0.360),  # S
+            ("Stage",                "stage_name",                    True,  0.750),  # M
+            ("Harm",                 "harm_level",                    True,  0.360),  # S
+            ("Status",               "status_name",                   True,  0.360),  # S
+            ("Field Type",           "clinical_risk_type_name",       True,  0.360),  # S
         ]
         
         # Handle empty data
@@ -1875,7 +1865,7 @@ class ReportsService:
             return buffer.getvalue()
         
         # Create main data table
-        table = doc.add_table(rows=1, cols=19)
+        table = doc.add_table(rows=1, cols=23)
         table.style = 'Table Grid'
         # Force fixed table layout so Word respects column widths
         tbl = table._element
@@ -1904,47 +1894,54 @@ class ReportsService:
         tblJc.set(qn('w:val'), 'center')
         tblPr.append(tblJc)
         
-        # CRITICAL: Set minimum row height with auto-expansion for ALL rows
-        # This fixes vertical column clipping and broken stripes
-        for row in table.rows:
-            row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-            row.height = Inches(0.79)  # Minimum height, can grow larger
-        
-        # Header row
+        # Header row: taller minimum to accommodate rotated Arabic text
+        header_row = table.rows[0]
+        header_row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+        header_row.height = Inches(1.4)  # ~35mm — fits full rotated text
+
+        # Header row setup
         header_cells = table.rows[0].cells
         for idx, (header_name, _, is_vertical, _) in enumerate(columns):
             cell = header_cells[idx]
             cell.text = header_name
-            
-            # Style header cell
+
+            tc = cell._element
+            tcPr = tc.get_or_add_tcPr()
+
+            # Vertical center alignment for header cell content
+            vAlign = OxmlElement('w:vAlign')
+            vAlign.set(qn('w:val'), 'center')
+            tcPr.append(vAlign)
+
+            # Style header text
             for paragraph in cell.paragraphs:
                 paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                paragraph.paragraph_format.right_to_left = True
+                # RTL only on non-vertical columns — RTL+btLr conflicts and shifts centering
+                if not is_vertical:
+                    paragraph.paragraph_format.right_to_left = True
+                paragraph.paragraph_format.space_before = int(Pt(0))
+                paragraph.paragraph_format.space_after = int(Pt(0))
                 for run in paragraph.runs:
                     run.font.bold = True
                     run.font.size = int(Pt(8))
                     run.font.name = 'Traditional Arabic'
                     run.italic = False
                     run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
-            
-            # Apply light turquoise/green background
+
+            # Light green background
             try:
-                shading_elm = cell._element.get_or_add_tcPr()
-                shading_elm.get_or_add_shd().fill = "B4E7CE"  # Light green
+                cell._element.get_or_add_tcPr().get_or_add_shd().fill = "B4E7CE"
             except:
                 pass
-            
-            # Apply vertical text rotation for narrow columns
+
+            # Rotate all header columns 90° (btLr) for compact layout
             if is_vertical:
                 try:
-                    # Set text direction to vertical (bt-lr = bottom to top, left to right)
-                    tc = cell._element
-                    tcPr = tc.get_or_add_tcPr()
-                    textDirection = OxmlElement('w:textDirection')
-                    textDirection.set(qn('w:val'), 'btLr')  # Bottom to top, left to right (90° rotation)
-                    tcPr.append(textDirection)
+                    textDir = OxmlElement('w:textDirection')
+                    textDir.set(qn('w:val'), 'btLr')
+                    tcPr.append(textDir)
                 except:
-                    pass  # If rotation fails, continue without it
+                    pass
         
         # Set column widths (force exact page width fitting)
         # Calculate usable width from actual page dimensions
@@ -1984,9 +1981,7 @@ class ReportsService:
             new_row = table.add_row()
             row_cells = new_row.cells
             
-            # CRITICAL: Set minimum row height with auto-expansion for this data row
-            new_row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-            new_row.height = Inches(0.79)  # Minimum height, allows natural expansion
+            new_row.height_rule = WD_ROW_HEIGHT_RULE.AUTO
             
             # Check if this is a red flag / never event
             is_red_flag = False
@@ -2046,9 +2041,17 @@ class ReportsService:
                             raw_value = ", ".join(all_displays) if all_displays else "—"
                     else:
                         raw_value = "—"
+                elif field_name in ("target_section_name", "target_department_name", "target_administration_name"):
+                    target_depts = row_dict.get("target_departments", [])
+                    primary = next((d for d in target_depts if d.get("is_primary")), target_depts[0] if target_depts else None)
+                    key = {"target_section_name": "section_name", "target_department_name": "department_name", "target_administration_name": "administration_name"}[field_name]
+                    raw_value = (primary.get(key) or "—") if primary else "—"
+                elif field_name == "incident_id":
+                    _inc = row_dict.get("incident_id")
+                    raw_value = f"INC-{int(_inc):06d}" if _inc is not None else ""
                 else:
                     raw_value = sanitize_value(row_dict.get(field_name, ""))
-                
+
                 # CRITICAL: Normalize text to remove manual line breaks from UI
                 value = normalize_text(raw_value)
                 
@@ -2069,11 +2072,29 @@ class ReportsService:
                 p = cell.paragraphs[0]
                 run = p.add_run(value)
 
-                # Font
-                run.font.size = int(Pt(7))
-                run.font.name = 'Traditional Arabic'
+                # Font size 9; Calibri for Arabic content, Traditional Arabic for English/numeric
+                run.font.size = int(Pt(9))
                 run.italic = False
-                run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+                if is_arabic(value):
+                    run.font.name = 'Calibri'
+                    run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Calibri')
+                    run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+                else:
+                    run.font.name = 'Traditional Arabic'
+                    run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+                    run._element.rPr.rFonts.set(qn('w:cs'), 'Traditional Arabic')
+
+                # Line spacing 1.15 + optional 6pt before/after for horizontal cells
+                _ppPr = p._element.get_or_add_pPr()
+                for _s in _ppPr.findall(qn('w:spacing')):
+                    _ppPr.remove(_s)
+                _sp = OxmlElement('w:spacing')
+                _sp.set(qn('w:line'), '276')   # 240 * 1.15 ≈ 276 twips
+                _sp.set(qn('w:lineRule'), 'auto')
+                if not is_vertical:
+                    _sp.set(qn('w:before'), '120')  # 6pt = 120 twips
+                    _sp.set(qn('w:after'),  '120')
+                _ppPr.append(_sp)
 
                 # Apply semantic coloring based on column and value (applies to ALL columns)
                 cell_color = None
@@ -2163,11 +2184,12 @@ class ReportsService:
                 else:
                     # Horizontal columns: center horizontally and vertically
                     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    
+                    # (6pt before/after spacing is set in the w:spacing block above)
+
                     # Set vertical center alignment for cell
                     tc = cell._element
                     tcPr = tc.get_or_add_tcPr()
-                    
+
                     vAlign = OxmlElement('w:vAlign')
                     vAlign.set(qn('w:val'), 'center')
                     tcPr.append(vAlign)
@@ -2277,13 +2299,12 @@ class ReportsService:
         try:
             section = doc.sections[0]
             footer = section.footer
+            footer.is_linked_to_previous = False  # Activate footer so Word writes footer1.xml
             footer_para = footer.paragraphs[0]
             footer_para.clear()
             
             # Add the Arabic quote
-            run = footer_para.add_run(
-                "نؤمن أن الإبتكار لا يكون فقط في التقنيات، بل في أسلوب الخدمة والتواصل والتعاطف… فلنبتكر معًا تجربة ذات أثر طيب"
-            )
+            run = footer_para.add_run(_footer_text)
             run.font.size = int(Pt(10))
             run.font.name = 'Traditional Arabic'
             run.italic = False

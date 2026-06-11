@@ -23,6 +23,7 @@ from ..db_layer.user_management_db import (
 )
 from ..db_layer.section_admin_recreate_db import username_exists
 from ..db_layer.auth_db import hash_password
+from core.config_loader import is_test_password_mode
 
 # Configure logger for user management operations
 logger = logging.getLogger(__name__)
@@ -391,9 +392,13 @@ def create_user_with_role_scope(
         if username_exists(conn, username):
             raise ValueError(f"Username '{username}' already exists")
         
-        # Hash password
-        password_hash = hash_password(password_plain)
-        
+        # Store as TEMP_HASH_ in test mode so credential export remains visible.
+        # Use bcrypt in production mode.
+        if is_test_password_mode():
+            password_hash = f"TEMP_HASH_{password_plain}"
+        else:
+            password_hash = hash_password(password_plain)
+
         # Insert user record
         user_id = insert_user_record(
             conn,
@@ -637,19 +642,23 @@ def admin_reset_user_password_service(user_id: int, new_password: str) -> None:
     cursor = None
     
     try:
-        # Hash the new password
-        password_hash = hash_password(new_password)
-        
+        # Store as TEMP_HASH_ in test mode so credential export remains visible.
+        # Use bcrypt in production mode.
+        if is_test_password_mode():
+            stored_hash = f"TEMP_HASH_{new_password}"
+        else:
+            stored_hash = hash_password(new_password)
+
         # Open connection
         conn = get_connection()
         cursor = conn.cursor()
-        
+
         # Update password
         cursor.execute("""
             UPDATE dbo.APP_Users
             SET PasswordHash = ?
             WHERE UserID = ?
-        """, (password_hash, user_id))
+        """, (stored_hash, user_id))
         
         rows_affected = cursor.rowcount
         

@@ -473,6 +473,51 @@ async def save_policy_by_department(
         })
 
 
+# ==================== POLICY COVERAGE VALIDATION ====================
+
+@router.get("/policy/validation")
+async def validate_policy_coverage(
+    unit_type: Optional[int] = Query(
+        None,
+        description="Restrict to one org-unit type code: 323=Administration, 325=Department, 324=Section. Omit for all."
+    ),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """
+    Scan every active organizational unit and report its policy assignment status.
+
+    **Status values:**
+    - `ok`               – active policy with at least one compliance rule enabled
+    - `no_rules_enabled` – policy record exists and is active, but ALL Enable* flags are 0
+    - `inactive`         – policy record exists but IsActive = 0
+    - `missing`          – no row at all in APP_OrgUnitPolicy
+
+    **Example response:**
+    ```json
+    {
+      "summary": { "total": 15, "ok": 10, "missing": 3, "inactive": 1, "no_rules_enabled": 1 },
+      "units": [
+        { "id": 5, "name": "إدارة الجودة", "type_label": "إدارة", "status": "missing",
+          "issues": ["لا يوجد سجل سياسة (No policy record in APP_OrgUnitPolicy)"] },
+        ...
+      ]
+    }
+    ```
+    """
+    require_logged_in(current_user)
+
+    try:
+        from ..db_layer.org_unit_policy import validate_policy_coverage as _validate
+        result = _validate(unit_type_filter=unit_type)
+        return {"success": True, **result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={
+            "error": "policy_validation_failed",
+            "message": str(e),
+            "message_ar": f"فشل التحقق من سياسات الوحدات: {str(e)}"
+        })
+
+
 # ==================== B13: EXPORT ====================
 
 @router.get("/export")

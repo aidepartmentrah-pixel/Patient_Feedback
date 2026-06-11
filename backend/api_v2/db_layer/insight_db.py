@@ -54,6 +54,7 @@ def get_subcase_status_counts(conn, allowed_unit_ids: List[int]) -> List[Dict[st
                 COUNT(*) AS Count
             FROM dbo.APP_AdministrativeSubcase
             WHERE TargetOrgUnitID IN ({placeholders})
+              AND CaseType = 'INCIDENT_RESPONSE'
             GROUP BY Status
             ORDER BY Status
         """
@@ -131,8 +132,9 @@ def get_action_item_counts(conn, allowed_unit_ids: List[int]) -> Dict[str, int]:
             INNER JOIN dbo.APP_AdministrativeSubcase s 
                 ON a.SubcaseID = s.SubcaseID
             WHERE s.TargetOrgUnitID IN ({placeholders})
+              AND s.CaseType = 'INCIDENT_RESPONSE'
         """
-        
+
         cursor.execute(query, allowed_unit_ids)
         row = cursor.fetchone()
         
@@ -205,6 +207,7 @@ def get_stuck_subcases(conn, allowed_unit_ids: List[int], days_threshold: int) -
                 DATEDIFF(day, UpdatedAt, GETDATE()) AS DaysInStage
             FROM dbo.APP_AdministrativeSubcase
             WHERE TargetOrgUnitID IN ({placeholders})
+              AND CaseType = 'INCIDENT_RESPONSE'
               AND Status NOT IN ('ADMIN_APPROVED', 'SECTION_DENIED', 'FORCE_CLOSED')
               AND DATEDIFF(day, UpdatedAt, GETDATE()) >= ?
             ORDER BY DaysInStage DESC
@@ -286,6 +289,7 @@ def get_subcase_created_time_buckets(conn, allowed_unit_ids: List[int], bucket: 
                     COUNT(*) AS Count
                 FROM dbo.APP_AdministrativeSubcase
                 WHERE TargetOrgUnitID IN ({placeholders})
+                  AND CaseType = 'INCIDENT_RESPONSE'
                 GROUP BY CAST(CreatedAt AS DATE)
                 ORDER BY CAST(CreatedAt AS DATE)
             """
@@ -297,6 +301,7 @@ def get_subcase_created_time_buckets(conn, allowed_unit_ids: List[int], bucket: 
                     COUNT(*) AS Count
                 FROM dbo.APP_AdministrativeSubcase
                 WHERE TargetOrgUnitID IN ({placeholders})
+                  AND CaseType = 'INCIDENT_RESPONSE'
                 GROUP BY YEAR(CreatedAt), MONTH(CreatedAt)
                 ORDER BY YEAR(CreatedAt), MONTH(CreatedAt)
             """
@@ -308,6 +313,7 @@ def get_subcase_created_time_buckets(conn, allowed_unit_ids: List[int], bucket: 
                     COUNT(*) AS Count
                 FROM dbo.APP_AdministrativeSubcase
                 WHERE TargetOrgUnitID IN ({placeholders})
+                  AND CaseType = 'INCIDENT_RESPONSE'
                 GROUP BY YEAR(CreatedAt)
                 ORDER BY YEAR(CreatedAt)
             """
@@ -353,6 +359,7 @@ def get_subcase_org_unit_counts(conn, allowed_unit_ids: List[int]) -> List[Dict[
             COUNT(*) AS count
         FROM dbo.APP_AdministrativeSubcase
         WHERE TargetOrgUnitID IN ({placeholders})
+          AND CaseType = 'INCIDENT_RESPONSE'
         GROUP BY TargetOrgUnitID
     """
     
@@ -477,6 +484,7 @@ def get_user_workload(
             LEFT JOIN dbo.APP_Roles r
                 ON urs.RoleID = r.RoleID
             WHERE sc.TargetOrgUnitID IN ({placeholders})
+              AND sc.CaseType = 'INCIDENT_RESPONSE'
               AND sc.Status NOT IN ('ADMIN_APPROVED', 'SECTION_DENIED', 'FORCE_CLOSED')
               AND ai.CompletedAt IS NULL
               AND ai.AssignedToUserID IS NOT NULL

@@ -215,6 +215,23 @@ def get_config_file_path() -> str:
     return str(_CONFIG_FILE)
 
 
+def is_test_password_mode() -> bool:
+    """
+    Return True if the system is configured for test-mode password storage.
+
+    In test mode, passwords are stored as TEMP_HASH_<plain> so they remain
+    visible in credential exports. In production mode, bcrypt is used.
+
+    Controlled by db_settings.json → password_mode: "test" | "production"
+    Environment variable HCAT_PASSWORD_MODE overrides the file value.
+    """
+    env_override = os.environ.get("HCAT_PASSWORD_MODE")
+    if env_override:
+        return env_override.strip().lower() == "test"
+    config = get_config()
+    return config.get("password_mode", "production").strip().lower() == "test"
+
+
 def _deep_merge(base: dict, override: dict) -> None:
     """
     Recursively merge `override` into `base` (in-place).

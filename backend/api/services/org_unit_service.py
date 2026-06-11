@@ -287,6 +287,42 @@ def get_sections() -> List[Dict]:
     return result
 
 
+def get_all_target_units() -> List[Dict]:
+    """
+    Get all active org units that can be targeted in a complaint:
+    Administration (323), Department (325), and Section (324).
+    Excludes frozen and unnamed units.
+    Sorted: Administration first, then Department, then Section, alpha within each group.
+    """
+    all_units = admin_units.get_admin_unit_tree()
+    valid_types = {ORG_TYPE_ADMINISTRATION, ORG_TYPE_DEPARTMENT, ORG_TYPE_SECTION}
+    type_label_map = {
+        ORG_TYPE_ADMINISTRATION: "Administration",
+        ORG_TYPE_DEPARTMENT: "Department",
+        ORG_TYPE_SECTION: "Section",
+    }
+    type_order = {ORG_TYPE_ADMINISTRATION: 0, ORG_TYPE_DEPARTMENT: 1, ORG_TYPE_SECTION: 2}
+
+    result = []
+    for unit in all_units:
+        if unit.Type not in valid_types:
+            continue
+        if getattr(unit, "Frozen", 0):
+            continue
+        name = unit.Name or ""
+        if not name.strip() or name.strip().upper() == "NULL":
+            continue
+        result.append({
+            "id": unit.UniqueID,
+            "name": name,
+            "type": unit.Type,
+            "type_label": type_label_map[unit.Type],
+        })
+
+    result.sort(key=lambda u: (type_order.get(u["type"], 3), u["name"]))
+    return result
+
+
 def get_units_by_type(unit_type: str) -> List[Dict]:
     """
     Get organizational units filtered by type.

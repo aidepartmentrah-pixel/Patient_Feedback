@@ -17,10 +17,7 @@ from ..constants.org_unit_types import (
     ORG_TYPE_DEPARTMENT,
     ORG_TYPE_SECTION
 )
-from .seasonal_report_orchestrator import (
-    get_or_generate_seasonal_report,
-    get_or_generate_comparative_seasonal_reports
-)
+from .seasonal_report_orchestrator import get_or_generate_seasonal_report
 from .seasonal_report_formatter import (
     generate_seasonal_word_report,
     generate_comparative_seasonal_word_report
@@ -111,14 +108,7 @@ class MultiSeasonalExportService:
         print(f"[MULTI-SEASONAL] Generating {len(units)} seasonal reports for {report_level} level")
         print(f"[MULTI-SEASONAL] All {len(units)} units validated against user scope")
         print(f"[MULTI-SEASONAL] Season: {period} {year} (season_id={season_id})")
-        print(f"[MULTI-SEASONAL] Mode: PHASE 2 - Generating 2 files per unit (Regular + Comparison with Charts)")
-        
-        # Get previous season for comparisons
-        previous_season_id = get_previous_season(season_id)
-        if previous_season_id:
-            print(f"[MULTI-SEASONAL] Previous season ID: {previous_season_id}")
-        else:
-            print(f"[MULTI-SEASONAL] No previous season found - comparisons will show zero data")
+        print(f"[MULTI-SEASONAL] Mode: Regular seasonal reports only — comparison reports are generated separately")
         
         # Track results for summary
         successful_units = []
@@ -136,45 +126,38 @@ class MultiSeasonalExportService:
                 unit_name = unit["name"]
                 
                 try:
-                    # PHASE 2: Generate BOTH current and previous seasonal reports
-                    comparative_data = self._generate_unit_seasonal_reports(
+                    # Fetch current season report only — comparison reports are generated separately
+                    current_report = self._generate_unit_seasonal_report(
                         season_id=season_id,
                         orgunit_id=unit_id,
                         orgunit_type=orgunit_type
                     )
-                    
-                    current_report = comparative_data['current_report']
-                    previous_report = comparative_data['previous_report']
-                    has_previous = comparative_data['has_previous']
-                    
+
                     # Check if unit has data in current season
                     has_data = False
                     incidents_count = 0
-                    
+
                     if isinstance(current_report, dict):
-                        # Check classification stats
                         classification_stats = current_report.get("classification_stats", [])
                         if classification_stats and len(classification_stats) > 0:
                             has_data = True
-                            # Sum total incidents from classification stats
                             incidents_count = sum(stat.get("total_count", 0) for stat in classification_stats)
-                    
+
                     if not has_data or incidents_count == 0:
-                        print(f"[MULTI-SEASONAL] {unit_name} (ID {unit_id}): No data - skipping files")
+                        print(f"[MULTI-SEASONAL] {unit_name} (ID {unit_id}): No data - skipping")
                         empty_units.append({"id": unit_id, "name": unit_name})
                         continue
-                    
+
                     safe_name = self._sanitize_filename(unit_name)
                     files_generated = []
-                    
-                    # FILE 1: Generate regular seasonal report
+
+                    # Generate regular seasonal report
                     if file_format == "docx":
                         regular_content = generate_seasonal_word_report(
                             seasonal_data=current_report,
                             language=language
                         )
                     else:
-                        # For other formats, use existing converter
                         regular_content = self._generate_file_content(
                             report_data=current_report,
                             file_format=file_format,
@@ -184,37 +167,17 @@ class MultiSeasonalExportService:
                             period=period,
                             year=year
                         )
-                    
+
                     regular_filename = f"Seasonal_Report_{safe_name}_{period}{year}.{file_format}"
                     zip_file.writestr(regular_filename, regular_content)
                     files_generated.append(regular_filename)
-                    print(f"[MULTI-SEASONAL] [OK] {unit_name}: Regular report -> {regular_filename}")
-                    
-                    # FILE 2: Generate comparison report (if previous data exists or for DOCX)
-                    if file_format == "docx":
-                        # Always generate comparison for DOCX (shows zero data gracefully)
-                        comparison_content = self._generate_comparison_content(
-                            current_data=current_report,
-                            previous_data=previous_report,
-                            file_format=file_format,
-                            language=language,
-                            unit_name=unit_name,
-                            current_period=period,
-                            previous_period=previous_report.get('header', {}).get('period', 'N/A')
-                        )
-                        
-                        comparison_filename = f"Comparison_{safe_name}_{period}_vs_{previous_report.get('header', {}).get('period', 'Previous')}.{file_format}"
-                        zip_file.writestr(comparison_filename, comparison_content)
-                        files_generated.append(comparison_filename)
-                        print(f"[MULTI-SEASONAL] [OK] {unit_name}: Comparison report -> {comparison_filename}")
-                    
+                    print(f"[MULTI-SEASONAL] [OK] {unit_name}: {regular_filename}")
+
                     successful_units.append({
                         "id": unit_id,
                         "name": unit_name,
                         "filenames": files_generated,
                         "incidents_count": incidents_count,
-                        "has_comparison": file_format == "docx",
-                        "has_previous_data": has_previous
                     })
                     
                     print(f"[MULTI-SEASONAL] [DONE] {unit_name}: {incidents_count} incidents, {len(files_generated)} files generated")
@@ -246,11 +209,10 @@ class MultiSeasonalExportService:
         # Prepare ZIP for download
         zip_buffer.seek(0)
         
-        # Create ZIP filename (Phase 2: includes "With_Comparison")
-        zip_filename = f"Seasonal_Reports_With_Comparison_{report_level.capitalize()}_{period}{year}.zip"
+        zip_filename = f"Seasonal_Reports_{report_level.capitalize()}_{period}{year}.zip"
         
         total_files = sum(len(u.get("filenames", [])) for u in successful_units)
-        print(f"[MULTI-SEASONAL] Complete: {len(successful_units)} units, {total_files} files, {len(empty_units)} empty, {len(failed_units)} failed")
+        print(f"[MULTI-SEASONAL] Complete: {len(successful_units)} units, {total_files} reports, {len(empty_units)} empty, {len(failed_units)} failed")
         
         return {
             "filename": zip_filename,
@@ -544,25 +506,21 @@ class MultiSeasonalExportService:
         total_units = len(successful_units) + len(empty_units) + len(failed_units)
         total_incidents = sum(u["incidents_count"] for u in successful_units)
         total_files = sum(len(u.get("filenames", [])) for u in successful_units)
-        units_with_comparison = sum(1 for u in successful_units if u.get("has_comparison"))
-        
+
         doc.add_paragraph(f"Total Units Processed: {total_units}")
         doc.add_paragraph(f"Units with Data: {len(successful_units)}")
         doc.add_paragraph(f"Units with No Incidents: {len(empty_units)}")
         doc.add_paragraph(f"Failed Units: {len(failed_units)}")
         doc.add_paragraph(f"Total Incidents: {total_incidents}")
         doc.add_paragraph(f"Total Files Generated: {total_files}")
-        doc.add_paragraph(f"Units with Comparison Reports: {units_with_comparison}")
         doc.add_paragraph()
         
         # Successful units
         if successful_units:
             doc.add_heading("Units with Data (Files Generated)", level=2)
             for unit in successful_units:
-                filenames_str = ", ".join(unit.get('filenames', []))
-                comparison_status = "✓ With Comparison" if unit.get("has_comparison") else "○ No Comparison"
                 doc.add_paragraph(
-                    f"✓ {unit['name']} - {unit['incidents_count']} incidents - {comparison_status}",
+                    f"✓ {unit['name']} - {unit['incidents_count']} incidents",
                     style='List Bullet'
                 )
                 for filename in unit.get('filenames', []):

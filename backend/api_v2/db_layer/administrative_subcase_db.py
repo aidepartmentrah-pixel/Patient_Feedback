@@ -600,6 +600,73 @@ def get_subcases_pending_for_administration() -> List[Dict[str, Any]]:
     return get_subcases_by_status("DEPT_ACCEPTED_PENDING_ADMIN")
 
 
+def get_subcases_waiting_patient_services_decision() -> List[Dict[str, Any]]:
+    """
+    Fetch subcases waiting for the Patient Services scientific decision.
+    Status = 'WAITING_PATIENT_SERVICES_DECISION'
+
+    These are administrative complaint subcases where Administration has
+    approved but the Complaint Supervisor still needs to record the
+    قرار خدمات المرضى بحسب المراجع العلميّة.
+
+    Returns:
+        List of subcase dicts
+    """
+    return get_subcases_by_status("WAITING_PATIENT_SERVICES_DECISION")
+
+
+def save_patient_services_decision(
+    subcase_id: int,
+    decision_text: str,
+    user_id: int
+) -> bool:
+    """
+    Persist the Patient Services scientific decision on a subcase.
+
+    - Always writes decision_text, user_id, updated_at.
+    - Sets decision_at only on the first save (preserves original timestamp on edits).
+    - Transitions subcase status to PATIENT_SERVICES_DECISION_COMPLETED.
+    - Does NOT touch action items.
+
+    Returns:
+        True if updated, False if subcase not found
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        now = datetime.now()
+        query = """
+            UPDATE dbo.APP_AdministrativeSubcase
+            SET PatientServicesDecisionText      = ?,
+                PatientServicesDecisionByUserID  = ?,
+                PatientServicesDecisionAt        = CASE
+                    WHEN PatientServicesDecisionAt IS NULL THEN ?
+                    ELSE PatientServicesDecisionAt
+                END,
+                PatientServicesDecisionUpdatedAt = ?,
+                Status           = 'PATIENT_SERVICES_DECISION_COMPLETED',
+                UpdatedAt        = ?,
+                UpdatedByUserID  = ?
+            WHERE SubcaseID = ?
+        """
+        cursor.execute(query, (
+            decision_text,
+            user_id,
+            now,   # PatientServicesDecisionAt (first save only)
+            now,   # PatientServicesDecisionUpdatedAt (always)
+            now,   # UpdatedAt
+            user_id,
+            subcase_id
+        ))
+        conn.commit()
+        return cursor.rowcount > 0
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
 # ============================================================
 # WORKFLOW MUTATION HELPERS (NO validation logic)
 # ============================================================
@@ -1548,7 +1615,8 @@ def get_subcases_archived_for_complaint_supervisor() -> List[Dict[str, Any]]:
         "RETURNED_TO_SECTION_FOR_REVISION",
         "SECTION_ACCEPTED_PENDING_DEPT",
         "DEPT_ACCEPTED_PENDING_ADMIN",
-        "ADMIN_APPROVED"
+        "ADMIN_APPROVED",
+        "PATIENT_SERVICES_DECISION_COMPLETED",
     ]
     return get_subcases_by_statuses(archive_statuses)
 
@@ -1883,6 +1951,13 @@ def get_subcase_fill_state(subcase_id: int) -> Optional[Dict[str, Any]]:
                 u_adm.Username   AS AdministrationEnteredByUsername,
                 u_adm.DisplayName AS AdministrationEnteredByDisplayName,
 
+                -- Patient Services Decision
+                sub.PatientServicesDecisionText,
+                sub.PatientServicesDecisionAt,
+                sub.PatientServicesDecisionUpdatedAt,
+                u_ps.Username    AS PSDecisionByUsername,
+                u_ps.DisplayName AS PSDecisionByDisplayName,
+
                 -- Force-closed-by user
                 u_fc.Username   AS ForceClosedByUsername,
                 u_fc.DisplayName AS ForceClosedByDisplayName
@@ -1894,6 +1969,8 @@ def get_subcase_fill_state(subcase_id: int) -> Optional[Dict[str, Any]]:
                 ON sub.DepartmentEnteredByUserID = u_dep.UserID
             LEFT JOIN dbo.APP_Users u_adm
                 ON sub.AdministrationEnteredByUserID = u_adm.UserID
+            LEFT JOIN dbo.APP_Users u_ps
+                ON sub.PatientServicesDecisionByUserID = u_ps.UserID
             LEFT JOIN dbo.APP_Users u_fc
                 ON sub.ForceClosedByUserID = u_fc.UserID
             WHERE sub.SubcaseID = ?
@@ -1936,6 +2013,12 @@ def get_subcase_fill_state(subcase_id: int) -> Optional[Dict[str, Any]]:
                 "entered_for_role": row.AdministrationEnteredForRole,
                 "entry_mode": row.AdministrationEntryMode,
                 "entry_timestamp": _ts(row.AdministrationEntryTimestamp),
+            },
+            "patient_services_decision": {
+                "decision_text": row.PatientServicesDecisionText,
+                "entered_by": _username(row.PSDecisionByUsername, row.PSDecisionByDisplayName),
+                "decision_at": _ts(row.PatientServicesDecisionAt),
+                "updated_at": _ts(row.PatientServicesDecisionUpdatedAt),
             },
         }
     finally:

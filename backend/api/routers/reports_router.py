@@ -10,6 +10,12 @@ from typing import Optional, Dict, Any, Literal
 import uuid
 import traceback
 import logging
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+# Dedicated thread pool for report generation — keeps the event loop responsive
+# while heavy DOCX/ZIP generation runs in background threads
+_report_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="report-gen")
 from io import BytesIO
 
 logger = logging.getLogger(__name__)
@@ -675,18 +681,22 @@ async def export_monthly_report(
         # MULTI-FILE EXPORT PATH
         if is_multi_export:
             print(f"[ROUTER] Multi-file export detected: {report_level} level, IDs: {selected_ids}")
-            
-            result = multi_report_export_service.generate_multi_export(
-                current_user=current_user,
-                year=year,
-                month=month,
-                start_date=start_date,
-                end_date=end_date,
-                file_format=format,
-                display_mode=display_mode,
-                report_level=report_level,
-                selected_unit_ids=selected_ids,
-                language=language
+
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                _report_executor,
+                lambda: multi_report_export_service.generate_multi_export(
+                    current_user=current_user,
+                    year=year,
+                    month=month,
+                    start_date=start_date,
+                    end_date=end_date,
+                    file_format=format,
+                    display_mode=display_mode,
+                    report_level=report_level,
+                    selected_unit_ids=selected_ids,
+                    language=language
+                )
             )
             
             print(f"[ROUTER] Multi-export result:")
@@ -740,21 +750,25 @@ async def export_monthly_report(
         if section_ids:
             filters["section_ids"] = section_ids
         
-        # Force report_type to monthly
-        result = report_export_service.generate_export(
-            current_user=current_user,
-            report_type="monthly",
-            display_mode=display_mode,
-            file_format=format,
-            year=year,
-            month=month,
-            start_date=start_date,
-            end_date=end_date,
-            trimester=None,
-            quarter=None,
-            filters=filters,
-            include_charts=include_charts,
-            language=language
+        # Force report_type to monthly — run in thread pool so event loop stays free
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            _report_executor,
+            lambda: report_export_service.generate_export(
+                current_user=current_user,
+                report_type="monthly",
+                display_mode=display_mode,
+                file_format=format,
+                year=year,
+                month=month,
+                start_date=start_date,
+                end_date=end_date,
+                trimester=None,
+                quarter=None,
+                filters=filters,
+                include_charts=include_charts,
+                language=language
+            )
         )
         
         # Return file directly instead of JSON metadata

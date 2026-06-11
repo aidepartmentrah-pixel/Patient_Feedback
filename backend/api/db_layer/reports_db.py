@@ -262,6 +262,7 @@ def get_filtered_complaints(
     query = f"""
     SELECT
         ic.IncidentRequestCaseID as id,
+        ic.incident_id as incident_id,
         ic.ComplaintText as complaint_text,
         ic.ImmediateAction as immediate_action,
         ic.TakenAction as taken_action,
@@ -326,6 +327,7 @@ def get_filtered_complaints(
         clinical_risk.Name as clinical_risk_type_name,
         ic.FeedbackIntentTypeID as feedback_intent_type_id,
         feedback_intent.NameEn as feedback_intent_type_name,
+        feedback_intent.NameAr as feedback_intent_type_name_ar,
         
         -- Source
         ic.SourceID as source_id,
@@ -595,43 +597,49 @@ def get_monthly_statistics(
     # Some sections parent directly to an Administration (no intermediate Department)
     if group_by == "administration":
         # Roll up to the administration level (grandparent or parent if section→admin directly)
-        # Walk up the tree: target dept → parent → grandparent, pick the first Type=323 node
+        # Walk up the tree: target dept → parent → grandparent, pick the first Type=323 node.
+        # ELSE returns NULL so rows with no administration ancestor are excluded rather than
+        # being silently grouped under a non-administration unit ID.
         dept_query = f"""
-        SELECT 
+        SELECT
             admin_unit.UniqueID as GroupID,
             COALESCE(admin_unit.Name, 'Unknown') as group_name,
-            COUNT(td.IncidentRequestCaseID) as count
+            COUNT(DISTINCT ic.IncidentRequestCaseID) as count
         FROM dbo.APP_IncidentCase ic
         INNER JOIN dbo.APP_IncidentCaseTargetDepartment td ON ic.IncidentRequestCaseID = td.IncidentRequestCaseID
         LEFT JOIN dbo.AdminsrationUnit sec_unit ON td.DepartmentID = sec_unit.UniqueID
         LEFT JOIN dbo.AdminsrationUnit dept_unit ON sec_unit.ParentID = dept_unit.UniqueID
+                   AND sec_unit.ParentID != sec_unit.UniqueID
         LEFT JOIN dbo.AdminsrationUnit admin_from_dept ON dept_unit.ParentID = admin_from_dept.UniqueID
+                   AND dept_unit.ParentID != dept_unit.UniqueID
         CROSS APPLY (
-            SELECT CASE 
+            SELECT CASE
                 WHEN sec_unit.Type = 323 THEN sec_unit.UniqueID
                 WHEN dept_unit.Type = 323 THEN dept_unit.UniqueID
                 WHEN admin_from_dept.Type = 323 THEN admin_from_dept.UniqueID
-                ELSE COALESCE(dept_unit.UniqueID, sec_unit.UniqueID)
+                ELSE NULL
             END AS UniqueID,
-            CASE 
+            CASE
                 WHEN sec_unit.Type = 323 THEN sec_unit.Name
                 WHEN dept_unit.Type = 323 THEN dept_unit.Name
                 WHEN admin_from_dept.Type = 323 THEN admin_from_dept.Name
-                ELSE COALESCE(dept_unit.Name, sec_unit.Name)
+                ELSE NULL
             END AS Name
         ) admin_unit
         {date_filter}
+        AND admin_unit.UniqueID IS NOT NULL
         GROUP BY admin_unit.UniqueID, admin_unit.Name
         ORDER BY count DESC
         """
     elif group_by == "department":
-        # Roll up to the department level (parent of section)
+        # Roll up to the department level (parent of section).
         # If parent is an Administration (Type=323), use it as the "department" level
+        # (covers sections that bypass the department layer and parent directly to an admin).
         dept_query = f"""
-        SELECT 
+        SELECT
             parent_unit.UniqueID as GroupID,
             COALESCE(parent_unit.Name, 'Unknown') as group_name,
-            COUNT(td.IncidentRequestCaseID) as count
+            COUNT(DISTINCT ic.IncidentRequestCaseID) as count
         FROM dbo.APP_IncidentCase ic
         INNER JOIN dbo.APP_IncidentCaseTargetDepartment td ON ic.IncidentRequestCaseID = td.IncidentRequestCaseID
         LEFT JOIN dbo.AdminsrationUnit sec_unit ON td.DepartmentID = sec_unit.UniqueID
@@ -643,10 +651,10 @@ def get_monthly_statistics(
     else:
         # Default: group by section (target department directly)
         dept_query = f"""
-        SELECT 
+        SELECT
             td.DepartmentID,
             COALESCE(ou.Name, 'Unknown') as dept_name,
-            COUNT(td.IncidentRequestCaseID) as count
+            COUNT(DISTINCT ic.IncidentRequestCaseID) as count
         FROM dbo.APP_IncidentCase ic
         INNER JOIN dbo.APP_IncidentCaseTargetDepartment td ON ic.IncidentRequestCaseID = td.IncidentRequestCaseID
         LEFT JOIN dbo.AdminsrationUnit ou ON td.DepartmentID = ou.UniqueID

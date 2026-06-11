@@ -250,33 +250,32 @@ def get_administration_inbox(current_user) -> List[Dict[str, Any]]:
 def get_complaint_supervisor_inbox(current_user) -> List[Dict[str, Any]]:
     """
     Get inbox for Complaint Supervisor role.
-    
-    Returns subcases that the section has DENIED (rejected responsibility for).
-    The COMPLAINT_SUPERVISOR can review these, optionally edit the incident
-    severity, and reopen the case by returning it to the section for revision.
-    
-    Status: SECTION_DENIED
-    
+
+    Returns two buckets merged:
+      1. SECTION_DENIED — section rejected responsibility; Supervisor can reopen.
+      2. WAITING_PATIENT_SERVICES_DECISION — Administration approved a complaint
+         subcase; Supervisor must record قرار خدمات المرضى بحسب المراجع العلميّة.
+
     Args:
         current_user: User object with COMPLAINT_SUPERVISOR role
-        
+
     Returns:
         List of inbox items (dictionaries) with allowed actions
     """
-    # Get subcases denied by section
-    subcases = administrative_subcase_db.get_subcases_denied_by_section()
-    
+    denied = administrative_subcase_db.get_subcases_denied_by_section()
+    pending_ps = administrative_subcase_db.get_subcases_waiting_patient_services_decision()
+    all_subcases = denied + pending_ps
+
     # =========================================================================
     # SECURITY LOCK — Scope filtering MUST NOT be removed or bypassed
     # =========================================================================
-    filtered_subcases = _apply_scope_filter(subcases, current_user)
-    
-    # Build inbox items with allowed actions
+    filtered_subcases = _apply_scope_filter(all_subcases, current_user)
+
     inbox_items = []
     for subcase in filtered_subcases:
         item = _build_inbox_item(subcase, current_user)
         inbox_items.append(item)
-    
+
     return inbox_items
 
 
@@ -714,6 +713,8 @@ def _compute_allowed_actions(subcase: Dict[str, Any], current_user) -> List[str]
             ):
                 actions.append("view_response")
             return actions
+        elif status == 'WAITING_PATIENT_SERVICES_DECISION':
+            return ["view", "save_patient_services_decision"]
         else:
             return ["view"]
     
@@ -782,7 +783,13 @@ def _build_archive_item(subcase: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Dictionary with archive item structure (view-only)
     """
-    # Archive items are always view-only
+    # Completed patient services decisions remain editable after archiving.
+    status = subcase.get('status')
+    if status == 'PATIENT_SERVICES_DECISION_COMPLETED':
+        allowed_actions = ["view", "edit_patient_services_decision"]
+    else:
+        allowed_actions = ["view"]
+
     archive_item = {
         "subcase_id": subcase.get('subcase_id'),
         "case_type": subcase.get('case_type'),
@@ -791,10 +798,10 @@ def _build_archive_item(subcase: Dict[str, Any]) -> Dict[str, Any]:
         "seasonal_report_id": subcase.get('seasonal_report_id'),
         "target_org_unit_id": subcase.get('target_org_unit_id'),
         "target_org_unit_name": subcase.get('org_unit_name'),
-        "status": subcase.get('status'),
+        "status": status,
         "created_at": subcase.get('created_at'),
-        "updated_at": subcase.get('updated_at'),  # Include when it was processed
-        "allowed_actions": ["view"]  # Archive is read-only
+        "updated_at": subcase.get('updated_at'),
+        "allowed_actions": allowed_actions,
     }
-    
+
     return archive_item

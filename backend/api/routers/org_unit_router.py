@@ -226,6 +226,37 @@ def get_section_parents():
         )
 
 
+@router.get("/all-targets")
+def get_all_target_units():
+    """
+    Get all active org units available as complaint targets:
+    Administration (type 323), Department (type 325), Section (type 324).
+
+    Used by the Insert page target dropdown so a complaint can be issued
+    against any level of the org hierarchy.
+
+    Returns:
+    ```json
+    {
+      "units": [
+        {"id": 1, "name": "Medical Administration", "type": 323, "type_label": "Administration"},
+        {"id": 10, "name": "Emergency Department",  "type": 325, "type_label": "Department"},
+        {"id": 45, "name": "ER Reception",          "type": 324, "type_label": "Section"}
+      ],
+      "count": 3
+    }
+    ```
+    """
+    try:
+        units = org_unit_service.get_all_target_units()
+        return {"units": units, "count": len(units)}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve target units: {str(e)}"
+        )
+
+
 @router.get("/sections")
 def get_sections():
     """

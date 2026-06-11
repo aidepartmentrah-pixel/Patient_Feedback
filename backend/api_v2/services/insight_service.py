@@ -280,11 +280,48 @@ def get_grouped_inbox_for_admin(current_user: CurrentUser) -> List[Dict[str, Any
     # Supervisory roles (COMPLAINT_SUPERVISOR, WORKER, SOFTWARE_ADMIN) see all three
     # active pipeline stages so the Insight page reflects the full operational truth.
     if role_code == 'SECTION_ADMIN':
-        raw_subcases = administrative_subcase_db.get_subcases_with_details_for_section()
+        # Full pipeline merge so section admins can track their cases at any stage.
+        # The scope filter below limits visibility to cases where target_org_unit_id
+        # is in allowed_unit_ids (the section's own IDs), giving cross-stage journey
+        # visibility without exposing cases from other sections.
+        section_cases = administrative_subcase_db.get_subcases_with_details_for_section()
+        dept_cases    = administrative_subcase_db.get_subcases_with_details_for_department()
+        admin_cases   = administrative_subcase_db.get_subcases_with_details_for_administration()
+        seen_ids: set = set()
+        raw_subcases = []
+        for subcase in section_cases + dept_cases + admin_cases:
+            sid = subcase.get('subcase_id')
+            if sid not in seen_ids:
+                seen_ids.add(sid)
+                raw_subcases.append(subcase)
     elif role_code == 'DEPARTMENT_ADMIN':
-        raw_subcases = administrative_subcase_db.get_subcases_with_details_for_department()
+        # Full pipeline merge so department admins can track their sections' cases at any stage.
+        # The scope filter below limits visibility to cases where target_org_unit_id is in
+        # allowed_unit_ids (the child sections under this department).
+        section_cases = administrative_subcase_db.get_subcases_with_details_for_section()
+        dept_cases    = administrative_subcase_db.get_subcases_with_details_for_department()
+        admin_cases   = administrative_subcase_db.get_subcases_with_details_for_administration()
+        seen_ids: set = set()
+        raw_subcases = []
+        for subcase in section_cases + dept_cases + admin_cases:
+            sid = subcase.get('subcase_id')
+            if sid not in seen_ids:
+                seen_ids.add(sid)
+                raw_subcases.append(subcase)
     elif role_code == 'ADMINISTRATION_ADMIN':
-        raw_subcases = administrative_subcase_db.get_subcases_with_details_for_administration()
+        # Full pipeline merge so administration admins can track all cases in their hierarchy.
+        # The scope filter below limits visibility to cases where target_org_unit_id is in
+        # allowed_unit_ids (all sections under this administration's departments).
+        section_cases = administrative_subcase_db.get_subcases_with_details_for_section()
+        dept_cases    = administrative_subcase_db.get_subcases_with_details_for_department()
+        admin_cases   = administrative_subcase_db.get_subcases_with_details_for_administration()
+        seen_ids: set = set()
+        raw_subcases = []
+        for subcase in section_cases + dept_cases + admin_cases:
+            sid = subcase.get('subcase_id')
+            if sid not in seen_ids:
+                seen_ids.add(sid)
+                raw_subcases.append(subcase)
     else:
         # COMPLAINT_SUPERVISOR, WORKER, SOFTWARE_ADMIN: full-pipeline supervisory view.
         # Merge all three active stages then deduplicate by subcase_id as a defensive
@@ -435,6 +472,27 @@ def _apply_search_filter_to_inbox(
     return result
 
 
+def get_patient_services_pending(current_user: CurrentUser) -> List[Dict[str, Any]]:
+    """
+    Return administrative complaint subcases waiting for the Patient Services
+    scientific decision (قرار خدمات المرضى بحسب المراجع العلميّة).
+
+    Status: WAITING_PATIENT_SERVICES_DECISION
+    Used by: Insight / Workflow page — grouped section for Complaint Supervisor.
+
+    Security:
+        Phase 2.5 scope filtering applied via allowed_unit_ids.
+
+    Args:
+        current_user: Authenticated user with allowed_unit_ids
+
+    Returns:
+        List of subcase dicts (same shape as get_subcases_by_status)
+    """
+    subcases = administrative_subcase_db.get_subcases_waiting_patient_services_decision()
+    return _apply_scope_filter_to_subcases(subcases, current_user)
+
+
 def _apply_scope_filter_to_subcases(subcases: List[Dict], current_user: CurrentUser) -> List[Dict]:
     """
     Filter subcases by user's allowed_unit_ids (Phase 2.5 scope engine).
@@ -467,6 +525,10 @@ def _apply_scope_filter_to_subcases(subcases: List[Dict], current_user: CurrentU
         
         # Skip force-closed cases (defensive filter) — matches inbox_service._apply_scope_filter
         if status in ('FORCE_CLOSED', 'FORCE_CLOSED_DRAFT', 'FORCE_CLOSED_COMPLETE'):
+            continue
+
+        # Insight page shows incident cases only; seasonal report responses belong in Inbox
+        if subcase.get('case_type') == 'SEASONAL_REPORT_RESPONSE':
             continue
         
         # Security check: only include if target is in allowed scope

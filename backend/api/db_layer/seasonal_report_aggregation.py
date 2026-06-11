@@ -68,13 +68,17 @@ def get_seasonal_classification_stats(
             where_clause = f"""
             WHERE ic.FeedbackRecievedDate >= ?
               AND ic.FeedbackRecievedDate <= ?
+              AND ic.ClassificationID IS NOT NULL
+              AND ic.DomainID IS NOT NULL
+              AND ic.CategoryID IS NOT NULL
+              AND ic.SubCategoryID IS NOT NULL
             """
             params = (start_date, end_date)
         else:
             # Specific unit: Apply tree-aware target department filter
             # Map orgunit_type to filter parameters:
             # orgunit_type 1 (Administration) -> idara_id
-            # orgunit_type 2 (Department) -> dayra_id  
+            # orgunit_type 2 (Department) -> dayra_id
             # orgunit_type 3 (Section) -> qism_id
             if orgunit_type == 1:  # Administration
                 idara_id = orgunit_id
@@ -92,17 +96,21 @@ def get_seasonal_classification_stats(
                 idara_id = None
                 dayra_id = None
                 qism_id = None
-            
+
             # Build tree-aware org filter (same mechanism as monthly reporting)
             org_filter = build_org_filter_condition(None, idara_id, dayra_id, qism_id)
-            
+
             where_clause = f"""
             WHERE ic.FeedbackRecievedDate >= ?
               AND ic.FeedbackRecievedDate <= ?
+              AND ic.ClassificationID IS NOT NULL
+              AND ic.DomainID IS NOT NULL
+              AND ic.CategoryID IS NOT NULL
+              AND ic.SubCategoryID IS NOT NULL
               AND {org_filter}
             """
             params = (start_date, end_date)
-        
+
         # Aggregate classification stats with severity breakdown
         # Note: IsPreventive calculated based on presence of preventive measures
         # Group by ClassificationID, DomainID, CategoryID, AND SubCategoryID (required by table schema)
@@ -241,6 +249,10 @@ def get_seasonal_domain_totals(
             where_clause = f"""
             WHERE ic.FeedbackRecievedDate >= ?
               AND ic.FeedbackRecievedDate <= ?
+              AND ic.ClassificationID IS NOT NULL
+              AND ic.DomainID IS NOT NULL
+              AND ic.CategoryID IS NOT NULL
+              AND ic.SubCategoryID IS NOT NULL
             """
             params = (start_date, end_date)
         else:
@@ -262,17 +274,21 @@ def get_seasonal_domain_totals(
                 idara_id = None
                 dayra_id = None
                 qism_id = None
-            
+
             # Build tree-aware org filter (same mechanism as monthly reporting)
             org_filter = build_org_filter_condition(None, idara_id, dayra_id, qism_id)
-            
+
             where_clause = f"""
             WHERE ic.FeedbackRecievedDate >= ?
               AND ic.FeedbackRecievedDate <= ?
+              AND ic.ClassificationID IS NOT NULL
+              AND ic.DomainID IS NOT NULL
+              AND ic.CategoryID IS NOT NULL
+              AND ic.SubCategoryID IS NOT NULL
               AND {org_filter}
             """
             params = (start_date, end_date)
-        
+
         # Count DISTINCT complaints to avoid counting same complaint multiple times
         # (a complaint may have multiple target departments)
         # FIXED: Use COUNT(DISTINCT ...) for ALL aggregations to ensure consistency

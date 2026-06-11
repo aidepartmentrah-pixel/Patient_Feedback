@@ -12,6 +12,9 @@ from backend.api.db_layer.incident_case_doctor import add_doctor_to_case
 from backend.api.db_layer.incident_case_employee import add_employee_to_case
 from backend.api.db_layer.incident_parent import create_incident_parent, assign_case_to_incident
 from backend.api.constants.case_statuses import DRAFT_STATUS_ID, READY_TO_SEND_STATUS_ID
+from backend.api.db_layer.admin_units import get_admin_unit_type
+
+_ALLOWED_TARGET_ORG_TYPES = {323, 324, 325}  # Administration, Section, Department
 
 
 def create_record(data: Dict[str, Any], save_mode: str = 'workflow') -> Dict[str, Any]:
@@ -1015,6 +1018,32 @@ def create_incident_with_cases(payload: Dict[str, Any], save_mode: str = 'workfl
     created_cases: list[dict] = []
     for idx, case_data in enumerate(cases):
         target_ids = case_data.get("target_department_ids", [])
+
+        # Validate each target org unit exists and has an allowed type
+        for dept_id in target_ids:
+            unit_type = get_admin_unit_type(dept_id)
+            if unit_type is None:
+                return {
+                    "success": False,
+                    "error": "VALIDATION_ERROR",
+                    "message": f"Case #{idx + 1}: target org unit {dept_id} does not exist",
+                    "message_ar": f"الحالة رقم {idx + 1}: الوحدة التنظيمية المستهدفة غير موجودة",
+                    "field": "target_department_ids",
+                }
+            if unit_type not in _ALLOWED_TARGET_ORG_TYPES:
+                return {
+                    "success": False,
+                    "error": "VALIDATION_ERROR",
+                    "message": (
+                        f"Case #{idx + 1}: target org unit {dept_id} has type {unit_type} "
+                        "which is not a valid target (allowed: Administration=323, Department=325, Section=324)"
+                    ),
+                    "message_ar": (
+                        f"الحالة رقم {idx + 1}: الوحدة المستهدفة يجب أن تكون إدارة أو قسم أو شعبة"
+                    ),
+                    "field": "target_department_ids",
+                }
+
         if save_mode == 'workflow' and len(target_ids) != 1:
             return {
                 "success": False,
