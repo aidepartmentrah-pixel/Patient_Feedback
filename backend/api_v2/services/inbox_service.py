@@ -680,6 +680,8 @@ def _compute_allowed_actions(subcase: Dict[str, Any], current_user) -> List[str]
             if _has_response:
                 actions.append("view_response")
             return actions
+        elif status == 'FORCE_CLOSED_AT_SECTION':
+            return ["view", "give_section_more_time"]
         else:
             return ["view"]
 
@@ -690,6 +692,8 @@ def _compute_allowed_actions(subcase: Dict[str, Any], current_user) -> List[str]
             if _has_response:
                 actions.append("view_response")
             return actions
+        elif status == 'FORCE_CLOSED_AT_DEPARTMENT':
+            return ["view", "give_department_more_time"]
         else:
             return ["view"]
 
@@ -764,9 +768,20 @@ def _build_inbox_item(subcase: Dict[str, Any], current_user) -> Dict[str, Any]:
         "target_org_unit_name": subcase.get('org_unit_name'),
         "status": subcase.get('status'),
         "created_at": subcase.get('created_at'),
-        "allowed_actions": allowed_actions
+        "allowed_actions": allowed_actions,
+        # HCAT Automatic Force Close Policy (Session 6) - per-level deadline state,
+        # used by the frontend for force-closed/late-reply/extra-time indicators.
+        "section_force_closed_at": subcase.get('section_force_closed_at'),
+        "section_late_reply": subcase.get('section_late_reply'),
+        "section_extra_time_granted_at": subcase.get('section_extra_time_granted_at'),
+        "department_force_closed_at": subcase.get('department_force_closed_at'),
+        "department_late_reply": subcase.get('department_late_reply'),
+        "department_extra_time_granted_at": subcase.get('department_extra_time_granted_at'),
+        "administration_force_closed_at": subcase.get('administration_force_closed_at'),
+        "administration_late_reply": subcase.get('administration_late_reply'),
+        "administration_extra_time_granted_at": subcase.get('administration_extra_time_granted_at'),
     }
-    
+
     return inbox_item
 
 
@@ -802,6 +817,17 @@ def _build_archive_item(subcase: Dict[str, Any]) -> Dict[str, Any]:
         "created_at": subcase.get('created_at'),
         "updated_at": subcase.get('updated_at'),
         "allowed_actions": allowed_actions,
+        # HCAT Automatic Force Close Policy (Session 6) - per-level deadline state,
+        # used by the frontend for force-closed/late-reply/extra-time indicators.
+        "section_force_closed_at": subcase.get('section_force_closed_at'),
+        "section_late_reply": subcase.get('section_late_reply'),
+        "section_extra_time_granted_at": subcase.get('section_extra_time_granted_at'),
+        "department_force_closed_at": subcase.get('department_force_closed_at'),
+        "department_late_reply": subcase.get('department_late_reply'),
+        "department_extra_time_granted_at": subcase.get('department_extra_time_granted_at'),
+        "administration_force_closed_at": subcase.get('administration_force_closed_at'),
+        "administration_late_reply": subcase.get('administration_late_reply'),
+        "administration_extra_time_granted_at": subcase.get('administration_extra_time_granted_at'),
     }
 
     return archive_item

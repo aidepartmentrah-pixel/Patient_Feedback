@@ -726,6 +726,58 @@ def force_close_case_and_subcases(
 
 
 # ============================================================
+# AUTOMATIC FORCE CLOSE - MANUAL SCAN ENDPOINT (Session 4)
+# ============================================================
+
+@router.post("/automatic-force-close/run-scan")
+def run_automatic_force_close_scan(
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Manually trigger one pass of the Automatic Force Close scan.
+
+    Runs the exact same automatic_force_close_service logic used by the
+    hourly scheduled job (see backend/main.py
+    startup_automatic_force_close_scheduler). Intended for
+    testing/administration only - this endpoint is NOT used by the frontend.
+
+    No-ops (returns skipped_disabled_policy=True) if
+    automatic_force_close_enabled is not 'true'.
+
+    Authorization:
+    - SOFTWARE_ADMIN
+    - COMPLAINT_SUPERVISOR
+
+    All other roles receive 403 Forbidden.
+
+    Response: summary dict from
+    automatic_force_close_service.run_automatic_force_close_scan() -
+    success, enabled, scanned_count, section_force_closed_count,
+    department_force_closed_count, administration_force_closed_count,
+    skipped_notice_count, skipped_morbidity_count, skipped_disabled_policy.
+    """
+    if not current_user or not current_user.scopes:
+        raise HTTPException(
+            status_code=403,
+            detail="Insufficient permissions. Only SOFTWARE_ADMIN or COMPLAINT_SUPERVISOR can run the automatic force-close scan."
+        )
+
+    primary_role = current_user.scopes[0].role_code
+    allowed_roles = ['SOFTWARE_ADMIN', 'COMPLAINT_SUPERVISOR']
+
+    if primary_role not in allowed_roles:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Insufficient permissions. Only SOFTWARE_ADMIN or COMPLAINT_SUPERVISOR can run the automatic force-close scan. Your role: {primary_role}"
+        )
+
+    from backend.api_v2.services import automatic_force_close_service
+    return automatic_force_close_service.run_automatic_force_close_scan(
+        triggered_by_user_id=current_user.user_id
+    )
+
+
+# ============================================================
 # INCIDENT RESPONSE SUMMARY (all subcases + responses for one incident)
 # ============================================================
 
@@ -1035,3 +1087,118 @@ def complete_force_closed_draft(
             status_code=400,
             detail=str(e)
         )
+
+
+# ============================================================
+# GIVE MORE TIME WORKFLOW (HCAT Automatic Force Close Policy - Session 5)
+# ============================================================
+
+@router.post("/subcase/{subcase_id}/give-section-more-time")
+def give_section_more_time(
+    subcase_id: int,
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Give the Section a fresh deadline after it was automatically
+    force-closed (Status = FORCE_CLOSED_AT_SECTION).
+
+    Restarts SectionDeadlineAt from now using the current
+    section_deadline_days setting, records SectionExtraTimeGrantedAt/By,
+    and returns Status to SUBMITTED_TO_SECTION so the Section is responsible
+    and editable again. SectionForceClosedAt and SectionLateReply are
+    preserved permanently (history is never erased).
+
+    Authorization: DEPARTMENT_ADMIN, COMPLAINT_SUPERVISOR, SOFTWARE_ADMIN
+    (subcase must be within the caller's organizational scope).
+
+    Error Responses:
+    - 403: Unauthorized role or subcase outside caller's scope
+    - 400: Subcase not found, or not currently FORCE_CLOSED_AT_SECTION
+        (e.g. not force-closed, force-closed at a different level, or
+        already restored)
+    """
+    try:
+        state = case_response_service.give_section_more_time(
+            subcase_id=subcase_id,
+            current_user=current_user
+        )
+        return {"success": True, "subcase_id": subcase_id, "workflow_state": state}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/subcase/{subcase_id}/give-department-more-time")
+def give_department_more_time(
+    subcase_id: int,
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Give the Department a fresh deadline after it was automatically
+    force-closed (Status = FORCE_CLOSED_AT_DEPARTMENT).
+
+    Restarts DepartmentDeadlineAt from now using the current
+    department_deadline_days setting, records
+    DepartmentExtraTimeGrantedAt/By, and returns Status to
+    SECTION_ACCEPTED_PENDING_DEPT so the Department is responsible and
+    editable again. DepartmentForceClosedAt and DepartmentLateReply are
+    preserved permanently (history is never erased).
+
+    Authorization: ADMINISTRATION_ADMIN, COMPLAINT_SUPERVISOR, SOFTWARE_ADMIN
+    (subcase must be within the caller's organizational scope).
+
+    Error Responses:
+    - 403: Unauthorized role or subcase outside caller's scope
+    - 400: Subcase not found, or not currently FORCE_CLOSED_AT_DEPARTMENT
+        (e.g. not force-closed, force-closed at a different level, or
+        already restored)
+    """
+    try:
+        state = case_response_service.give_department_more_time(
+            subcase_id=subcase_id,
+            current_user=current_user
+        )
+        return {"success": True, "subcase_id": subcase_id, "workflow_state": state}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/subcase/{subcase_id}/give-administration-more-time")
+def give_administration_more_time(
+    subcase_id: int,
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Give Administration a fresh deadline after it was automatically
+    force-closed (Status = FORCE_CLOSED_AT_ADMINISTRATION).
+
+    Restarts AdministrationDeadlineAt from now using the current
+    administration_deadline_days setting, records
+    AdministrationExtraTimeGrantedAt/By, and returns Status to
+    DEPT_ACCEPTED_PENDING_ADMIN so Administration is responsible and editable
+    again. AdministrationForceClosedAt and AdministrationLateReply are
+    preserved permanently (history is never erased).
+
+    Authorization: COMPLAINT_SUPERVISOR, SOFTWARE_ADMIN only. Administration
+    is the top operational level - no ADMINISTRATION-level role sits above it
+    to grant the extension.
+
+    Error Responses:
+    - 403: Unauthorized role or subcase outside caller's scope
+    - 400: Subcase not found, or not currently FORCE_CLOSED_AT_ADMINISTRATION
+        (e.g. not force-closed, force-closed at a different level, or
+        already restored)
+    """
+    try:
+        state = case_response_service.give_administration_more_time(
+            subcase_id=subcase_id,
+            current_user=current_user
+        )
+        return {"success": True, "subcase_id": subcase_id, "workflow_state": state}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))

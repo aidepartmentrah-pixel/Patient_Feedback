@@ -50,6 +50,7 @@ def create_incident_case(data: dict) -> int:
             IssuingOrgUnitID,
             CreatedByUserID,
             isINPatient,
+            IsMorbidity,
             ClinicalRiskTypeID,
             FeedbackIntentTypeID,
             BuildingID,
@@ -67,7 +68,7 @@ def create_incident_case(data: dict) -> int:
             RecordTypeID
         )
         OUTPUT INSERTED.IncidentRequestCaseID
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         data.get("ComplaintText"),
         data.get("ImmediateAction") or "",
@@ -77,6 +78,7 @@ def create_incident_case(data: dict) -> int:
         data.get("IssuingOrgUnitID"),
         data.get("CreatedByUserID"),
         data.get("isINPatient", 1),
+        data.get("IsMorbidity", 0),
         data.get("ClinicalRiskTypeID"),
         data.get("FeedbackIntentTypeID"),
         data.get("BuildingID"),

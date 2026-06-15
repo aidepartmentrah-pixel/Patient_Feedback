@@ -15,7 +15,7 @@ def get_whisper_model():
             MODEL_SIZE,
             device=DEVICE,
             compute_type="int8",
-            cpu_threads=4,
+            cpu_threads=8,
             num_workers=1
         )
     return _model

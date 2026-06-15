@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(sqlcmd -S localhost -d IncidentManager -E -Q \"SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='APP_AdministrativeSubcase' AND \\(COLUMN_NAME LIKE '%EntryMode%' OR COLUMN_NAME LIKE '%EnteredBy%' OR COLUMN_NAME LIKE '%EnteredForRole%' OR COLUMN_NAME LIKE '%EntryTimestamp%' OR COLUMN_NAME LIKE '%ExplanationText%' OR COLUMN_NAME LIKE '%ForceClosedAt%' OR COLUMN_NAME LIKE '%LateReply%'\\) ORDER BY COLUMN_NAME\" -W)",
+      "PowerShell(sqlcmd -S localhost -d IncidentManager -E -Q \"SELECT DISTINCT RoleCode FROM APP_Lookup_Role ORDER BY RoleCode\" -W 2>&1)",
+      "PowerShell(sqlcmd -S localhost -d IncidentManager -E -Q \"SELECT u.Username, r.RoleCode FROM APP_Users u JOIN APP_UserRoleScope s ON u.UserID=s.UserID JOIN APP_Lookup_Role r ON s.RoleID=r.RoleID WHERE u.Username='complaint_supervisor'\" -W 2>&1)",
+      "PowerShell(sqlcmd -S localhost -d IncidentManager -E -Q \"SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME LIKE '%Role%'\" -W 2>&1)"
+    ]
+  }
+}

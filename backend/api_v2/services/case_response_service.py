@@ -15,6 +15,7 @@ Complete workflow engine with:
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from fastapi import HTTPException
+from core.database import get_connection
 from backend.api_v2.db_layer import administrative_subcase_db
 from backend.api_v2.db_layer import action_item_subcase_db
 from backend.api.db_layer import auth_db
@@ -1277,7 +1278,9 @@ def fill_explanation_on_behalf(
     For ON_BEHALF mode only, the workflow status is advanced after the fill:
       - section fill  → SECTION_ACCEPTED_PENDING_DEPT (+ action_items DRAFT→SUBMITTED_TO_DEPT)
       - department fill → DEPT_ACCEPTED_PENDING_ADMIN  (+ action_items SUBMITTED_TO_DEPT→SUBMITTED_TO_ADMIN)
-      - administration fill → ADMIN_APPROVED            (+ action_items SUBMITTED_TO_ADMIN→ADMIN_APPROVED)
+      - administration fill (ClinicalRiskTypeID == 1, complaint) → WAITING_PATIENT_SERVICES_DECISION
+        (action_items left untouched at SUBMITTED_TO_ADMIN, per approve_administration())
+      - administration fill (all other case types) → ADMIN_APPROVED (+ action_items SUBMITTED_TO_ADMIN→ADMIN_APPROVED)
 
     action_items is only used at the section level in ON_BEHALF mode.
 
@@ -1429,19 +1432,333 @@ def fill_explanation_on_behalf(
                 updated_by_user_id=current_user.user_id
             )
         elif level == 'administration' and current_status == 'DEPT_ACCEPTED_PENDING_ADMIN':
-            action_item_subcase_db.bulk_update_action_items_status_by_subcase(
-                subcase_id=subcase_id,
-                to_status='ADMIN_APPROVED',
-                updated_by_user_id=current_user.user_id,
-                from_statuses=['SUBMITTED_TO_ADMIN']
-            )
-            administrative_subcase_db.update_subcase_status(
-                subcase_id=subcase_id,
-                new_status='ADMIN_APPROVED',
-                updated_by_user_id=current_user.user_id
-            )
+            # Mirror approve_administration()'s complaint-routing rule:
+            # ClinicalRiskTypeID == 1 (ordinary complaint) hands off to Patient
+            # Services for the scientific decision instead of going terminal.
+            is_complaint = False
+            incident_id = subcase.get('incident_request_case_id')
+            if incident_id:
+                from backend.api.db_layer import incident_case as incident_case_db
+                incident = incident_case_db.get_incident_case_by_id(incident_id)
+                if incident and incident.get('ClinicalRiskTypeID') == 1:
+                    is_complaint = True
+
+            if is_complaint:
+                # Complaint path: hand off to Patient Services for the scientific
+                # decision. Action items remain at SUBMITTED_TO_ADMIN — do NOT
+                # transition them here.
+                administrative_subcase_db.update_subcase_status(
+                    subcase_id=subcase_id,
+                    new_status='WAITING_PATIENT_SERVICES_DECISION',
+                    updated_by_user_id=current_user.user_id
+                )
+            else:
+                action_item_subcase_db.bulk_update_action_items_status_by_subcase(
+                    subcase_id=subcase_id,
+                    to_status='ADMIN_APPROVED',
+                    updated_by_user_id=current_user.user_id,
+                    from_statuses=['SUBMITTED_TO_ADMIN']
+                )
+                administrative_subcase_db.update_subcase_status(
+                    subcase_id=subcase_id,
+                    new_status='ADMIN_APPROVED',
+                    updated_by_user_id=current_user.user_id
+                )
 
     return entry_mode
+
+
+# ============================================================
+# GIVE MORE TIME WORKFLOW (HCAT Automatic Force Close Policy - Session 5)
+# ============================================================
+
+# Permission matrix (Session 5): which roles may restore each force-closed
+# level. COMPLAINT_SUPERVISOR and SOFTWARE_ADMIN can give more time at any
+# level.
+_GIVE_SECTION_MORE_TIME_ROLES = ('DEPARTMENT_ADMIN', 'COMPLAINT_SUPERVISOR', 'SOFTWARE_ADMIN')
+_GIVE_DEPARTMENT_MORE_TIME_ROLES = ('ADMINISTRATION_ADMIN', 'COMPLAINT_SUPERVISOR', 'SOFTWARE_ADMIN')
+# Administration is the top operational level - no ADMINISTRATION-level role
+# sits above it, so only the hospital-wide roles can restore it.
+_GIVE_ADMINISTRATION_MORE_TIME_ROLES = ('COMPLAINT_SUPERVISOR', 'SOFTWARE_ADMIN')
+
+# Fallback deadline windows (days). Mirrors
+# case_creation_service._DEFAULT_DEADLINE_DAYS (duplicated per the Session
+# 3/4 convention of not sharing this small helper across service files).
+_GIVE_MORE_TIME_DEFAULT_DEADLINE_DAYS = {
+    "section": 10,
+    "department": 7,
+    "administration": 7,
+}
+
+
+def _get_deadline_days_settings(cursor) -> dict:
+    """
+    Read section/department/administration_deadline_days from
+    APP_SystemSettings using the caller's open cursor, falling back to
+    _GIVE_MORE_TIME_DEFAULT_DEADLINE_DAYS for missing/invalid values.
+    """
+    keys_by_setting = {
+        "section_deadline_days": "section",
+        "department_deadline_days": "department",
+        "administration_deadline_days": "administration",
+    }
+
+    result = dict(_GIVE_MORE_TIME_DEFAULT_DEADLINE_DAYS)
+
+    cursor.execute(
+        "SELECT SettingKey, SettingValue FROM dbo.APP_SystemSettings WHERE SettingKey IN (?, ?, ?)",
+        tuple(keys_by_setting.keys())
+    )
+    for row in cursor.fetchall():
+        level = keys_by_setting.get(row.SettingKey)
+        if level is None:
+            continue
+        try:
+            result[level] = int(row.SettingValue)
+        except (TypeError, ValueError):
+            pass
+
+    return result
+
+
+def _require_give_more_time_role(current_user, allowed_roles, level_label: str) -> str:
+    """
+    Role check shared by give_*_more_time(). Returns the caller's primary
+    role code.
+
+    Raises:
+        HTTPException(403): If current_user has no scopes or an unauthorized role.
+    """
+    role_code = (
+        current_user.scopes[0].role_code
+        if current_user and current_user.scopes
+        else None
+    )
+    if role_code not in allowed_roles:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Insufficient permissions. Only "
+                f"{', '.join(allowed_roles)} can give {level_label} more time. "
+                f"Your role: {role_code}"
+            )
+        )
+    return role_code
+
+
+def _check_give_more_time_scope(subcase: Dict[str, Any], current_user) -> None:
+    """
+    Scope check shared by give_*_more_time(). Mirrors reopen_denied_case():
+    the subcase's TargetOrgUnitID must be within the granting user's
+    allowed_unit_ids (COMPLAINT_SUPERVISOR/SOFTWARE_ADMIN have full access;
+    DEPARTMENT_ADMIN/ADMINISTRATION_ADMIN are limited to their org subtree).
+
+    Raises:
+        HTTPException(403): If the subcase is outside the user's scope.
+    """
+    target_org_unit_id = subcase.get('target_org_unit_id')
+    allowed_unit_ids = getattr(current_user, 'allowed_unit_ids', None) or set()
+    if target_org_unit_id not in allowed_unit_ids:
+        raise HTTPException(
+            status_code=403,
+            detail="Subcase is outside your organizational scope."
+        )
+
+
+def give_section_more_time(subcase_id: int, current_user) -> Dict[str, Any]:
+    """
+    Restore a Section-force-closed subcase to active Section responsibility,
+    giving the Section a fresh deadline.
+
+    Status transition: FORCE_CLOSED_AT_SECTION -> SUBMITTED_TO_SECTION
+
+    - SectionDeadlineAt is restarted to now + section_deadline_days (read
+      live from APP_SystemSettings).
+    - SectionExtraTimeGrantedAt / SectionExtraTimeGrantedBy record who
+      granted the extension and when.
+    - SectionForceClosedAt and SectionLateReply are preserved unchanged -
+      the force-close history is permanent.
+    - The Section's auto-inserted explanation text (if any, tagged
+      SectionEntryMode='AUTO_FORCE_CLOSE' by Session 4) remains editable via
+      the normal SUBMIT_RESPONSE action once Status is SUBMITTED_TO_SECTION.
+
+    Authorization: DEPARTMENT_ADMIN, COMPLAINT_SUPERVISOR, SOFTWARE_ADMIN
+    (subcase must be within the granting user's organizational scope).
+
+    Args:
+        subcase_id: Subcase ID
+        current_user: Current user object (must have user_id, scopes, allowed_unit_ids)
+
+    Returns:
+        Updated per-level deadline state (see
+        administrative_subcase_db.get_subcase_deadline_state)
+
+    Raises:
+        HTTPException(403): Unauthorized role or out-of-scope subcase
+        Exception: Subcase not found, not currently FORCE_CLOSED_AT_SECTION
+            (including the case where it was already restored)
+    """
+    if current_user is None:
+        raise Exception("current_user cannot be None")
+
+    _require_give_more_time_role(current_user, _GIVE_SECTION_MORE_TIME_ROLES, "Section")
+
+    subcase = _load_subcase_or_fail(subcase_id)
+    _check_give_more_time_scope(subcase, current_user)
+    _assert_status(subcase, ['FORCE_CLOSED_AT_SECTION'])
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        deadline_days = _get_deadline_days_settings(cursor)['section']
+    finally:
+        cursor.close()
+        conn.close()
+
+    restored = administrative_subcase_db.give_section_more_time(
+        subcase_id=subcase_id,
+        granted_by_user_id=current_user.user_id,
+        deadline_days=deadline_days
+    )
+    if not restored:
+        raise Exception(
+            f"Subcase {subcase_id} could not be restored - it is no longer "
+            f"force-closed at the Section level."
+        )
+
+    return administrative_subcase_db.get_subcase_deadline_state(subcase_id)
+
+
+def give_department_more_time(subcase_id: int, current_user) -> Dict[str, Any]:
+    """
+    Restore a Department-force-closed subcase to active Department
+    responsibility, giving the Department a fresh deadline.
+
+    Status transition: FORCE_CLOSED_AT_DEPARTMENT -> SECTION_ACCEPTED_PENDING_DEPT
+
+    - DepartmentDeadlineAt is restarted to now + department_deadline_days
+      (read live from APP_SystemSettings).
+    - DepartmentExtraTimeGrantedAt / DepartmentExtraTimeGrantedBy record who
+      granted the extension and when.
+    - DepartmentForceClosedAt and DepartmentLateReply are preserved unchanged
+      - the force-close history is permanent.
+    - The Department's auto-inserted explanation text (if any, tagged
+      DepartmentEntryMode='AUTO_FORCE_CLOSE' by Session 4) remains editable
+      via the normal APPROVE/REJECT/OVERRIDE actions once Status is
+      SECTION_ACCEPTED_PENDING_DEPT.
+
+    Authorization: ADMINISTRATION_ADMIN, COMPLAINT_SUPERVISOR, SOFTWARE_ADMIN
+    (subcase must be within the granting user's organizational scope).
+
+    Args:
+        subcase_id: Subcase ID
+        current_user: Current user object (must have user_id, scopes, allowed_unit_ids)
+
+    Returns:
+        Updated per-level deadline state (see
+        administrative_subcase_db.get_subcase_deadline_state)
+
+    Raises:
+        HTTPException(403): Unauthorized role or out-of-scope subcase
+        Exception: Subcase not found, not currently FORCE_CLOSED_AT_DEPARTMENT
+            (including the case where it was already restored)
+    """
+    if current_user is None:
+        raise Exception("current_user cannot be None")
+
+    _require_give_more_time_role(current_user, _GIVE_DEPARTMENT_MORE_TIME_ROLES, "Department")
+
+    subcase = _load_subcase_or_fail(subcase_id)
+    _check_give_more_time_scope(subcase, current_user)
+    _assert_status(subcase, ['FORCE_CLOSED_AT_DEPARTMENT'])
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        deadline_days = _get_deadline_days_settings(cursor)['department']
+    finally:
+        cursor.close()
+        conn.close()
+
+    restored = administrative_subcase_db.give_department_more_time(
+        subcase_id=subcase_id,
+        granted_by_user_id=current_user.user_id,
+        deadline_days=deadline_days
+    )
+    if not restored:
+        raise Exception(
+            f"Subcase {subcase_id} could not be restored - it is no longer "
+            f"force-closed at the Department level."
+        )
+
+    return administrative_subcase_db.get_subcase_deadline_state(subcase_id)
+
+
+def give_administration_more_time(subcase_id: int, current_user) -> Dict[str, Any]:
+    """
+    Restore an Administration-force-closed subcase to active Administration
+    responsibility, giving Administration a fresh deadline.
+
+    Status transition: FORCE_CLOSED_AT_ADMINISTRATION -> DEPT_ACCEPTED_PENDING_ADMIN
+
+    - AdministrationDeadlineAt is restarted to now +
+      administration_deadline_days (read live from APP_SystemSettings).
+    - AdministrationExtraTimeGrantedAt / AdministrationExtraTimeGrantedBy
+      record who granted the extension and when.
+    - AdministrationForceClosedAt and AdministrationLateReply are preserved
+      unchanged - the force-close history is permanent.
+    - The Administration's auto-inserted explanation text (if any, tagged
+      AdministrationEntryMode='AUTO_FORCE_CLOSE' by Session 4) remains
+      editable via the normal APPROVE/REJECT/OVERRIDE actions once Status is
+      DEPT_ACCEPTED_PENDING_ADMIN.
+
+    Authorization: COMPLAINT_SUPERVISOR, SOFTWARE_ADMIN only. Administration
+    is the top operational level - no ADMINISTRATION-level role sits above it
+    in the normal hierarchy, so only the hospital-wide roles (which the
+    Session 5 spec allows to give more time "to any level") can restore it.
+
+    Args:
+        subcase_id: Subcase ID
+        current_user: Current user object (must have user_id, scopes, allowed_unit_ids)
+
+    Returns:
+        Updated per-level deadline state (see
+        administrative_subcase_db.get_subcase_deadline_state)
+
+    Raises:
+        HTTPException(403): Unauthorized role or out-of-scope subcase
+        Exception: Subcase not found, not currently FORCE_CLOSED_AT_ADMINISTRATION
+            (including the case where it was already restored)
+    """
+    if current_user is None:
+        raise Exception("current_user cannot be None")
+
+    _require_give_more_time_role(current_user, _GIVE_ADMINISTRATION_MORE_TIME_ROLES, "Administration")
+
+    subcase = _load_subcase_or_fail(subcase_id)
+    _check_give_more_time_scope(subcase, current_user)
+    _assert_status(subcase, ['FORCE_CLOSED_AT_ADMINISTRATION'])
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        deadline_days = _get_deadline_days_settings(cursor)['administration']
+    finally:
+        cursor.close()
+        conn.close()
+
+    restored = administrative_subcase_db.give_administration_more_time(
+        subcase_id=subcase_id,
+        granted_by_user_id=current_user.user_id,
+        deadline_days=deadline_days
+    )
+    if not restored:
+        raise Exception(
+            f"Subcase {subcase_id} could not be restored - it is no longer "
+            f"force-closed at the Administration level."
+        )
+
+    return administrative_subcase_db.get_subcase_deadline_state(subcase_id)
 
 
 

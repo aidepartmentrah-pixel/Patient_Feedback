@@ -7,6 +7,7 @@ Pure orchestration layer - no business logic, validation, or permission checks.
 
 import logging
 from typing import Optional
+from datetime import datetime, timedelta
 from core.database import get_connection
 from api_v2.db_layer import administrative_subcase_db
 from api_v2.db_layer import seasonal_report_db
@@ -22,6 +23,50 @@ logger = logging.getLogger(__name__)
 _ORG_TYPE_SECTION = 324
 _ORG_TYPE_DEPARTMENT = 325
 _ORG_TYPE_ADMINISTRATION = 323
+
+# APP_IncidentCase.RecordTypeID value identifying a "Notice" record
+_RECORD_TYPE_NOTICE = 2
+
+# Fallback deadline windows (days) used only if the APP_SystemSettings rows
+# are missing or contain a non-numeric value
+_DEFAULT_DEADLINE_DAYS = {
+    "section": 10,
+    "department": 7,
+    "administration": 7,
+}
+
+
+def _get_deadline_days_settings(cursor) -> dict:
+    """
+    Read the workflow deadline windows (in days) from APP_SystemSettings.
+
+    Reads section_deadline_days, department_deadline_days and
+    administration_deadline_days using the caller's open cursor. Falls back
+    to _DEFAULT_DEADLINE_DAYS for any key that is missing or not a valid
+    integer.
+    """
+    keys_by_setting = {
+        "section_deadline_days": "section",
+        "department_deadline_days": "department",
+        "administration_deadline_days": "administration",
+    }
+
+    result = dict(_DEFAULT_DEADLINE_DAYS)
+
+    cursor.execute(
+        "SELECT SettingKey, SettingValue FROM dbo.APP_SystemSettings WHERE SettingKey IN (?, ?, ?)",
+        tuple(keys_by_setting.keys())
+    )
+    for row in cursor.fetchall():
+        level = keys_by_setting.get(row.SettingKey)
+        if level is None:
+            continue
+        try:
+            result[level] = int(row.SettingValue)
+        except (TypeError, ValueError):
+            pass
+
+    return result
 
 
 def get_initial_subcase_status_for_target_org_type(org_type: int) -> str:
@@ -48,12 +93,15 @@ def _create_subcase(
     seasonal_report_id: Optional[int],
     target_org_unit_id: int,
     created_by_user_id: int,
-    initial_status: str
+    initial_status: str,
+    section_deadline_at: Optional[datetime] = None,
+    department_deadline_at: Optional[datetime] = None,
+    administration_deadline_at: Optional[datetime] = None
 ) -> Optional[int]:
     """
     Internal helper to create a subcase.
     Thin adapter to DB layer.
-    
+
     After creation, sends notification to section admin if they have an email.
     """
     subcase_id = administrative_subcase_db.create_subcase(
@@ -62,7 +110,10 @@ def _create_subcase(
         seasonal_report_id=seasonal_report_id,
         target_org_unit_id=target_org_unit_id,
         created_by_user_id=created_by_user_id,
-        initial_status=initial_status
+        initial_status=initial_status,
+        section_deadline_at=section_deadline_at,
+        department_deadline_at=department_deadline_at,
+        administration_deadline_at=administration_deadline_at
     )
     
     # Send notification (async, non-blocking)
@@ -96,14 +147,32 @@ def create_subcases_for_incident(incident_id: int, current_user) -> None:
     existing = administrative_subcase_db.get_subcases_by_incident(incident_id)
     if existing:
         return
-    
+
     # Handle None current_user (legacy adapter calls)
     user_id = current_user.user_id if current_user else 1  # Default to system user
-    
+
     conn = get_connection()
     cursor = conn.cursor()
-    
+
     try:
+        # Determine deadline-exclusion flags for this incident:
+        # Notice records (RecordTypeID=2) and Morbidity-related cases
+        # (IsMorbidity=1) never receive workflow deadlines.
+        cursor.execute(
+            "SELECT RecordTypeID, IsMorbidity FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID = ?",
+            (incident_id,)
+        )
+        case_row = cursor.fetchone()
+        is_notice = bool(case_row and case_row.RecordTypeID == _RECORD_TYPE_NOTICE)
+        is_morbidity = bool(case_row and case_row.IsMorbidity)
+        excluded_from_deadlines = is_notice or is_morbidity
+
+        deadline_days = None
+        publish_time = None
+        if not excluded_from_deadlines:
+            deadline_days = _get_deadline_days_settings(cursor)
+            publish_time = datetime.now()
+
         query = """
             SELECT td.DepartmentID, au.Type AS OrgUnitType, au.Name AS OrgUnitName
             FROM dbo.APP_IncidentCaseTargetDepartment td
@@ -125,13 +194,30 @@ def create_subcases_for_incident(incident_id: int, current_user) -> None:
                 incident_id, dept_id, org_name or '?', org_type, initial_status
             )
 
+            # Initialize ONLY the deadline for the starting workflow level,
+            # and only for non-Notice, non-Morbidity cases.
+            section_deadline_at = None
+            department_deadline_at = None
+            administration_deadline_at = None
+
+            if not excluded_from_deadlines:
+                if org_type == _ORG_TYPE_SECTION:
+                    section_deadline_at = publish_time + timedelta(days=deadline_days["section"])
+                elif org_type == _ORG_TYPE_DEPARTMENT:
+                    department_deadline_at = publish_time + timedelta(days=deadline_days["department"])
+                elif org_type == _ORG_TYPE_ADMINISTRATION:
+                    administration_deadline_at = publish_time + timedelta(days=deadline_days["administration"])
+
             _create_subcase(
                 case_type='INCIDENT_RESPONSE',
                 incident_id=incident_id,
                 seasonal_report_id=None,
                 target_org_unit_id=dept_id,
                 created_by_user_id=user_id,
-                initial_status=initial_status
+                initial_status=initial_status,
+                section_deadline_at=section_deadline_at,
+                department_deadline_at=department_deadline_at,
+                administration_deadline_at=administration_deadline_at
             )
 
     finally:

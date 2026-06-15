@@ -1,0 +1,132 @@
+Changed database context to 'IncidentManager'.
+============================================================
+AFC-S1: Automatic Force Close Policy — Database Foundation
+============================================================
+ 
+PART 1: Morbidity flag on APP_IncidentCase...
+  IsMorbidity already exists. Skipping.
+ 
+PART 2: Workflow deadline fields on APP_AdministrativeSubcase...
+  SectionDeadlineAt already exists. Skipping.
+  DepartmentDeadlineAt already exists. Skipping.
+  AdministrationDeadlineAt already exists. Skipping.
+ 
+PART 3: Per-level force-close history fields on APP_AdministrativeSubcase...
+  SectionForceClosedAt already exists. Skipping.
+  DepartmentForceClosedAt already exists. Skipping.
+  AdministrationForceClosedAt already exists. Skipping.
+ 
+PART 4: Late-reply tracking fields on APP_AdministrativeSubcase...
+  SectionLateReply added
+  DepartmentLateReply added
+  AdministrationLateReply added
+ 
+PART 5: Extra-time tracking fields on APP_AdministrativeSubcase...
+  SectionExtraTimeGrantedAt added
+  DepartmentExtraTimeGrantedAt added
+  AdministrationExtraTimeGrantedAt added
+  SectionExtraTimeGrantedBy added
+  DepartmentExtraTimeGrantedBy added
+  AdministrationExtraTimeGrantedBy added
+ 
+PART 5b: Foreign keys for ExtraTimeGrantedBy columns -> APP_Users...
+  FK for SectionExtraTimeGrantedBy added
+  FK for DepartmentExtraTimeGrantedBy added
+  FK for AdministrationExtraTimeGrantedBy added
+ 
+PART 6: Adding new force-close subcase statuses...
+
+(1 rows affected)
+  FORCE_CLOSED_AT_SECTION added
+
+(1 rows affected)
+  FORCE_CLOSED_AT_DEPARTMENT added
+
+(1 rows affected)
+  FORCE_CLOSED_AT_ADMINISTRATION added
+ 
+PART 7: Adding Automatic Force Close Policy settings...
+
+(1 rows affected)
+  automatic_force_close_enabled added
+
+(1 rows affected)
+  section_deadline_days added
+
+(1 rows affected)
+  department_deadline_days added
+
+(1 rows affected)
+  administration_deadline_days added
+ 
+============================================================
+VERIFICATION
+============================================================
+ 
+--- APP_IncidentCase.IsMorbidity ---
+name                                                                                                                             data_type                                                                                                                        is_nullable
+-------------------------------------------------------------------------------------------------------------------------------- -------------------------------------------------------------------------------------------------------------------------------- -----------
+IsMorbidity                                                                                                                      bit                                                                                                                                        0
+
+(1 rows affected)
+ 
+--- APP_AdministrativeSubcase new columns ---
+name                                                                                                                             data_type                                                                                                                        is_nullable
+-------------------------------------------------------------------------------------------------------------------------------- -------------------------------------------------------------------------------------------------------------------------------- -----------
+AdministrationDeadlineAt                                                                                                         datetime                                                                                                                                   1
+AdministrationExtraTimeGrantedAt                                                                                                 datetime                                                                                                                                   1
+AdministrationExtraTimeGrantedBy                                                                                                 int                                                                                                                                        1
+AdministrationForceClosedAt                                                                                                      datetime                                                                                                                                   1
+AdministrationLateReply                                                                                                          bit                                                                                                                                        0
+DepartmentDeadlineAt                                                                                                             datetime                                                                                                                                   1
+DepartmentExtraTimeGrantedAt                                                                                                     datetime                                                                                                                                   1
+DepartmentExtraTimeGrantedBy                                                                                                     int                                                                                                                                        1
+DepartmentForceClosedAt                                                                                                          datetime                                                                                                                                   1
+DepartmentLateReply                                                                                                              bit                                                                                                                                        0
+SectionDeadlineAt                                                                                                                datetime                                                                                                                                   1
+SectionExtraTimeGrantedAt                                                                                                        datetime                                                                                                                                   1
+SectionExtraTimeGrantedBy                                                                                                        int                                                                                                                                        1
+SectionForceClosedAt                                                                                                             datetime                                                                                                                                   1
+SectionLateReply                                                                                                                 bit                                                                                                                                        0
+
+(15 rows affected)
+ 
+--- APP_Lookup_SubcaseStatus (all statuses) ---
+StatusCode                                         StatusNameEn                                                                                         DisplayOrder IsFinal IsActive
+-------------------------------------------------- ---------------------------------------------------------------------------------------------------- ------------ ------- --------
+SUBMITTED_TO_SECTION                               Submitted to Section                                                                                            1       0        1
+SECTION_DENIED                                     Section Denied                                                                                                  2       0        1
+SECTION_ACCEPTED_PENDING_DEPT                      Section Accepted - Pending Department                                                                           3       0        1
+DEPT_REJECTED                                      Department Rejected                                                                                             4       0        1
+DEPT_ACCEPTED_PENDING_ADMIN                        Department Accepted - Pending Administration                                                                    5       0        1
+ADMIN_REJECTED                                     Administration Rejected                                                                                         6       0        1
+ADMIN_APPROVED                                     Administration Approved                                                                                         7       0        1
+CLOSED                                             Closed                                                                                                          8       1        1
+FORCE_CLOSED                                       Force Closed                                                                                                    9       1        1
+FORCE_CLOSED_DRAFT                                 Force Closed - Draft                                                                                           10       0        1
+FORCE_CLOSED_COMPLETE                              Force Closed - Complete                                                                                        11       1        1
+WAITING_PATIENT_SERVICES_DECISION                  Waiting Patient Services Decision                                                                              12       0        1
+PATIENT_SERVICES_DECISION_COMPLETED                Patient Services Decision Completed                                                                            13       0        1
+FORCE_CLOSED_AT_SECTION                            Force Closed at Section                                                                                        14       1        1
+FORCE_CLOSED_AT_DEPARTMENT                         Force Closed at Department                                                                                     15       1        1
+FORCE_CLOSED_AT_ADMINISTRATION                     Force Closed at Administration                                                                                 16       1        1
+
+(16 rows affected)
+ 
+--- APP_SystemSettings (new settings) ---
+SettingKey                                                                                           SettingValue                                                                                                                                                                                                                                                     SettingType                                        IsActive
+---------------------------------------------------------------------------------------------------- ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- -------------------------------------------------- --------
+administration_deadline_days                                                                         7                                                                                                                                                                                                                                                                number                                                    1
+automatic_force_close_enabled                                                                        false                                                                                                                                                                                                                                                            boolean                                                   1
+department_deadline_days                                                                             7                                                                                                                                                                                                                                                                number                                                    1
+section_deadline_days                                                                                10                                                                                                                                                                                                                                                               number                                                    1
+
+(4 rows affected)
+ 
+============================================================
+AFC-S1: Migration complete.
+Expected: 1 new column on APP_IncidentCase,
+          15 new columns + 3 new FKs on APP_AdministrativeSubcase,
+          3 new statuses in APP_Lookup_SubcaseStatus,
+          4 new settings in APP_SystemSettings.
+============================================================

@@ -380,6 +380,48 @@ async def startup_db_reconnect_watcher():
     asyncio.create_task(_reconnect_loop())
 
 
+@app.on_event("startup")
+async def startup_automatic_force_close_scheduler():
+    """
+    HCAT Automatic Force Close Policy (Session 4): hourly background scan for
+    overdue APP_AdministrativeSubcase rows.
+
+    Marks the responsible level (Section/Department/Administration)
+    force-closed once its deadline has expired, escalating responsibility to
+    the next level. No-ops entirely if automatic_force_close_enabled is not
+    'true' - this is re-checked on every run, not just at startup.
+
+    Safe to run repeatedly: each scan only acts on subcases whose Status
+    still indicates the level is pending, and the DB-layer force_close_*
+    functions guard on <Level>ForceClosedAt IS NULL.
+    """
+    import asyncio
+    import logging
+    logger = logging.getLogger("automatic_force_close")
+
+    if bootstrap_module.BOOTSTRAP_MODE:
+        logger.info("[AUTO FORCE CLOSE] Skipped - running in BOOTSTRAP mode")
+        return
+
+    INITIAL_DELAY_SECONDS = 60
+    INTERVAL_SECONDS = 3600
+
+    async def _automatic_force_close_loop():
+        from api_v2.services import automatic_force_close_service
+        await asyncio.sleep(INITIAL_DELAY_SECONDS)
+        while True:
+            try:
+                result = automatic_force_close_service.run_automatic_force_close_scan(
+                    triggered_by_user_id=None
+                )
+                logger.info("[AUTO FORCE CLOSE] Scheduled scan result: %s", result)
+            except Exception:
+                logger.exception("[AUTO FORCE CLOSE] Scheduled scan failed")
+            await asyncio.sleep(INTERVAL_SECONDS)
+
+    asyncio.create_task(_automatic_force_close_loop())
+
+
 @app.get("/")
 def health_check():
     return {"status": "ok"}

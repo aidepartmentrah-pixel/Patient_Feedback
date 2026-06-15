@@ -92,6 +92,29 @@ async def get_rca_suggestions_for_subcase(
         })
 
 
+@router.get("/{subcase_id}/rca-pairs")
+async def get_rca_pairs_for_subcase(
+    subcase_id: int = Path(..., gt=0),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """
+    Return active Cause/Corrective-Action pairs grouped by category.
+    Each pair carries an is_selected flag for the given subcase's
+    current selections so the frontend can pre-check them.
+    """
+    require_logged_in(current_user)
+    _load_subcase_or_404(subcase_id)
+    try:
+        categories = rca_db.get_pairs_grouped_by_category(subcase_id)
+        return {"categories": categories}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={
+            "error": "fetch_failed",
+            "message": str(e),
+            "message_ar": f"فشل جلب أزواج RCA: {str(e)}"
+        })
+
+
 @router.put("/{subcase_id}/rca-selections")
 async def save_rca_selections(
     subcase_id: int = Path(..., gt=0),

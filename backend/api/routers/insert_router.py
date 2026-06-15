@@ -61,7 +61,8 @@ class CreateRecordRequest(BaseModel):
     immediate_action: Optional[str] = Field(None, description="Immediate actions taken")
     taken_action: Optional[str] = Field(None, description="Follow-up actions taken")
     is_inpatient: Optional[bool] = Field(None, description="Is inpatient (True) or outpatient (False)")
-    
+    is_morbidity: Optional[bool] = Field(False, description="Is this case morbidity related? (default: No / 0)")
+
     # Optional text fields - REMOVED (now required above)
     
     # Optional metadata
@@ -106,6 +107,7 @@ class IncidentCommonRequest(BaseModel):
     )
     patient_name: Optional[str] = ""
     is_inpatient: bool = True
+    is_morbidity: bool = False
     source_id: int
     building_id: Optional[int] = None
     primary_doctor_name: Optional[str] = None

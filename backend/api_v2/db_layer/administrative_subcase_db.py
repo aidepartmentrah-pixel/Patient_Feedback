@@ -7,7 +7,7 @@ NO business logic. NO authorization. ONLY SQL operations.
 """
 
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from core.database import get_connection
 
 
@@ -21,11 +21,14 @@ def create_subcase(
     seasonal_report_id: Optional[int],
     target_org_unit_id: int,
     created_by_user_id: int,
-    initial_status: str = "SUBMITTED_TO_SECTION"
+    initial_status: str = "SUBMITTED_TO_SECTION",
+    section_deadline_at: Optional[datetime] = None,
+    department_deadline_at: Optional[datetime] = None,
+    administration_deadline_at: Optional[datetime] = None
 ) -> Optional[int]:
     """
     Create a new administrative subcase.
-    
+
     Args:
         case_type: 'INCIDENT_RESPONSE' or 'SEASONAL_REPORT_RESPONSE'
         incident_id: FK to APP_IncidentCase (or None)
@@ -33,13 +36,20 @@ def create_subcase(
         target_org_unit_id: FK to AdminsrationUnit
         created_by_user_id: Who created this subcase
         initial_status: Initial workflow status (default: SUBMITTED_TO_SECTION)
-    
+        section_deadline_at: Initial SectionDeadlineAt (only set when the
+            workflow starts at the Section level for a non-excluded case)
+        department_deadline_at: Initial DepartmentDeadlineAt (only set when
+            the workflow starts at the Department level for a non-excluded case)
+        administration_deadline_at: Initial AdministrationDeadlineAt (only set
+            when the workflow starts at the Administration level for a
+            non-excluded case)
+
     Returns:
         SubcaseID if created, None on failure
     """
     conn = get_connection()
     cursor = conn.cursor()
-    
+
     try:
         query = """
             INSERT INTO dbo.APP_AdministrativeSubcase (
@@ -49,12 +59,15 @@ def create_subcase(
                 TargetOrgUnitID,
                 Status,
                 CreatedAt,
-                CreatedByUserID
+                CreatedByUserID,
+                SectionDeadlineAt,
+                DepartmentDeadlineAt,
+                AdministrationDeadlineAt
             )
             OUTPUT INSERTED.SubcaseID
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
-        
+
         cursor.execute(query, (
             case_type,
             incident_id,
@@ -62,15 +75,18 @@ def create_subcase(
             target_org_unit_id,
             initial_status,
             datetime.now(),
-            created_by_user_id
+            created_by_user_id,
+            section_deadline_at,
+            department_deadline_at,
+            administration_deadline_at
         ))
-        
+
         row = cursor.fetchone()
         new_id = row[0] if row else None
-        
+
         conn.commit()
         return new_id
-    
+
     finally:
         cursor.close()
         conn.close()
@@ -432,7 +448,16 @@ def get_subcases_by_status(status_code: str) -> List[Dict[str, Any]]:
                 sub.CreatedByUserID,
                 sub.UpdatedAt,
                 sub.UpdatedByUserID,
-                inc.incident_number AS IncidentNumber
+                inc.incident_number AS IncidentNumber,
+                sub.SectionForceClosedAt,
+                sub.SectionLateReply,
+                sub.SectionExtraTimeGrantedAt,
+                sub.DepartmentForceClosedAt,
+                sub.DepartmentLateReply,
+                sub.DepartmentExtraTimeGrantedAt,
+                sub.AdministrationForceClosedAt,
+                sub.AdministrationLateReply,
+                sub.AdministrationExtraTimeGrantedAt
             FROM dbo.APP_AdministrativeSubcase sub
             LEFT JOIN dbo.AdminsrationUnit org
                 ON sub.TargetOrgUnitID = org.UniqueID
@@ -467,6 +492,15 @@ def get_subcases_by_status(status_code: str) -> List[Dict[str, Any]]:
                 "updated_at": row.UpdatedAt,
                 "updated_by_user_id": row.UpdatedByUserID,
                 "incident_number": row.IncidentNumber,
+                "section_force_closed_at": row.SectionForceClosedAt,
+                "section_late_reply": bool(row.SectionLateReply),
+                "section_extra_time_granted_at": row.SectionExtraTimeGrantedAt,
+                "department_force_closed_at": row.DepartmentForceClosedAt,
+                "department_late_reply": bool(row.DepartmentLateReply),
+                "department_extra_time_granted_at": row.DepartmentExtraTimeGrantedAt,
+                "administration_force_closed_at": row.AdministrationForceClosedAt,
+                "administration_late_reply": bool(row.AdministrationLateReply),
+                "administration_extra_time_granted_at": row.AdministrationExtraTimeGrantedAt,
             }
             for row in rows
         ]
@@ -579,25 +613,33 @@ def get_subcases_pending_for_department() -> List[Dict[str, Any]]:
     """
     Fetch subcases pending department response.
     Status = 'SECTION_ACCEPTED_PENDING_DEPT' OR 'RETURNED_TO_DEPT_FOR_REVISION'
-    
+    OR 'FORCE_CLOSED_AT_SECTION' (Section missed its deadline and the case
+    escalated to Department responsibility)
+
     Returns:
         List of subcase dicts
     """
-    # Get both initial submissions and returned-for-revision cases
+    # Get initial submissions, returned-for-revision cases, and cases
+    # escalated to Department because Section was automatically force-closed
     initial = get_subcases_by_status("SECTION_ACCEPTED_PENDING_DEPT")
     returned = get_subcases_by_status("RETURNED_TO_DEPT_FOR_REVISION")
-    return initial + returned
+    escalated = get_subcases_by_status("FORCE_CLOSED_AT_SECTION")
+    return initial + returned + escalated
 
 
 def get_subcases_pending_for_administration() -> List[Dict[str, Any]]:
     """
     Fetch subcases pending administration response.
-    Status = 'DEPT_ACCEPTED_PENDING_ADMIN'
-    
+    Status = 'DEPT_ACCEPTED_PENDING_ADMIN' OR 'FORCE_CLOSED_AT_DEPARTMENT'
+    (Department missed its deadline and the case escalated to
+    Administration responsibility)
+
     Returns:
         List of subcase dicts
     """
-    return get_subcases_by_status("DEPT_ACCEPTED_PENDING_ADMIN")
+    initial = get_subcases_by_status("DEPT_ACCEPTED_PENDING_ADMIN")
+    escalated = get_subcases_by_status("FORCE_CLOSED_AT_DEPARTMENT")
+    return initial + escalated
 
 
 def get_subcases_waiting_patient_services_decision() -> List[Dict[str, Any]]:
@@ -1466,7 +1508,16 @@ def get_subcases_by_statuses(status_codes: List[str]) -> List[Dict[str, Any]]:
                 sub.CreatedByUserID,
                 sub.UpdatedAt,
                 sub.UpdatedByUserID,
-                inc.incident_number AS IncidentNumber
+                inc.incident_number AS IncidentNumber,
+                sub.SectionForceClosedAt,
+                sub.SectionLateReply,
+                sub.SectionExtraTimeGrantedAt,
+                sub.DepartmentForceClosedAt,
+                sub.DepartmentLateReply,
+                sub.DepartmentExtraTimeGrantedAt,
+                sub.AdministrationForceClosedAt,
+                sub.AdministrationLateReply,
+                sub.AdministrationExtraTimeGrantedAt
             FROM dbo.APP_AdministrativeSubcase sub
             LEFT JOIN dbo.AdminsrationUnit org
                 ON sub.TargetOrgUnitID = org.UniqueID
@@ -1501,6 +1552,15 @@ def get_subcases_by_statuses(status_codes: List[str]) -> List[Dict[str, Any]]:
                 "updated_at": row.UpdatedAt,
                 "updated_by_user_id": row.UpdatedByUserID,
                 "incident_number": row.IncidentNumber,
+                "section_force_closed_at": row.SectionForceClosedAt,
+                "section_late_reply": bool(row.SectionLateReply),
+                "section_extra_time_granted_at": row.SectionExtraTimeGrantedAt,
+                "department_force_closed_at": row.DepartmentForceClosedAt,
+                "department_late_reply": bool(row.DepartmentLateReply),
+                "department_extra_time_granted_at": row.DepartmentExtraTimeGrantedAt,
+                "administration_force_closed_at": row.AdministrationForceClosedAt,
+                "administration_late_reply": bool(row.AdministrationLateReply),
+                "administration_extra_time_granted_at": row.AdministrationExtraTimeGrantedAt,
             }
             for row in rows
         ]
@@ -1540,7 +1600,8 @@ def get_subcases_archived_for_section() -> List[Dict[str, Any]]:
         "SECTION_DENIED",
         "FORCE_CLOSED",
         "FORCE_CLOSED_DRAFT",
-        "FORCE_CLOSED_COMPLETE"
+        "FORCE_CLOSED_COMPLETE",
+        "FORCE_CLOSED_AT_SECTION"
     ]
     return get_subcases_by_statuses(archive_statuses)
 
@@ -2091,6 +2152,485 @@ def get_supervisor_name_for_org_unit(
 
         return None
 
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ============================================================
+# AUTOMATIC FORCE CLOSE (HCAT Automatic Force Close Policy - Session 4)
+# ============================================================
+
+def force_close_section(subcase_id: int, auto_text: str, system_user_id: int = 1) -> bool:
+    """
+    Mark a subcase Section-force-closed due to an expired SectionDeadlineAt.
+
+    - Sets SectionForceClosedAt = now and SectionLateReply = 1.
+    - Transitions Status to 'FORCE_CLOSED_AT_SECTION' (case remains visible
+      and escalates to Department responsibility via the pending-for-department
+      query).
+    - If SectionExplanationText is empty, fills it with auto_text and tags the
+      entry with SectionEntryMode = 'AUTO_FORCE_CLOSE' (so it can be identified
+      and replaced later by Give More Time). A real existing answer is never
+      overwritten.
+    - Idempotent: WHERE SectionForceClosedAt IS NULL guard means re-running
+      this on an already force-closed subcase is a no-op.
+
+    Returns:
+        True if a row was updated, False if not found or already force-closed.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        now = datetime.now()
+        query = """
+            UPDATE dbo.APP_AdministrativeSubcase
+            SET SectionForceClosedAt = ?,
+                SectionLateReply      = 1,
+                Status                = 'FORCE_CLOSED_AT_SECTION',
+                SectionExplanationText = CASE
+                    WHEN SectionExplanationText IS NULL OR LTRIM(RTRIM(SectionExplanationText)) = ''
+                    THEN ? ELSE SectionExplanationText END,
+                SectionEnteredByUserID = CASE
+                    WHEN SectionExplanationText IS NULL OR LTRIM(RTRIM(SectionExplanationText)) = ''
+                    THEN ? ELSE SectionEnteredByUserID END,
+                SectionEnteredForRole = CASE
+                    WHEN SectionExplanationText IS NULL OR LTRIM(RTRIM(SectionExplanationText)) = ''
+                    THEN ? ELSE SectionEnteredForRole END,
+                SectionEntryMode = CASE
+                    WHEN SectionExplanationText IS NULL OR LTRIM(RTRIM(SectionExplanationText)) = ''
+                    THEN ? ELSE SectionEntryMode END,
+                SectionEntryTimestamp = CASE
+                    WHEN SectionExplanationText IS NULL OR LTRIM(RTRIM(SectionExplanationText)) = ''
+                    THEN ? ELSE SectionEntryTimestamp END,
+                UpdatedAt       = ?,
+                UpdatedByUserID = ?
+            WHERE SubcaseID = ?
+              AND SectionForceClosedAt IS NULL
+        """
+        cursor.execute(query, (
+            now,                # SectionForceClosedAt
+            auto_text,          # SectionExplanationText (if empty)
+            system_user_id,     # SectionEnteredByUserID (if empty)
+            'SECTION_ADMIN',    # SectionEnteredForRole (if empty)
+            'AUTO_FORCE_CLOSE', # SectionEntryMode (if empty)
+            now,                # SectionEntryTimestamp (if empty)
+            now,                # UpdatedAt
+            system_user_id,     # UpdatedByUserID
+            subcase_id
+        ))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def force_close_department(subcase_id: int, auto_text: str, system_user_id: int = 1) -> bool:
+    """
+    Mark a subcase Department-force-closed due to an expired DepartmentDeadlineAt.
+
+    - Sets DepartmentForceClosedAt = now and DepartmentLateReply = 1.
+    - Transitions Status to 'FORCE_CLOSED_AT_DEPARTMENT' (case remains visible
+      and escalates to Administration responsibility via the
+      pending-for-administration query).
+    - If DepartmentExplanationText is empty, fills it with auto_text and tags
+      the entry with DepartmentEntryMode = 'AUTO_FORCE_CLOSE'. A real existing
+      answer is never overwritten.
+    - Idempotent: WHERE DepartmentForceClosedAt IS NULL guard.
+
+    Returns:
+        True if a row was updated, False if not found or already force-closed.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        now = datetime.now()
+        query = """
+            UPDATE dbo.APP_AdministrativeSubcase
+            SET DepartmentForceClosedAt = ?,
+                DepartmentLateReply      = 1,
+                Status                   = 'FORCE_CLOSED_AT_DEPARTMENT',
+                DepartmentExplanationText = CASE
+                    WHEN DepartmentExplanationText IS NULL OR LTRIM(RTRIM(DepartmentExplanationText)) = ''
+                    THEN ? ELSE DepartmentExplanationText END,
+                DepartmentEnteredByUserID = CASE
+                    WHEN DepartmentExplanationText IS NULL OR LTRIM(RTRIM(DepartmentExplanationText)) = ''
+                    THEN ? ELSE DepartmentEnteredByUserID END,
+                DepartmentEnteredForRole = CASE
+                    WHEN DepartmentExplanationText IS NULL OR LTRIM(RTRIM(DepartmentExplanationText)) = ''
+                    THEN ? ELSE DepartmentEnteredForRole END,
+                DepartmentEntryMode = CASE
+                    WHEN DepartmentExplanationText IS NULL OR LTRIM(RTRIM(DepartmentExplanationText)) = ''
+                    THEN ? ELSE DepartmentEntryMode END,
+                DepartmentEntryTimestamp = CASE
+                    WHEN DepartmentExplanationText IS NULL OR LTRIM(RTRIM(DepartmentExplanationText)) = ''
+                    THEN ? ELSE DepartmentEntryTimestamp END,
+                UpdatedAt       = ?,
+                UpdatedByUserID = ?
+            WHERE SubcaseID = ?
+              AND DepartmentForceClosedAt IS NULL
+        """
+        cursor.execute(query, (
+            now,                   # DepartmentForceClosedAt
+            auto_text,             # DepartmentExplanationText (if empty)
+            system_user_id,        # DepartmentEnteredByUserID (if empty)
+            'DEPARTMENT_ADMIN',    # DepartmentEnteredForRole (if empty)
+            'AUTO_FORCE_CLOSE',    # DepartmentEntryMode (if empty)
+            now,                   # DepartmentEntryTimestamp (if empty)
+            now,                   # UpdatedAt
+            system_user_id,        # UpdatedByUserID
+            subcase_id
+        ))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def force_close_administration(subcase_id: int, auto_text: str, system_user_id: int = 1) -> bool:
+    """
+    Mark a subcase Administration-force-closed due to an expired
+    AdministrationDeadlineAt.
+
+    - Sets AdministrationForceClosedAt = now and AdministrationLateReply = 1.
+    - Transitions Status to 'FORCE_CLOSED_AT_ADMINISTRATION' (final status -
+      case remains visible for Administration/Supervisor follow-up, it is
+      never deleted or hidden).
+    - If AdministrationExplanationText is empty, fills it with auto_text and
+      tags the entry with AdministrationEntryMode = 'AUTO_FORCE_CLOSE'. A real
+      existing answer is never overwritten.
+    - Idempotent: WHERE AdministrationForceClosedAt IS NULL guard.
+
+    Returns:
+        True if a row was updated, False if not found or already force-closed.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        now = datetime.now()
+        query = """
+            UPDATE dbo.APP_AdministrativeSubcase
+            SET AdministrationForceClosedAt = ?,
+                AdministrationLateReply      = 1,
+                Status                       = 'FORCE_CLOSED_AT_ADMINISTRATION',
+                AdministrationExplanationText = CASE
+                    WHEN AdministrationExplanationText IS NULL OR LTRIM(RTRIM(AdministrationExplanationText)) = ''
+                    THEN ? ELSE AdministrationExplanationText END,
+                AdministrationEnteredByUserID = CASE
+                    WHEN AdministrationExplanationText IS NULL OR LTRIM(RTRIM(AdministrationExplanationText)) = ''
+                    THEN ? ELSE AdministrationEnteredByUserID END,
+                AdministrationEnteredForRole = CASE
+                    WHEN AdministrationExplanationText IS NULL OR LTRIM(RTRIM(AdministrationExplanationText)) = ''
+                    THEN ? ELSE AdministrationEnteredForRole END,
+                AdministrationEntryMode = CASE
+                    WHEN AdministrationExplanationText IS NULL OR LTRIM(RTRIM(AdministrationExplanationText)) = ''
+                    THEN ? ELSE AdministrationEntryMode END,
+                AdministrationEntryTimestamp = CASE
+                    WHEN AdministrationExplanationText IS NULL OR LTRIM(RTRIM(AdministrationExplanationText)) = ''
+                    THEN ? ELSE AdministrationEntryTimestamp END,
+                UpdatedAt       = ?,
+                UpdatedByUserID = ?
+            WHERE SubcaseID = ?
+              AND AdministrationForceClosedAt IS NULL
+        """
+        cursor.execute(query, (
+            now,                      # AdministrationForceClosedAt
+            auto_text,                # AdministrationExplanationText (if empty)
+            system_user_id,           # AdministrationEnteredByUserID (if empty)
+            'ADMINISTRATION_ADMIN',   # AdministrationEnteredForRole (if empty)
+            'AUTO_FORCE_CLOSE',       # AdministrationEntryMode (if empty)
+            now,                      # AdministrationEntryTimestamp (if empty)
+            now,                      # UpdatedAt
+            system_user_id,           # UpdatedByUserID
+            subcase_id
+        ))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_overdue_subcases_for_level(deadline_column: str, pending_statuses: List[str]) -> List[Dict[str, Any]]:
+    """
+    Find subcases whose <Level>DeadlineAt has expired and whose Status is
+    still one of the "pending" statuses for that level (i.e. the case has not
+    yet been force-closed at this level).
+
+    Joins to APP_IncidentCase to expose RecordTypeID and IsMorbidity so the
+    service layer can exclude Notice (RecordTypeID=2) and Morbidity
+    (IsMorbidity=1) cases. Seasonal-report subcases have no
+    IncidentRequestCaseID, so the join is a LEFT JOIN and RecordTypeID /
+    IsMorbidity come back NULL for them (treated as "not Notice, not
+    Morbidity" by the service layer).
+
+    Args:
+        deadline_column: 'SectionDeadlineAt', 'DepartmentDeadlineAt' or
+            'AdministrationDeadlineAt'
+        pending_statuses: Status values that mean "this level is still
+            responsible / pending" for the given deadline column.
+
+    Returns:
+        List of dicts with SubcaseID, RecordTypeID, IsMorbidity.
+    """
+    if deadline_column not in (
+        "SectionDeadlineAt", "DepartmentDeadlineAt", "AdministrationDeadlineAt"
+    ):
+        raise ValueError(f"Unsupported deadline column: {deadline_column}")
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        placeholders = ", ".join("?" for _ in pending_statuses)
+        query = f"""
+            SELECT s.SubcaseID, c.RecordTypeID, c.IsMorbidity
+            FROM dbo.APP_AdministrativeSubcase s
+            LEFT JOIN dbo.APP_IncidentCase c
+                ON s.IncidentRequestCaseID = c.IncidentRequestCaseID
+            WHERE s.{deadline_column} IS NOT NULL
+              AND s.{deadline_column} < ?
+              AND s.Status IN ({placeholders})
+        """
+        cursor.execute(query, (datetime.now(), *pending_statuses))
+        rows = cursor.fetchall()
+        return [
+            {
+                "SubcaseID": row.SubcaseID,
+                "RecordTypeID": row.RecordTypeID,
+                "IsMorbidity": row.IsMorbidity,
+            }
+            for row in rows
+        ]
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ============================================================
+# GIVE MORE TIME WORKFLOW (HCAT Automatic Force Close Policy - Session 5)
+# ============================================================
+
+def get_subcase_deadline_state(subcase_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Fetch per-level deadline / force-close / late-reply / extra-time-grant
+    state for a subcase.
+
+    Used by the Give More Time workflow to validate the current workflow
+    level before restoration and to return the updated workflow state to the
+    caller afterwards.
+
+    Returns:
+        Dict with subcase_id, status, target_org_unit_id and, for each of
+        section/department/administration: deadline_at, force_closed_at,
+        late_reply, extra_time_granted_at, extra_time_granted_by.
+        None if the subcase does not exist.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        query = """
+            SELECT
+                SubcaseID, Status, TargetOrgUnitID,
+                SectionDeadlineAt, SectionForceClosedAt, SectionLateReply,
+                SectionExtraTimeGrantedAt, SectionExtraTimeGrantedBy,
+                DepartmentDeadlineAt, DepartmentForceClosedAt, DepartmentLateReply,
+                DepartmentExtraTimeGrantedAt, DepartmentExtraTimeGrantedBy,
+                AdministrationDeadlineAt, AdministrationForceClosedAt, AdministrationLateReply,
+                AdministrationExtraTimeGrantedAt, AdministrationExtraTimeGrantedBy
+            FROM dbo.APP_AdministrativeSubcase
+            WHERE SubcaseID = ?
+        """
+        cursor.execute(query, (subcase_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+
+        return {
+            "subcase_id": row.SubcaseID,
+            "status": row.Status,
+            "target_org_unit_id": row.TargetOrgUnitID,
+            "section": {
+                "deadline_at": row.SectionDeadlineAt,
+                "force_closed_at": row.SectionForceClosedAt,
+                "late_reply": bool(row.SectionLateReply),
+                "extra_time_granted_at": row.SectionExtraTimeGrantedAt,
+                "extra_time_granted_by": row.SectionExtraTimeGrantedBy,
+            },
+            "department": {
+                "deadline_at": row.DepartmentDeadlineAt,
+                "force_closed_at": row.DepartmentForceClosedAt,
+                "late_reply": bool(row.DepartmentLateReply),
+                "extra_time_granted_at": row.DepartmentExtraTimeGrantedAt,
+                "extra_time_granted_by": row.DepartmentExtraTimeGrantedBy,
+            },
+            "administration": {
+                "deadline_at": row.AdministrationDeadlineAt,
+                "force_closed_at": row.AdministrationForceClosedAt,
+                "late_reply": bool(row.AdministrationLateReply),
+                "extra_time_granted_at": row.AdministrationExtraTimeGrantedAt,
+                "extra_time_granted_by": row.AdministrationExtraTimeGrantedBy,
+            },
+        }
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def give_section_more_time(subcase_id: int, granted_by_user_id: int, deadline_days: int) -> bool:
+    """
+    Restore a Section-force-closed subcase to active Section responsibility
+    (HCAT Give More Time workflow - Session 5).
+
+    - Sets SectionDeadlineAt = now + deadline_days (deadline restarts from now).
+    - Sets SectionExtraTimeGrantedAt = now and SectionExtraTimeGrantedBy =
+      granted_by_user_id (history of who granted the extension).
+    - Transitions Status back to 'SUBMITTED_TO_SECTION' (Section's normal
+      pending status) - Section becomes responsible/editable again.
+    - SectionForceClosedAt and SectionLateReply are left UNCHANGED - the
+      force-close history and late-reply flag are preserved permanently.
+    - Guard: WHERE Status = 'FORCE_CLOSED_AT_SECTION' prevents restoring a
+      subcase that is not currently force-closed at Section level and
+      prevents double-restoration (status no longer matches after the first
+      restore).
+
+    Returns:
+        True if a row was updated, False if the subcase is not currently
+        FORCE_CLOSED_AT_SECTION (not found, wrong level, or already restored).
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        now = datetime.now()
+        new_deadline = now + timedelta(days=deadline_days)
+        query = """
+            UPDATE dbo.APP_AdministrativeSubcase
+            SET SectionDeadlineAt        = ?,
+                SectionExtraTimeGrantedAt = ?,
+                SectionExtraTimeGrantedBy = ?,
+                Status                   = 'SUBMITTED_TO_SECTION',
+                UpdatedAt       = ?,
+                UpdatedByUserID = ?
+            WHERE SubcaseID = ?
+              AND Status = 'FORCE_CLOSED_AT_SECTION'
+        """
+        cursor.execute(query, (
+            new_deadline,        # SectionDeadlineAt
+            now,                 # SectionExtraTimeGrantedAt
+            granted_by_user_id,  # SectionExtraTimeGrantedBy
+            now,                 # UpdatedAt
+            granted_by_user_id,  # UpdatedByUserID
+            subcase_id
+        ))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def give_department_more_time(subcase_id: int, granted_by_user_id: int, deadline_days: int) -> bool:
+    """
+    Restore a Department-force-closed subcase to active Department
+    responsibility (HCAT Give More Time workflow - Session 5).
+
+    - Sets DepartmentDeadlineAt = now + deadline_days (deadline restarts from now).
+    - Sets DepartmentExtraTimeGrantedAt = now and DepartmentExtraTimeGrantedBy =
+      granted_by_user_id.
+    - Transitions Status back to 'SECTION_ACCEPTED_PENDING_DEPT' (Department's
+      normal pending status) - Department becomes responsible/editable again.
+    - DepartmentForceClosedAt and DepartmentLateReply are left UNCHANGED -
+      force-close history and late-reply flag are preserved permanently.
+    - Guard: WHERE Status = 'FORCE_CLOSED_AT_DEPARTMENT' prevents restoring a
+      subcase not currently force-closed at Department level and prevents
+      double-restoration.
+
+    Returns:
+        True if a row was updated, False if the subcase is not currently
+        FORCE_CLOSED_AT_DEPARTMENT (not found, wrong level, or already restored).
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        now = datetime.now()
+        new_deadline = now + timedelta(days=deadline_days)
+        query = """
+            UPDATE dbo.APP_AdministrativeSubcase
+            SET DepartmentDeadlineAt        = ?,
+                DepartmentExtraTimeGrantedAt = ?,
+                DepartmentExtraTimeGrantedBy = ?,
+                Status                      = 'SECTION_ACCEPTED_PENDING_DEPT',
+                UpdatedAt       = ?,
+                UpdatedByUserID = ?
+            WHERE SubcaseID = ?
+              AND Status = 'FORCE_CLOSED_AT_DEPARTMENT'
+        """
+        cursor.execute(query, (
+            new_deadline,        # DepartmentDeadlineAt
+            now,                 # DepartmentExtraTimeGrantedAt
+            granted_by_user_id,  # DepartmentExtraTimeGrantedBy
+            now,                 # UpdatedAt
+            granted_by_user_id,  # UpdatedByUserID
+            subcase_id
+        ))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def give_administration_more_time(subcase_id: int, granted_by_user_id: int, deadline_days: int) -> bool:
+    """
+    Restore an Administration-force-closed subcase to active Administration
+    responsibility (HCAT Give More Time workflow - Session 5).
+
+    - Sets AdministrationDeadlineAt = now + deadline_days (deadline restarts
+      from now).
+    - Sets AdministrationExtraTimeGrantedAt = now and
+      AdministrationExtraTimeGrantedBy = granted_by_user_id.
+    - Transitions Status back to 'DEPT_ACCEPTED_PENDING_ADMIN'
+      (Administration's normal pending status) - Administration becomes
+      responsible/editable again.
+    - AdministrationForceClosedAt and AdministrationLateReply are left
+      UNCHANGED - force-close history and late-reply flag are preserved
+      permanently.
+    - Guard: WHERE Status = 'FORCE_CLOSED_AT_ADMINISTRATION' prevents
+      restoring a subcase not currently force-closed at Administration level
+      and prevents double-restoration.
+
+    Returns:
+        True if a row was updated, False if the subcase is not currently
+        FORCE_CLOSED_AT_ADMINISTRATION (not found, wrong level, or already
+        restored).
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        now = datetime.now()
+        new_deadline = now + timedelta(days=deadline_days)
+        query = """
+            UPDATE dbo.APP_AdministrativeSubcase
+            SET AdministrationDeadlineAt        = ?,
+                AdministrationExtraTimeGrantedAt = ?,
+                AdministrationExtraTimeGrantedBy = ?,
+                Status                          = 'DEPT_ACCEPTED_PENDING_ADMIN',
+                UpdatedAt       = ?,
+                UpdatedByUserID = ?
+            WHERE SubcaseID = ?
+              AND Status = 'FORCE_CLOSED_AT_ADMINISTRATION'
+        """
+        cursor.execute(query, (
+            new_deadline,        # AdministrationDeadlineAt
+            now,                 # AdministrationExtraTimeGrantedAt
+            granted_by_user_id,  # AdministrationExtraTimeGrantedBy
+            now,                 # UpdatedAt
+            granted_by_user_id,  # UpdatedByUserID
+            subcase_id
+        ))
+        conn.commit()
+        return cursor.rowcount > 0
     finally:
         cursor.close()
         conn.close()

@@ -228,7 +228,18 @@ def create_record(data: Dict[str, Any], save_mode: str = 'workflow') -> Dict[str
             is_inpatient_val = 1
         
         print(f"[DEBUG] is_inpatient raw: {data.get('is_inpatient')} (type: {type(raw).__name__}) -> stored: {is_inpatient_val}")
-        
+
+        # Safe, strict conversion for is_morbidity (MUST be boolean, default 0)
+        raw_morbidity = data.get("is_morbidity", False)
+        if isinstance(raw_morbidity, bool):
+            is_morbidity_val = 1 if raw_morbidity else 0
+        elif isinstance(raw_morbidity, str):
+            is_morbidity_val = 1 if raw_morbidity.lower() in ("yes", "true", "1") else 0
+        elif isinstance(raw_morbidity, int):
+            is_morbidity_val = 1 if raw_morbidity == 1 else 0
+        else:
+            is_morbidity_val = 0
+
         clinical_risk_type_id = data.get('clinical_risk_type_id')
         feedback_intent_type_id = data.get('feedback_intent_type_id')
 
@@ -320,6 +331,7 @@ def create_record(data: Dict[str, Any], save_mode: str = 'workflow') -> Dict[str
             "IssuingOrgUnitID": data.get('issuing_department_id'),
             "CreatedByUserID": 1,
             "isINPatient": is_inpatient_val,
+            "IsMorbidity": is_morbidity_val,
             "ClinicalRiskTypeID": clinical_risk_type_id,
             "FeedbackIntentTypeID": feedback_intent_type_id,
             "BuildingID": data.get('building_id') or building_id,
@@ -1061,6 +1073,7 @@ def create_incident_with_cases(payload: Dict[str, Any], save_mode: str = 'workfl
             "feedback_intent_type_id": common.get("feedback_intent_type_id"),
             "patient_name": common.get("patient_name") or case_data.get("patient_name") or "",
             "is_inpatient": common.get("is_inpatient", True),
+            "is_morbidity": case_data.get("is_morbidity", common.get("is_morbidity", False)),
             "source_id": case_data.get("source_id") or common.get("source_id"),
             "building_id": case_data.get("building_id") or common.get("building_id"),
             "doctors": case_data.get("doctors") or common.get("doctors"),

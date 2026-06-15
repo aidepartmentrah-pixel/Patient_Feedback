@@ -840,6 +840,140 @@ async def create_system_setting(
         })
 
 
+# ==================== AUTOMATIC FORCE CLOSE POLICY (HCAT Session 6) ====================
+
+FORCE_CLOSE_POLICY_KEYS = [
+    "automatic_force_close_enabled",
+    "section_deadline_days",
+    "department_deadline_days",
+    "administration_deadline_days",
+]
+
+
+class ForceClosePolicyUpdateRequest(BaseModel):
+    """Request model for updating the Automatic Force Close Policy settings."""
+    automatic_force_close_enabled: bool
+    section_deadline_days: int
+    department_deadline_days: int
+    administration_deadline_days: int
+
+
+@router.get("/force-close-policy")
+async def get_force_close_policy(
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """
+    Get the Automatic Force Close Policy settings.
+
+    Returns the 4 settings that control the automatic force-close engine:
+    - `automatic_force_close_enabled` (bool)
+    - `section_deadline_days` (int)
+    - `department_deadline_days` (int)
+    - `administration_deadline_days` (int)
+
+    Restricted to SOFTWARE_ADMIN and COMPLAINT_SUPERVISOR.
+    """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+
+    try:
+        settings = {key: SettingsService.get_setting(key) for key in FORCE_CLOSE_POLICY_KEYS}
+
+        return {
+            "automatic_force_close_enabled": settings["automatic_force_close_enabled"]["setting_value"].strip().lower() == "true",
+            "section_deadline_days": int(settings["section_deadline_days"]["setting_value"]),
+            "department_deadline_days": int(settings["department_deadline_days"]["setting_value"]),
+            "administration_deadline_days": int(settings["administration_deadline_days"]["setting_value"]),
+            "labels": {
+                key: {"label": setting["label"], "label_ar": setting["label_ar"]}
+                for key, setting in settings.items()
+            },
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail={
+            "error": "setting_not_found",
+            "message": str(ve),
+            "message_ar": "أحد إعدادات سياسة الإغلاق القسري التلقائي غير موجود"
+        })
+    except Exception as e:
+        raise HTTPException(status_code=400, detail={
+            "error": "force_close_policy_fetch_failed",
+            "message": str(e),
+            "message_ar": f"فشل جلب سياسة الإغلاق القسري التلقائي: {str(e)}"
+        })
+
+
+@router.put("/force-close-policy")
+async def update_force_close_policy(
+    request: ForceClosePolicyUpdateRequest = Body(...),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """
+    Update the Automatic Force Close Policy settings.
+
+    **Request Body:**
+    ```json
+    {
+      "automatic_force_close_enabled": true,
+      "section_deadline_days": 10,
+      "department_deadline_days": 7,
+      "administration_deadline_days": 7
+    }
+    ```
+
+    Validation: `section_deadline_days`, `department_deadline_days` and
+    `administration_deadline_days` must be positive integers (minimum 1 day).
+
+    Restricted to SOFTWARE_ADMIN and COMPLAINT_SUPERVISOR.
+    """
+    require_logged_in(current_user)
+    require_software_admin(current_user)
+
+    deadline_fields = {
+        "section_deadline_days": request.section_deadline_days,
+        "department_deadline_days": request.department_deadline_days,
+        "administration_deadline_days": request.administration_deadline_days,
+    }
+    for key, value in deadline_fields.items():
+        if value < 1:
+            raise HTTPException(status_code=400, detail={
+                "error": "invalid_deadline_days",
+                "message": f"'{key}' must be a positive integer (minimum 1 day), got {value}",
+                "message_ar": "يجب أن تكون عدد أيام المهلة عددا صحيحا أكبر من صفر (الحد الأدنى يوم واحد)"
+            })
+
+    try:
+        SettingsService.update_setting(
+            "automatic_force_close_enabled",
+            "true" if request.automatic_force_close_enabled else "false",
+            updated_by=None
+        )
+        for key, value in deadline_fields.items():
+            SettingsService.update_setting(key, str(value), updated_by=None)
+
+        return {
+            "success": True,
+            "automatic_force_close_enabled": request.automatic_force_close_enabled,
+            "section_deadline_days": request.section_deadline_days,
+            "department_deadline_days": request.department_deadline_days,
+            "administration_deadline_days": request.administration_deadline_days,
+            "message": "Automatic Force Close Policy updated successfully",
+            "message_ar": "تم تحديث سياسة الإغلاق القسري التلقائي بنجاح"
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail={
+            "error": "setting_not_found",
+            "message": str(ve),
+            "message_ar": "أحد إعدادات سياسة الإغلاق القسري التلقائي غير موجود"
+        })
+    except Exception as e:
+        raise HTTPException(status_code=400, detail={
+            "error": "force_close_policy_update_failed",
+            "message": str(e),
+            "message_ar": f"فشل تحديث سياسة الإغلاق القسري التلقائي: {str(e)}"
+        })
+
+
 # ==================== B8: DOCTORS - DELETE ====================
 
 @router.delete("/doctors/{doctor_id}")

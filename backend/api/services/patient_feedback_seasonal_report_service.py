@@ -673,6 +673,19 @@ def generate_patient_feedback_seasonal_word(
     rca_intro_run.font.name = 'Calibri'
     rca_intro.paragraph_format.line_spacing = 1.5
 
+    rca_disclaimer = doc.add_paragraph()
+    rca_disclaimer_run = rca_disclaimer.add_run(
+        "تمثل هذه البيانات تصنيف الأسباب الجذرية والإجراءات التصحيحية المرتبطة بها "
+        "وفقاً لمنهجية RCA، ولا تعكس ما إذا تم تنفيذ الإجراء أو مدى فعاليته، "
+        "حيث يتم تناول ذلك في تقارير أخرى."
+    )
+    rca_disclaimer_run.font.size = Pt(10)
+    rca_disclaimer_run.font.name = 'Calibri'
+    rca_disclaimer_run.font.italic = True
+    rca_disclaimer_run.font.color.rgb = RGBColor(120, 120, 120)
+    rca_disclaimer_run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+    rca_disclaimer.paragraph_format.line_spacing = 1.5
+
     doc.add_paragraph()
 
     by_category = rca_stats.get('by_category', [])

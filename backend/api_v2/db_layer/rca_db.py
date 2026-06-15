@@ -491,6 +491,70 @@ def get_suggestions_grouped_by_category(subcase_id: int) -> List[Dict[str, Any]]
     return list(categories.values())
 
 
+def get_pairs_grouped_by_category(subcase_id: int) -> List[Dict[str, Any]]:
+    """
+    Returns active Cause/Corrective-Action pairs grouped by category.
+    Each pair carries an is_selected flag based on current selections
+    for the given subcase (true if either half of the pair is selected).
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            cat.CategoryID, cat.CategoryNameEn, cat.CategoryNameAr,
+            cat.SortOrder AS CategorySortOrder,
+            c.SuggestionID AS PairID, a.SuggestionID AS ActionSuggestionID,
+            c.SuggestionTextAr AS CauseTextAr, c.SuggestionTextEn AS CauseTextEn,
+            a.SuggestionTextAr AS ActionTextAr, a.SuggestionTextEn AS ActionTextEn,
+            c.SortOrder AS PairSortOrder,
+            CASE WHEN selc.SuggestionID IS NOT NULL OR sela.SuggestionID IS NOT NULL
+                 THEN 1 ELSE 0 END AS IsSelected
+        FROM dbo.APP_RCAFactorCategory cat
+        JOIN dbo.APP_RCASuggestion c ON c.CategoryID = cat.CategoryID AND c.SuggestionType = 'CAUSE'
+        JOIN dbo.APP_RCASuggestion a ON a.SuggestionID = c.PairedSuggestionID AND a.SuggestionType = 'ACTION_ITEM'
+        LEFT JOIN dbo.APP_SubcaseRCASuggestionSelection selc
+            ON selc.SuggestionID = c.SuggestionID AND selc.SubcaseID = ?
+        LEFT JOIN dbo.APP_SubcaseRCASuggestionSelection sela
+            ON sela.SuggestionID = a.SuggestionID AND sela.SubcaseID = ?
+        WHERE cat.IsActive = 1 AND c.IsActive = 1 AND a.IsActive = 1
+        ORDER BY cat.SortOrder, cat.CategoryID, c.SortOrder, c.SuggestionID
+        """,
+        (subcase_id, subcase_id)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    categories: Dict[int, Dict[str, Any]] = {}
+    for row in rows:
+        (cat_id, cat_name_en, cat_name_ar, cat_sort,
+         pair_id, action_id, cause_ar, cause_en, action_ar, action_en,
+         pair_sort, is_selected) = row
+
+        if cat_id not in categories:
+            categories[cat_id] = {
+                "category_id": cat_id,
+                "category_name_en": cat_name_en,
+                "category_name_ar": cat_name_ar,
+                "sort_order": cat_sort,
+                "pairs": [],
+            }
+
+        categories[cat_id]["pairs"].append({
+            "pair_id": pair_id,
+            "action_suggestion_id": action_id,
+            "cause_text_ar": cause_ar,
+            "cause_text_en": cause_en,
+            "action_text_ar": action_ar,
+            "action_text_en": action_en,
+            "sort_order": pair_sort,
+            "is_selected": bool(is_selected),
+        })
+
+    return list(categories.values())
+
+
 # ============================================================
 # SELECTIONS: read / save
 # ============================================================

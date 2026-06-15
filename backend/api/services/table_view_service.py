@@ -730,6 +730,7 @@ def get_complaint_by_id(complaint_id: int) -> Optional[Dict[str, Any]]:
             c.CreatedAt as created_at,
             c.CreatedByUserID as created_by_user_id,
             c.isINPatient as is_inpatient,
+            c.IsMorbidity as is_morbidity,
 
             -- Incident parent
             c.incident_id as incident_id,
