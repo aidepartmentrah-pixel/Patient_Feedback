@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 from fastapi import APIRouter, Query, HTTPException, Depends
 import traceback
-from ..services.dashboard_service import get_dashboard_stats, get_dashboard_hierarchy
+from ..services.dashboard_service import get_dashboard_stats, get_dashboard_hierarchy, get_operational_summary
 from ..dependencies.user_context import get_current_user
 from ..schemas.auth_models import CurrentUser
 from ..utils.guards import require_unit_in_scope
@@ -199,6 +199,86 @@ def dashboard_date_bounds(
         }
     except Exception as e:
         print(f"Dashboard date bounds error - scope: {scope}, admin: {administration_id}, dept: {department_id}, section: {section_id}")
+        print(f"Error: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+# =========================================================
+# OPERATIONAL DASHBOARD SUMMARY ENDPOINT (HCAT Perf Monitoring - Session 2)
+# =========================================================
+
+@router.get("/operational-summary")
+def dashboard_operational_summary(
+    current_user: CurrentUser = Depends(get_current_user),
+    scope: str = Query(..., description="hospital | administration | department | section"),
+    administration_id: int | None = Query(None),
+    department_id: int | None = Query(None),
+    section_id: int | None = Query(None),
+):
+    """
+    Operational dashboard summary: open / closed / force closed / late replies /
+    currently overdue / extra time granted.
+
+    Uses identical scope resolution and RBAC filtering as dashboard stats.
+    """
+
+    # -------------------------
+    # Validate scope logic (same as stats endpoint)
+    # -------------------------
+    if scope not in {"hospital", "administration", "department", "section"}:
+        raise HTTPException(status_code=400, detail="Invalid scope")
+
+    if scope == "administration" and administration_id is None:
+        raise HTTPException(status_code=400, detail="administration_id required")
+
+    if scope == "department" and department_id is None:
+        raise HTTPException(status_code=400, detail="department_id required")
+
+    if scope == "section" and section_id is None:
+        raise HTTPException(status_code=400, detail="section_id required")
+
+    # -------------------------
+    # Enforce organizational scope (same as stats endpoint)
+    # -------------------------
+    if scope == "administration" and administration_id is not None:
+        require_unit_in_scope(current_user, administration_id)
+
+    if scope == "department" and department_id is not None:
+        require_unit_in_scope(current_user, department_id)
+
+    if scope == "section" and section_id is not None:
+        require_unit_in_scope(current_user, section_id)
+
+    # -------------------------
+    # Determine Requested Scope (INLINE - copied from get_dashboard_stats logic)
+    # -------------------------
+    from ..services import org_tree_service
+
+    if scope == "section" and section_id is not None:
+        requested_unit_ids = {section_id}
+
+    elif scope == "department" and department_id is not None:
+        requested_unit_ids = org_tree_service.get_descendants(department_id)
+
+    elif scope == "administration" and administration_id is not None:
+        requested_unit_ids = org_tree_service.get_descendants(administration_id)
+
+    else:
+        requested_unit_ids = current_user.allowed_unit_ids
+
+    # -------------------------
+    # RBAC Safety: Intersect with allowed scope
+    # -------------------------
+    scope_unit_ids = list(requested_unit_ids & current_user.allowed_unit_ids)
+
+    # -------------------------
+    # Call service
+    # -------------------------
+    try:
+        return get_operational_summary(scope_unit_ids)
+    except Exception as e:
+        print(f"Dashboard operational summary error - scope: {scope}, admin: {administration_id}, dept: {department_id}, section: {section_id}")
         print(f"Error: {str(e)}")
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

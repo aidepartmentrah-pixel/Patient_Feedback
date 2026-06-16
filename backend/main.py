@@ -85,6 +85,8 @@ from api.routers.policy_router import router as policy_router
 from api.routers.rca_settings_router import router as rca_settings_router
 # RCA Inbox Router (section inbox RCA read/save)
 from api_v2.routers.rca_inbox_router import router as rca_inbox_router
+# Publication Batch Router (HCAT Performance & Delay Monitoring - Session 1)
+from api_v2.routers.publication_batch_router import router as publication_batch_router
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
@@ -216,6 +218,7 @@ app.include_router(import_router)
 app.include_router(policy_router)
 app.include_router(rca_settings_router)
 app.include_router(rca_inbox_router)
+app.include_router(publication_batch_router)
 
 
 # ==================== BOOTSTRAP MIDDLEWARE ====================

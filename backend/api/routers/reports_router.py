@@ -5,7 +5,7 @@ Handles seasonal reports and report exports.
 """
 
 # Standard library imports
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional, Dict, Any, Literal
 import uuid
 import traceback
@@ -104,7 +104,7 @@ async def search_patients_endpoint(
     require_logged_in(current_user)
     
     result = search_patients(q, limit)
-    
+
     if not result.get("success", False):
         raise HTTPException(
             status_code=500,
@@ -113,8 +113,114 @@ async def search_patients_endpoint(
                 "message": result.get("error", "Failed to search patients")
             }
         )
-    
+
     return result
+
+
+# ============================================================
+# RESPONSE PERFORMANCE REPORT (HCAT Performance & Delay Monitoring - Session 3)
+# ============================================================
+
+@router.get("/response-performance")
+def response_performance_report(
+    date_from: Optional[date] = Query(None, description="Inclusive start date (YYYY-MM-DD). Default: first day of current month"),
+    date_to: Optional[date] = Query(None, description="Inclusive end date (YYYY-MM-DD). Default: today"),
+    level: Literal["All", "Administration", "Department", "Section"] = Query("All", description="Hierarchy level filter"),
+    target_unit_id: Optional[int] = Query(None, description="Restrict the report to a single organizational unit"),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """
+    Response Performance Report (تقرير أداء الردود).
+
+    Historical report: for every Administration/Department/Section unit that
+    has at least one published case assigned to it in the selected date
+    range, returns Total Assigned, Answered On Time, Answered Late, Force
+    Closed, Extra Time Granted, Still Open, Average Response Days, Response
+    Rate, Late Rate and a simple Performance Label.
+
+    This is NOT a live blockage report - see response_performance_service.py
+    for the full metric definitions and documented assumptions.
+    """
+    require_logged_in(current_user)
+
+    from ..services.response_performance_service import get_response_performance_report
+
+    # -------------------------
+    # Default date range: current month
+    # -------------------------
+    today = date.today()
+    if date_to is None:
+        date_to = today
+    if date_from is None:
+        date_from = today.replace(day=1)
+
+    if date_from > date_to:
+        raise HTTPException(status_code=400, detail="date_from must be before or equal to date_to")
+
+    date_from_dt = datetime(date_from.year, date_from.month, date_from.day)
+    date_to_exclusive_dt = datetime(date_to.year, date_to.month, date_to.day) + timedelta(days=1)
+
+    # -------------------------
+    # RBAC scope
+    # -------------------------
+    if target_unit_id is not None:
+        require_unit_in_scope(current_user, target_unit_id)
+
+    scope_unit_ids = list(current_user.allowed_unit_ids)
+
+    try:
+        return get_response_performance_report(
+            scope_unit_ids=scope_unit_ids,
+            date_from=date_from_dt,
+            date_to_exclusive=date_to_exclusive_dt,
+            level=level,
+            target_unit_id=target_unit_id,
+        )
+    except Exception as e:
+        logger.exception("Response performance report error")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+# ============================================================
+# CURRENT DELAY / BLOCKAGE REPORT (HCAT Performance & Delay Monitoring - Session 4)
+# ============================================================
+
+@router.get("/current-delay")
+def current_delay_report(
+    level: Literal["All", "Administration", "Department", "Section"] = Query("All", description="Hierarchy level filter"),
+    target_unit_id: Optional[int] = Query(None, description="Restrict the report to a single organizational unit"),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """
+    Current Delay / Blockage Report (تقرير التأخير الحالي).
+
+    LIVE operational report: for every unit in scope with at least one
+    assigned subcase, returns Currently Pending, Currently Overdue, Force
+    Closed At Unit, Extra Time Granted, Oldest Pending Days and Average
+    Pending Days. There is no date range - this reflects the CURRENT state.
+
+    This is NOT a historical report - see current_delay_service.py for the
+    full metric definitions and documented assumptions.
+    """
+    require_logged_in(current_user)
+
+    from ..services.current_delay_service import get_current_delay_report
+
+    if target_unit_id is not None:
+        require_unit_in_scope(current_user, target_unit_id)
+
+    scope_unit_ids = list(current_user.allowed_unit_ids)
+
+    try:
+        return get_current_delay_report(
+            scope_unit_ids=scope_unit_ids,
+            level=level,
+            target_unit_id=target_unit_id,
+        )
+    except Exception as e:
+        logger.exception("Current delay report error")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
 
 # ============================================================
 # REQUEST/RESPONSE MODELS

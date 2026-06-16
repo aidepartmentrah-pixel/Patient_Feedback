@@ -906,9 +906,11 @@ async def bulk_publish(
     Draft complaints in the list are silently skipped.
     """
     require_logged_in(current_user)
+    import logging
     from core.database import get_connection
     from api.constants.case_statuses import READY_TO_SEND_STATUS_ID, OPEN_STATUS_ID
     from api_v2.services.case_creation_service import create_subcases_for_incident
+    from api_v2.db_layer.publication_batch_db import create_publication_batch, create_publication_batch_case
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -928,28 +930,65 @@ async def bulk_publish(
         rows_to_publish = cursor.fetchall()
         published, failed = 0, 0
         errors = []
+        published_cases = []  # [{"incident_case_id": int, "subcases": [{"subcase_id": int, "target_org_unit_id": int}, ...]}]
 
         for row in rows_to_publish:
             cid = row[0]
             record_type = row[1]
             try:
-                create_subcases_for_incident(cid, current_user=None)
+                created_subcases = create_subcases_for_incident(cid, current_user=None)
                 cursor.execute(
                     "UPDATE dbo.APP_IncidentCase SET CaseStatusID = ? WHERE IncidentRequestCaseID = ?",
                     OPEN_STATUS_ID, cid
                 )
                 conn.commit()
                 published += 1
+                published_cases.append({"incident_case_id": cid, "subcases": created_subcases})
             except Exception as e:
                 failed += 1
                 errors.append({"case_id": cid, "error": str(e)})
+
+        # Passive publication batch tracking: record this Publish All operation
+        # if at least one case was published. Never allowed to affect the
+        # Publish All response/behavior above - failures here are swallowed.
+        publication_batch = None
+        if published > 0:
+            try:
+                batch = create_publication_batch(cursor, current_user.user_id, published)
+                for case in published_cases:
+                    subcases = case["subcases"]
+                    if subcases:
+                        for sub in subcases:
+                            create_publication_batch_case(
+                                cursor,
+                                batch["publication_batch_id"],
+                                case["incident_case_id"],
+                                administrative_subcase_id=sub.get("subcase_id"),
+                                target_org_unit_id=sub.get("target_org_unit_id"),
+                            )
+                    else:
+                        create_publication_batch_case(
+                            cursor,
+                            batch["publication_batch_id"],
+                            case["incident_case_id"],
+                        )
+                conn.commit()
+                publication_batch = {
+                    "publication_batch_id": batch["publication_batch_id"],
+                    "publication_serial": batch["publication_serial"],
+                    "published_at": batch["published_at"],
+                }
+            except Exception as e:
+                conn.rollback()
+                logging.getLogger(__name__).warning(f"PUBLICATION BATCH TRACKING: failed to record batch: {str(e)}")
 
         return {
             "success": True,
             "published": published,
             "failed": failed,
             "errors": errors,
-            "message": f"Published {published} complaint(s)"
+            "message": f"Published {published} complaint(s)",
+            "publication_batch": publication_batch,
         }
 
     finally:

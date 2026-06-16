@@ -1,7 +1,8 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from collections import Counter, defaultdict
 from ..db_layer import incident_case, admin_units, lookups
 from ..schemas.auth_models import CurrentUser
+from ..constants.case_statuses import OPEN_STATUS_ID, IN_PROGRESS_STATUS_ID, CLOSED_STATUS_ID
 from . import org_tree_service
 
 # =========================================================
@@ -176,6 +177,148 @@ def get_dashboard_date_bounds_for_units(unit_ids: list[int]) -> dict:
     return {
         "min_date": row[0] if row[0] else None,
         "max_date": row[1] if row[1] else None
+    }
+
+
+def get_operational_summary(scope_unit_ids: list[int]) -> dict:
+    """
+    Operational dashboard summary (HCAT Performance & Delay Monitoring - Session 2).
+
+    Single source of truth for the 6 operational dashboard cards. All counts
+    are scoped to scope_unit_ids (already RBAC-intersected by the caller).
+
+    Sources:
+    - open_cases / closed_cases: APP_IncidentCase.CaseStatusID, scoped by
+      IssuingOrgUnitID (same scoping field used by list_incident_cases_filtered).
+    - force_closed_cases: APP_AdministrativeSubcase rows where any of
+      Section/Department/AdministrationForceClosedAt IS NOT NULL. These
+      columns are set once (idempotency-guarded) and never cleared, so this
+      count remains stable as status transitions evolve.
+    - late_replies: APP_AdministrativeSubcase rows where any of
+      Section/Department/AdministrationLateReply = 1. Permanent historical
+      flags - never cleared by extra time grants or workflow completion.
+    - extra_time_granted: APP_AdministrativeSubcase rows where any of
+      Section/Department/AdministrationExtraTimeGrantedAt IS NOT NULL.
+      Permanent historical record.
+    - currently_overdue: APP_AdministrativeSubcase rows whose responsible
+      level's deadline has passed while that level is still pending, using
+      the same per-level pending-status sets as the Automatic Force Close
+      engine. Excludes Notice cases, Morbidity cases, and Closed cases.
+    Both APP_AdministrativeSubcase-based counts are scoped by TargetOrgUnitID
+    (same scoping field used by _count_force_closed_subcases).
+    """
+    empty_result = {
+        "open_cases": 0,
+        "closed_cases": 0,
+        "force_closed_cases": 0,
+        "late_replies": 0,
+        "currently_overdue": 0,
+        "extra_time_granted": 0,
+    }
+
+    if not scope_unit_ids:
+        return empty_result
+
+    from core.database import get_connection
+    from api_v2.services.automatic_force_close_service import (
+        _SECTION_PENDING_STATUSES,
+        _DEPARTMENT_PENDING_STATUSES,
+        _ADMINISTRATION_PENDING_STATUSES,
+        _RECORD_TYPE_NOTICE,
+    )
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    placeholders = ','.join('?' * len(scope_unit_ids))
+
+    # -------------------------
+    # Open / Closed cases (APP_IncidentCase, scoped by IssuingOrgUnitID)
+    # -------------------------
+    cursor.execute(
+        f"""
+        SELECT
+            SUM(CASE WHEN CaseStatusID IN (?, ?) THEN 1 ELSE 0 END) AS open_cases,
+            SUM(CASE WHEN CaseStatusID = ? THEN 1 ELSE 0 END) AS closed_cases
+        FROM dbo.APP_IncidentCase
+        WHERE IssuingOrgUnitID IN ({placeholders})
+        """,
+        [OPEN_STATUS_ID, IN_PROGRESS_STATUS_ID, CLOSED_STATUS_ID, *scope_unit_ids],
+    )
+    row = cursor.fetchone()
+    open_cases = row[0] or 0
+    closed_cases = row[1] or 0
+
+    # -------------------------
+    # Force closed / late replies / extra time granted
+    # (APP_AdministrativeSubcase, scoped by TargetOrgUnitID)
+    # -------------------------
+    cursor.execute(
+        f"""
+        SELECT
+            SUM(CASE WHEN SectionForceClosedAt IS NOT NULL
+                      OR DepartmentForceClosedAt IS NOT NULL
+                      OR AdministrationForceClosedAt IS NOT NULL
+                     THEN 1 ELSE 0 END) AS force_closed_cases,
+            SUM(CASE WHEN SectionLateReply = 1
+                      OR DepartmentLateReply = 1
+                      OR AdministrationLateReply = 1
+                     THEN 1 ELSE 0 END) AS late_replies,
+            SUM(CASE WHEN SectionExtraTimeGrantedAt IS NOT NULL
+                      OR DepartmentExtraTimeGrantedAt IS NOT NULL
+                      OR AdministrationExtraTimeGrantedAt IS NOT NULL
+                     THEN 1 ELSE 0 END) AS extra_time_granted
+        FROM dbo.APP_AdministrativeSubcase
+        WHERE TargetOrgUnitID IN ({placeholders})
+        """,
+        list(scope_unit_ids),
+    )
+    row = cursor.fetchone()
+    force_closed_cases = row[0] or 0
+    late_replies = row[1] or 0
+    extra_time_granted = row[2] or 0
+
+    # -------------------------
+    # Currently overdue: one query per responsible level, summed.
+    # Pending-status sets are mutually exclusive across levels, so no
+    # subcase is counted twice. Excludes Notice/Morbidity/Closed cases.
+    # -------------------------
+    now = datetime.now()
+    currently_overdue = 0
+
+    for deadline_column, pending_statuses in (
+        ("SectionDeadlineAt", _SECTION_PENDING_STATUSES),
+        ("DepartmentDeadlineAt", _DEPARTMENT_PENDING_STATUSES),
+        ("AdministrationDeadlineAt", _ADMINISTRATION_PENDING_STATUSES),
+    ):
+        status_placeholders = ','.join('?' * len(pending_statuses))
+        cursor.execute(
+            f"""
+            SELECT COUNT(*)
+            FROM dbo.APP_AdministrativeSubcase s
+            LEFT JOIN dbo.APP_IncidentCase c
+                ON s.IncidentRequestCaseID = c.IncidentRequestCaseID
+            WHERE s.TargetOrgUnitID IN ({placeholders})
+              AND s.{deadline_column} IS NOT NULL
+              AND s.{deadline_column} < ?
+              AND s.Status IN ({status_placeholders})
+              AND (c.RecordTypeID IS NULL OR c.RecordTypeID != ?)
+              AND (c.IsMorbidity IS NULL OR c.IsMorbidity != 1)
+              AND (c.CaseStatusID IS NULL OR c.CaseStatusID != ?)
+            """,
+            [*scope_unit_ids, now, *pending_statuses, _RECORD_TYPE_NOTICE, CLOSED_STATUS_ID],
+        )
+        currently_overdue += cursor.fetchone()[0] or 0
+
+    conn.close()
+
+    return {
+        "open_cases": open_cases,
+        "closed_cases": closed_cases,
+        "force_closed_cases": force_closed_cases,
+        "late_replies": late_replies,
+        "currently_overdue": currently_overdue,
+        "extra_time_granted": extra_time_granted,
     }
 
 

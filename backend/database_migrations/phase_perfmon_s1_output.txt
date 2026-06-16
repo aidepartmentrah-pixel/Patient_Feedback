@@ -1,0 +1,68 @@
+Changed database context to 'IncidentManager'.
+============================================================
+PERFMON-S1: Publication Batch Tracking - Database Foundation
+============================================================
+ 
+PART 1: Creating APP_PublicationBatch...
+  APP_PublicationBatch created
+ 
+PART 1b: Unique constraint + FK for APP_PublicationBatch...
+  UQ_PublicationBatch_Serial added
+  FK_PublicationBatch_PublishedByUser added
+ 
+PART 2: Creating APP_PublicationBatchCase...
+  APP_PublicationBatchCase created
+ 
+PART 2b: Foreign key + indexes for APP_PublicationBatchCase...
+  FK_PublicationBatchCase_Batch added
+  IX_PublicationBatchCase_BatchID added
+  IX_PublicationBatchCase_IncidentCaseID added
+ 
+============================================================
+VERIFICATION
+============================================================
+ 
+--- APP_PublicationBatch columns ---
+name                                                                                                                             data_type                                                                                                                        is_nullable
+-------------------------------------------------------------------------------------------------------------------------------- -------------------------------------------------------------------------------------------------------------------------------- -----------
+PublicationBatchID                                                                                                               int                                                                                                                                        0
+PublicationSerial                                                                                                                int                                                                                                                                        0
+PublishedAt                                                                                                                      datetime                                                                                                                                   0
+PublishedByUserID                                                                                                                int                                                                                                                                        0
+CasesPublishedCount                                                                                                              int                                                                                                                                        0
+Notes                                                                                                                            nvarchar                                                                                                                                   1
+CreatedAt                                                                                                                        datetime                                                                                                                                   0
+
+(7 rows affected)
+ 
+--- APP_PublicationBatchCase columns ---
+name                                                                                                                             data_type                                                                                                                        is_nullable
+-------------------------------------------------------------------------------------------------------------------------------- -------------------------------------------------------------------------------------------------------------------------------- -----------
+PublicationBatchCaseID                                                                                                           int                                                                                                                                        0
+PublicationBatchID                                                                                                               int                                                                                                                                        0
+IncidentCaseID                                                                                                                   int                                                                                                                                        0
+AdministrativeSubcaseID                                                                                                          int                                                                                                                                        1
+TargetOrgUnitID                                                                                                                  int                                                                                                                                        1
+CreatedAt                                                                                                                        datetime                                                                                                                                   0
+
+(6 rows affected)
+ 
+--- Constraints/Indexes ---
+object_name                                                                                                                      object_type
+-------------------------------------------------------------------------------------------------------------------------------- -----------
+FK_PublicationBatch_PublishedByUser                                                                                              FK         
+FK_PublicationBatchCase_Batch                                                                                                    FK         
+PK__APP_Publ__E4EC823963326EDB                                                                                                   INDEX      
+UQ_PublicationBatch_Serial                                                                                                       INDEX      
+PK__APP_Publ__2C2B6F478E4FA04C                                                                                                   INDEX      
+IX_PublicationBatchCase_BatchID                                                                                                  INDEX      
+IX_PublicationBatchCase_IncidentCaseID                                                                                           INDEX      
+
+(7 rows affected)
+ 
+============================================================
+PERFMON-S1: Migration complete.
+Expected: 2 new tables (APP_PublicationBatch, APP_PublicationBatchCase),
+          1 unique index + 1 FK on APP_PublicationBatch,
+          1 FK + 2 indexes on APP_PublicationBatchCase.
+============================================================

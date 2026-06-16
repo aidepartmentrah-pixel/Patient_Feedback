@@ -6,7 +6,7 @@ Pure orchestration layer - no business logic, validation, or permission checks.
 """
 
 import logging
-from typing import Optional
+from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta
 from core.database import get_connection
 from api_v2.db_layer import administrative_subcase_db
@@ -135,18 +135,23 @@ def _create_subcase(
     return subcase_id
 
 
-def create_subcases_for_incident(incident_id: int, current_user) -> None:
+def create_subcases_for_incident(incident_id: int, current_user) -> List[Dict[str, Any]]:
     """
     Create subcases for an incident.
     Idempotent - does nothing if subcases already exist.
-    
+
     Args:
         incident_id: The incident ID
         current_user: Current user object (must have user_id attribute) or None for system user
+
+    Returns:
+        List of {"subcase_id": int, "target_org_unit_id": int} for each subcase
+        created during this call. Empty list if subcases already existed
+        (idempotent no-op) or no target departments were found.
     """
     existing = administrative_subcase_db.get_subcases_by_incident(incident_id)
     if existing:
-        return
+        return []
 
     # Handle None current_user (legacy adapter calls)
     user_id = current_user.user_id if current_user else 1  # Default to system user
@@ -183,6 +188,8 @@ def create_subcases_for_incident(incident_id: int, current_user) -> None:
         cursor.execute(query, (incident_id,))
         rows = cursor.fetchall()
 
+        created_subcases: List[Dict[str, Any]] = []
+
         for row in rows:
             org_type = row.OrgUnitType
             org_name = row.OrgUnitName
@@ -208,7 +215,7 @@ def create_subcases_for_incident(incident_id: int, current_user) -> None:
                 elif org_type == _ORG_TYPE_ADMINISTRATION:
                     administration_deadline_at = publish_time + timedelta(days=deadline_days["administration"])
 
-            _create_subcase(
+            subcase_id = _create_subcase(
                 case_type='INCIDENT_RESPONSE',
                 incident_id=incident_id,
                 seasonal_report_id=None,
@@ -219,6 +226,10 @@ def create_subcases_for_incident(incident_id: int, current_user) -> None:
                 department_deadline_at=department_deadline_at,
                 administration_deadline_at=administration_deadline_at
             )
+
+            created_subcases.append({"subcase_id": subcase_id, "target_org_unit_id": dept_id})
+
+        return created_subcases
 
     finally:
         cursor.close()
