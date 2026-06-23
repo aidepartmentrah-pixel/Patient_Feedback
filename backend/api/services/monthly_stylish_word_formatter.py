@@ -1009,11 +1009,11 @@ def _render_complaint_page(doc: Document, complaint: Dict, index: int, total: in
                             report_entity_name: str, report_entity_type: str):
     # Zone 1: Identity
     _build_identity_zone(doc, complaint, period, report_entity_name, report_entity_type)
-    _gap(doc, 3)
+    _gap(doc, 1.8)   # 60% of 3mm
 
     # Zone 2: Classification
     _build_classification_zone(doc, complaint)
-    _gap(doc, 3)
+    _gap(doc, 1.8)   # 60% of 3mm
 
     # Zone 3: Stage of care
     _build_stage_row(doc,
@@ -1021,11 +1021,11 @@ def _render_complaint_page(doc: Document, complaint: Dict, index: int, total: in
                      complaint.get('status_name') or '',
                      complaint.get('clinical_risk_type_name') or 'Ordinary',
                      page_width_mm)
-    _gap(doc, 4)
+    _gap(doc, 2.4)   # 60% of 4mm
 
     # Zone 4: Content
     _build_content_zone(doc, complaint, page_width_mm)
-    _gap(doc, 4)
+    _gap(doc, 2.4)   # 60% of 4mm
 
     # Zone 5: Approvals
     _build_approvals_zone(doc, complaint)
@@ -1282,8 +1282,8 @@ def _setup_document(report_data: Dict, report_entity_name: str) -> Document:
     sec.orientation   = WD_ORIENT.LANDSCAPE
     sec.left_margin   = int(Mm(12))   # recovered from 15mm — more canvas for content
     sec.right_margin  = int(Mm(12))
-    sec.top_margin    = int(Mm(26))   # recovered from 28mm — header still fits with 2mm buffer
-    sec.bottom_margin = int(Mm(6))    # recovered from 7mm
+    sec.top_margin    = int(Mm(13))   # only safe because header is now a single ~9mm row, not 4 stacked paragraphs
+    sec.bottom_margin = int(Mm(3))    # footer trimmed to 6pt to fit
     sec.header_distance = int(Mm(4))
     sec.footer_distance = int(Mm(3))
 
@@ -1306,40 +1306,64 @@ def _setup_document(report_data: Dict, report_entity_name: str) -> Document:
     period_str = (f"{period.get('start_date', '—')}  —  {period.get('end_date', '—')}")
     scope_str  = report_entity_name or 'مستوى المستشفى'
 
-    # ── Repeating header (paragraph-based, compact: logo / title / one info line) ──
+    # ── Repeating header — compact single-row table (logo beside the title
+    # block, not stacked above it) so total header height fits a 13mm top
+    # margin. Plain 2-column table, no borders, no merged cells, AT_LEAST
+    # height — avoids both Round-1 collapse causes (merged-cell + EXACTLY,
+    # and _Cell.add_table() rejecting a width kwarg) since neither applies
+    # to a borderless, unmerged, header-level add_table(rows, cols, width).
+    from docx.enum.table import WD_ROW_HEIGHT_RULE as _HDR_HR
     hdr = sec.header
+    hdr.paragraphs[0].clear()
 
-    # Logo — right-aligned in first paragraph (small)
-    logo_para = hdr.paragraphs[0]
-    logo_para.clear()
-    logo_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    logo_para.paragraph_format.space_after = int(Pt(0))
+    hdr_tbl = hdr.add_table(1, 2, int(Mm(273)))
+    hdr_tbl.autofit = False
+    hdr_tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+    _set_rtl_table(hdr_tbl)
+
+    logo_cell  = hdr_tbl.rows[0].cells[0]
+    title_cell = hdr_tbl.rows[0].cells[1]
+    _set_row_col_width(hdr_tbl.rows[0], 0, 32)
+    _set_row_col_width(hdr_tbl.rows[0], 1, 241)
+
+    # Logo — small, square-ish (178x179px), 0.35in keeps row height ~9mm
+    _cell_v_center(logo_cell)
+    logo_cell.text = ''
+    lp = logo_cell.paragraphs[0]
+    lp.clear()
+    lp.alignment = WD_ALIGN_PARAGRAPH.CENTER
     try:
         if os.path.exists(logo_path):
-            logo_para.add_run().add_picture(logo_path, width=int(Inches(0.55)))
+            lp.add_run().add_picture(logo_path, width=int(Inches(0.35)))
     except Exception:
         pass
 
-    # Arabic title (compact, single line)
-    hdr_title_para = hdr.add_paragraph()
-    hdr_title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    hdr_title_para.paragraph_format.space_before = int(Pt(0))
-    hdr_title_para.paragraph_format.space_after = int(Pt(1))
-    _ar_run(hdr_title_para, header_title, size=11, bold=True, color=NAVY)
+    # Title + info line, stacked inside the (wider) second column
+    _cell_v_center(title_cell)
+    title_cell.text = ''
+    tp = title_cell.paragraphs[0]
+    tp.clear()
+    tp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    tp.paragraph_format.space_before = int(Pt(0))
+    tp.paragraph_format.space_after  = int(Pt(1))
+    _ar_run(tp, header_title, size=10, bold=True, color=NAVY)
 
     # One combined info line: subtitle (config value is Arabic by default,
     # e.g. "(إصدار رسمي — للاستخدام الإداري والجودة)" — same key the classical
     # formatter uses, rendered with Traditional Arabic there too) | period+scope | report code
-    hdr_info_para = hdr.add_paragraph()
+    hdr_info_para = title_cell.add_paragraph()
     hdr_info_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
     hdr_info_para.paragraph_format.space_before = int(Pt(0))
-    hdr_info_para.paragraph_format.space_after = int(Pt(2))
-    _ar_run(hdr_info_para, header_subtitle, size=8, italic=True, color=GREY_TEXT)
-    _ar_run(hdr_info_para, '   |   ', size=8, color=GREY_TEXT)
-    _ar_run(hdr_info_para, f'الفترة: {period_str}   |   النطاق: {scope_str}', size=8, bold=True, color=GREY_TEXT)
+    hdr_info_para.paragraph_format.space_after = int(Pt(1))
+    _ar_run(hdr_info_para, header_subtitle, size=7, italic=True, color=GREY_TEXT)
+    _ar_run(hdr_info_para, '   |   ', size=7, color=GREY_TEXT)
+    _ar_run(hdr_info_para, f'الفترة: {period_str}   |   النطاق: {scope_str}', size=7, bold=True, color=GREY_TEXT)
     if report_code:
-        _ar_run(hdr_info_para, '   |   ', size=8, color=GREY_TEXT)
-        _ar_run(hdr_info_para, f'رمز التقرير: {report_code}', size=8, color=GREY_TEXT)
+        _ar_run(hdr_info_para, '   |   ', size=7, color=GREY_TEXT)
+        _ar_run(hdr_info_para, f'رمز التقرير: {report_code}', size=7, color=GREY_TEXT)
+
+    hdr_tbl.rows[0].height_rule = _HDR_HR.AT_LEAST
+    hdr_tbl.rows[0].height = _mm_to_dxa(9)
 
     # Blue separator line (matches classical formatter) — minimal height
     hdr_sep = hdr.add_paragraph()
@@ -1358,16 +1382,16 @@ def _setup_document(report_data: Dict, report_entity_name: str) -> Document:
     _pBdr.append(_bot)
     _pPr.append(_pBdr)
 
-    # ── Footer (compact — single small line) ──
+    # ── Footer (compact — single tiny line, fits a 3mm bottom margin) ──
     ftr = sec.footer
     ftr.is_linked_to_previous = False
     fp = ftr.paragraphs[0]
     fp.clear()
     fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    fp.paragraph_format.space_before = Pt(1)
+    fp.paragraph_format.space_before = Pt(0)
     fp.paragraph_format.space_after  = Pt(0)
     _set_para_bottom_border(fp, color=GREY_LINE, sz=4)
-    _ar_run(fp, footer_text, size=7, italic=True, color=GREY_TEXT)
+    _ar_run(fp, footer_text, size=6, italic=True, color=GREY_TEXT)
 
     return doc
 
