@@ -33,7 +33,7 @@ def build_temp_to_label_for_domain(domain_id: int) -> dict:
     cursor = conn.cursor()
     
     cursor.execute(
-        "SELECT DISTINCT category FROM table_feedback_train WHERE domain = ? ORDER BY category",
+        "SELECT DISTINCT category FROM table_feedback_train WHERE domain = ? AND category IS NOT NULL ORDER BY category",
         (domain_id,)
     )
     rows = cursor.fetchall()
@@ -76,7 +76,7 @@ def build_temp_to_label_for_category(category_id: int) -> dict:
     cursor = conn.cursor()
     
     cursor.execute(
-        "SELECT DISTINCT sub_category FROM table_feedback_train WHERE category = ? ORDER BY sub_category",
+        "SELECT DISTINCT sub_category FROM table_feedback_train WHERE category = ? AND sub_category IS NOT NULL ORDER BY sub_category",
         (category_id,)
     )
     rows = cursor.fetchall()

@@ -16,7 +16,8 @@ TreeType = Literal[
     "severity_distribution_numbers",
     "severity_distribution_percentage",
     "red_flag_incidents",
-    "never_event_incidents"
+    "never_event_incidents",
+    "notice_count",
 ]
 
 
@@ -30,6 +31,12 @@ TreeType = Literal[
 RED_FLAG_CLINICAL_RISK_TYPE = 2
 NEVER_EVENT_CLINICAL_RISK_TYPE = 3
 
+# APP_IncidentCase.RecordTypeID values:
+# - 1 -> Complaint (default)
+# - 2 -> Notice (positive feedback / recognition)
+RECORD_TYPE_COMPLAINT = 1
+RECORD_TYPE_NOTICE = 2
+
 
 # =========================================================
 # PUBLIC SERVICE FUNCTIONS
@@ -37,7 +44,8 @@ NEVER_EVENT_CLINICAL_RISK_TYPE = 3
 
 def get_investigation_tree(
     *,
-    season: str,
+    start_date: date,
+    end_date: date,
     tree_type: TreeType,
     administration_id: int | None = None,
     department_id: int | None = None,
@@ -45,30 +53,20 @@ def get_investigation_tree(
 ) -> dict:
     """
     Get hierarchical investigation tree with aggregated incident data.
-    
+
     Args:
-        season: Season identifier (e.g., "2024-Q4")
+        start_date: Start of the investigation period
+        end_date: End of the investigation period
         tree_type: Type of aggregation/visualization
         administration_id: Filter to specific administration
         department_id: Filter to specific department
         section_id: Filter to specific section
-        
+
     Returns:
         Dictionary with tree structure and metadata
     """
-    # -------------------------
-    # Get season info
-    # -------------------------
-    season_info = _get_season_info(season)
-    if not season_info:
-        raise ValueError(f"Season '{season}' not found")
-    
-    start_date = season_info["start_date"]
-    end_date = season_info["end_date"]
-    season_label = season_info["season_label"]
-    
-    print(f"Season info: {season_label} ({start_date} to {end_date})")
-    
+    print(f"Investigation period: {start_date} to {end_date}")
+
     # -------------------------
     # Determine scope level
     # -------------------------
@@ -93,13 +91,20 @@ def get_investigation_tree(
     print(f"Organizational hierarchy built: {len(org_hierarchy['root_nodes'])} root nodes")
     
     # -------------------------
+    # Determine record type filter
+    # notice_count uses notices only; all other tree types use complaints only
+    # -------------------------
+    record_type_id = RECORD_TYPE_NOTICE if tree_type == "notice_count" else RECORD_TYPE_COMPLAINT
+
+    # -------------------------
     # Fetch incidents for the season and scope
     # -------------------------
     incidents = _fetch_incidents_for_season(
         start_date,
         end_date,
         scope_unit_id,
-        scope_level
+        scope_level,
+        record_type_id=record_type_id,
     )
     
     print(f"Fetched {len(incidents)} incidents for the season")
@@ -138,7 +143,11 @@ def get_investigation_tree(
     elif tree_type == "never_event_incidents":
         tree = _build_never_event_tree(org_hierarchy, incidents)
         summary = _build_never_event_summary(incidents)
-    
+
+    elif tree_type == "notice_count":
+        tree = _build_incident_count_tree(org_hierarchy, incidents)
+        summary = _build_incident_count_summary(incidents, org_hierarchy)
+
     else:
         raise ValueError(f"Invalid tree_type: {tree_type}")
     
@@ -146,8 +155,8 @@ def get_investigation_tree(
     # Build response
     # -------------------------
     return {
-        "season": season,
-        "season_label": season_label,
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
         "tree_type": tree_type,
         "scope": {
             "level": scope_level,
@@ -386,41 +395,50 @@ def _fetch_incidents_for_season(
     start_date: date,
     end_date: date,
     scope_unit_id: int | None,
-    scope_level: str
+    scope_level: str,
+    record_type_id: int = RECORD_TYPE_COMPLAINT,
 ) -> list[dict]:
     """
-    Fetch all incidents for a season, optionally filtered by organizational scope.
+    Fetch incidents for a date range, filtered by record type and optional org scope.
+
+    record_type_id:
+        RECORD_TYPE_COMPLAINT (1) — complaints only (default for all complaint trees)
+        RECORD_TYPE_NOTICE    (2) — notices only
     """
     conn = get_connection()
     cursor = conn.cursor()
-    
+
     query = """
-    SELECT 
-        IncidentRequestCaseID,
-        IssuingOrgUnitID,
-        DomainID,
-        SeverityID,
-        CategoryID,
-        HarmLevelID,
-        ClinicalRiskTypeID,
-        FeedbackRecievedDate
-    FROM dbo.APP_IncidentCase
-    WHERE FeedbackRecievedDate >= ?
-      AND FeedbackRecievedDate <= ?
+    SELECT
+        ic.IncidentRequestCaseID,
+        td.DepartmentID AS TargetOrgUnitID,
+        ic.DomainID,
+        ic.SeverityID,
+        ic.CategoryID,
+        ic.HarmLevelID,
+        ic.ClinicalRiskTypeID,
+        ic.FeedbackRecievedDate
+    FROM dbo.APP_IncidentCase ic
+    INNER JOIN dbo.APP_IncidentCaseTargetDepartment td
+        ON ic.IncidentRequestCaseID = td.IncidentRequestCaseID
+        AND td.IsPrimary = 1
+    WHERE ic.FeedbackRecievedDate >= ?
+      AND ic.FeedbackRecievedDate <= ?
+      AND ic.RecordTypeID = ?
     """
-    
-    params = [start_date, end_date]
-    
-    # If scope is specified, filter by organizational unit and its descendants
+
+    params = [start_date, end_date, record_type_id]
+
+    # If scope is specified, filter by target organizational unit and its descendants
     if scope_unit_id is not None:
         # Get all descendant unit IDs
         descendant_ids = _get_descendant_unit_ids(scope_unit_id)
-        
+
         print(f"Filtering by scope unit {scope_unit_id}, found {len(descendant_ids)} descendant units: {descendant_ids}")
-        
+
         if descendant_ids:
             placeholders = ','.join('?' * len(descendant_ids))
-            query += f" AND IssuingOrgUnitID IN ({placeholders})"
+            query += f" AND td.DepartmentID IN ({placeholders})"
             params.extend(descendant_ids)
         else:
             # No descendants found, return empty list
@@ -566,10 +584,10 @@ def _build_incident_count_tree(org_hierarchy: dict, incidents: list[dict]) -> li
     """
     Build tree with incident counts for each node.
     """
-    # Count incidents per unit
+    # Count incidents per target unit
     incident_counts = defaultdict(int)
     for incident in incidents:
-        unit_id = incident["IssuingOrgUnitID"]
+        unit_id = incident["TargetOrgUnitID"]
         if unit_id:
             incident_counts[unit_id] += 1
     
@@ -609,10 +627,10 @@ def _build_domain_distribution_tree(
     # Get domain lookup
     domains = {d["DomainID"]: d for d in lookups.get_domains()}
     
-    # Count incidents by unit and domain
+    # Count incidents by target unit and domain
     unit_domain_counts = defaultdict(lambda: defaultdict(int))
     for incident in incidents:
-        unit_id = incident["IssuingOrgUnitID"]
+        unit_id = incident["TargetOrgUnitID"]
         domain_id = incident["DomainID"]
         if unit_id and domain_id:
             domain_name = domains.get(domain_id, {}).get("DomainName", f"Domain_{domain_id}")
@@ -682,10 +700,10 @@ def _build_severity_distribution_tree(
         6: "high",
     }
     
-    # Count incidents by unit and severity
+    # Count incidents by target unit and severity
     unit_severity_counts = defaultdict(lambda: defaultdict(int))
     for incident in incidents:
-        unit_id = incident["IssuingOrgUnitID"]
+        unit_id = incident["TargetOrgUnitID"]
         severity_id = incident["SeverityID"]
         if unit_id and severity_id:
             severity_level = severity_mapping.get(severity_id, "unknown")
@@ -746,9 +764,9 @@ def _build_red_flag_tree(org_hierarchy: dict, incidents: list[dict]) -> list[dic
     unit_totals = defaultdict(int)
     
     for incident in incidents:
-        unit_id = incident["IssuingOrgUnitID"]
+        unit_id = incident["TargetOrgUnitID"]
         clinical_risk_type_id = incident.get("ClinicalRiskTypeID")
-        
+
         if unit_id:
             unit_totals[unit_id] += 1
             if clinical_risk_type_id == RED_FLAG_CLINICAL_RISK_TYPE:
@@ -794,12 +812,12 @@ def _build_never_event_tree(org_hierarchy: dict, incidents: list[dict]) -> list[
     unit_totals = defaultdict(int)
     
     for incident in incidents:
-        unit_id = incident["IssuingOrgUnitID"]
+        unit_id = incident["TargetOrgUnitID"]
         clinical_risk_type_id = incident.get("ClinicalRiskTypeID")
-        
+
         if unit_id:
             unit_totals[unit_id] += 1
-            
+
             if clinical_risk_type_id == NEVER_EVENT_CLINICAL_RISK_TYPE:
                 unit_never_events[unit_id] += 1
     

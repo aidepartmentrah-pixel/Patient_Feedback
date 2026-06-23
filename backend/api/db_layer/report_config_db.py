@@ -11,6 +11,7 @@ _VALID_KEYS = {
     "header_title", "header_subtitle", "footer_text", "report_code",
     "seasonal_header_title", "seasonal_header_subtitle",
     "seasonal_footer_text", "seasonal_report_code",
+    "monthly_report_format",   # "classical" (default) | "stylish" — controls DOCX formatter for Monthly Detailed Report
 }
 
 

@@ -8,7 +8,13 @@ from typing import Dict, Any, Optional, Literal
 
 from ..schemas.auth_models import CurrentUser
 from ..utils.guards import require_any_unit_in_scope
-from ..db_layer.reports_db import get_filtered_complaints, get_monthly_statistics
+from ..db_layer.reports_db import (
+    get_filtered_complaints,
+    get_filtered_notices,
+    get_monthly_statistics,
+    get_monthly_intent_counts_by_unit,
+    get_monthly_notice_summary,
+)
 
 
 class MonthlyReportService:
@@ -241,9 +247,32 @@ class MonthlyReportService:
         )
         
         total_pages = (total_records + page_size - 1) // page_size
-        
+
+        # Complaint/Notice count summary by unit (Session 3) — same scope as the
+        # complaints fetch above (allowed_unit_ids / target_unit_ids / period).
+        intent_counts = get_monthly_intent_counts_by_unit(
+            year=year,
+            month=month,
+            start_date=period_start,
+            end_date=period_end,
+            allowed_unit_ids=allowed_unit_ids,
+            target_unit_ids=target_unit_ids,
+        )
+
+        # Notice detail records for the Stylish formatter (Session 6).
+        # Same scope/period as complaints. Classical formatter ignores this key.
+        notices = get_filtered_notices(
+            year=year,
+            month=month,
+            start_date=period_start,
+            end_date=period_end,
+            allowed_unit_ids=allowed_unit_ids,
+            target_unit_ids=target_unit_ids,
+        )
+
         return {
             "complaints": complaints,
+            "notices": notices,
             "pagination": {
                 "page": page,
                 "page_size": page_size,
@@ -255,7 +284,8 @@ class MonthlyReportService:
                 "label_ar": label_ar,
                 "start_date": period_start.isoformat(),
                 "end_date": period_end.isoformat()
-            }
+            },
+            "intent_counts": intent_counts
         }
 
 
@@ -332,7 +362,8 @@ class MonthlyReportService:
         # group_by controls the aggregation level for by_department
         group_by = filters.get("group_by", "section")
         
-        # Fetch statistics
+        # Fetch statistics — Complaint-only by design, untouched (Session 4 must
+        # not change existing Complaint calculations).
         target_unit_ids = filters.get("target_unit_ids")
         stats = get_monthly_statistics(
             year=year,
@@ -343,7 +374,40 @@ class MonthlyReportService:
             target_unit_ids=target_unit_ids,
             group_by=group_by
         )
-        
+
+        # Notice Statistics + Combined Totals (Session 4). Same scope/period
+        # as the Complaint statistics above. intent_counts is the same
+        # reusable per-unit breakdown built for the Monthly Detailed Report
+        # (Session 3) — Notice Statistics and Combined Totals both read from
+        # it, just rendering different columns.
+        notice_summary = get_monthly_notice_summary(
+            year=year,
+            month=month,
+            start_date=period_start,
+            end_date=period_end,
+            allowed_unit_ids=allowed_unit_ids,
+            target_unit_ids=target_unit_ids,
+        )
+        intent_counts = get_monthly_intent_counts_by_unit(
+            year=year,
+            month=month,
+            start_date=period_start,
+            end_date=period_end,
+            allowed_unit_ids=allowed_unit_ids,
+            target_unit_ids=target_unit_ids,
+        )
+
+        total_complaints = stats["summary"].get("total_complaints", 0)
+        total_notices = notice_summary["total_notices"]
+        executive_summary = {
+            "total_complaints": total_complaints,
+            "total_notices": total_notices,
+            "total_records": total_complaints + total_notices,
+            "sections_involved": len(intent_counts["sections"]),
+            "departments_involved": len(intent_counts["departments"]),
+            "administrations_involved": len(intent_counts["administrations"]),
+        }
+
         return {
             "period": {
                 "year": year,
@@ -357,7 +421,10 @@ class MonthlyReportService:
             "by_domain": stats["by_domain"],
             "by_category": stats["by_category"],
             "by_severity": stats["by_severity"],
-            "by_department": stats["by_department"]
+            "by_department": stats["by_department"],
+            "notice_summary": notice_summary,
+            "intent_counts": intent_counts,
+            "executive_summary": executive_summary
         }
 
 

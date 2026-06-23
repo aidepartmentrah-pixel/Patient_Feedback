@@ -3,6 +3,7 @@ DB Layer for Seasonal Report Persistence
 Handles CRUD operations for materialized seasonal reports and related tables.
 """
 
+import json
 from typing import Dict, Any, List, Optional
 from core.database import get_connection
 
@@ -872,6 +873,31 @@ def get_seasonal_report_keys_by_id(seasonal_report_id: int) -> Optional[Dict[str
             conn.close()
 
 
+def _parse_violated_rules(raw: Optional[str]) -> Optional[List[Dict[str, Any]]]:
+    """
+    ViolatedRules is stored as a JSON array (see seasonal_report_generator.py
+    _evaluate_compliance), each item already carrying rule_name_ar/rule_name_en,
+    threshold, and actual. Parse it so the API returns structured data instead
+    of a raw JSON string. Falls back to a single synthetic entry for legacy/
+    malformed text rather than dropping the information.
+    """
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, list) else None
+    except (json.JSONDecodeError, TypeError):
+        return [{
+            'rule': None,
+            'rule_name_ar': None,
+            'rule_name_en': raw,
+            'threshold': None,
+            'threshold_unit': None,
+            'actual': None,
+            'actual_unit': None,
+        }]
+
+
 def get_full_seasonal_report(
     season_id: int,
     orgunit_id: int,
@@ -946,7 +972,7 @@ def get_full_seasonal_report(
             'management_domain_count': header_row.ManagementDomainCount,
             'relational_domain_count': header_row.RelationalDomainCount,
             'is_compliant': bool(header_row.IsCompliant),
-            'violated_rules': header_row.ViolatedRules,
+            'violated_rules': _parse_violated_rules(header_row.ViolatedRules),
             'explanation_status_id': header_row.ExplanationStatusID,
             'created_by_user_id': header_row.CreatedByUserID,
             'created_at': header_row.CreatedAt.isoformat() if header_row.CreatedAt else None,

@@ -22,6 +22,7 @@ from ..constants.org_unit_types import (
 from ..db_layer.org_unit_policy import (
     get_representative_policy_for_type,
     get_hospital_policy,
+    get_policy_by_unit_id,
     upsert_all_policies_for_type,
     upsert_hospital_policy,
 )
@@ -167,6 +168,57 @@ def save_administrations_policy(
         "enable_medium_rule":      False,
     }
     return upsert_all_policies_for_type(ORG_TYPE_ADMINISTRATION, fields, user_id)
+
+
+def _normalize_domain_limit(value: int | None) -> int | None:
+    """
+    Treat 0/None as "not configured" rather than a real zero-incident target.
+    Matches the convention already used by save_sections_policy /
+    save_departments_policy, which zero out domain/severity fields that
+    don't apply at that level — 0 means "not applicable here", not "target
+    is zero incidents".
+    """
+    return value if value else None
+
+
+def get_domain_targets_for_scope(
+    scope: str,
+    administration_id: int | None = None,
+    department_id: int | None = None,
+) -> dict:
+    """
+    Return domain count targets (Clinical / Management / Relational) for the
+    given Target Analysis scope (HCAT Iteration 4, Session 2).
+
+    Mandatory rule: Section scope never receives domain targets — section
+    policy is classification-based, not domain-based (see Session 0 findings).
+
+    Targets are stored as raw incident-count ceilings (ClinicalDomainLimit
+    etc.), not percentages — there is no percentage-of-total field in the
+    schema. Callers compare these directly against the corresponding raw
+    monthly counts already returned by the trends endpoint.
+    """
+    if scope == "section":
+        policy = None
+    elif scope == "hospital":
+        policy = get_hospital_policy()
+    elif scope == "administration" and administration_id is not None:
+        policy = get_policy_by_unit_id(administration_id)
+    elif scope == "department" and department_id is not None:
+        policy = get_policy_by_unit_id(department_id)
+    else:
+        policy = None
+
+    clinical = _normalize_domain_limit(policy.get("ClinicalDomainLimit") if policy else None)
+    management = _normalize_domain_limit(policy.get("ManagementDomainLimit") if policy else None)
+    relational = _normalize_domain_limit(policy.get("RelationalDomainLimit") if policy else None)
+
+    return {
+        "has_domain_targets": any(v is not None for v in (clinical, management, relational)),
+        "clinical_domain_limit": clinical,
+        "management_domain_limit": management,
+        "relational_domain_limit": relational,
+    }
 
 
 def save_hospital_policy(

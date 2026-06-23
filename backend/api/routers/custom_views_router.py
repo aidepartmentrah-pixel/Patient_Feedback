@@ -3,7 +3,7 @@ Custom Views Router
 CRUD API for APP_CUSTOM_VIEWS to control table view columns.
 """
 
-from fastapi import APIRouter, HTTPException, Body, Query, Path
+from fastapi import APIRouter, HTTPException, Body, Query, Path, Depends
 from pydantic import BaseModel, Field
 from typing import Optional
 
@@ -14,6 +14,9 @@ from ..services.custom_views_service import (
     update_view,
     delete_view,
 )
+from ..dependencies.user_context import get_current_user
+from ..schemas.auth_models import CurrentUser
+from ..utils.guards import require_software_admin
 
 router = APIRouter(prefix="/api/custom-views", tags=["Custom Views"])
 
@@ -45,6 +48,18 @@ class CustomViewBase(BaseModel):
     ShowCaseStatusID: Optional[bool] = False
     ShowSourceID: Optional[bool] = False
     ShowExplanationStatusID: Optional[bool] = False
+    ShowSectionAnswer: Optional[bool] = False
+    ShowDepartmentAnswer: Optional[bool] = False
+    ShowAdministrationAnswer: Optional[bool] = False
+    ShowTargetDepartment: Optional[bool] = False
+    ShowSatisfactionStatus: Optional[bool] = False
+    ShowSatisfactionDate: Optional[bool] = False
+    ShowRedFlagIndicator: Optional[bool] = False
+    ShowNeverEventIndicator: Optional[bool] = False
+    ShowMorbidityIndicator: Optional[bool] = False
+    ShowLateIndicator: Optional[bool] = False
+    ShowForceClosedIndicator: Optional[bool] = False
+    ShowLastEdited: Optional[bool] = False
 
     class Config:
         populate_by_name = True
@@ -72,7 +87,11 @@ async def get_custom_view_endpoint(view_id: int = Path(..., gt=0)):
 
 
 @router.post("")
-async def create_custom_view_endpoint(request: CreateCustomViewRequest = Body(...)):
+async def create_custom_view_endpoint(
+    request: CreateCustomViewRequest = Body(...),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    require_software_admin(current_user)
     payload = request.dict(by_alias=True)
     # Promote alias to expected key
     if "ViewName" not in payload and request.view_name:
@@ -87,8 +106,10 @@ async def create_custom_view_endpoint(request: CreateCustomViewRequest = Body(..
 @router.put("/{view_id}")
 async def update_custom_view_endpoint(
     view_id: int = Path(..., gt=0),
-    request: UpdateCustomViewRequest = Body(...)
+    request: UpdateCustomViewRequest = Body(...),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
+    require_software_admin(current_user)
     payload = request.dict(by_alias=True, exclude_unset=True)
     if "ViewName" not in payload and request.view_name is not None:
         payload["ViewName"] = request.view_name
@@ -103,8 +124,10 @@ async def update_custom_view_endpoint(
 @router.delete("/{view_id}")
 async def delete_custom_view_endpoint(
     view_id: int = Path(..., gt=0),
-    hard: bool = Query(False)
+    hard: bool = Query(False),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
+    require_software_admin(current_user)
     result = delete_view(view_id, hard=hard)
     if not result.get("success", False):
         status = 404 if result.get("error") == "NOT_FOUND" else 400

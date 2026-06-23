@@ -71,38 +71,56 @@ def _assert_status(subcase: Dict[str, Any], allowed_statuses: List[str]) -> None
             )
 
 
-def _replace_action_items(
+def _upsert_action_items(
     subcase_id: int,
     action_items: List[Dict[str, Any]],
     current_user
 ) -> None:
     """
-    Replace all existing action items for a subcase with new ones.
-    Used by department and administration override functions.
-    
-    Args:
-        subcase_id: Subcase ID
-        action_items: List of new action items to create
-        current_user: Current user object (must have user_id attribute)
+    Upsert action items for a subcase.
+    - Items with action_item_id present → UPDATE (title, description, due_date)
+    - Items without action_item_id → CREATE new
+    - Existing items not referenced in the payload → DELETE
+
+    This replaces _replace_action_items to preserve stable record identities.
     """
-    # Get all existing action items
-    existing_items = action_item_subcase_db.get_action_items_by_subcase(subcase_id)
-    
-    # Delete all existing action items
-    for item in existing_items:
-        action_item_subcase_db.delete_action_item(item['action_item_id'])
-    
-    # Create new action items (DRAFT status)
+    existing = action_item_subcase_db.get_action_items_by_subcase(subcase_id)
+    existing_ids = {item['action_item_id'] for item in existing}
+    kept_ids = set()
+
     for item in action_items:
-        action_item_subcase_db.create_action_item(
-            subcase_id=subcase_id,
-            title=item['title'],
-            description=item['description'],
-            created_by_user_id=current_user.user_id,
-            due_date=item.get('due_date'),
-            initial_status='DRAFT',
-            assigned_to_user_id=item.get('assigned_to_user_id')
-        )
+        aid = item.get('action_item_id')
+        if aid and aid in existing_ids:
+            action_item_subcase_db.update_action_item(
+                action_item_id=aid,
+                title=item['title'],
+                description=item.get('description'),
+                due_date=item.get('due_date'),
+                updated_by_user_id=current_user.user_id
+            )
+            kept_ids.add(aid)
+        else:
+            action_item_subcase_db.create_action_item(
+                subcase_id=subcase_id,
+                title=item['title'],
+                description=item.get('description'),
+                created_by_user_id=current_user.user_id,
+                due_date=item.get('due_date'),
+                initial_status='DRAFT',
+                assigned_to_user_id=item.get('assigned_to_user_id')
+            )
+
+    for eid in existing_ids - kept_ids:
+        action_item_subcase_db.delete_action_item(eid)
+
+
+def _replace_action_items(
+    subcase_id: int,
+    action_items: List[Dict[str, Any]],
+    current_user
+) -> None:
+    """Kept for backward compatibility. Delegates to _upsert_action_items."""
+    _upsert_action_items(subcase_id, action_items, current_user)
 
 
 def _is_force_close_data_complete(subcase: Dict[str, Any]) -> bool:
@@ -260,6 +278,7 @@ def get_subcase_response(subcase_id: int, current_user) -> Dict[str, Any]:
     raw_items = action_item_subcase_db.get_action_items_by_subcase(subcase_id)
     action_items = [
         {
+            "action_item_id": item.get('action_item_id'),
             "title": item.get('title'),
             "description": item.get('description'),
             "due_date": (
@@ -398,21 +417,9 @@ def submit_section_response(
     # Note: RCA table uses IncidentRequestCaseID as primary key, so only one RCA per incident
     existing_rca = incident_case_feedback.get_incident_case_feedback(incident_id)
     
-    # If resubmitting (returned for revision), replace existing action items
-    if subcase.get('status') == 'RETURNED_TO_SECTION_FOR_REVISION':
-        _replace_action_items(subcase_id, action_items, current_user)
-    else:
-        # Initial submission: create new action items
-        for item in action_items:
-            action_item_subcase_db.create_action_item(
-                subcase_id=subcase_id,
-                title=item['title'],
-                description=item['description'],
-                created_by_user_id=current_user.user_id,
-                due_date=item.get('due_date'),
-                initial_status='DRAFT',
-                assigned_to_user_id=item.get('assigned_to_user_id')
-            )
+    # Upsert action items — handles initial submission (all new) and
+    # resubmission (RETURNED_TO_SECTION_FOR_REVISION, may have existing items).
+    _upsert_action_items(subcase_id, action_items, current_user)
     
     # Save legacy boolean RCA feedback if provided (old flow kept for backward compat)
     if rca_feedback is not None and not existing_rca:
@@ -596,7 +603,7 @@ def approve_department(
         raise Exception("current_user cannot be None")
     
     subcase = _load_subcase_or_fail(subcase_id)
-    _assert_status(subcase, ['SECTION_ACCEPTED_PENDING_DEPT', 'RETURNED_TO_DEPT_FOR_REVISION'])
+    _assert_status(subcase, ['SECTION_ACCEPTED_PENDING_DEPT', 'RETURNED_TO_DEPT_FOR_REVISION', 'FORCE_CLOSED_AT_SECTION'])
 
     # Write acceptance text so the field is never left empty
     administrative_subcase_db.update_department_explanation(
@@ -650,8 +657,8 @@ def reject_department(
         raise Exception("current_user cannot be None")
     
     subcase = _load_subcase_or_fail(subcase_id)
-    _assert_status(subcase, ['SECTION_ACCEPTED_PENDING_DEPT', 'RETURNED_TO_DEPT_FOR_REVISION'])
-    
+    _assert_status(subcase, ['SECTION_ACCEPTED_PENDING_DEPT', 'RETURNED_TO_DEPT_FOR_REVISION', 'FORCE_CLOSED_AT_SECTION'])
+
     # Update rejection text
     administrative_subcase_db.update_department_rejection(
         subcase_id=subcase_id,
@@ -703,8 +710,8 @@ def override_department(
         raise Exception("current_user cannot be None")
     
     subcase = _load_subcase_or_fail(subcase_id)
-    _assert_status(subcase, ['SECTION_ACCEPTED_PENDING_DEPT', 'RETURNED_TO_DEPT_FOR_REVISION'])
-    
+    _assert_status(subcase, ['SECTION_ACCEPTED_PENDING_DEPT', 'RETURNED_TO_DEPT_FOR_REVISION', 'FORCE_CLOSED_AT_SECTION'])
+
     # Replace all action items
     _replace_action_items(subcase_id, action_items, current_user)
     
@@ -763,7 +770,7 @@ def approve_administration(
         raise Exception("current_user cannot be None")
 
     subcase = _load_subcase_or_fail(subcase_id)
-    _assert_status(subcase, ['DEPT_ACCEPTED_PENDING_ADMIN'])
+    _assert_status(subcase, ['DEPT_ACCEPTED_PENDING_ADMIN', 'FORCE_CLOSED_AT_DEPARTMENT'])
 
     # Detect whether this is an administrative complaint subcase.
     # ClinicalRiskTypeID == 1 means ordinary complaint (not Notice=2, not Never Event=3).
@@ -880,8 +887,8 @@ def reject_administration(
         raise Exception("current_user cannot be None")
     
     subcase = _load_subcase_or_fail(subcase_id)
-    _assert_status(subcase, ['DEPT_ACCEPTED_PENDING_ADMIN'])
-    
+    _assert_status(subcase, ['DEPT_ACCEPTED_PENDING_ADMIN', 'FORCE_CLOSED_AT_DEPARTMENT'])
+
     # Update rejection text
     administrative_subcase_db.update_administration_rejection(
         subcase_id=subcase_id,
@@ -937,7 +944,7 @@ def override_administration(
         raise Exception("current_user cannot be None")
 
     subcase = _load_subcase_or_fail(subcase_id)
-    _assert_status(subcase, ['DEPT_ACCEPTED_PENDING_ADMIN'])
+    _assert_status(subcase, ['DEPT_ACCEPTED_PENDING_ADMIN', 'FORCE_CLOSED_AT_DEPARTMENT'])
 
     # Detect complaint subcase (same logic as approve_administration)
     is_complaint = False

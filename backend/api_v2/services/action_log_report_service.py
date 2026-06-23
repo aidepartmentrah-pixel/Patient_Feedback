@@ -20,6 +20,50 @@ from backend.api_v2.db_layer import action_item_subcase_db
 # REPORT BUILDER
 # ============================================================================
 
+def build_action_log_report_by_date_range(
+    conn,
+    start_date: date,
+    end_date: date,
+    current_user,
+    today: date
+) -> Dict[str, Any]:
+    """
+    Build Action Log report dataset for a custom date range (no season required).
+
+    Identical pipeline to build_action_log_report but skips season resolution —
+    start_date and end_date are passed directly by the caller.
+    """
+    rows = action_item_subcase_db.get_action_items_by_due_date_range(
+        conn, start_date, end_date
+    )
+
+    allowed_unit_ids = set(current_user.allowed_unit_ids)
+    scoped_rows = [
+        row for row in rows
+        if row.get("target_org_unit_id") in allowed_unit_ids
+    ]
+
+    classification_result = action_log_classification_service.classify_action_items(
+        scoped_rows, today
+    )
+
+    report_meta = {
+        "season_id": None,
+        "season_name": None,
+        "start_date": start_date,
+        "end_date": end_date,
+        "generated_at": today,
+        "generated_by": current_user.display_name if hasattr(current_user, "display_name") else None,
+    }
+
+    return {
+        "meta": report_meta,
+        "completed_items": classification_result["completed_items"],
+        "not_completed_items": classification_result["not_completed_items"],
+        "totals": classification_result["totals"],
+    }
+
+
 def build_action_log_report(
     conn,
     season_id: int,

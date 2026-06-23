@@ -61,6 +61,24 @@ def get_inbox(
     return {"items": items}
 
 
+@router.get("/inbox/accountability")
+def get_inbox_accountability(
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Return force-close accountability data for SECTION_ADMIN and DEPARTMENT_ADMIN.
+
+    Response:
+        {
+          "red":  [ {...subcase fields...} ],   # still escalated, view-only
+          "gray": [ {...subcase fields...} ],   # restored + progressed, dismissible
+        }
+
+    Other roles receive empty lists.
+    """
+    return inbox_service.get_inbox_accountability(current_user)
+
+
 @router.get("/inbox/archive")
 def get_inbox_archive(
     current_user: CurrentUser = Depends(get_current_user)
@@ -390,6 +408,70 @@ def get_subcase_response(
         404 — subcase not found or no response submitted yet
     """
     return case_response_service.get_subcase_response(subcase_id, current_user)
+
+
+# ============================================================
+# INVESTIGATION HISTORY VIEWER (Stage 6 – read-only)
+# ============================================================
+
+@router.get("/case/{subcase_id}/history")
+def get_subcase_history(
+    subcase_id: int,
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Return the full investigation history for a subcase:
+    Section / Department / Administration explanation texts and
+    Patient Services decision, each with available metadata.
+    Also returns action items attached to the subcase.
+
+    Authorization: user must have the subcase in their allowed scope
+    (same rule as inbox).
+
+    Response (200):
+    {
+        "subcase_id": 123,
+        "org_unit_name": "Cardiology",
+        "section":        { "has_content": bool, "text": str|null, "entered_by": str|null, "entered_at": str|null },
+        "department":     { ... },
+        "administration": { ... },
+        "patient_services": { ... },
+        "action_items": [{ "title": str, "description": str|null, "due_date": str|null, "status": str }]
+    }
+
+    Errors:
+        403 — subcase not in user scope
+        404 — subcase not found
+    """
+    from backend.api_v2.db_layer import administrative_subcase_db, action_item_subcase_db
+
+    history = administrative_subcase_db.get_subcase_history(subcase_id)
+    if history is None:
+        raise HTTPException(status_code=404, detail=f"Subcase {subcase_id} not found")
+
+    # Scope check — subcase target unit must be in user's allowed units
+    subcase = administrative_subcase_db.get_subcase_by_id(subcase_id)
+    allowed_unit_ids = set(current_user.allowed_unit_ids) if current_user.allowed_unit_ids else set()
+    is_privileged = any(
+        s.role_code in ("SOFTWARE_ADMIN", "COMPLAINT_SUPERVISOR", "ADMINISTRATION_ADMIN")
+        for s in (current_user.scopes or [])
+    )
+    if not is_privileged and subcase.get("target_org_unit_id") not in allowed_unit_ids:
+        raise HTTPException(status_code=403, detail="Not authorised to view this subcase")
+
+    # Attach action items
+    raw_items = action_item_subcase_db.get_action_items_by_subcase(subcase_id)
+    history["action_items"] = [
+        {
+            "title": i.get("title"),
+            "description": i.get("description") or None,
+            "due_date": i.get("due_date").strftime("%Y-%m-%d") if i.get("due_date") else None,
+            "status": i.get("status"),
+        }
+        for i in raw_items
+    ]
+
+    return history
 
 
 # ============================================================

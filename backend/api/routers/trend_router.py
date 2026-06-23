@@ -413,8 +413,8 @@ def fetch_trends_analysis(
     administration_id: int | None = Query(None),
     department_id: int | None = Query(None),
     section_id: int | None = Query(None),
-    start_date: str | None = Query(None, description="Start month in YYYY-MM format"),
-    end_date: str | None = Query(None, description="End month in YYYY-MM format"),
+    start_date: str | None = Query(None, description="Start date in YYYY-MM-DD format"),
+    end_date: str | None = Query(None, description="End date in YYYY-MM-DD format"),
     include_zero_months: bool = Query(True),
 ):
     """
@@ -472,19 +472,11 @@ def fetch_trends_analysis(
     
     # Parse dates
     try:
-        start_date_obj = None
-        end_date_obj = None
-        
-        if start_date:
-            year, month = map(int, start_date.split("-"))
-            start_date_obj = date(year, month, 1)
-        
-        if end_date:
-            year, month = map(int, end_date.split("-"))
-            end_date_obj = date(year, month, 1)
+        start_date_obj = date.fromisoformat(start_date) if start_date else None
+        end_date_obj = date.fromisoformat(end_date) if end_date else None
     except ValueError:
-        raise HTTPException(status_code=400, detail="Date must be in YYYY-MM format")
-    
+        raise HTTPException(status_code=400, detail="Date must be in YYYY-MM-DD format")
+
     try:
         from ..services.trend_service import get_trends_analysis
         
@@ -501,5 +493,43 @@ def fetch_trends_analysis(
     
     except Exception as e:
         print(f"Trends analysis error: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+# =========================================================
+# HOSPITAL SAFETY METRICS — constant thresholds, not policy-table-driven
+# =========================================================
+
+@router.get("/hospital-safety-metrics")
+def fetch_hospital_safety_metrics(
+    current_user: CurrentUser = Depends(get_current_user),
+    start_date: str = Query(..., description="Start date in YYYY-MM-DD format"),
+    end_date: str = Query(..., description="End date in YYYY-MM-DD format"),
+):
+    """
+    Hospital-wide safety metrics widget (Target Analysis).
+
+    Two constant thresholds defined in code, not stored in
+    APP_OrgUnitPolicy and not configurable via the Settings tab:
+      - High severity cases must not exceed 5% of total hospital cases.
+      - High severity + Clinical domain cases must not exceed 3% of total.
+
+    Hospital scope only — no org unit filtering.
+    """
+    try:
+        start_date_obj = date.fromisoformat(start_date)
+        end_date_obj = date.fromisoformat(end_date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Dates must be in YYYY-MM-DD format")
+
+    try:
+        from ..services.hospital_safety_metrics_service import get_hospital_safety_metrics
+
+        result = get_hospital_safety_metrics(start_date_obj, end_date_obj)
+        return {"success": True, **result}
+
+    except Exception as e:
+        print(f"Hospital safety metrics error: {str(e)}")
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

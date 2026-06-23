@@ -118,41 +118,48 @@ async def search_patients_endpoint(
 
 
 # ============================================================
-# RESPONSE PERFORMANCE REPORT (HCAT Performance & Delay Monitoring - Session 3)
+# WORKFLOW PERFORMANCE REPORT EXPORT (HCAT Reporting Refactor - Session 1)
 # ============================================================
+#
+# NOTE: the standalone GET /response-performance and GET /current-delay
+# endpoints that used to back the Reporting Page's "Response Performance"
+# and "Current Delay" cards were removed in Session 2 (those cards were
+# migrated into this unified export - see workflow_performance_report_service.py).
+# The underlying get_response_performance_report() / get_current_delay_report()
+# service functions are still shared logic, reused by build_workflow_performance_report()
+# below.
 
-@router.get("/response-performance")
-def response_performance_report(
-    date_from: Optional[date] = Query(None, description="Inclusive start date (YYYY-MM-DD). Default: first day of current month"),
-    date_to: Optional[date] = Query(None, description="Inclusive end date (YYYY-MM-DD). Default: today"),
-    level: Literal["All", "Administration", "Department", "Section"] = Query("All", description="Hierarchy level filter"),
-    target_unit_id: Optional[int] = Query(None, description="Restrict the report to a single organizational unit"),
-    current_user: CurrentUser = Depends(get_current_user)
+class WorkflowPerformanceExportRequest(BaseModel):
+    """Request body for exporting the unified Workflow Performance Report."""
+    date_from: Optional[date] = Field(None, description="Inclusive start date for the Response Performance section. Default: first day of current month")
+    date_to: Optional[date] = Field(None, description="Inclusive end date for the Response Performance section. Default: today")
+    level: Literal["All", "Administration", "Department", "Section"] = "All"
+    target_unit_id: Optional[int] = Field(None, description="Restrict the report to a single organizational unit")
+
+
+@router.post("/workflow-performance/export")
+def export_workflow_performance_report(
+    request: WorkflowPerformanceExportRequest,
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """
-    Response Performance Report (تقرير أداء الردود).
+    Export the unified Workflow Performance Report (تقرير أداء سير العمل) as a
+    Word (.docx) document, for the Workflow Page launcher.
 
-    Historical report: for every Administration/Department/Section unit that
-    has at least one published case assigned to it in the selected date
-    range, returns Total Assigned, Answered On Time, Answered Late, Force
-    Closed, Extra Time Granted, Still Open, Average Response Days, Response
-    Rate, Late Rate and a simple Performance Label.
-
-    This is NOT a live blockage report - see response_performance_service.py
-    for the full metric definitions and documented assumptions.
+    Combines the existing Response Performance (historical, date-ranged) and
+    Current Delay (live, current-state) reports into one DOCX with two
+    sections. Reuses get_response_performance_report() and
+    get_current_delay_report() exactly as the old Reporting Page cards do -
+    no new metrics or scoping rules are introduced.
     """
     require_logged_in(current_user)
 
-    from ..services.response_performance_service import get_response_performance_report
+    from ..services.workflow_performance_report_service import build_workflow_performance_report
+    from ..services.workflow_performance_word_formatter import generate_workflow_performance_word
 
-    # -------------------------
-    # Default date range: current month
-    # -------------------------
     today = date.today()
-    if date_to is None:
-        date_to = today
-    if date_from is None:
-        date_from = today.replace(day=1)
+    date_to = request.date_to or today
+    date_from = request.date_from or today.replace(day=1)
 
     if date_from > date_to:
         raise HTTPException(status_code=400, detail="date_from must be before or equal to date_to")
@@ -160,66 +167,32 @@ def response_performance_report(
     date_from_dt = datetime(date_from.year, date_from.month, date_from.day)
     date_to_exclusive_dt = datetime(date_to.year, date_to.month, date_to.day) + timedelta(days=1)
 
-    # -------------------------
-    # RBAC scope
-    # -------------------------
-    if target_unit_id is not None:
-        require_unit_in_scope(current_user, target_unit_id)
+    if request.target_unit_id is not None:
+        require_unit_in_scope(current_user, request.target_unit_id)
 
     scope_unit_ids = list(current_user.allowed_unit_ids)
 
     try:
-        return get_response_performance_report(
+        report_data = build_workflow_performance_report(
             scope_unit_ids=scope_unit_ids,
             date_from=date_from_dt,
             date_to_exclusive=date_to_exclusive_dt,
-            level=level,
-            target_unit_id=target_unit_id,
+            level=request.level,
+            target_unit_id=request.target_unit_id,
+            generated_by=getattr(current_user, "display_name", "System"),
         )
+        docx_bytes = generate_workflow_performance_word(report_data)
     except Exception as e:
-        logger.exception("Response performance report error")
+        logger.exception("Workflow performance report export error")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
+    filename = f"workflow_performance_report_{date_from}_to_{date_to}.docx"
 
-# ============================================================
-# CURRENT DELAY / BLOCKAGE REPORT (HCAT Performance & Delay Monitoring - Session 4)
-# ============================================================
-
-@router.get("/current-delay")
-def current_delay_report(
-    level: Literal["All", "Administration", "Department", "Section"] = Query("All", description="Hierarchy level filter"),
-    target_unit_id: Optional[int] = Query(None, description="Restrict the report to a single organizational unit"),
-    current_user: CurrentUser = Depends(get_current_user)
-):
-    """
-    Current Delay / Blockage Report (تقرير التأخير الحالي).
-
-    LIVE operational report: for every unit in scope with at least one
-    assigned subcase, returns Currently Pending, Currently Overdue, Force
-    Closed At Unit, Extra Time Granted, Oldest Pending Days and Average
-    Pending Days. There is no date range - this reflects the CURRENT state.
-
-    This is NOT a historical report - see current_delay_service.py for the
-    full metric definitions and documented assumptions.
-    """
-    require_logged_in(current_user)
-
-    from ..services.current_delay_service import get_current_delay_report
-
-    if target_unit_id is not None:
-        require_unit_in_scope(current_user, target_unit_id)
-
-    scope_unit_ids = list(current_user.allowed_unit_ids)
-
-    try:
-        return get_current_delay_report(
-            scope_unit_ids=scope_unit_ids,
-            level=level,
-            target_unit_id=target_unit_id,
-        )
-    except Exception as e:
-        logger.exception("Current delay report error")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+    return Response(
+        content=docx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ============================================================

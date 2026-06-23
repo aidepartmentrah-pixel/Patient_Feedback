@@ -456,6 +456,149 @@ def get_filtered_complaints(
 
 
 # =============================================
+# B1b: FETCH FILTERED NOTICES (DETAILED MODE)
+# =============================================
+
+def get_filtered_notices(
+    year: int,
+    month: Optional[int] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    allowed_unit_ids: Optional[List[int]] = None,
+    target_unit_ids: Optional[List[int]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Fetch notice records (RecordTypeID=2) for the stylish monthly formatter.
+    Mirrors get_filtered_complaints scoping exactly — same date range,
+    same allowed_unit_ids boundary, same target_unit_ids filter.
+    Returns ALL notices (no pagination — notice volume is always small).
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    if start_date and end_date:
+        date_filter = f"AND ic.FeedbackRecievedDate BETWEEN '{start_date}' AND '{end_date}'"
+    elif month:
+        date_filter = f"AND YEAR(ic.FeedbackRecievedDate) = {year} AND MONTH(ic.FeedbackRecievedDate) = {month}"
+    else:
+        date_filter = f"AND YEAR(ic.FeedbackRecievedDate) = {year}"
+
+    where_parts = [date_filter, "AND ic.RecordTypeID = 2"]
+
+    if allowed_unit_ids:
+        placeholders = ','.join(str(uid) for uid in allowed_unit_ids)
+        where_parts.append(f"AND ic.IssuingOrgUnitID IN ({placeholders})")
+    else:
+        where_parts.append("AND 1=0")
+
+    if target_unit_ids:
+        target_placeholders = ','.join(str(uid) for uid in target_unit_ids)
+        where_parts.append(f"""AND EXISTS (
+            SELECT 1 FROM dbo.APP_IncidentCaseTargetDepartment td_filter
+            WHERE td_filter.IncidentRequestCaseID = ic.IncidentRequestCaseID
+            AND td_filter.DepartmentID IN ({target_placeholders})
+        )""")
+
+    where_clause = " ".join(where_parts)
+
+    query = f"""
+    SELECT
+        ic.IncidentRequestCaseID as id,
+        ic.incident_id as incident_id,
+        ic.ComplaintText as notice_text,
+        ic.FeedbackRecievedDate as received_date,
+        ic.PatientName as patient_name,
+
+        -- Issuing hierarchy
+        issuing_section.Name as section_name,
+        issuing_dept.Name as department_name,
+        issuing_admin.Name as administration_name,
+
+        -- Source
+        ic.SourceID as source_id,
+        source.SourceName as source_name,
+
+        -- Intent type (تنويه label)
+        feedback_intent.NameAr as feedback_intent_type_name_ar,
+
+        -- Status (for reference)
+        status.Name as status_name
+    FROM dbo.APP_IncidentCase ic
+    LEFT JOIN dbo.AdminsrationUnit issuing_section ON ic.IssuingOrgUnitID = issuing_section.UniqueID
+    LEFT JOIN dbo.AdminsrationUnit issuing_dept    ON issuing_section.ParentID = issuing_dept.UniqueID
+    LEFT JOIN dbo.AdminsrationUnit issuing_admin   ON issuing_dept.ParentID = issuing_admin.UniqueID
+    LEFT JOIN dbo.APP_LOOKUP_SOURCE source ON ic.SourceID = source.SourceID
+    LEFT JOIN dbo.APP_LOOKUP_FEEDBACK_INTENT_TYPE feedback_intent ON ic.FeedbackIntentTypeID = feedback_intent.FeedbackIntentTypeID
+    LEFT JOIN dbo.APP_LOOKUP_CASE_STATUS status ON ic.CaseStatusID = status.CaseStatusID
+    WHERE 1=1 {where_clause}
+    ORDER BY ic.FeedbackRecievedDate DESC
+    """
+
+    cursor.execute(query)
+    rows = cursor.fetchall()
+    columns = [desc[0] for desc in cursor.description]
+
+    notices = []
+    for row in rows:
+        notice = dict(zip(columns, row))
+
+        if notice.get('received_date'):
+            if isinstance(notice['received_date'], datetime):
+                notice['received_date'] = notice['received_date'].strftime('%Y-%m-%d')
+            elif isinstance(notice['received_date'], date):
+                notice['received_date'] = notice['received_date'].isoformat()
+
+        # Fetch target departments (same hierarchy walk as complaints)
+        target_dept_query = """
+            SELECT
+                td.IsPrimary AS is_primary,
+                hier.section_id, hier.section_name,
+                hier.department_id, hier.department_name,
+                hier.administration_id, hier.administration_name
+            FROM dbo.APP_IncidentCaseTargetDepartment td
+            OUTER APPLY (
+                SELECT
+                    CASE WHEN target.Type = 324 THEN target.UniqueID ELSE NULL END AS section_id,
+                    CASE WHEN target.Type = 324 THEN target.Name    ELSE NULL END AS section_name,
+                    CASE WHEN target.Type = 325 THEN target.UniqueID
+                         WHEN target.Type = 324 AND p1.Type = 325 THEN p1.UniqueID ELSE NULL END AS department_id,
+                    CASE WHEN target.Type = 325 THEN target.Name
+                         WHEN target.Type = 324 AND p1.Type = 325 THEN p1.Name ELSE NULL END AS department_name,
+                    CASE WHEN target.Type = 323 THEN target.UniqueID
+                         WHEN target.Type = 325 AND p1.Type = 323 THEN p1.UniqueID
+                         WHEN target.Type = 324 AND p1.Type = 323 THEN p1.UniqueID
+                         WHEN target.Type = 324 AND p1.Type = 325 AND p2.Type = 323 THEN p2.UniqueID ELSE NULL END AS administration_id,
+                    CASE WHEN target.Type = 323 THEN target.Name
+                         WHEN target.Type = 325 AND p1.Type = 323 THEN p1.Name
+                         WHEN target.Type = 324 AND p1.Type = 323 THEN p1.Name
+                         WHEN target.Type = 324 AND p1.Type = 325 AND p2.Type = 323 THEN p2.Name ELSE NULL END AS administration_name
+                FROM dbo.AdminsrationUnit target
+                LEFT JOIN dbo.AdminsrationUnit p1 ON target.ParentID = p1.UniqueID AND target.ParentID != target.UniqueID
+                LEFT JOIN dbo.AdminsrationUnit p2 ON p1.ParentID = p2.UniqueID AND p1.ParentID IS NOT NULL AND p1.ParentID != p1.UniqueID
+                WHERE target.UniqueID = td.DepartmentID
+            ) AS hier
+            WHERE td.IncidentRequestCaseID = ?
+            ORDER BY td.DepartmentID
+        """
+        cursor.execute(target_dept_query, (notice['id'],))
+        target_rows = cursor.fetchall()
+        notice['target_departments'] = [
+            {
+                'section_id': r.section_id, 'section_name': r.section_name,
+                'department_id': r.department_id, 'department_name': r.department_name,
+                'administration_id': r.administration_id, 'administration_name': r.administration_name,
+                'is_primary': bool(r.is_primary)
+            }
+            for r in target_rows
+        ]
+
+        notices.append(notice)
+
+    conn.close()
+    return notices
+
+
+# =============================================
 # B2: MONTHLY AGGREGATED STATISTICS
 # =============================================
 
@@ -675,7 +818,7 @@ def get_monthly_statistics(
         })
     
     conn.close()
-    
+
     return {
         "summary": summary,
         "by_domain": by_domain,
@@ -683,6 +826,225 @@ def get_monthly_statistics(
         "by_severity": by_severity,
         "by_department": by_department
     }
+
+
+# =============================================
+# B2b: MONTHLY COMPLAINT/NOTICE COUNT SUMMARY (HCAT Monthly Reporting Refactor - Session 3)
+# =============================================
+
+def _pivot_intent_count_rows(rows: List[Tuple]) -> List[Dict[str, Any]]:
+    """
+    Pivot (GroupID, group_name, RecordTypeID, count) rows into one row per
+    unit with complaint_count/notice_count/total_count. RecordTypeID:
+    1 = Complaint, 2 = Notice (dbo.APP_LOOKUP_RECORD_TYPE).
+    """
+    units: Dict[Any, Dict[str, Any]] = {}
+    for group_id, group_name, record_type_id, count in rows:
+        if group_id not in units:
+            units[group_id] = {
+                "unit_id": group_id,
+                "unit_name": group_name or "Unknown",
+                "complaint_count": 0,
+                "notice_count": 0,
+                "total_count": 0,
+            }
+        if record_type_id == 1:
+            units[group_id]["complaint_count"] += count
+        elif record_type_id == 2:
+            units[group_id]["notice_count"] += count
+        units[group_id]["total_count"] += count
+    return sorted(units.values(), key=lambda u: u["unit_name"])
+
+
+def get_monthly_intent_counts_by_unit(
+    year: int,
+    month: Optional[int] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    allowed_unit_ids: Optional[List[int]] = None,
+    target_unit_ids: Optional[List[int]] = None,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Complaint vs Notice counts per unit, for the Monthly Detailed Report's
+    count summary (Session 3) — "Complaint and Notice Count Summary by Unit".
+
+    Mirrors get_monthly_statistics()'s date/scope filtering and its three
+    by_department group-by levels (section / department / administration)
+    exactly, except it does NOT exclude Notices (RecordTypeID=2) — it groups
+    by RecordTypeID instead, so both Complaint (1) and Notice (2) counts are
+    returned side by side. Same scope guarantee as the rest of the Monthly
+    Detailed Report: only allowed_unit_ids / target_unit_ids are counted.
+
+    Returns:
+        {
+            "sections":       [{unit_id, unit_name, complaint_count, notice_count, total_count}, ...],
+            "departments":    [...],
+            "administrations": [...],
+        }
+        Units with zero matching records are absent (same "only units with
+        records appear" behavior as get_monthly_statistics' by_department).
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Same date range + scope filters as get_monthly_statistics, EXCEPT no
+    # "AND ic.RecordTypeID = 1" — we want both Complaints and Notices here.
+    if start_date and end_date:
+        date_filter = f"WHERE ic.FeedbackRecievedDate BETWEEN '{start_date}' AND '{end_date}'"
+    elif month:
+        date_filter = f"WHERE YEAR(ic.FeedbackRecievedDate) = {year} AND MONTH(ic.FeedbackRecievedDate) = {month}"
+    else:
+        date_filter = f"WHERE YEAR(ic.FeedbackRecievedDate) = {year}"
+
+    if allowed_unit_ids:
+        placeholders = ','.join(str(uid) for uid in allowed_unit_ids)
+        date_filter += f" AND ic.IssuingOrgUnitID IN ({placeholders})"
+    else:
+        date_filter += " AND 1=0"
+
+    if target_unit_ids:
+        target_placeholders = ','.join(str(uid) for uid in target_unit_ids)
+        date_filter += f""" AND EXISTS (
+            SELECT 1 FROM dbo.APP_IncidentCaseTargetDepartment td_filter
+            WHERE td_filter.IncidentRequestCaseID = ic.IncidentRequestCaseID
+            AND td_filter.DepartmentID IN ({target_placeholders})
+        )"""
+
+    date_filter += " AND ic.RecordTypeID IN (1, 2)"  # 1=Complaint, 2=Notice — both counted here
+
+    # Section level (target department directly)
+    section_query = f"""
+    SELECT
+        td.DepartmentID,
+        COALESCE(ou.Name, 'Unknown') as group_name,
+        ic.RecordTypeID,
+        COUNT(DISTINCT ic.IncidentRequestCaseID) as count
+    FROM dbo.APP_IncidentCase ic
+    INNER JOIN dbo.APP_IncidentCaseTargetDepartment td ON ic.IncidentRequestCaseID = td.IncidentRequestCaseID
+    LEFT JOIN dbo.AdminsrationUnit ou ON td.DepartmentID = ou.UniqueID
+    {date_filter}
+    GROUP BY td.DepartmentID, ou.Name, ic.RecordTypeID
+    """
+    cursor.execute(section_query)
+    sections = _pivot_intent_count_rows(cursor.fetchall())
+
+    # Department level (roll up to parent of target section)
+    department_query = f"""
+    SELECT
+        parent_unit.UniqueID,
+        COALESCE(parent_unit.Name, 'Unknown') as group_name,
+        ic.RecordTypeID,
+        COUNT(DISTINCT ic.IncidentRequestCaseID) as count
+    FROM dbo.APP_IncidentCase ic
+    INNER JOIN dbo.APP_IncidentCaseTargetDepartment td ON ic.IncidentRequestCaseID = td.IncidentRequestCaseID
+    LEFT JOIN dbo.AdminsrationUnit sec_unit ON td.DepartmentID = sec_unit.UniqueID
+    LEFT JOIN dbo.AdminsrationUnit parent_unit ON sec_unit.ParentID = parent_unit.UniqueID
+    {date_filter}
+    GROUP BY parent_unit.UniqueID, parent_unit.Name, ic.RecordTypeID
+    """
+    cursor.execute(department_query)
+    departments = _pivot_intent_count_rows(cursor.fetchall())
+
+    # Administration level (walk up to first Type=323 ancestor)
+    administration_query = f"""
+    SELECT
+        admin_unit.UniqueID,
+        COALESCE(admin_unit.Name, 'Unknown') as group_name,
+        ic.RecordTypeID,
+        COUNT(DISTINCT ic.IncidentRequestCaseID) as count
+    FROM dbo.APP_IncidentCase ic
+    INNER JOIN dbo.APP_IncidentCaseTargetDepartment td ON ic.IncidentRequestCaseID = td.IncidentRequestCaseID
+    LEFT JOIN dbo.AdminsrationUnit sec_unit ON td.DepartmentID = sec_unit.UniqueID
+    LEFT JOIN dbo.AdminsrationUnit dept_unit ON sec_unit.ParentID = dept_unit.UniqueID
+               AND sec_unit.ParentID != sec_unit.UniqueID
+    LEFT JOIN dbo.AdminsrationUnit admin_from_dept ON dept_unit.ParentID = admin_from_dept.UniqueID
+               AND dept_unit.ParentID != dept_unit.UniqueID
+    CROSS APPLY (
+        SELECT CASE
+            WHEN sec_unit.Type = 323 THEN sec_unit.UniqueID
+            WHEN dept_unit.Type = 323 THEN dept_unit.UniqueID
+            WHEN admin_from_dept.Type = 323 THEN admin_from_dept.UniqueID
+            ELSE NULL
+        END AS UniqueID,
+        CASE
+            WHEN sec_unit.Type = 323 THEN sec_unit.Name
+            WHEN dept_unit.Type = 323 THEN dept_unit.Name
+            WHEN admin_from_dept.Type = 323 THEN admin_from_dept.Name
+            ELSE NULL
+        END AS Name
+    ) admin_unit
+    {date_filter}
+    AND admin_unit.UniqueID IS NOT NULL
+    GROUP BY admin_unit.UniqueID, admin_unit.Name, ic.RecordTypeID
+    """
+    cursor.execute(administration_query)
+    administrations = _pivot_intent_count_rows(cursor.fetchall())
+
+    conn.close()
+
+    return {
+        "sections": sections,
+        "departments": departments,
+        "administrations": administrations,
+    }
+
+
+def get_monthly_notice_summary(
+    year: int,
+    month: Optional[int] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    allowed_unit_ids: Optional[List[int]] = None,
+    target_unit_ids: Optional[List[int]] = None,
+) -> Dict[str, Any]:
+    """
+    Total Notices for the period/scope (HCAT Monthly Reporting Refactor -
+    Session 4 - Monthly Statistical Report's "Notice Statistics" /
+    "Executive Summary" / "Combined Totals" sections).
+
+    Mirrors get_monthly_statistics()'s summary_query exactly (same date
+    range + allowed_unit_ids scope, no target-department join, so this is
+    a true scope-wide total - not a per-unit breakdown, which would
+    double-count records that target multiple units), but scoped to
+    RecordTypeID=2 (Notice) instead of 1 (Complaint). Kept as a separate
+    function so get_monthly_statistics() - which is Complaint-only by
+    design - is never touched or risked by this session.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    if start_date and end_date:
+        date_filter = f"WHERE ic.FeedbackRecievedDate BETWEEN '{start_date}' AND '{end_date}'"
+    elif month:
+        date_filter = f"WHERE YEAR(ic.FeedbackRecievedDate) = {year} AND MONTH(ic.FeedbackRecievedDate) = {month}"
+    else:
+        date_filter = f"WHERE YEAR(ic.FeedbackRecievedDate) = {year}"
+
+    if allowed_unit_ids:
+        placeholders = ','.join(str(uid) for uid in allowed_unit_ids)
+        date_filter += f" AND ic.IssuingOrgUnitID IN ({placeholders})"
+    else:
+        date_filter += " AND 1=0"
+
+    if target_unit_ids:
+        target_placeholders = ','.join(str(uid) for uid in target_unit_ids)
+        date_filter += f""" AND EXISTS (
+            SELECT 1 FROM dbo.APP_IncidentCaseTargetDepartment td_filter
+            WHERE td_filter.IncidentRequestCaseID = ic.IncidentRequestCaseID
+            AND td_filter.DepartmentID IN ({target_placeholders})
+        )"""
+
+    date_filter += " AND ic.RecordTypeID = 2"  # Notices only
+
+    cursor.execute(f"""
+    SELECT COUNT(*) as total_notices
+    FROM dbo.APP_IncidentCase ic
+    {date_filter}
+    """)
+    row = cursor.fetchone()
+    conn.close()
+
+    return {"total_notices": row[0] or 0}
 
 
 # =============================================

@@ -419,7 +419,7 @@ class ReportsService:
             """Apply borders to cell"""
             tc = cell._element
             tcPr = tc.get_or_add_tcPr()
-            
+
             # Add borders
             tcBorders = OxmlElement('w:tcBorders')
             for border_name in ['top', 'left', 'bottom', 'right']:
@@ -429,13 +429,136 @@ class ReportsService:
                 border.set(qn('w:color'), '000000')
                 tcBorders.append(border)
             tcPr.append(tcBorders)
-        
+
+        def add_section_divider(text_ar, text_en):
+            """
+            Major section heading (Session 4): Executive Summary / Complaint
+            Statistics / Notice Statistics / Combined Totals. More prominent
+            than the existing sub-headings (e.g. "التوزيع حسب المجال") so the
+            four-section structure reads clearly without redesigning the
+            report's existing look.
+            """
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            run = p.add_run(text_ar)
+            run.font.size = Pt(16)
+            run.font.bold = True
+            run.font.name = 'Traditional Arabic'
+            run.font.color.rgb = RGBColor(0x1C, 0x3A, 0x7A)
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+            p.paragraph_format.space_before = Pt(10)
+            p.paragraph_format.space_after = Pt(1)
+
+            sub = doc.add_paragraph()
+            sub.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            sub_run = sub.add_run(text_en)
+            sub_run.font.size = Pt(11)
+            sub_run.font.italic = True
+            sub.paragraph_format.space_after = Pt(6)
+
+            pPr = p._p.get_or_add_pPr()
+            pBdr = OxmlElement('w:pBdr')
+            bottom = OxmlElement('w:bottom')
+            bottom.set(qn('w:val'), 'single')
+            bottom.set(qn('w:sz'), '8')
+            bottom.set(qn('w:space'), '2')
+            bottom.set(qn('w:color'), '1C3A7A')
+            pBdr.append(bottom)
+            pPr.append(pBdr)
+
+        def add_label_value_table(rows_data):
+            """2-column (value | label) table, same visual style as the
+            existing Summary Statistics table - used by Executive Summary."""
+            table = doc.add_table(rows=len(rows_data), cols=2)
+            table.alignment = WD_TABLE_ALIGNMENT.RIGHT
+            table.autofit = False
+            table.allow_autofit = False
+            table.columns[0].width = _safe(Cm(4))
+            table.columns[1].width = _safe(Cm(10))
+
+            for idx, (label, value) in enumerate(rows_data):
+                row_cells = table.rows[idx].cells
+                row_cells[0].text = str(value)
+                for paragraph in row_cells[0].paragraphs:
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    for run in paragraph.runs:
+                        run.font.size = Pt(11)
+                        run.font.bold = True
+                        run.font.name = 'Traditional Arabic'
+                        run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+
+                row_cells[1].text = label
+                for paragraph in row_cells[1].paragraphs:
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                    for run in paragraph.runs:
+                        run.font.size = Pt(11)
+                        run.font.bold = True
+                        run.font.name = 'Traditional Arabic'
+                        run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+
+                apply_cell_borders(row_cells[0])
+                apply_cell_borders(row_cells[1])
+            return table
+
+        def add_unit_count_table(units, count_field):
+            """2-column (count | unit name) table - same style as the
+            existing Severity breakdown table. Used by Notice Statistics'
+            per-level distribution tables."""
+            table = doc.add_table(rows=len(units) + 1, cols=2)
+            table.alignment = WD_TABLE_ALIGNMENT.RIGHT
+            table.autofit = False
+            table.allow_autofit = False
+            table.columns[0].width = _safe(Cm(3))
+            table.columns[1].width = _safe(Cm(11))
+
+            header_cells = table.rows[0].cells
+            for idx, header_text in enumerate(["العدد", "الوحدة"]):
+                header_cells[idx].text = header_text
+                for paragraph in header_cells[idx].paragraphs:
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    for run in paragraph.runs:
+                        run.font.size = Pt(11)
+                        run.font.bold = True
+                        run.font.name = 'Traditional Arabic'
+                        run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+                apply_cell_borders(header_cells[idx])
+                shading_elm = OxmlElement('w:shd')
+                shading_elm.set(qn('w:fill'), 'D3D3D3')
+                header_cells[idx]._element.get_or_add_tcPr().append(shading_elm)
+
+            for idx, unit in enumerate(units, start=1):
+                row_cells = table.rows[idx].cells
+                row_cells[0].text = str(unit.get(count_field, 0))
+                center_cell_content(row_cells[0])
+                row_cells[1].text = unit.get("unit_name", "—")
+                for paragraph in row_cells[1].paragraphs:
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                    for run in paragraph.runs:
+                        run.font.size = Pt(11)
+                        run.font.name = 'Traditional Arabic'
+                        run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+                for cell in row_cells:
+                    apply_cell_borders(cell)
+            return table
+
+        def add_no_data_note(text_ar):
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            run = p.add_run(text_ar)
+            run.font.size = Pt(10)
+            run.font.italic = True
+            run.font.name = 'Traditional Arabic'
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+
         # Extract data
         period = report_data.get("period", {})
         summary = report_data.get("summary", {})
         by_domain = report_data.get("by_domain", [])
         by_severity = report_data.get("by_severity", [])
         by_department = report_data.get("by_department", [])
+        executive_summary = report_data.get("executive_summary")
+        notice_summary = report_data.get("notice_summary")
+        intent_counts = report_data.get("intent_counts")
         
         # Build period label
         year = period.get("year", "")
@@ -455,7 +578,7 @@ class ReportsService:
         # Build scope label
         if report_entity_type == "hospital" or not report_entity_type:
             scope_label = "التقرير الشهري الإحصائي للمستشفى"
-            scope_name = "مستشفى الملك فهد التخصصي بالدمام"
+            scope_name = "مستشفى الرّسول الأعظم"
         elif report_entity_type == "administration":
             scope_label = "التقرير الشهري الإحصائي للإدارة"
             scope_name = report_entity_name or "—"
@@ -471,7 +594,7 @@ class ReportsService:
         
         # Create Word document
         doc = Document()
-        
+
         # Set page to A4 Landscape
         section = doc.sections[0]
         section.page_height = _safe(Mm(210))
@@ -481,11 +604,25 @@ class ReportsService:
         section.right_margin = _safe(Mm(15))
         section.top_margin = _safe(Mm(15))
         section.bottom_margin = _safe(Mm(15))
-        
+
+        # Hospital logo in Word page header (same pattern as generate_docx_export
+        # and generate_workflow_activity_word — all official hospital reports)
+        import os
+        try:
+            logo_path = os.path.join(os.path.dirname(__file__), '..', '..', 'assets', 'logo.png')
+            if os.path.exists(logo_path):
+                section.header_distance = _safe(Mm(5))
+                hdr_p = section.header.paragraphs[0]
+                hdr_p.clear()
+                hdr_p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                hdr_p.add_run().add_picture(logo_path, width=_safe(Inches(0.9)))
+        except Exception:
+            pass  # logo is cosmetic — report must never fail because of it
+
         # ============================================================
         # HEADER SECTION
         # ============================================================
-        
+
         # Main title
         title_para = doc.add_paragraph()
         title_run = title_para.add_run(scope_label)
@@ -514,13 +651,36 @@ class ReportsService:
         period_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
         doc.add_paragraph()  # Spacer
-        
+
         # ============================================================
-        # SUMMARY STATISTICS TABLE
+        # SECTION 1 — EXECUTIVE SUMMARY (Session 4)
         # ============================================================
-        
+
+        if executive_summary:
+            add_section_divider("الملخص التنفيذي", "Section 1 — Executive Summary")
+            exec_rows = [
+                ("إجمالي الشكاوى (Total Complaints)", executive_summary.get("total_complaints", 0)),
+                ("إجمالي الملاحظات (Total Notices)", executive_summary.get("total_notices", 0)),
+                ("إجمالي السجلات (Total Records)", executive_summary.get("total_records", 0)),
+                ("عدد الأقسام المعنية (Sections Involved)", executive_summary.get("sections_involved", 0)),
+                ("عدد الدوائر المعنية (Departments Involved)", executive_summary.get("departments_involved", 0)),
+                ("عدد الإدارات المعنية (Administrations Involved)", executive_summary.get("administrations_involved", 0)),
+            ]
+            add_label_value_table(exec_rows)
+            doc.add_paragraph()
+
+        # ============================================================
+        # SECTION 2 — COMPLAINT STATISTICS (existing tables, unchanged)
+        # ============================================================
+
+        add_section_divider("إحصائيات الشكاوى", "Section 2 — Complaint Statistics")
+
+        # ============================================================
+        # SUMMARY STATISTICS TABLE (Complaint-only — retained as-is)
+        # ============================================================
+
         summary_heading = doc.add_paragraph()
-        summary_heading_run = summary_heading.add_run("الإحصائيات العامة")
+        summary_heading_run = summary_heading.add_run("الإحصائيات العامة للشكاوى")
         summary_heading_run.font.size = Pt(14)
         summary_heading_run.font.bold = True
         summary_heading_run.font.name = 'Traditional Arabic'
@@ -911,9 +1071,135 @@ class ReportsService:
             breakdown_note.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         
         # ============================================================
+        # SECTION 3 — NOTICE STATISTICS (Session 4)
+        # ============================================================
+
+        if intent_counts is not None:
+            add_section_divider("إحصائيات الملاحظات", "Section 3 — Notice Statistics")
+
+            total_notices_val = (notice_summary or {}).get("total_notices", 0)
+            add_label_value_table([("إجمالي الملاحظات (Total Notices)", total_notices_val)])
+            doc.add_paragraph()
+
+            for level_key, level_label_ar, level_label_en in [
+                ("sections", "توزيع الملاحظات حسب القسم", "Notices by Section"),
+                ("departments", "توزيع الملاحظات حسب الدائرة", "Notices by Department"),
+                ("administrations", "توزيع الملاحظات حسب الإدارة", "Notices by Administration"),
+            ]:
+                units_with_notices = [u for u in intent_counts.get(level_key, []) if u.get("notice_count", 0) > 0]
+
+                level_heading = doc.add_paragraph()
+                level_run = level_heading.add_run(level_label_ar)
+                level_run.font.size = Pt(13)
+                level_run.font.bold = True
+                level_run.font.name = 'Traditional Arabic'
+                level_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+                level_heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+
+                if units_with_notices:
+                    add_unit_count_table(units_with_notices, "notice_count")
+                else:
+                    add_no_data_note("لا توجد ملاحظات لهذه الوحدات في الفترة المحددة — No notices for this level in the selected period")
+                doc.add_paragraph()
+
+        # ============================================================
+        # SECTION 4 — COMBINED TOTALS (Session 4)
+        # ============================================================
+
+        if intent_counts is not None:
+            add_section_divider("الإجماليات المدمجة", "Section 4 — Combined Totals")
+
+            # Per-unit table (Section / Department / Administration rows with
+            # Complaint + Notice + Total columns) — same visual style as the
+            # Session 3 Detailed Report count summary for consistency.
+            all_units = []
+            type_labels = {
+                "sections": "قسم (Section)",
+                "departments": "دائرة (Department)",
+                "administrations": "إدارة (Administration)",
+            }
+            for level_key, type_label in type_labels.items():
+                for unit in intent_counts.get(level_key, []):
+                    all_units.append((unit, type_label))
+
+            if all_units:
+                combined_table = doc.add_table(rows=1, cols=5)
+                combined_table.style = 'Table Grid'
+                combined_table.alignment = WD_TABLE_ALIGNMENT.RIGHT
+                combined_table.autofit = False
+                combined_table.allow_autofit = False
+
+                col_widths = [_safe(Cm(9)), _safe(Cm(4)), _safe(Cm(3)), _safe(Cm(3)), _safe(Cm(3))]
+                for idx, w in enumerate(col_widths):
+                    combined_table.columns[idx].width = w
+
+                header_cells = combined_table.rows[0].cells
+                combined_headers = [
+                    "اسم الوحدة / Unit Name",
+                    "نوع الوحدة / Unit Type",
+                    "عدد الشكاوى / Complaints",
+                    "عدد الملاحظات / Notices",
+                    "المجموع / Total",
+                ]
+                for idx, (cell, hdr) in enumerate(zip(header_cells, combined_headers)):
+                    cell.text = hdr
+                    for paragraph in cell.paragraphs:
+                        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        for run in paragraph.runs:
+                            run.font.size = Pt(9)
+                            run.font.bold = True
+                            run.font.name = 'Traditional Arabic'
+                            run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+                    apply_cell_borders(cell)
+                    shading_elm = OxmlElement('w:shd')
+                    shading_elm.set(qn('w:fill'), 'D3D3D3')
+                    cell._element.get_or_add_tcPr().append(shading_elm)
+                for idx, w in enumerate(col_widths):
+                    header_cells[idx].width = w
+
+                for unit, type_label in all_units:
+                    row = combined_table.add_row()
+                    values = [
+                        unit.get("unit_name", "—"),
+                        type_label,
+                        str(unit.get("complaint_count", 0)),
+                        str(unit.get("notice_count", 0)),
+                        str(unit.get("total_count", 0)),
+                    ]
+                    for idx, (cell, val) in enumerate(zip(row.cells, values)):
+                        cell.text = val
+                        for paragraph in cell.paragraphs:
+                            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER if idx > 0 else WD_ALIGN_PARAGRAPH.RIGHT
+                            for run in paragraph.runs:
+                                run.font.size = Pt(9)
+                                run.font.name = 'Traditional Arabic'
+                                run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+                        apply_cell_borders(cell)
+                        cell.width = col_widths[idx]
+
+                doc.add_paragraph()
+
+            # Hospital / scope total row
+            ex = executive_summary or {}
+            total_row_data = [
+                ("إجمالي الشكاوى (Total Complaints)", ex.get("total_complaints", 0)),
+                ("إجمالي الملاحظات (Total Notices)", ex.get("total_notices", 0)),
+                ("الإجمالي الكلي (Grand Total)", ex.get("total_records", 0)),
+            ]
+            hosp_label = doc.add_paragraph()
+            hosp_run = hosp_label.add_run("إجمالي المستشفى / Hospital Total")
+            hosp_run.font.size = Pt(13)
+            hosp_run.font.bold = True
+            hosp_run.font.name = 'Traditional Arabic'
+            hosp_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+            hosp_label.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            add_label_value_table(total_row_data)
+            doc.add_paragraph()
+
+        # ============================================================
         # FOOTER
         # ============================================================
-        
+
         doc.add_paragraph()
         footer_para = doc.add_paragraph()
         footer_run = footer_para.add_run(f"تم إنشاء التقرير في: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
@@ -1621,7 +1907,105 @@ class ReportsService:
             """Returns True if text contains Arabic characters."""
             import re
             return bool(re.search(r'[؀-ۿ]', str(text) if text else ''))
-        
+
+        def render_intent_count_summary(doc, intent_counts):
+            """
+            Render the Complaint/Notice Count Summary by Unit (Session 3).
+            intent_counts is prepared by get_monthly_intent_counts_by_unit() —
+            this only renders already-counted data, no counting logic here.
+            """
+            if not intent_counts:
+                return
+
+            title_p = doc.add_paragraph()
+            title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            title_run = title_p.add_run("ملخص عدد الشكاوى والملاحظات بحسب الوحدة")
+            title_run.font.size = Pt(13)
+            title_run.font.bold = True
+            title_run.font.name = 'Traditional Arabic'
+            title_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+            title_p.paragraph_format.space_after = int(Pt(1))
+
+            sub_p = doc.add_paragraph()
+            sub_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            sub_run = sub_p.add_run("Complaint and Notice Count Summary by Unit")
+            sub_run.font.size = Pt(10)
+            sub_run.font.italic = True
+            sub_p.paragraph_format.space_after = int(Pt(6))
+
+            level_labels = [
+                ("sections", "قسم (Section)"),
+                ("departments", "دائرة (Department)"),
+                ("administrations", "إدارة (Administration)"),
+            ]
+
+            rows_to_render = []
+            for key, type_label in level_labels:
+                for unit in intent_counts.get(key, []) or []:
+                    rows_to_render.append((unit, type_label))
+
+            if not rows_to_render:
+                empty_p = doc.add_paragraph()
+                empty_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                empty_run = empty_p.add_run("لا توجد سجلات لهذا الشهر — No records for this month")
+                empty_run.font.size = Pt(10)
+                empty_run.font.italic = True
+                empty_run.font.name = 'Traditional Arabic'
+                empty_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+                doc.add_paragraph()
+                return
+
+            table = doc.add_table(rows=1, cols=5)
+            table.style = 'Table Grid'
+            table.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+            tbl = table._element
+            tblPr = tbl.tblPr
+            tblPr.append(OxmlElement('w:bidiVisual'))
+
+            headers = [
+                ("اسم الوحدة", "Unit Name"),
+                ("نوع الوحدة", "Unit Type"),
+                ("عدد الشكاوى", "Complaints"),
+                ("عدد الملاحظات", "Notices"),
+                ("المجموع", "Total"),
+            ]
+            header_cells = table.rows[0].cells
+            for idx, (ar_label, en_label) in enumerate(headers):
+                cell = header_cells[idx]
+                cell.text = f"{ar_label}\n{en_label}"
+                for paragraph in cell.paragraphs:
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    for run in paragraph.runs:
+                        run.font.bold = True
+                        run.font.size = int(Pt(9))
+                        run.font.name = 'Traditional Arabic'
+                        run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+                try:
+                    cell._element.get_or_add_tcPr().get_or_add_shd().fill = "B4E7CE"
+                except Exception:
+                    pass
+
+            for unit, type_label in rows_to_render:
+                row_cells = table.add_row().cells
+                values = [
+                    unit.get("unit_name", "—"),
+                    type_label,
+                    str(unit.get("complaint_count", 0)),
+                    str(unit.get("notice_count", 0)),
+                    str(unit.get("total_count", 0)),
+                ]
+                for idx, val in enumerate(values):
+                    row_cells[idx].text = val
+                    for paragraph in row_cells[idx].paragraphs:
+                        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        for run in paragraph.runs:
+                            run.font.size = int(Pt(9))
+                            run.font.name = 'Traditional Arabic'
+                            run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+
+            doc.add_paragraph()
+
         # Normalize data source
         try:
             if isinstance(report_data, dict) and "complaints" in report_data:
@@ -1635,6 +2019,12 @@ class ReportsService:
                 rows = []
         except:
             rows = []
+
+        # Complaint/Notice count summary (Session 3) — only present when the
+        # caller passed the full monthly-detailed report_data dict (not a bare
+        # list), e.g. the single-file monthly export. Multi-export (per-unit
+        # ZIP) still passes a bare list and simply won't render this section.
+        intent_counts = report_data.get("intent_counts") if isinstance(report_data, dict) else None
 
         # Load institutional config once (header title, subtitle, footer, report code)
         try:
@@ -1824,7 +2214,16 @@ class ReportsService:
             print(f"[DOCX] Header setup error: {_hdr_err}")
 
         # ========== END OF HEADER ==========
-        
+
+        # Complaint/Notice Count Summary by Unit (Session 3) — rendered before
+        # the detailed table so it survives even when `rows` is empty below
+        # (e.g. a month with only Notices has zero complaint rows, but should
+        # still show its Notice counts here).
+        try:
+            render_intent_count_summary(doc, intent_counts)
+        except Exception as _summary_err:
+            print(f"[DOCX] Intent count summary error: {_summary_err}")
+
         # Define columns (23 columns with behavior)
         # Format: (header_label, field_name, is_vertical, width_ratio)
         # is_vertical=True  → narrow column, header rotated 90°

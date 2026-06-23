@@ -455,6 +455,7 @@ def _compute_metrics(incidents, force_closed_subcase_count: int = 0):
         "uniquePatients": len(
             {i["PatientName"] for i in incidents if i.get("PatientName")}
         ),
+        "noticeCount": sum(1 for i in incidents if i.get("RecordTypeID") == 2),
         "openClosed": {
             "open": 0,
             "closed": 0,
@@ -537,18 +538,36 @@ def _build_charts(incidents, include_issuing_dept, classification_chart_type="ba
     
     org_units = admin_units.get_active_admin_units()
     dept_map = {u["UniqueID"]: u["Name"] for u in org_units}
-    
+
+    severities = lookups.get_severities()
+    severity_map = {s["SeverityID"]: s["SeverityName"] for s in severities}
+
+    harm_levels = lookups.get_harm_levels()
+    harm_map = {h["HarmID"]: h["HarmLevel"] for h in harm_levels}
+
+    categories = lookups.get_categories()
+    category_map = {c["CategoryID"]: c["CategoryName"] for c in categories}
+
+    subcategories = lookups.get_subcategories()
+    subcategory_map = {s["SubCategoryID"]: s["SubCategoryName"] for s in subcategories}
+
     # Build classification chart
     classification_data = _top5_with_names(incidents, "ClassificationID", classification_map)
-    
+
     # Build stage chart
     stage_data = _histogram_with_names(incidents, "StageID", stage_map)
-    
-    # Build department chart
+
+    # Build severity / harm / category / subcategory distribution charts (Session 5)
+    severity_data = _histogram_with_names(incidents, "SeverityID", severity_map)
+    harm_data = _histogram_with_names(incidents, "HarmLevelID", harm_map)
+    category_data = _histogram_with_names(incidents, "CategoryID", category_map)
+    subcategory_data = _top_n_with_other(incidents, "SubCategoryID", subcategory_map, n=8)
+
+    # Build department chart (top 8 by volume, remainder grouped as "Other")
     department_data = None
     if include_issuing_dept:
-        department_data = _histogram_with_names(incidents, "IssuingOrgUnitID", dept_map)
-    
+        department_data = _top_n_with_other(incidents, "IssuingOrgUnitID", dept_map, n=8)
+
     charts = {
         "classification": {
             "type": classification_chart_type,
@@ -558,8 +577,24 @@ def _build_charts(incidents, include_issuing_dept, classification_chart_type="ba
             "type": stage_chart_type,
             "data": stage_data
         },
+        "severity": {
+            "type": "bar",
+            "data": severity_data
+        },
+        "harm": {
+            "type": "bar",
+            "data": harm_data
+        },
+        "category": {
+            "type": "bar",
+            "data": category_data
+        },
+        "subcategory": {
+            "type": "bar",
+            "data": subcategory_data
+        },
     }
-    
+
     if department_data:
         charts["department"] = {
             "type": department_chart_type,
@@ -637,6 +672,24 @@ def _histogram_with_names(items, key, id_name_map):
     for id_val, count in counter.items():
         name = id_name_map.get(id_val, f"Unknown ({id_val})")
         result.append({"name": name, "count": count})
+    return result
+
+
+def _top_n_with_other(items, key, id_name_map, n=8):
+    """
+    Return the top-N entries by count, grouping the remainder into a single
+    'أخرى (Other)' entry.  If there are n or fewer unique values the 'Other'
+    bucket is omitted entirely.
+    """
+    counter = Counter(i[key] for i in items if i.get(key))
+    top = counter.most_common(n)
+    result = [
+        {"name": id_name_map.get(id_val, f"Unknown ({id_val})"), "count": count}
+        for id_val, count in top
+    ]
+    other_count = sum(count for _, count in counter.most_common()[n:])
+    if other_count > 0:
+        result.append({"name": "أخرى (Other)", "count": other_count})
     return result
 
 

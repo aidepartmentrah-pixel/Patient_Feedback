@@ -266,18 +266,48 @@ class ReportExportService:
                             report_entity_type=report_entity_type
                         )
                     else:
-                        # Use detailed report generator (existing)
-                        print(f"[EXPORT SERVICE] Generating detailed monthly Word report")
-                        content = reports_service.generate_docx_export(
-                            report_data=export_data,
-                            filename=f"report_{year}.docx",
-                            language=language,
-                            report_entity_name=report_entity_name,
-                            report_entity_type=report_entity_type,
-                            report_administration=report_administration,
-                            report_department=report_department,
-                            report_section=report_section
-                        )
+                        # Formatter routing (Session 5): read monthly_report_format from
+                        # APP_ReportConfig and route to Classical or Stylish formatter.
+                        # Fallback to "classical" on any read error or unrecognised value.
+                        # The selector only governs the Monthly Detailed Report;
+                        # the Statistical Report uses its own fixed formatter.
+                        try:
+                            from ..db_layer.report_config_db import get_report_config as _get_cfg
+                            _monthly_format = (_get_cfg().get("monthly_report_format") or "classical").strip().lower()
+                            if _monthly_format not in ("classical", "stylish"):
+                                _monthly_format = "classical"
+                        except Exception as _cfg_err:
+                            print(f"[EXPORT SERVICE] Warning: could not read monthly_report_format ({_cfg_err}), defaulting to classical")
+                            _monthly_format = "classical"
+
+                        print(f"[EXPORT SERVICE] Generating detailed monthly Word report [format={_monthly_format}]")
+
+                        if _monthly_format == "stylish":
+                            # Session 6: Real Stylish Monthly formatter.
+                            from .monthly_stylish_word_formatter import generate_monthly_stylish_docx
+                            print(f"[EXPORT SERVICE] Stylish formatter -> generate_monthly_stylish_docx")
+                            content = generate_monthly_stylish_docx(
+                                report_data=report_data,
+                                filename=f"report_{year}.docx",
+                                language=language,
+                                report_entity_name=report_entity_name,
+                                report_entity_type=report_entity_type,
+                                report_administration=report_administration,
+                                report_department=report_department,
+                                report_section=report_section
+                            )
+                        else:
+                            # Classical formatter (default, unchanged behaviour)
+                            content = reports_service.generate_docx_export(
+                                report_data=report_data,
+                                filename=f"report_{year}.docx",
+                                language=language,
+                                report_entity_name=report_entity_name,
+                                report_entity_type=report_entity_type,
+                                report_administration=report_administration,
+                                report_department=report_department,
+                                report_section=report_section
+                            )
             else:  # csv
                 content = reports_service.generate_csv_export(
                     report_data=export_data,

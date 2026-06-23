@@ -121,69 +121,63 @@ def get_inbox(current_user) -> List[Dict[str, Any]]:
 def get_section_inbox(current_user) -> List[Dict[str, Any]]:
     """
     Get inbox for Section Administrator role.
-    
-    Returns subcases with statuses defined in STATUS_ROLE_MAP for SECTION_ADMIN.
-    Statuses are: SUBMITTED_TO_SECTION, RETURNED_TO_SECTION_FOR_REVISION
-    
+
+    Returns three buckets merged:
+      1. SUBMITTED_TO_SECTION / RETURNED_TO_SECTION_FOR_REVISION — active work.
+      2. FORCE_CLOSED_AT_SECTION — escalated cases shown for awareness only
+         (view-only; section cannot grant themselves more time).  Allows section
+         admins to see that their cases were force-closed and escalated upward,
+         matching the visual Zone 2 (Escalated) that department/admin see.
+      3. WAITING_PATIENT_SERVICES_DECISION — informational only (view-only).
+         Lets the section know a case of theirs is awaiting the Patient Services
+         scientific decision; no action is expected from them at this stage.
+
     Args:
         current_user: User object with role, section_id, department_id attributes
-        
-    Returns:
-        List of inbox items (dictionaries) with allowed actions
-        
-    Raises:
-        ValueError: If user is not a Section Administrator
     """
-    # Light role assertion using scopes
     if not current_user.scopes or current_user.scopes[0].role_code != 'SECTION_ADMIN':
         raise ValueError("User must be a Section Administrator to access section inbox")
-    
-    # Get subcases pending for section from DB layer
-    # DB layer already queries for statuses in STATUS_ROLE_MAP["SECTION_ADMIN"]
-    subcases = administrative_subcase_db.get_subcases_pending_for_section()
-    
+
+    active     = administrative_subcase_db.get_subcases_pending_for_section()
+    escalated  = administrative_subcase_db.get_subcases_by_statuses(['FORCE_CLOSED_AT_SECTION'])
+    pending_ps = administrative_subcase_db.get_subcases_by_statuses(['WAITING_PATIENT_SERVICES_DECISION'])
+    subcases   = active + escalated + pending_ps
+
     # =========================================================================
     # SECURITY LOCK — Scope filtering MUST NOT be removed or bypassed
     # =========================================================================
-    # Filters inbox items by allowed_unit_ids from Phase 2.5 Org Tree Scoping Engine.
-    # Only subcases where TargetOrgUnitID is in current_user.allowed_unit_ids are returned.
-    # This is the ONLY authority for data access - role does NOT grant data access.
-    # Required for multi-tenant organizational security boundaries.
-    # =========================================================================
     filtered_subcases = _apply_scope_filter(subcases, current_user)
-    
-    # Build inbox items with allowed actions
-    inbox_items = []
-    for subcase in filtered_subcases:
-        item = _build_inbox_item(subcase, current_user)
-        inbox_items.append(item)
-    
-    return inbox_items
+
+    return [_build_inbox_item(s, current_user) for s in filtered_subcases]
 
 
 def get_department_inbox(current_user) -> List[Dict[str, Any]]:
     """
     Get inbox for Department Administrator role.
     
-    Returns subcases with statuses defined in STATUS_ROLE_MAP for DEPARTMENT_ADMIN.
+    Returns subcases with statuses defined in STATUS_ROLE_MAP for DEPARTMENT_ADMIN,
+    plus WAITING_PATIENT_SERVICES_DECISION shown informationally (view-only) so the
+    department knows a case under their scope is awaiting the Patient Services
+    scientific decision.
     Statuses are: SECTION_ACCEPTED_PENDING_DEPT, RETURNED_TO_DEPT_FOR_REVISION
-    
+
     Args:
         current_user: User object with role, section_id, department_id attributes
-        
+
     Returns:
         List of inbox items (dictionaries) with allowed actions
-        
+
     Raises:
         ValueError: If user is not a Department Administrator
     """
     # Light role assertion using scopes
     if not current_user.scopes or current_user.scopes[0].role_code != 'DEPARTMENT_ADMIN':
         raise ValueError("User must be a Department Administrator to access department inbox")
-    
+
     # Get subcases pending for department from DB layer
     # DB layer already queries for statuses in STATUS_ROLE_MAP["DEPARTMENT_ADMIN"]
-    subcases = administrative_subcase_db.get_subcases_pending_for_department()
+    pending_ps = administrative_subcase_db.get_subcases_by_statuses(['WAITING_PATIENT_SERVICES_DECISION'])
+    subcases = administrative_subcase_db.get_subcases_pending_for_department() + pending_ps
     
     # =========================================================================
     # SECURITY LOCK — Scope filtering MUST NOT be removed or bypassed
@@ -208,25 +202,29 @@ def get_administration_inbox(current_user) -> List[Dict[str, Any]]:
     """
     Get inbox for Administration Administrator role.
     
-    Returns subcases with statuses defined in STATUS_ROLE_MAP for ADMINISTRATION_ADMIN.
+    Returns subcases with statuses defined in STATUS_ROLE_MAP for ADMINISTRATION_ADMIN,
+    plus WAITING_PATIENT_SERVICES_DECISION shown informationally (view-only) so the
+    administration knows a case under their scope is awaiting the Patient Services
+    scientific decision.
     Status is: DEPT_ACCEPTED_PENDING_ADMIN
-    
+
     Args:
         current_user: User object with role, section_id, department_id attributes
-        
+
     Returns:
         List of inbox items (dictionaries) with allowed actions
-        
+
     Raises:
         ValueError: If user is not an Administration Administrator
     """
     # Light role assertion using scopes
     if not current_user.scopes or current_user.scopes[0].role_code != 'ADMINISTRATION_ADMIN':
         raise ValueError("User must be an Administration Administrator to access administration inbox")
-    
+
     # Get subcases pending for administration from DB layer
     # DB layer already queries for statuses in STATUS_ROLE_MAP["ADMINISTRATION_ADMIN"]
-    subcases = administrative_subcase_db.get_subcases_pending_for_administration()
+    pending_ps = administrative_subcase_db.get_subcases_by_statuses(['WAITING_PATIENT_SERVICES_DECISION'])
+    subcases = administrative_subcase_db.get_subcases_pending_for_administration() + pending_ps
     
     # =========================================================================
     # SECURITY LOCK — Scope filtering MUST NOT be removed or bypassed
@@ -251,10 +249,13 @@ def get_complaint_supervisor_inbox(current_user) -> List[Dict[str, Any]]:
     """
     Get inbox for Complaint Supervisor role.
 
-    Returns two buckets merged:
+    Returns three buckets merged:
       1. SECTION_DENIED — section rejected responsibility; Supervisor can reopen.
       2. WAITING_PATIENT_SERVICES_DECISION — Administration approved a complaint
          subcase; Supervisor must record قرار خدمات المرضى بحسب المراجع العلميّة.
+      3. FORCE_CLOSED_AT_* — any level missed its deadline; Supervisor is a
+         hospital-wide role authorized to restore any level (see
+         _GIVE_*_MORE_TIME_ROLES in case_response_service.py).
 
     Args:
         current_user: User object with COMPLAINT_SUPERVISOR role
@@ -264,7 +265,12 @@ def get_complaint_supervisor_inbox(current_user) -> List[Dict[str, Any]]:
     """
     denied = administrative_subcase_db.get_subcases_denied_by_section()
     pending_ps = administrative_subcase_db.get_subcases_waiting_patient_services_decision()
-    all_subcases = denied + pending_ps
+    # Only FORCE_CLOSED_AT_ADMINISTRATION in the inbox — official supervisor responsibility.
+    # AT_SECTION and AT_DEPARTMENT are handled via the Insight page intervention panel.
+    force_closed = administrative_subcase_db.get_subcases_by_statuses([
+        'FORCE_CLOSED_AT_ADMINISTRATION',
+    ])
+    all_subcases = denied + pending_ps + force_closed
 
     # =========================================================================
     # SECURITY LOCK — Scope filtering MUST NOT be removed or bypassed
@@ -666,10 +672,13 @@ def _compute_allowed_actions(subcase: Dict[str, Any], current_user) -> List[str]
     if role_code == 'SECTION_ADMIN':
         if status in ['SUBMITTED_TO_SECTION', 'RETURNED_TO_SECTION_FOR_REVISION']:
             actions = ["view", "submit_response", "accept_complaint", "reject"]
-            # Section admin can re-view their previous response when returned for revision.
             if status == 'RETURNED_TO_SECTION_FOR_REVISION' and _has_response:
                 actions.append("view_response")
             return actions
+        elif status == 'FORCE_CLOSED_AT_SECTION':
+            # Section admin can see their force-closed cases for awareness (Zone 2),
+            # but cannot act on them — the level above grants more time.
+            return ["view"]
         else:
             return ["view"]
 
@@ -681,7 +690,12 @@ def _compute_allowed_actions(subcase: Dict[str, Any], current_user) -> List[str]
                 actions.append("view_response")
             return actions
         elif status == 'FORCE_CLOSED_AT_SECTION':
-            return ["view", "give_section_more_time"]
+            # Department can either give section more time OR handle the case directly
+            # (accept / override / reject).  Give-more-time is one option, not the only one.
+            actions = ["view", "accept", "override", "reject", "give_section_more_time"]
+            if _has_response:
+                actions.append("view_response")
+            return actions
         else:
             return ["view"]
 
@@ -693,7 +707,11 @@ def _compute_allowed_actions(subcase: Dict[str, Any], current_user) -> List[str]
                 actions.append("view_response")
             return actions
         elif status == 'FORCE_CLOSED_AT_DEPARTMENT':
-            return ["view", "give_department_more_time"]
+            # Administration can either give department more time OR handle the case directly.
+            actions = ["view", "accept", "override", "reject", "give_department_more_time"]
+            if _has_response:
+                actions.append("view_response")
+            return actions
         else:
             return ["view"]
 
@@ -704,9 +722,17 @@ def _compute_allowed_actions(subcase: Dict[str, Any], current_user) -> List[str]
             if _has_response:
                 actions.append("view_response")
             return actions
+        # Hospital-wide role - authorized to restore any force-closed level
+        # (see _GIVE_*_MORE_TIME_ROLES in case_response_service.py)
+        elif status == 'FORCE_CLOSED_AT_SECTION':
+            return ["view", "give_section_more_time"]
+        elif status == 'FORCE_CLOSED_AT_DEPARTMENT':
+            return ["view", "give_department_more_time"]
+        elif status == 'FORCE_CLOSED_AT_ADMINISTRATION':
+            return ["view", "give_administration_more_time"]
         else:
             return ["view"]
-    
+
     # COMPLAINT_SUPERVISOR actions
     elif role_code == 'COMPLAINT_SUPERVISOR':
         if status == 'SECTION_DENIED':
@@ -719,6 +745,14 @@ def _compute_allowed_actions(subcase: Dict[str, Any], current_user) -> List[str]
             return actions
         elif status == 'WAITING_PATIENT_SERVICES_DECISION':
             return ["view", "save_patient_services_decision"]
+        # Hospital-wide role - authorized to restore any force-closed level
+        # (see _GIVE_*_MORE_TIME_ROLES in case_response_service.py)
+        elif status == 'FORCE_CLOSED_AT_SECTION':
+            return ["view", "give_section_more_time"]
+        elif status == 'FORCE_CLOSED_AT_DEPARTMENT':
+            return ["view", "give_department_more_time"]
+        elif status == 'FORCE_CLOSED_AT_ADMINISTRATION':
+            return ["view", "give_administration_more_time"]
         else:
             return ["view"]
     
@@ -741,6 +775,99 @@ def _compute_allowed_actions(subcase: Dict[str, Any], current_user) -> List[str]
         return ["view"]
 
 
+_FORCE_CLOSE_LEVEL = {
+    'FORCE_CLOSED_AT_SECTION': 'section',
+    'FORCE_CLOSED_AT_DEPARTMENT': 'department',
+    'FORCE_CLOSED_AT_ADMINISTRATION': 'administration',
+}
+
+
+_RECORD_TYPE_NOTICE = 2
+
+
+def _derive_message_type(case_type: str, status: str, record_type_id: int = None):
+    if record_type_id == _RECORD_TYPE_NOTICE:
+        return 'NOTICE', 'INFORMATIONAL'
+    if case_type == 'SEASONAL_REPORT_RESPONSE':
+        return 'SEASONAL_REPORT', 'REPORT'
+    if status == 'WAITING_PATIENT_SERVICES_DECISION':
+        return 'PATIENT_SERVICES_OPINION', 'WORKFLOW'
+    if status == 'PATIENT_SERVICES_DECISION_COMPLETED':
+        return 'DECISION_TAKEN', 'DECISION'
+    return 'COMPLAINT', 'WORKFLOW'
+
+
+def _derive_current_level(status: str):
+    if status in ('SUBMITTED_TO_SECTION', 'RETURNED_TO_SECTION_FOR_REVISION',
+                  'SECTION_DENIED', 'FORCE_CLOSED_AT_SECTION'):
+        return 'section'
+    if status in ('SECTION_ACCEPTED_PENDING_DEPT', 'RETURNED_TO_DEPT_FOR_REVISION',
+                  'FORCE_CLOSED_AT_DEPARTMENT'):
+        return 'department'
+    if status in ('DEPT_ACCEPTED_PENDING_ADMIN', 'ADMIN_APPROVED',
+                  'FORCE_CLOSED_AT_ADMINISTRATION'):
+        return 'administration'
+    if status in ('WAITING_PATIENT_SERVICES_DECISION', 'PATIENT_SERVICES_DECISION_COMPLETED'):
+        return 'patient_services'
+    return None
+
+
+def _derive_target_level(org_unit_type):
+    return {323: 'administration', 324: 'section', 325: 'department'}.get(org_unit_type)
+
+
+def _build_display_metadata(s: Dict[str, Any]) -> Dict[str, Any]:
+    status = s.get('status', '')
+    case_type = s.get('case_type', '')
+    org_unit_type = s.get('target_org_unit_type') or s.get('org_type')
+
+    message_type, message_category = _derive_message_type(case_type, status, s.get('record_type_id'))
+    current_level = _derive_current_level(status)
+    target_level = _derive_target_level(org_unit_type)
+
+    is_force_closed = status in _FORCE_CLOSE_LEVEL
+    force_closed_at_level = _FORCE_CLOSE_LEVEL.get(status)
+
+    is_late = bool(
+        s.get('section_late_reply') or
+        s.get('department_late_reply') or
+        s.get('administration_late_reply')
+    )
+
+    is_red_flag = bool(s.get('is_red_flag', False))
+    is_never_event = bool(s.get('is_never_event', False))
+    is_morbidity = bool(s.get('is_morbidity', False))
+
+    clinical_indicators = []
+    if is_red_flag:    clinical_indicators.append('RED_FLAG')
+    if is_never_event: clinical_indicators.append('NEVER_EVENT')
+    if is_morbidity:   clinical_indicators.append('MORBIDITY')
+
+    workflow_indicators = []
+    if is_force_closed: workflow_indicators.append('FORCE_CLOSED')
+    if is_late:         workflow_indicators.append('LATE')
+
+    incident_date = s.get('feedback_received_date')
+    display_date = incident_date or s.get('created_at')
+
+    return {
+        "message_type": message_type,
+        "message_category": message_category,
+        "current_level": current_level,
+        "target_level": target_level,
+        "is_force_closed": is_force_closed,
+        "force_closed_at_level": force_closed_at_level,
+        "is_late": is_late,
+        "is_red_flag": is_red_flag,
+        "is_never_event": is_never_event,
+        "is_morbidity": is_morbidity,
+        "clinical_indicators": clinical_indicators,
+        "workflow_indicators": workflow_indicators,
+        "incident_date": incident_date.isoformat() if hasattr(incident_date, 'isoformat') else None,
+        "display_date": display_date.isoformat() if hasattr(display_date, 'isoformat') else None,
+    }
+
+
 def _build_inbox_item(subcase: Dict[str, Any], current_user) -> Dict[str, Any]:
     """
     Build an inbox item dictionary from a subcase dict.
@@ -756,7 +883,7 @@ def _build_inbox_item(subcase: Dict[str, Any], current_user) -> Dict[str, Any]:
     """
     # Compute allowed actions for this subcase
     allowed_actions = _compute_allowed_actions(subcase, current_user)
-    
+
     # Build the inbox item (subcase is already a dict from DB layer)
     inbox_item = {
         "subcase_id": subcase.get('subcase_id'),
@@ -766,11 +893,15 @@ def _build_inbox_item(subcase: Dict[str, Any], current_user) -> Dict[str, Any]:
         "seasonal_report_id": subcase.get('seasonal_report_id'),
         "target_org_unit_id": subcase.get('target_org_unit_id'),
         "target_org_unit_name": subcase.get('org_unit_name'),
+        "target_org_unit_type": subcase.get('target_org_unit_type'),
         "status": subcase.get('status'),
         "created_at": subcase.get('created_at'),
         "allowed_actions": allowed_actions,
         # HCAT Automatic Force Close Policy (Session 6) - per-level deadline state,
         # used by the frontend for force-closed/late-reply/extra-time indicators.
+        "section_deadline_at": subcase.get('section_deadline_at'),
+        "department_deadline_at": subcase.get('department_deadline_at'),
+        "administration_deadline_at": subcase.get('administration_deadline_at'),
         "section_force_closed_at": subcase.get('section_force_closed_at'),
         "section_late_reply": subcase.get('section_late_reply'),
         "section_extra_time_granted_at": subcase.get('section_extra_time_granted_at'),
@@ -780,6 +911,7 @@ def _build_inbox_item(subcase: Dict[str, Any], current_user) -> Dict[str, Any]:
         "administration_force_closed_at": subcase.get('administration_force_closed_at'),
         "administration_late_reply": subcase.get('administration_late_reply'),
         "administration_extra_time_granted_at": subcase.get('administration_extra_time_granted_at'),
+        **_build_display_metadata(subcase),
     }
 
     return inbox_item
@@ -813,12 +945,16 @@ def _build_archive_item(subcase: Dict[str, Any]) -> Dict[str, Any]:
         "seasonal_report_id": subcase.get('seasonal_report_id'),
         "target_org_unit_id": subcase.get('target_org_unit_id'),
         "target_org_unit_name": subcase.get('org_unit_name'),
+        "target_org_unit_type": subcase.get('target_org_unit_type'),
         "status": status,
         "created_at": subcase.get('created_at'),
         "updated_at": subcase.get('updated_at'),
         "allowed_actions": allowed_actions,
         # HCAT Automatic Force Close Policy (Session 6) - per-level deadline state,
         # used by the frontend for force-closed/late-reply/extra-time indicators.
+        "section_deadline_at": subcase.get('section_deadline_at'),
+        "department_deadline_at": subcase.get('department_deadline_at'),
+        "administration_deadline_at": subcase.get('administration_deadline_at'),
         "section_force_closed_at": subcase.get('section_force_closed_at'),
         "section_late_reply": subcase.get('section_late_reply'),
         "section_extra_time_granted_at": subcase.get('section_extra_time_granted_at'),
@@ -828,6 +964,67 @@ def _build_archive_item(subcase: Dict[str, Any]) -> Dict[str, Any]:
         "administration_force_closed_at": subcase.get('administration_force_closed_at'),
         "administration_late_reply": subcase.get('administration_late_reply'),
         "administration_extra_time_granted_at": subcase.get('administration_extra_time_granted_at'),
+        **_build_display_metadata(subcase),
     }
 
     return archive_item
+
+
+# =============================================================================
+# ACCOUNTABILITY BOX (HCAT Force-Close Accountability)
+# =============================================================================
+
+def get_inbox_accountability(current_user) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Return the force-close accountability data for SECTION_ADMIN and DEPARTMENT_ADMIN.
+
+    Returns a dict with two lists:
+      'red'  — cases currently force-closed at this level, not yet given more time.
+               These are still in escalated state; the admin can only view them.
+  'gray' — cases that WERE force-closed at this level, were given more time, and
+               have since progressed past this level.  The admin can dismiss these.
+
+    Other roles receive empty lists.
+    """
+    if not current_user or not hasattr(current_user, 'scopes') or not current_user.scopes:
+        return {"red": [], "gray": []}
+
+    role_code = current_user.scopes[0].role_code
+
+    if role_code == 'SECTION_ADMIN':
+        red_raw  = administrative_subcase_db.get_section_accountability_red()
+        gray_raw = administrative_subcase_db.get_section_accountability_gray()
+    elif role_code == 'DEPARTMENT_ADMIN':
+        red_raw  = administrative_subcase_db.get_department_accountability_red()
+        gray_raw = administrative_subcase_db.get_department_accountability_gray()
+    else:
+        return {"red": [], "gray": []}
+
+    red_filtered  = _apply_scope_filter(red_raw,  current_user)
+    gray_filtered = _apply_scope_filter(gray_raw, current_user)
+
+    def _build(subcase):
+        return {
+            "subcase_id":          subcase.get("subcase_id"),
+            "incident_id":         subcase.get("incident_request_case_id"),
+            "incident_number":     subcase.get("incident_number"),
+            "status":              subcase.get("status"),
+            "target_org_unit_id":  subcase.get("target_org_unit_id"),
+            "target_org_unit_name": subcase.get("org_unit_name"),
+            "created_at":          subcase.get("created_at").isoformat() if subcase.get("created_at") else None,
+            "section_force_closed_at":         _dt(subcase.get("section_force_closed_at")),
+            "section_extra_time_granted_at":   _dt(subcase.get("section_extra_time_granted_at")),
+            "department_force_closed_at":      _dt(subcase.get("department_force_closed_at")),
+            "department_extra_time_granted_at": _dt(subcase.get("department_extra_time_granted_at")),
+            **_build_display_metadata(subcase),
+        }
+
+    return {
+        "red":  [_build(s) for s in red_filtered],
+        "gray": [_build(s) for s in gray_filtered],
+    }
+
+
+def _dt(val):
+    """Safely convert datetime to ISO string or None."""
+    return val.isoformat() if val else None

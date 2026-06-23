@@ -32,6 +32,15 @@ COLUMNS = [
     "ShowSectionAnswer",
     "ShowDepartmentAnswer",
     "ShowAdministrationAnswer",
+    "ShowTargetDepartment",
+    "ShowSatisfactionStatus",
+    "ShowSatisfactionDate",
+    "ShowRedFlagIndicator",
+    "ShowNeverEventIndicator",
+    "ShowMorbidityIndicator",
+    "ShowLateIndicator",
+    "ShowForceClosedIndicator",
+    "ShowLastEdited",
     "CreatedAt",
     "CreatedByUserID",
     "IsActive",
@@ -163,7 +172,7 @@ def delete_custom_view(view_id: int) -> None:
     cursor = conn.cursor()
 
     cursor.execute(
-        "DELETE FROM d  bo.APP_CUSTOM_VIEWS WHERE ViewID = ?",
+        "DELETE FROM dbo.APP_CUSTOM_VIEWS WHERE ViewID = ?",
         view_id,
     )
 

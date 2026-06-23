@@ -337,9 +337,23 @@ def get_grouped_inbox_for_admin(current_user: CurrentUser) -> List[Dict[str, Any
                 seen_ids.add(sid)
                 raw_subcases.append(subcase)
     
+    # Merge in escalated force-closed cases so they appear inside the group that
+    # currently owns the pending response, matching the regular Inbox:
+    #   FORCE_CLOSED_AT_SECTION    -> Department group (department now responsible)
+    #   FORCE_CLOSED_AT_DEPARTMENT -> Administration group (administration now responsible)
+    # FORCE_CLOSED_AT_ADMINISTRATION has nowhere further to escalate — it stays a
+    # Complaint Supervisor concern and is surfaced via the separate Complaints panel.
+    fc_section_cases = administrative_subcase_db.get_force_closed_section_cases_for_department()
+    fc_dept_cases     = administrative_subcase_db.get_force_closed_department_cases_for_administration()
+    for subcase in fc_section_cases + fc_dept_cases:
+        sid = subcase.get('subcase_id')
+        if sid not in seen_ids:
+            seen_ids.add(sid)
+            raw_subcases.append(subcase)
+
     # Apply scope filtering - only show org units user has access to
     filtered_subcases = _apply_scope_filter_to_subcases(raw_subcases, current_user)
-    
+
     # Group subcases by target org unit
     grouped = _group_subcases_by_org_unit(filtered_subcases)
     
@@ -353,6 +367,44 @@ def get_grouped_inbox_for_admin(current_user: CurrentUser) -> List[Dict[str, Any
     groups.sort(key=lambda g: g['pending_count'], reverse=True)
     
     return groups
+
+
+def get_force_closed_pipeline_cases(current_user: CurrentUser) -> List[Dict[str, Any]]:
+    """
+    Return pipeline-stuck force-closed cases for the Insight page intervention panel.
+
+    These are FORCE_CLOSED_AT_SECTION/DEPARTMENT/ADMINISTRATION subcases that are
+    awaiting give-more-time action by the Complaint Supervisor.
+
+    Authorization: COMPLAINT_SUPERVISOR and SOFTWARE_ADMIN only.
+    Not scope-filtered — supervisors need full hospital-wide visibility.
+    """
+    from fastapi import HTTPException
+
+    user_roles = {s.role_code for s in current_user.scopes} if current_user.scopes else set()
+    if not ({'COMPLAINT_SUPERVISOR', 'SOFTWARE_ADMIN'} & user_roles):
+        raise HTTPException(
+            status_code=403,
+            detail="Only COMPLAINT_SUPERVISOR or SOFTWARE_ADMIN can view force-closed pipeline cases."
+        )
+
+    _ACTION_MAP = {
+        'FORCE_CLOSED_AT_SECTION':        'give_section_more_time',
+        'FORCE_CLOSED_AT_DEPARTMENT':     'give_department_more_time',
+        'FORCE_CLOSED_AT_ADMINISTRATION': 'give_administration_more_time',
+    }
+
+    subcases = administrative_subcase_db.get_force_closed_pipeline_cases()
+    result = []
+    for s in subcases:
+        status = s.get('status', '')
+        action = _ACTION_MAP.get(status)
+        result.append({
+            **s,
+            'give_more_time_action': action,
+            'allowed_actions': [action] if action else [],
+        })
+    return result
 
 
 def get_force_closed_cases(current_user: CurrentUser, status: str) -> List[Dict[str, Any]]:

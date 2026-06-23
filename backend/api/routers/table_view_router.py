@@ -224,6 +224,9 @@ async def get_filtered_count(
 async def export_complaints_to_excel(
     search: Optional[str] = Query(None),
     issuing_org_unit_id: Optional[int] = Query(None),
+    target_department_id: Optional[int] = Query(None),
+    target_dept_parent_id: Optional[int] = Query(None),
+    target_admin_id: Optional[int] = Query(None),
     domain_id: Optional[int] = Query(None),
     category_id: Optional[int] = Query(None),
     severity_id: Optional[int] = Query(None),
@@ -234,6 +237,9 @@ async def export_complaints_to_excel(
     month: Optional[int] = Query(None, ge=1, le=12),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
+    sort_by: str = Query("FeedbackRecievedDate"),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$"),
+    tab: Optional[str] = Query(None),
     current_user: CurrentUser = Depends(get_current_user),
 ):
     """
@@ -265,6 +271,9 @@ async def export_complaints_to_excel(
         excel_file = export_complaints_excel(
             search=search,
             issuing_org_unit_id=issuing_org_unit_id,
+            target_department_id=target_department_id,
+            target_dept_parent_id=target_dept_parent_id,
+            target_admin_id=target_admin_id,
             domain_id=domain_id,
             category_id=category_id,
             severity_id=severity_id,
@@ -275,6 +284,9 @@ async def export_complaints_to_excel(
             month=month,
             start_date=start_date,
             end_date=end_date,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            tab=tab,
             restrict_to_unit_ids=restrict_to_unit_ids,
         )
         

@@ -147,6 +147,19 @@ def get_feedback_intent_types(active_only: bool = True) -> list[dict]:
     return _fetch_all(query)
 
 
+def get_severities(active_only: bool = True) -> list[dict]:
+    query = """
+        SELECT SeverityID, SeverityName, SeverityCode
+        FROM dbo.APP_LOOKUP_SEVERITY
+    """
+    if active_only:
+        query += " WHERE IsActive = 1"
+
+    query += " ORDER BY SeverityOrder"
+
+    return _fetch_all(query)
+
+
 def get_harm_levels() -> list[dict]:
     return _fetch_all(
         """

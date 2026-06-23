@@ -24,6 +24,7 @@ class ReportConfigUpdateRequest(BaseModel):
     seasonal_header_subtitle: str | None = None
     seasonal_footer_text:     str | None = None
     seasonal_report_code:     str | None = None
+    monthly_report_format:    str | None = None   # "classical" | "stylish"
 
 
 @router.get("")

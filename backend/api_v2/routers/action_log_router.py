@@ -8,12 +8,15 @@ This router provides:
 Security: All endpoints protected by authentication and authorization guard.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from datetime import date
 from backend.api.schemas.auth_models import CurrentUser
 from backend.api_v2.guards.action_log_guards import require_action_log_role
-from backend.api_v2.services.action_log_report_service import build_action_log_report
+from backend.api_v2.services.action_log_report_service import (
+    build_action_log_report,
+    build_action_log_report_by_date_range,
+)
 from backend.api_v2.services.action_log_word_generator import generate_action_log_word
 from core.database import get_connection
 
@@ -95,4 +98,53 @@ def export_action_log_report(
         
     finally:
         # Always close connection
+        conn.close()
+
+
+# ============================================================
+# EXPORT BY DATE RANGE ENDPOINT
+# ============================================================
+
+@router.get("/export-by-date")
+def export_action_log_by_date_range(
+    date_from: date,
+    date_to: date,
+    current_user: CurrentUser = Depends(require_action_log_role)
+) -> Response:
+    """
+    Export Action Log report for a custom date range as Word document.
+
+    Accepts date_from and date_to as YYYY-MM-DD query parameters.
+    Includes all action items with DueDate in [date_from, date_to] inclusive.
+    Scoped to user's organizational units (Phase 2.5).
+
+    Raises:
+        422: date_from is after date_to
+        401: Not authenticated
+        403: Not authorized
+    """
+    if date_from > date_to:
+        raise HTTPException(
+            status_code=422,
+            detail="date_from must not be after date_to"
+        )
+
+    conn = get_connection()
+    try:
+        today = date.today()
+        report_data = build_action_log_report_by_date_range(
+            conn=conn,
+            start_date=date_from,
+            end_date=date_to,
+            current_user=current_user,
+            today=today,
+        )
+        doc_bytes = generate_action_log_word(report_data)
+        filename = f"action_log_{date_from}_{date_to}.docx"
+        return Response(
+            content=doc_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    finally:
         conn.close()

@@ -81,6 +81,51 @@ def create_action_item(
         conn.close()
 
 
+def update_action_item(
+    action_item_id: int,
+    title: str,
+    description: Optional[str],
+    due_date,
+    updated_by_user_id: int
+) -> bool:
+    """
+    Update title, description, and due date of an existing action item.
+    Status and workflow fields are intentionally excluded — use dedicated helpers.
+
+    Returns:
+        True if updated, False if action item not found
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        query = """
+            UPDATE dbo.APP_SubcaseActionItem
+            SET Title = ?,
+                Description = ?,
+                DueDate = ?,
+                UpdatedAt = ?,
+                UpdatedByUserID = ?
+            WHERE ActionItemID = ?
+        """
+
+        cursor.execute(query, (
+            title,
+            description,
+            due_date,
+            datetime.now(),
+            updated_by_user_id,
+            action_item_id
+        ))
+
+        conn.commit()
+        return cursor.rowcount > 0
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def get_action_item_by_id(action_item_id: int) -> Optional[Dict[str, Any]]:
     """
     Fetch a single action item by ID.

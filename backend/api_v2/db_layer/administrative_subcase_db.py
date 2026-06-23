@@ -437,6 +437,7 @@ def get_subcases_by_status(status_code: str) -> List[Dict[str, Any]]:
                 sub.SeasonalReportID,
                 sub.TargetOrgUnitID,
                 org.Name AS OrgUnitName,
+                org.Type AS OrgUnitType,
                 sub.Status,
                 sub.SectionExplanationText,
                 sub.SectionRejectionText,
@@ -449,6 +450,9 @@ def get_subcases_by_status(status_code: str) -> List[Dict[str, Any]]:
                 sub.UpdatedAt,
                 sub.UpdatedByUserID,
                 inc.incident_number AS IncidentNumber,
+                sub.SectionDeadlineAt,
+                sub.DepartmentDeadlineAt,
+                sub.AdministrationDeadlineAt,
                 sub.SectionForceClosedAt,
                 sub.SectionLateReply,
                 sub.SectionExtraTimeGrantedAt,
@@ -457,7 +461,12 @@ def get_subcases_by_status(status_code: str) -> List[Dict[str, Any]]:
                 sub.DepartmentExtraTimeGrantedAt,
                 sub.AdministrationForceClosedAt,
                 sub.AdministrationLateReply,
-                sub.AdministrationExtraTimeGrantedAt
+                sub.AdministrationExtraTimeGrantedAt,
+                CASE WHEN ic.ClinicalRiskTypeID = 2 THEN 1 ELSE 0 END AS IsRedFlag,
+                CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
+                ISNULL(ic.IsMorbidity, 0) AS IsMorbidity,
+                ic.FeedbackRecievedDate,
+                ic.RecordTypeID
             FROM dbo.APP_AdministrativeSubcase sub
             LEFT JOIN dbo.AdminsrationUnit org
                 ON sub.TargetOrgUnitID = org.UniqueID
@@ -480,6 +489,7 @@ def get_subcases_by_status(status_code: str) -> List[Dict[str, Any]]:
                 "seasonal_report_id": row.SeasonalReportID,
                 "target_org_unit_id": row.TargetOrgUnitID,
                 "org_unit_name": row.OrgUnitName,
+                "target_org_unit_type": row.OrgUnitType,
                 "status": row.Status,
                 "section_explanation_text": row.SectionExplanationText,
                 "section_rejection_text": row.SectionRejectionText,
@@ -492,6 +502,9 @@ def get_subcases_by_status(status_code: str) -> List[Dict[str, Any]]:
                 "updated_at": row.UpdatedAt,
                 "updated_by_user_id": row.UpdatedByUserID,
                 "incident_number": row.IncidentNumber,
+                "section_deadline_at": row.SectionDeadlineAt,
+                "department_deadline_at": row.DepartmentDeadlineAt,
+                "administration_deadline_at": row.AdministrationDeadlineAt,
                 "section_force_closed_at": row.SectionForceClosedAt,
                 "section_late_reply": bool(row.SectionLateReply),
                 "section_extra_time_granted_at": row.SectionExtraTimeGrantedAt,
@@ -501,10 +514,15 @@ def get_subcases_by_status(status_code: str) -> List[Dict[str, Any]]:
                 "administration_force_closed_at": row.AdministrationForceClosedAt,
                 "administration_late_reply": bool(row.AdministrationLateReply),
                 "administration_extra_time_granted_at": row.AdministrationExtraTimeGrantedAt,
+                "is_red_flag": bool(row.IsRedFlag),
+                "is_never_event": bool(row.IsNeverEvent),
+                "is_morbidity": bool(row.IsMorbidity),
+                "feedback_received_date": row.FeedbackRecievedDate,
+                "record_type_id": row.RecordTypeID,
             }
             for row in rows
         ]
-    
+
     finally:
         cursor.close()
         conn.close()
@@ -1169,6 +1187,8 @@ def get_subcases_with_details_for_section() -> List[Dict[str, Any]]:
                 ic.ClinicalRiskTypeID,
                 CASE WHEN ic.ClinicalRiskTypeID = 2 THEN 1 ELSE 0 END AS IsRedFlag,
                 CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
+                ISNULL(ic.IsMorbidity, 0) AS IsMorbidity,
+                ic.FeedbackRecievedDate,
 
                 -- Seasonal Report Info (for SEASONAL_REPORT_RESPONSE)
                 sr.SeasonalReportID,
@@ -1222,6 +1242,8 @@ def get_subcases_with_details_for_section() -> List[Dict[str, Any]]:
                 "category": row.CategoryName,
                 "is_red_flag": bool(row.IsRedFlag),
                 "is_never_event": bool(row.IsNeverEvent),
+                "is_morbidity": bool(row.IsMorbidity),
+                "feedback_received_date": row.FeedbackRecievedDate,
                 "seasonal_report_id": row.SeasonalReportID,
                 "season_name": row.SeasonName
             })
@@ -1282,6 +1304,8 @@ def get_subcases_with_details_for_department() -> List[Dict[str, Any]]:
                 ic.ClinicalRiskTypeID,
                 CASE WHEN ic.ClinicalRiskTypeID = 2 THEN 1 ELSE 0 END AS IsRedFlag,
                 CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
+                ISNULL(ic.IsMorbidity, 0) AS IsMorbidity,
+                ic.FeedbackRecievedDate,
 
                 -- Seasonal Report Info (for SEASONAL_REPORT_RESPONSE)
                 sr.SeasonalReportID,
@@ -1338,6 +1362,8 @@ def get_subcases_with_details_for_department() -> List[Dict[str, Any]]:
                 "category": row.CategoryName,
                 "is_red_flag": bool(row.IsRedFlag),
                 "is_never_event": bool(row.IsNeverEvent),
+                "is_morbidity": bool(row.IsMorbidity),
+                "feedback_received_date": row.FeedbackRecievedDate,
                 "seasonal_report_id": row.SeasonalReportID,
                 "season_name": row.SeasonName
             })
@@ -1397,6 +1423,8 @@ def get_subcases_with_details_for_administration() -> List[Dict[str, Any]]:
                 ic.ClinicalRiskTypeID,
                 CASE WHEN ic.ClinicalRiskTypeID = 2 THEN 1 ELSE 0 END AS IsRedFlag,
                 CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
+                ISNULL(ic.IsMorbidity, 0) AS IsMorbidity,
+                ic.FeedbackRecievedDate,
 
                 -- Seasonal Report Info (for SEASONAL_REPORT_RESPONSE)
                 sr.SeasonalReportID,
@@ -1456,6 +1484,8 @@ def get_subcases_with_details_for_administration() -> List[Dict[str, Any]]:
                 "category": row.CategoryName,
                 "is_red_flag": bool(row.IsRedFlag),
                 "is_never_event": bool(row.IsNeverEvent),
+                "is_morbidity": bool(row.IsMorbidity),
+                "feedback_received_date": row.FeedbackRecievedDate,
                 "seasonal_report_id": row.SeasonalReportID,
                 "season_name": row.SeasonName
             })
@@ -1497,6 +1527,7 @@ def get_subcases_by_statuses(status_codes: List[str]) -> List[Dict[str, Any]]:
                 sub.SeasonalReportID,
                 sub.TargetOrgUnitID,
                 org.Name AS OrgUnitName,
+                org.Type AS OrgUnitType,
                 sub.Status,
                 sub.SectionExplanationText,
                 sub.SectionRejectionText,
@@ -1509,6 +1540,9 @@ def get_subcases_by_statuses(status_codes: List[str]) -> List[Dict[str, Any]]:
                 sub.UpdatedAt,
                 sub.UpdatedByUserID,
                 inc.incident_number AS IncidentNumber,
+                sub.SectionDeadlineAt,
+                sub.DepartmentDeadlineAt,
+                sub.AdministrationDeadlineAt,
                 sub.SectionForceClosedAt,
                 sub.SectionLateReply,
                 sub.SectionExtraTimeGrantedAt,
@@ -1517,7 +1551,12 @@ def get_subcases_by_statuses(status_codes: List[str]) -> List[Dict[str, Any]]:
                 sub.DepartmentExtraTimeGrantedAt,
                 sub.AdministrationForceClosedAt,
                 sub.AdministrationLateReply,
-                sub.AdministrationExtraTimeGrantedAt
+                sub.AdministrationExtraTimeGrantedAt,
+                CASE WHEN ic.ClinicalRiskTypeID = 2 THEN 1 ELSE 0 END AS IsRedFlag,
+                CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
+                ISNULL(ic.IsMorbidity, 0) AS IsMorbidity,
+                ic.FeedbackRecievedDate,
+                ic.RecordTypeID
             FROM dbo.APP_AdministrativeSubcase sub
             LEFT JOIN dbo.AdminsrationUnit org
                 ON sub.TargetOrgUnitID = org.UniqueID
@@ -1540,6 +1579,7 @@ def get_subcases_by_statuses(status_codes: List[str]) -> List[Dict[str, Any]]:
                 "seasonal_report_id": row.SeasonalReportID,
                 "target_org_unit_id": row.TargetOrgUnitID,
                 "org_unit_name": row.OrgUnitName,
+                "target_org_unit_type": row.OrgUnitType,
                 "status": row.Status,
                 "section_explanation_text": row.SectionExplanationText,
                 "section_rejection_text": row.SectionRejectionText,
@@ -1552,6 +1592,9 @@ def get_subcases_by_statuses(status_codes: List[str]) -> List[Dict[str, Any]]:
                 "updated_at": row.UpdatedAt,
                 "updated_by_user_id": row.UpdatedByUserID,
                 "incident_number": row.IncidentNumber,
+                "section_deadline_at": row.SectionDeadlineAt,
+                "department_deadline_at": row.DepartmentDeadlineAt,
+                "administration_deadline_at": row.AdministrationDeadlineAt,
                 "section_force_closed_at": row.SectionForceClosedAt,
                 "section_late_reply": bool(row.SectionLateReply),
                 "section_extra_time_granted_at": row.SectionExtraTimeGrantedAt,
@@ -1561,10 +1604,328 @@ def get_subcases_by_statuses(status_codes: List[str]) -> List[Dict[str, Any]]:
                 "administration_force_closed_at": row.AdministrationForceClosedAt,
                 "administration_late_reply": bool(row.AdministrationLateReply),
                 "administration_extra_time_granted_at": row.AdministrationExtraTimeGrantedAt,
+                "is_red_flag": bool(row.IsRedFlag),
+                "is_never_event": bool(row.IsNeverEvent),
+                "is_morbidity": bool(row.IsMorbidity),
+                "feedback_received_date": row.FeedbackRecievedDate,
+                "record_type_id": row.RecordTypeID,
             }
             for row in rows
         ]
-    
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_force_closed_pipeline_cases() -> List[Dict[str, Any]]:
+    """
+    Fetch FORCE_CLOSED_AT_ADMINISTRATION subcases with full display details for
+    the Insight page "Complaints" panel.
+
+    AT_SECTION and AT_DEPARTMENT cases are no longer returned here — they are
+    merged directly into the Department/Administration groups of
+    get_grouped_inbox_for_admin() (see get_force_closed_section_cases_for_department
+    and get_force_closed_department_cases_for_administration below), since
+    administration is the top of the org hierarchy and AT_ADMINISTRATION cases
+    have nowhere further to escalate — they stay a Complaint Supervisor concern.
+
+    Returns patient name, description, severity, waiting days — the same fields
+    used by the grouped inbox view — so the frontend can render rich cards.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        query = """
+            SELECT
+                sub.SubcaseID,
+                sub.CaseType,
+                sub.Status,
+                sub.CreatedAt,
+                DATEDIFF(day, sub.CreatedAt, GETDATE()) AS WaitingDays,
+
+                org.UniqueID  AS TargetOrgUnitID,
+                org.Name      AS OrgUnitName,
+                org.Type      AS OrgType,
+
+                ic.IncidentRequestCaseID,
+                ic.ComplaintText  AS CaseDescription,
+                ic.PatientName,
+                ic.SeverityID,
+                sev.SeverityName,
+                cat.CategoryName,
+
+                inc.incident_number AS IncidentNumber,
+
+                CASE WHEN ic.ClinicalRiskTypeID = 2 THEN 1 ELSE 0 END AS IsRedFlag,
+                CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
+
+                sr.SeasonalReportID
+
+            FROM dbo.APP_AdministrativeSubcase sub
+            LEFT JOIN dbo.AdminsrationUnit org
+                ON sub.TargetOrgUnitID = org.UniqueID
+            LEFT JOIN dbo.APP_IncidentCase ic
+                ON sub.IncidentRequestCaseID = ic.IncidentRequestCaseID
+            LEFT JOIN dbo.APP_Incident inc
+                ON ic.incident_id = inc.incident_id
+            LEFT JOIN dbo.APP_LOOKUP_SEVERITY sev
+                ON ic.SeverityID = sev.SeverityID
+            LEFT JOIN dbo.APP_LOOKUP_CATEGORY cat
+                ON ic.CategoryID = cat.CategoryID
+            LEFT JOIN dbo.APP_SeasonalOrgUnitReport sr
+                ON sub.SeasonalReportID = sr.SeasonalReportID
+
+            WHERE sub.Status = 'FORCE_CLOSED_AT_ADMINISTRATION'
+            ORDER BY sub.CreatedAt ASC
+        """
+        cursor.execute(query)
+        rows = cursor.fetchall()
+
+        return [
+            {
+                "subcase_id":              row.SubcaseID,
+                "case_type":               row.CaseType,
+                "status":                  row.Status,
+                "created_at":              row.CreatedAt,
+                "waiting_days":            int(row.WaitingDays or 0),
+                "target_org_unit_id":      row.TargetOrgUnitID,
+                "org_unit_name":           row.OrgUnitName or "",
+                "org_type":                row.OrgType or "",
+                "incident_request_case_id": row.IncidentRequestCaseID,
+                "case_description":        row.CaseDescription or "",
+                "patient_name":            row.PatientName or "",
+                "severity_id":             row.SeverityID,
+                "severity":                row.SeverityName or "NEUTRAL",
+                "category":                row.CategoryName or "",
+                "incident_number":         row.IncidentNumber,
+                "is_red_flag":             bool(row.IsRedFlag),
+                "is_never_event":          bool(row.IsNeverEvent),
+                "seasonal_report_id":      row.SeasonalReportID,
+            }
+            for row in rows
+        ]
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_force_closed_section_cases_for_department() -> List[Dict[str, Any]]:
+    """
+    Fetch FORCE_CLOSED_AT_SECTION subcases with the same field shape as
+    get_subcases_with_details_for_department(), so they merge directly into
+    the Department group of the Insight grouped inbox.
+
+    The department now owns the pending response (accept/override/reject or
+    give the section more time), so responsible_org_unit = the section's
+    parent department — same join pattern as the department-stage query.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        query = """
+            SELECT
+                sub.SubcaseID,
+                sub.CaseType,
+                sub.Status,
+                sub.CreatedAt,
+                DATEDIFF(day, sub.CreatedAt, GETDATE()) AS WaitingDays,
+
+                org.UniqueID AS TargetOrgUnitID,
+                org.Name AS OrgUnitName,
+                org.Type AS OrgType,
+
+                dept.UniqueID AS ResponsibleOrgUnitID,
+                dept.Name AS ResponsibleOrgUnitName,
+                dept.Type AS ResponsibleOrgType,
+
+                ic.IncidentRequestCaseID,
+                ic.ComplaintText AS CaseDescription,
+                ic.PatientName,
+                ic.SeverityID,
+                sev.SeverityName,
+                cat.CategoryName,
+
+                inc.incident_number AS IncidentNumber,
+
+                ic.ClinicalRiskTypeID,
+                CASE WHEN ic.ClinicalRiskTypeID = 2 THEN 1 ELSE 0 END AS IsRedFlag,
+                CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
+                ISNULL(ic.IsMorbidity, 0) AS IsMorbidity,
+                ic.FeedbackRecievedDate,
+
+                sr.SeasonalReportID,
+                s.SeasonName
+
+            FROM dbo.APP_AdministrativeSubcase sub
+            LEFT JOIN dbo.AdminsrationUnit org
+                ON sub.TargetOrgUnitID = org.UniqueID
+            LEFT JOIN dbo.AdminsrationUnit dept
+                ON org.ParentID = dept.UniqueID
+            LEFT JOIN dbo.APP_IncidentCase ic
+                ON sub.IncidentRequestCaseID = ic.IncidentRequestCaseID
+            LEFT JOIN dbo.APP_Incident inc
+                ON ic.incident_id = inc.incident_id
+            LEFT JOIN dbo.APP_LOOKUP_SEVERITY sev
+                ON ic.SeverityID = sev.SeverityID
+            LEFT JOIN dbo.APP_LOOKUP_CATEGORY cat
+                ON ic.CategoryID = cat.CategoryID
+            LEFT JOIN dbo.APP_SeasonalOrgUnitReport sr
+                ON sub.SeasonalReportID = sr.SeasonalReportID
+            LEFT JOIN dbo.Season s
+                ON sr.SeasonID = s.UniqueID
+
+            WHERE sub.Status = 'FORCE_CLOSED_AT_SECTION'
+
+            ORDER BY WaitingDays DESC
+        """
+        cursor.execute(query)
+        rows = cursor.fetchall()
+
+        return [
+            {
+                "subcase_id": row.SubcaseID,
+                "case_type": row.CaseType,
+                "status": row.Status,
+                "created_at": row.CreatedAt,
+                "waiting_days": row.WaitingDays,
+                "target_org_unit_id": row.TargetOrgUnitID,
+                "org_unit_name": row.OrgUnitName,
+                "org_type": row.OrgType,
+                "responsible_org_unit_id": row.ResponsibleOrgUnitID,
+                "responsible_org_unit_name": row.ResponsibleOrgUnitName,
+                "responsible_org_type": row.ResponsibleOrgType,
+                "incident_request_case_id": row.IncidentRequestCaseID,
+                "incident_number": row.IncidentNumber,
+                "case_description": row.CaseDescription,
+                "patient_name": row.PatientName,
+                "severity_id": row.SeverityID,
+                "severity": row.SeverityName,
+                "category": row.CategoryName,
+                "is_red_flag": bool(row.IsRedFlag),
+                "is_never_event": bool(row.IsNeverEvent),
+                "is_morbidity": bool(row.IsMorbidity),
+                "feedback_received_date": row.FeedbackRecievedDate,
+                "seasonal_report_id": row.SeasonalReportID,
+                "season_name": row.SeasonName
+            }
+            for row in rows
+        ]
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_force_closed_department_cases_for_administration() -> List[Dict[str, Any]]:
+    """
+    Fetch FORCE_CLOSED_AT_DEPARTMENT subcases with the same field shape as
+    get_subcases_with_details_for_administration(), so they merge directly
+    into the Administration group of the Insight grouped inbox.
+
+    The administration now owns the pending response (accept/override/reject
+    or give the department more time), so responsible_org_unit = the
+    grandparent administration — same two-hop join pattern as the
+    administration-stage query.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        query = """
+            SELECT
+                sub.SubcaseID,
+                sub.CaseType,
+                sub.Status,
+                sub.CreatedAt,
+                DATEDIFF(day, sub.CreatedAt, GETDATE()) AS WaitingDays,
+
+                org.UniqueID AS TargetOrgUnitID,
+                org.Name AS OrgUnitName,
+                org.Type AS OrgType,
+
+                admin_unit.UniqueID AS ResponsibleOrgUnitID,
+                admin_unit.Name AS ResponsibleOrgUnitName,
+                admin_unit.Type AS ResponsibleOrgType,
+
+                ic.IncidentRequestCaseID,
+                ic.ComplaintText AS CaseDescription,
+                ic.PatientName,
+                ic.SeverityID,
+                sev.SeverityName,
+                cat.CategoryName,
+
+                inc.incident_number AS IncidentNumber,
+
+                ic.ClinicalRiskTypeID,
+                CASE WHEN ic.ClinicalRiskTypeID = 2 THEN 1 ELSE 0 END AS IsRedFlag,
+                CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
+                ISNULL(ic.IsMorbidity, 0) AS IsMorbidity,
+                ic.FeedbackRecievedDate,
+
+                sr.SeasonalReportID,
+                s.SeasonName
+
+            FROM dbo.APP_AdministrativeSubcase sub
+            LEFT JOIN dbo.AdminsrationUnit org
+                ON sub.TargetOrgUnitID = org.UniqueID
+            LEFT JOIN dbo.AdminsrationUnit dept
+                ON org.ParentID = dept.UniqueID
+            LEFT JOIN dbo.AdminsrationUnit admin_unit
+                ON dept.ParentID = admin_unit.UniqueID
+            LEFT JOIN dbo.APP_IncidentCase ic
+                ON sub.IncidentRequestCaseID = ic.IncidentRequestCaseID
+            LEFT JOIN dbo.APP_Incident inc
+                ON ic.incident_id = inc.incident_id
+            LEFT JOIN dbo.APP_LOOKUP_SEVERITY sev
+                ON ic.SeverityID = sev.SeverityID
+            LEFT JOIN dbo.APP_LOOKUP_CATEGORY cat
+                ON ic.CategoryID = cat.CategoryID
+            LEFT JOIN dbo.APP_SeasonalOrgUnitReport sr
+                ON sub.SeasonalReportID = sr.SeasonalReportID
+            LEFT JOIN dbo.Season s
+                ON sr.SeasonID = s.UniqueID
+
+            WHERE sub.Status = 'FORCE_CLOSED_AT_DEPARTMENT'
+
+            ORDER BY WaitingDays DESC
+        """
+        cursor.execute(query)
+        rows = cursor.fetchall()
+
+        return [
+            {
+                "subcase_id": row.SubcaseID,
+                "case_type": row.CaseType,
+                "status": row.Status,
+                "created_at": row.CreatedAt,
+                "waiting_days": row.WaitingDays,
+                "target_org_unit_id": row.TargetOrgUnitID,
+                "org_unit_name": row.OrgUnitName,
+                "org_type": row.OrgType,
+                "responsible_org_unit_id": row.ResponsibleOrgUnitID,
+                "responsible_org_unit_name": row.ResponsibleOrgUnitName,
+                "responsible_org_type": row.ResponsibleOrgType,
+                "incident_request_case_id": row.IncidentRequestCaseID,
+                "incident_number": row.IncidentNumber,
+                "case_description": row.CaseDescription,
+                "patient_name": row.PatientName,
+                "severity_id": row.SeverityID,
+                "severity": row.SeverityName,
+                "category": row.CategoryName,
+                "is_red_flag": bool(row.IsRedFlag),
+                "is_never_event": bool(row.IsNeverEvent),
+                "is_morbidity": bool(row.IsMorbidity),
+                "feedback_received_date": row.FeedbackRecievedDate,
+                "seasonal_report_id": row.SeasonalReportID,
+                "season_name": row.SeasonName
+            }
+            for row in rows
+        ]
+
     finally:
         cursor.close()
         conn.close()
@@ -2021,7 +2382,15 @@ def get_subcase_fill_state(subcase_id: int) -> Optional[Dict[str, Any]]:
 
                 -- Force-closed-by user
                 u_fc.Username   AS ForceClosedByUsername,
-                u_fc.DisplayName AS ForceClosedByDisplayName
+                u_fc.DisplayName AS ForceClosedByDisplayName,
+
+                -- Case context (for Manual Fill page display)
+                ic.ComplaintText    AS CaseDescription,
+                ic.PatientName,
+                inc.incident_number AS IncidentNumber,
+                cat.CategoryName,
+                sc.SubCategoryName,
+                cls.Classification_EN AS ClassificationEN
 
             FROM dbo.APP_AdministrativeSubcase sub
             LEFT JOIN dbo.APP_Users u_sec
@@ -2034,6 +2403,16 @@ def get_subcase_fill_state(subcase_id: int) -> Optional[Dict[str, Any]]:
                 ON sub.PatientServicesDecisionByUserID = u_ps.UserID
             LEFT JOIN dbo.APP_Users u_fc
                 ON sub.ForceClosedByUserID = u_fc.UserID
+            LEFT JOIN dbo.APP_IncidentCase ic
+                ON sub.IncidentRequestCaseID = ic.IncidentRequestCaseID
+            LEFT JOIN dbo.APP_Incident inc
+                ON ic.incident_id = inc.incident_id
+            LEFT JOIN dbo.APP_LOOKUP_CATEGORY cat
+                ON ic.CategoryID = cat.CategoryID
+            LEFT JOIN dbo.APP_LOOKUP_SUBCATEGORY sc
+                ON ic.SubCategoryID = sc.SubCategoryID
+            LEFT JOIN dbo.APP_LOOKUP_CLASSIFICATION cls
+                ON ic.ClassificationID = cls.ClassificationID
             WHERE sub.SubcaseID = ?
         """
         cursor.execute(query, (subcase_id,))
@@ -2081,6 +2460,12 @@ def get_subcase_fill_state(subcase_id: int) -> Optional[Dict[str, Any]]:
                 "decision_at": _ts(row.PatientServicesDecisionAt),
                 "updated_at": _ts(row.PatientServicesDecisionUpdatedAt),
             },
+            "case_description": row.CaseDescription,
+            "patient_name": row.PatientName,
+            "incident_number": row.IncidentNumber,
+            "category_name": row.CategoryName,
+            "sub_category_name": row.SubCategoryName,
+            "classification_en": row.ClassificationEN,
         }
     finally:
         cursor.close()
@@ -2631,6 +3016,270 @@ def give_administration_more_time(subcase_id: int, granted_by_user_id: int, dead
         ))
         conn.commit()
         return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ============================================================
+# INVESTIGATION HISTORY (Stage 6 – read-only)
+# ============================================================
+
+def get_subcase_history(subcase_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Return all investigation-level texts for a subcase, plus available
+    per-level metadata (entered_by, timestamp from on-behalf fills).
+
+    Used by the frontend InvestigationHistorySection to display the full
+    response history without any workflow logic.
+
+    Returns None if the subcase is not found.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        query = """
+            SELECT
+                sub.SubcaseID,
+                org.Name AS OrgUnitName,
+
+                sub.SectionExplanationText,
+                sub.SectionEntryTimestamp,
+                u_sec.DisplayName AS SectionEnteredByName,
+
+                sub.DepartmentExplanationText,
+                sub.DepartmentEntryTimestamp,
+                u_dep.DisplayName AS DepartmentEnteredByName,
+
+                sub.AdministrationExplanationText,
+                sub.AdministrationEntryTimestamp,
+                u_adm.DisplayName AS AdministrationEnteredByName,
+
+                sub.PatientServicesDecisionText,
+                sub.PatientServicesDecisionAt,
+                u_ps.DisplayName  AS PSDecisionByName
+
+            FROM dbo.APP_AdministrativeSubcase sub
+            LEFT JOIN dbo.AdminsrationUnit org
+                ON sub.TargetOrgUnitID = org.UniqueID
+            LEFT JOIN dbo.APP_Users u_sec
+                ON sub.SectionEnteredByUserID = u_sec.UserID
+            LEFT JOIN dbo.APP_Users u_dep
+                ON sub.DepartmentEnteredByUserID = u_dep.UserID
+            LEFT JOIN dbo.APP_Users u_adm
+                ON sub.AdministrationEnteredByUserID = u_adm.UserID
+            LEFT JOIN dbo.APP_Users u_ps
+                ON sub.PatientServicesDecisionByUserID = u_ps.UserID
+            WHERE sub.SubcaseID = ?
+        """
+        cursor.execute(query, (subcase_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+
+        def _ts(val):
+            return val.isoformat() if val and hasattr(val, 'isoformat') else None
+
+        return {
+            "subcase_id": subcase_id,
+            "org_unit_name": row.OrgUnitName,
+            "section": {
+                "has_content": bool(row.SectionExplanationText),
+                "text": row.SectionExplanationText,
+                "entered_by": row.SectionEnteredByName,
+                "entered_at": _ts(row.SectionEntryTimestamp),
+            },
+            "department": {
+                "has_content": bool(row.DepartmentExplanationText),
+                "text": row.DepartmentExplanationText,
+                "entered_by": row.DepartmentEnteredByName,
+                "entered_at": _ts(row.DepartmentEntryTimestamp),
+            },
+            "administration": {
+                "has_content": bool(row.AdministrationExplanationText),
+                "text": row.AdministrationExplanationText,
+                "entered_by": row.AdministrationEnteredByName,
+                "entered_at": _ts(row.AdministrationEntryTimestamp),
+            },
+            "patient_services": {
+                "has_content": bool(row.PatientServicesDecisionText),
+                "text": row.PatientServicesDecisionText,
+                "entered_by": row.PSDecisionByName,
+                "entered_at": _ts(row.PatientServicesDecisionAt),
+            },
+        }
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ============================================================
+# ACCOUNTABILITY QUERIES  (HCAT Force-Close Accountability Box)
+# ============================================================
+
+_ACCOUNTABILITY_SELECT = """
+    SELECT
+        sub.SubcaseID,
+        sub.CaseType,
+        sub.IncidentRequestCaseID,
+        sub.SeasonalReportID,
+        sub.TargetOrgUnitID,
+        org.Name  AS OrgUnitName,
+        org.Type  AS OrgUnitType,
+        sub.Status,
+        sub.SectionExplanationText,
+        sub.SectionRejectionText,
+        sub.DepartmentExplanationText,
+        sub.DepartmentRejectionText,
+        sub.AdministrationExplanationText,
+        sub.AdministrationRejectionText,
+        sub.CreatedAt,
+        sub.CreatedByUserID,
+        sub.UpdatedAt,
+        sub.UpdatedByUserID,
+        inc.incident_number AS IncidentNumber,
+        sub.SectionDeadlineAt,
+        sub.DepartmentDeadlineAt,
+        sub.AdministrationDeadlineAt,
+        sub.SectionForceClosedAt,
+        sub.SectionLateReply,
+        sub.SectionExtraTimeGrantedAt,
+        sub.DepartmentForceClosedAt,
+        sub.DepartmentLateReply,
+        sub.DepartmentExtraTimeGrantedAt,
+        sub.AdministrationForceClosedAt,
+        sub.AdministrationLateReply,
+        sub.AdministrationExtraTimeGrantedAt,
+        CASE WHEN ic.ClinicalRiskTypeID = 2 THEN 1 ELSE 0 END AS IsRedFlag,
+        CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
+        ISNULL(ic.IsMorbidity, 0) AS IsMorbidity,
+        ic.FeedbackRecievedDate,
+        ic.RecordTypeID
+    FROM dbo.APP_AdministrativeSubcase sub
+    LEFT JOIN dbo.AdminsrationUnit org
+        ON sub.TargetOrgUnitID = org.UniqueID
+    LEFT JOIN dbo.APP_IncidentCase ic
+        ON sub.IncidentRequestCaseID = ic.IncidentRequestCaseID
+    LEFT JOIN dbo.APP_Incident inc
+        ON ic.incident_id = inc.incident_id
+"""
+
+
+def _rows_to_subcase_dicts(rows) -> List[Dict[str, Any]]:
+    result = []
+    for row in rows:
+        result.append({
+            "subcase_id": row.SubcaseID,
+            "case_type": row.CaseType,
+            "incident_request_case_id": row.IncidentRequestCaseID,
+            "seasonal_report_id": row.SeasonalReportID,
+            "target_org_unit_id": row.TargetOrgUnitID,
+            "org_unit_name": row.OrgUnitName,
+            "target_org_unit_type": row.OrgUnitType,
+            "status": row.Status,
+            "section_explanation_text": row.SectionExplanationText,
+            "section_rejection_text": row.SectionRejectionText,
+            "department_explanation_text": row.DepartmentExplanationText,
+            "department_rejection_text": row.DepartmentRejectionText,
+            "administration_explanation_text": row.AdministrationExplanationText,
+            "administration_rejection_text": row.AdministrationRejectionText,
+            "created_at": row.CreatedAt,
+            "created_by_user_id": row.CreatedByUserID,
+            "updated_at": row.UpdatedAt,
+            "updated_by_user_id": row.UpdatedByUserID,
+            "incident_number": row.IncidentNumber,
+            "section_deadline_at": row.SectionDeadlineAt,
+            "department_deadline_at": row.DepartmentDeadlineAt,
+            "administration_deadline_at": row.AdministrationDeadlineAt,
+            "section_force_closed_at": row.SectionForceClosedAt,
+            "section_late_reply": bool(row.SectionLateReply),
+            "section_extra_time_granted_at": row.SectionExtraTimeGrantedAt,
+            "department_force_closed_at": row.DepartmentForceClosedAt,
+            "department_late_reply": bool(row.DepartmentLateReply),
+            "department_extra_time_granted_at": row.DepartmentExtraTimeGrantedAt,
+            "administration_force_closed_at": row.AdministrationForceClosedAt,
+            "administration_late_reply": bool(row.AdministrationLateReply),
+            "administration_extra_time_granted_at": row.AdministrationExtraTimeGrantedAt,
+            "is_red_flag": bool(row.IsRedFlag),
+            "is_never_event": bool(row.IsNeverEvent),
+            "is_morbidity": bool(row.IsMorbidity),
+            "feedback_received_date": row.FeedbackRecievedDate,
+            "record_type_id": row.RecordTypeID,
+        })
+    return result
+
+
+def get_section_accountability_red() -> List[Dict[str, Any]]:
+    """RED: force-closed at Section, not yet given more time."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            _ACCOUNTABILITY_SELECT +
+            " WHERE sub.Status = 'FORCE_CLOSED_AT_SECTION'"
+            "   AND sub.SectionExtraTimeGrantedAt IS NULL"
+            " ORDER BY sub.SectionForceClosedAt DESC"
+        )
+        return _rows_to_subcase_dicts(cursor.fetchall())
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_section_accountability_gray() -> List[Dict[str, Any]]:
+    """GRAY: was force-closed at Section, given more time, progressed past Section."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            _ACCOUNTABILITY_SELECT +
+            " WHERE sub.SectionForceClosedAt IS NOT NULL"
+            "   AND sub.SectionExtraTimeGrantedAt IS NOT NULL"
+            "   AND sub.Status NOT IN ("
+            "       'SUBMITTED_TO_SECTION','RETURNED_TO_SECTION_FOR_REVISION',"
+            "       'FORCE_CLOSED_AT_SECTION'"
+            "   )"
+            " ORDER BY sub.SectionExtraTimeGrantedAt DESC"
+        )
+        return _rows_to_subcase_dicts(cursor.fetchall())
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_department_accountability_red() -> List[Dict[str, Any]]:
+    """RED: force-closed at Department, not yet given more time."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            _ACCOUNTABILITY_SELECT +
+            " WHERE sub.Status = 'FORCE_CLOSED_AT_DEPARTMENT'"
+            "   AND sub.DepartmentExtraTimeGrantedAt IS NULL"
+            " ORDER BY sub.DepartmentForceClosedAt DESC"
+        )
+        return _rows_to_subcase_dicts(cursor.fetchall())
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_department_accountability_gray() -> List[Dict[str, Any]]:
+    """GRAY: was force-closed at Department, given more time, progressed past Department."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            _ACCOUNTABILITY_SELECT +
+            " WHERE sub.DepartmentForceClosedAt IS NOT NULL"
+            "   AND sub.DepartmentExtraTimeGrantedAt IS NOT NULL"
+            "   AND sub.Status NOT IN ("
+            "       'SECTION_ACCEPTED_PENDING_DEPT','RETURNED_TO_DEPT_FOR_REVISION',"
+            "       'FORCE_CLOSED_AT_DEPARTMENT'"
+            "   )"
+            " ORDER BY sub.DepartmentExtraTimeGrantedAt DESC"
+        )
+        return _rows_to_subcase_dicts(cursor.fetchall())
     finally:
         cursor.close()
         conn.close()

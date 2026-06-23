@@ -41,9 +41,9 @@ def create_record(data: Dict[str, Any], save_mode: str = 'workflow') -> Dict[str
             # -----------------------------
             _record_type_id = data.get('record_type_id', 1)
 
-            if _record_type_id == 2:  # Notice — no classification required
+            if _record_type_id == 2:  # Notice — complaint text and classification not required
                 required_fields = [
-                    'complaint_text',
+                    'feedback_intent_type_id',
                     'feedback_received_date',
                     'issuing_department_id',
                     'patient_name',
@@ -65,7 +65,6 @@ def create_record(data: Dict[str, Any], save_mode: str = 'workflow') -> Dict[str
                     'clinical_risk_type_id',
                     'feedback_intent_type_id',
                     'immediate_action',
-                    'taken_action',
                     'patient_name',
                     'is_inpatient',
                     'source_id',
@@ -474,9 +473,9 @@ def update_record(record_id: int, data: Dict[str, Any], save_mode: str = 'workfl
         conn = get_connection()
         cursor = conn.cursor()
 
-        # Load current FSM state
+        # Load current FSM state + record type
         cursor.execute(
-            "SELECT CaseStatusID, ExplanationStatusID, ClinicalRiskTypeID FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID = ?",
+            "SELECT CaseStatusID, ExplanationStatusID, ClinicalRiskTypeID, RecordTypeID, BuildingID FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID = ?",
             (record_id,)
         )
         row = cursor.fetchone()
@@ -486,19 +485,30 @@ def update_record(record_id: int, data: Dict[str, Any], save_mode: str = 'workfl
         current_case_status_id = row.CaseStatusID
         current_explanation_status_id = row.ExplanationStatusID
         current_clinical_risk_type_id = row.ClinicalRiskTypeID
+        current_record_type_id = row.RecordTypeID or 1
+        existing_building_id = row.BuildingID
 
         # --- Draft: skip all validation ---
         if save_mode == 'draft':
             pass  # fall through to update
 
         elif save_mode in ('workflow', 'complete'):
-            required_fields = [
-                'complaint_text', 'feedback_received_date', 'issuing_department_id',
-                'domain_id', 'category_id', 'subcategory_id', 'classification_id',
-                'severity_id', 'stage_id', 'harm_id', 'requires_explanation',
-                'clinical_risk_type_id', 'feedback_intent_type_id',
-                'immediate_action', 'taken_action', 'patient_name', 'is_inpatient', 'source_id'
-            ]
+            if current_record_type_id == 2:  # Notice — complaint text and classification not required
+                required_fields = [
+                    'feedback_intent_type_id',
+                    'feedback_received_date',
+                    'issuing_department_id',
+                    'patient_name',
+                    'source_id',
+                ]
+            else:
+                required_fields = [
+                    'complaint_text', 'feedback_received_date', 'issuing_department_id',
+                    'domain_id', 'category_id', 'subcategory_id', 'classification_id',
+                    'severity_id', 'stage_id', 'harm_id', 'requires_explanation',
+                    'clinical_risk_type_id', 'feedback_intent_type_id',
+                    'immediate_action', 'patient_name', 'is_inpatient', 'source_id'
+                ]
 
             for field in required_fields:
                 if field not in data or data[field] is None or data[field] == "":
@@ -519,17 +529,10 @@ def update_record(record_id: int, data: Dict[str, Any], save_mode: str = 'workfl
                         "field": field
                     }
 
-            existing_building_id_prefetch = None
-            try:
-                cursor.execute("SELECT BuildingID FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID = ?", (record_id,))
-                brow = cursor.fetchone()
-                if brow:
-                    existing_building_id_prefetch = brow.BuildingID
-            except Exception:
-                pass
-
-            if not data.get('building_id') and not data.get('building_code') and not existing_building_id_prefetch:
-                return {"success": False, "error": "VALIDATION_ERROR", "message": "Either building_id or building_code is required", "field": "building_id"}
+            # Building required for complaints only (Notices are exempt)
+            if current_record_type_id != 2:
+                if not data.get('building_id') and not data.get('building_code') and not existing_building_id:
+                    return {"success": False, "error": "VALIDATION_ERROR", "message": "Either building_id or building_code is required", "field": "building_id"}
 
             if data.get('clinical_risk_type_id') is not None and int(data.get('clinical_risk_type_id')) != int(current_clinical_risk_type_id):
                 return {"success": False, "error": "IMMUTABLE_FIELD", "message": "Clinical Risk Type cannot be changed after creation", "field": "clinical_risk_type_id"}
@@ -772,7 +775,8 @@ def update_record(record_id: int, data: Dict[str, Any], save_mode: str = 'workfl
                 HarmLevelID = ?,
                 SourceID = ?,
                 CaseStatusID = ?,
-                ExplanationStatusID = ?
+                ExplanationStatusID = ?,
+                UpdatedAt = GETDATE()
             WHERE IncidentRequestCaseID = ?
         """
         # -----------------------------
@@ -1004,21 +1008,25 @@ def create_incident_with_cases(payload: Dict[str, Any], save_mode: str = 'workfl
             "field": "cases",
         }
 
-    if not common.get("feedback_intent_type_id"):
-        return {
-            "success": False,
-            "error": "VALIDATION_ERROR",
-            "message": "Feedback intent type is required",
-            "message_ar": "نوع نية الملاحظة مطلوب",
-            "field": "feedback_intent_type_id",
-        }
+    if save_mode != 'draft':
+        for idx, case_data in enumerate(cases):
+            if not case_data.get("feedback_intent_type_id"):
+                return {
+                    "success": False,
+                    "error": "VALIDATION_ERROR",
+                    "message": f"Case #{idx + 1}: Feedback intent type is required",
+                    "message_ar": f"الحالة رقم {idx + 1}: نوع نية الملاحظة مطلوب",
+                    "field": "feedback_intent_type_id",
+                }
+
+    primary_intent = common.get("feedback_intent_type_id") or (cases[0].get("feedback_intent_type_id") if cases else None)
 
     incident_id = create_incident_parent(
         {
             "patient_name": common.get("patient_name"),
             "primary_doctor_name": common.get("primary_doctor_name"),
             "primary_worker_name": common.get("primary_worker_name"),
-            "feedback_intent_type_id": common.get("feedback_intent_type_id"),
+            "feedback_intent_type_id": primary_intent,
             "issuing_org_unit_id": common.get("issuing_department_id"),
             "complaint_summary": common.get("complaint_text"),
             "building_id": common.get("building_id"),
@@ -1070,7 +1078,7 @@ def create_incident_with_cases(payload: Dict[str, Any], save_mode: str = 'workfl
             "complaint_text": case_data.get("complaint_text") or common.get("complaint_text") or "",
             "feedback_received_date": case_data.get("feedback_received_date") or common.get("feedback_received_date"),
             "issuing_department_id": case_data.get("issuing_department_id") or common.get("issuing_department_id"),
-            "feedback_intent_type_id": common.get("feedback_intent_type_id"),
+            "feedback_intent_type_id": case_data.get("feedback_intent_type_id") or common.get("feedback_intent_type_id"),
             "patient_name": common.get("patient_name") or case_data.get("patient_name") or "",
             "is_inpatient": common.get("is_inpatient", True),
             "is_morbidity": case_data.get("is_morbidity", common.get("is_morbidity", False)),

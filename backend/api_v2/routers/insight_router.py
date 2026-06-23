@@ -264,6 +264,20 @@ async def export_insight_word_report(
     )
 
 
+@router.get("/force-closed-pipeline")
+async def get_force_closed_pipeline_endpoint(
+    current_user: CurrentUser = Depends(get_current_user)
+) -> List[Dict[str, Any]]:
+    """
+    List pipeline-stuck force-closed cases (FORCE_CLOSED_AT_SECTION/DEPARTMENT/ADMINISTRATION).
+    These are awaiting give-more-time intervention by the Complaint Supervisor.
+
+    Authorization: COMPLAINT_SUPERVISOR and SOFTWARE_ADMIN only.
+    Not scope-filtered — full hospital-wide visibility for supervisors.
+    """
+    return insight_service.get_force_closed_pipeline_cases(current_user)
+
+
 @router.get("/force-closed")
 async def get_force_closed_cases_endpoint(
     status: str,

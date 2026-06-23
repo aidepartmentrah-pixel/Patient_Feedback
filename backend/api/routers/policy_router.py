@@ -13,24 +13,27 @@ Saving:   PUT  /api/org-policy/hospital        → hospital policy
           PUT  /api/org-policy/departments     → overwrites ALL department rows
           PUT  /api/org-policy/administrations → overwrites ALL administration rows
 Evaluate: POST /api/org-policy/evaluate        → returns policy_snapshot for date range
+Target:   GET  /api/org-policy/target          → scope-driven domain targets (Target Analysis, Session 2)
 """
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from ..dependencies.user_context import get_current_user
 from ..schemas.auth_models import CurrentUser
-from ..utils.guards import require_logged_in, require_software_admin
+from ..utils.guards import require_logged_in, require_software_admin, require_unit_in_scope
 from ..services.policy_service import (
     get_org_level_policies,
     save_hospital_policy,
     save_sections_policy,
     save_departments_policy,
     save_administrations_policy,
+    get_domain_targets_for_scope,
 )
 from ..services.policy_evaluator import compute_policy_snapshot
+from ..services.section_compliance_service import get_section_compliance
 
 
 router = APIRouter(prefix="/api/org-policy", tags=["Org Policy"])
@@ -234,4 +237,90 @@ async def evaluate_policy_snapshot(
             status_code=500,
             detail={"error": "evaluation_failed", "message": str(e),
                     "message_ar": f"فشل تقييم سياسة الامتثال: {str(e)}"},
+        )
+
+
+@router.get("/target")
+async def get_domain_targets(
+    scope: str = Query(..., description="hospital | administration | department | section"),
+    administration_id: int | None = Query(None),
+    department_id: int | None = Query(None),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Scope-driven domain target retrieval for Target Analysis (Session 2).
+
+    Returns raw incident-count ceilings (Clinical/Management/Relational),
+    not percentages — the schema has no percentage-of-total field.
+    Section scope always returns has_domain_targets=false: section policy
+    is classification-based, not domain-based, and must never show domain
+    target lines (mandatory rule, Session 2).
+    """
+    require_logged_in(current_user)
+
+    if scope not in {"hospital", "administration", "department", "section"}:
+        raise HTTPException(status_code=400, detail="Invalid scope")
+
+    if scope == "administration" and administration_id is not None:
+        require_unit_in_scope(current_user, administration_id)
+
+    if scope == "department" and department_id is not None:
+        require_unit_in_scope(current_user, department_id)
+
+    try:
+        targets = get_domain_targets_for_scope(scope, administration_id, department_id)
+        return {"success": True, "scope": scope, **targets}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "fetch_failed", "message": str(e),
+                    "message_ar": f"فشل جلب أهداف النطاق: {str(e)}"},
+        )
+
+
+@router.get("/section-compliance")
+async def get_section_compliance_endpoint(
+    scope: str = Query(..., description="section | hospital"),
+    start_date: str = Query(..., description="Start date YYYY-MM-DD"),
+    end_date: str = Query(..., description="End date YYYY-MM-DD"),
+    section_id: int | None = Query(None, description="Required when scope=section"),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Section Compliance Analysis — HCAT Iteration 4, Session 3.
+
+    scope=section  → compliance for one specific section.
+    scope=hospital → all sections aggregated by classification (Option B).
+
+    Only section and hospital scopes are valid here.
+    Administration and Department scopes do not use classification-based policy.
+    """
+    require_logged_in(current_user)
+
+    if scope not in {"section", "hospital"}:
+        raise HTTPException(status_code=400, detail="scope must be 'section' or 'hospital'")
+
+    if scope == "section":
+        if section_id is None:
+            raise HTTPException(status_code=400, detail="section_id required for section scope")
+        require_unit_in_scope(current_user, section_id)
+
+    try:
+        date_from = date.fromisoformat(start_date)
+        date_to   = date.fromisoformat(end_date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Dates must be in YYYY-MM-DD format")
+
+    try:
+        result = get_section_compliance(
+            scope=scope,
+            date_from=date_from,
+            date_to=date_to,
+            section_id=section_id,
+        )
+        return {"success": True, **result}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "compliance_fetch_failed", "message": str(e)},
         )

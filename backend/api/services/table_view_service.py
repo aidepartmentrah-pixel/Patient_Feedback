@@ -24,6 +24,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 
 from ..db_layer.database import get_connection
+from ..db_layer.satisfaction_db import get_satisfactions_by_cases
 
 
 # ==================== HELPER FUNCTIONS ====================
@@ -109,6 +110,7 @@ def _get_workflow_statuses_batch(case_ids: list, cursor) -> dict:
     """
     Fetch workflow statuses for a list of case IDs in a single query.
     Returns dict keyed by IncidentRequestCaseID.
+    Includes is_late derived from per-level LateReply flags.
     """
     if not case_ids:
         return {}
@@ -120,7 +122,10 @@ def _get_workflow_statuses_batch(case_ids: list, cursor) -> dict:
             s.SubcaseID,
             s.Status,
             s.TargetOrgUnitID,
-            org.Name AS TargetOrgUnitName
+            org.Name AS TargetOrgUnitName,
+            s.SectionLateReply,
+            s.DepartmentLateReply,
+            s.AdministrationLateReply
         FROM dbo.APP_AdministrativeSubcase s
         LEFT JOIN AdminsrationUnit org ON s.TargetOrgUnitID = org.UniqueID
         WHERE s.IncidentRequestCaseID IN ({placeholders})
@@ -133,12 +138,22 @@ def _get_workflow_statuses_batch(case_ids: list, cursor) -> dict:
     for row in rows:
         cid = row.IncidentRequestCaseID
         if cid not in result:
-            result[cid] = {"has_subcases": True, "open_subcase_count": 0, "force_closed": False, "subcases": []}
+            result[cid] = {
+                "has_subcases": True,
+                "open_subcase_count": 0,
+                "force_closed": False,
+                "is_late": False,
+                "subcases": [],
+            }
         status = row.Status
         if status == "FORCE_CLOSED":
             result[cid]["force_closed"] = True
         elif status not in ("ADMIN_APPROVED", "SECTION_DENIED"):
             result[cid]["open_subcase_count"] += 1
+
+        if row.SectionLateReply or row.DepartmentLateReply or row.AdministrationLateReply:
+            result[cid]["is_late"] = True
+
         result[cid]["subcases"].append({
             "subcase_id": row.SubcaseID,
             "status": status,
@@ -187,21 +202,36 @@ def get_complaints_paginated(
     if page_size < 1 or page_size > 500:
         raise ValueError("Page size must be between 1 and 500")
     
-    # Validate sort parameters
-    valid_sort_fields = [
-        "FeedbackRecievedDate", "IncidentRequestCaseID", "SeverityID", 
-        "CreatedAt", "PatientName", "id"
-    ]
-    if sort_by not in valid_sort_fields:
+    # Sort field whitelist — maps a stable sort key to a literal, trusted SQL expression.
+    # sort_by (user input) is only ever used as a dict key lookup, never interpolated
+    # directly into SQL, so no injection surface exists here.
+    # SeverityID/HarmSeverityOrder use the lookup tables' rank columns (SeverityOrder),
+    # not the raw FK id, since FK assignment order is not guaranteed to match severity rank.
+    SORT_FIELD_MAP = {
+        "FeedbackRecievedDate": "c.FeedbackRecievedDate",
+        "IncidentRequestCaseID": "CAST(c.IncidentRequestCaseID AS INT)",
+        "id": "CAST(c.IncidentRequestCaseID AS INT)",
+        "CreatedAt": "c.CreatedAt",
+        "UpdatedAt": "c.UpdatedAt",
+        "PatientName": "c.PatientName",
+        "SeverityID": "severity.SeverityOrder",
+        "HarmSeverityOrder": "harm.SeverityOrder",
+        "IncidentNumber": "i.incident_number",
+        "SourceName": "source.SourceName",
+        "FeedbackIntentTypeName": "feedback_intent.NameEn",
+        "DomainName": "domain.DomainName",
+        "CategoryName": "category.CategoryName",
+        "SubCategoryName": "subcategory.SubCategoryName",
+        "ClassificationName": "classification.Classification_AR",
+        "StatusDisplayOrder": "status.DisplayOrder",
+        "TargetDepartmentName": "target_depts.target_dept_names",
+    }
+    if sort_by not in SORT_FIELD_MAP:
         sort_by = "FeedbackRecievedDate"
-    
+
     if sort_order.lower() not in ["asc", "desc"]:
         sort_order = "desc"
-    
-    # Map 'id' to actual database column
-    if sort_by == "id":
-        sort_by = "IncidentRequestCaseID"
-    
+
     # Build WHERE clause dynamically
     where_conditions = []
     params = []
@@ -336,12 +366,17 @@ def get_complaints_paginated(
     # Calculate offset for pagination
     offset = (page - 1) * page_size
     
-    # Build ORDER BY clause with CAST for numeric sorting on ID field
-    if sort_by == "IncidentRequestCaseID":
-        order_by_clause = f"ORDER BY CAST(c.{sort_by} AS INT) {sort_order.upper()}"
+    # Build ORDER BY clause from the trusted whitelist. A stable tiebreaker (case ID)
+    # is appended whenever sorting by a non-unique field, so OFFSET/FETCH pagination
+    # returns deterministic, non-overlapping pages across requests.
+    sort_field_expr = SORT_FIELD_MAP[sort_by]
+    sort_dir = sort_order.upper()
+    id_expr = SORT_FIELD_MAP["IncidentRequestCaseID"]
+    if sort_field_expr == id_expr:
+        order_by_clause = f"ORDER BY {sort_field_expr} {sort_dir}"
     else:
-        order_by_clause = f"ORDER BY c.{sort_by} {sort_order.upper()}"
-    
+        order_by_clause = f"ORDER BY {sort_field_expr} {sort_dir}, {id_expr} ASC"
+
     # SQL query for fetching records
     query = f"""
         SELECT
@@ -354,11 +389,14 @@ def get_complaints_paginated(
             c.FeedbackRecievedDate as received_date,
             c.CreatedAt as created_at,
             c.PatientName as patient_name,
-            
+
             -- Issuing organizational unit
             c.IssuingOrgUnitID as issuing_org_unit_id,
             org_unit.Name as issuing_org_unit_name,
-            
+
+            -- Target department(s) — aggregated, for Operational Views
+            target_depts.target_dept_names as target_department_name,
+
             -- Domain
             c.DomainID as domain_id,
             domain.DomainName as domain_name,
@@ -421,8 +459,14 @@ def get_complaints_paginated(
             c.ImmediateAction as immediate_action,
             c.TakenAction as taken_action,
             c.isINPatient as is_inpatient,
-            c.CreatedByUserID as created_by_user_id
-            
+            c.CreatedByUserID as created_by_user_id,
+
+            -- Morbidity flag (for Universal Case Theme clinical indicator)
+            c.IsMorbidity as is_morbidity,
+
+            -- Recently Edited
+            c.UpdatedAt as last_edited
+
         FROM dbo.APP_IncidentCase c
         LEFT JOIN AdminsrationUnit org_unit ON c.IssuingOrgUnitID = org_unit.UniqueID
         LEFT JOIN APP_LOOKUP_DOMAIN domain ON c.DomainID = domain.DomainID
@@ -448,6 +492,12 @@ def get_complaints_paginated(
             WHERE IncidentRequestCaseID = c.IncidentRequestCaseID
             ORDER BY CreatedAt DESC
         ) subcase_ans
+        OUTER APPLY (
+            SELECT STRING_AGG(au.Name, N', ') as target_dept_names
+            FROM dbo.APP_IncidentCaseTargetDepartment td
+            JOIN dbo.AdminsrationUnit au ON td.DepartmentID = au.UniqueID
+            WHERE td.IncidentRequestCaseID = c.IncidentRequestCaseID
+        ) target_depts
         {where_clause}
         {order_by_clause}
         OFFSET ? ROWS
@@ -486,6 +536,8 @@ def get_complaints_paginated(
                 complaint['received_date'] = complaint['received_date'].strftime('%Y-%m-%d')
             if complaint.get('created_at'):
                 complaint['created_at'] = complaint['created_at'].isoformat()
+            if complaint.get('last_edited'):
+                complaint['last_edited'] = complaint['last_edited'].isoformat()
 
             if complaint.get('received_date'):
                 try:
@@ -501,9 +553,16 @@ def get_complaints_paginated(
         # Batch fetch all workflow statuses in one query instead of N queries
         case_ids = [c['id'] for c in complaints if c.get('id')]
         workflow_map = _get_workflow_statuses_batch(case_ids, cursor)
+        satisfaction_map = get_satisfactions_by_cases(case_ids)
         for complaint in complaints:
-            complaint['workflow_status'] = workflow_map.get(complaint.get('id'))
+            wf = workflow_map.get(complaint.get('id'))
+            complaint['workflow_status'] = wf
             complaint['case_status_name'] = complaint.get('status_name')
+            complaint['is_late'] = bool(wf and wf.get('is_late', False))
+
+            satisfaction = satisfaction_map.get(complaint.get('id'))
+            complaint['satisfaction_status_name'] = satisfaction.get('satisfaction_status_name_en') if satisfaction else None
+            complaint['satisfaction_date'] = satisfaction.get('feedback_datetime') if satisfaction else None
         
         total_pages = (total_records + page_size - 1) // page_size
         
@@ -1148,6 +1207,9 @@ def get_complaints_count(
 def export_complaints_excel(
     search: Optional[str] = None,
     issuing_org_unit_id: Optional[int] = None,
+    target_department_id: Optional[int] = None,
+    target_dept_parent_id: Optional[int] = None,
+    target_admin_id: Optional[int] = None,
     domain_id: Optional[int] = None,
     category_id: Optional[int] = None,
     severity_id: Optional[int] = None,
@@ -1158,6 +1220,9 @@ def export_complaints_excel(
     month: Optional[int] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    sort_by: str = "FeedbackRecievedDate",
+    sort_order: str = "desc",
+    tab: Optional[str] = None,
     restrict_to_unit_ids: Optional[set] = None,
 ) -> BytesIO:
     """
@@ -1196,6 +1261,39 @@ def export_complaints_excel(
             )
             params.extend(list(restrict_to_unit_ids))
 
+    if target_department_id:
+        where_conditions.append("""
+            EXISTS (
+                SELECT 1 FROM dbo.APP_IncidentCaseTargetDepartment td
+                WHERE td.IncidentRequestCaseID = c.IncidentRequestCaseID
+                  AND td.DepartmentID = ?
+            )
+        """)
+        params.append(target_department_id)
+
+    if target_dept_parent_id:
+        where_conditions.append("""
+            EXISTS (
+                SELECT 1 FROM dbo.APP_IncidentCaseTargetDepartment td
+                INNER JOIN AdminsrationUnit s ON s.UniqueID = td.DepartmentID
+                WHERE td.IncidentRequestCaseID = c.IncidentRequestCaseID
+                  AND s.ParentID = ?
+            )
+        """)
+        params.append(target_dept_parent_id)
+
+    if target_admin_id:
+        where_conditions.append("""
+            EXISTS (
+                SELECT 1 FROM dbo.APP_IncidentCaseTargetDepartment td
+                INNER JOIN AdminsrationUnit s ON s.UniqueID = td.DepartmentID
+                LEFT JOIN AdminsrationUnit p ON p.UniqueID = s.ParentID
+                WHERE td.IncidentRequestCaseID = c.IncidentRequestCaseID
+                  AND (s.ParentID = ? OR p.ParentID = ?)
+            )
+        """)
+        params.extend([target_admin_id, target_admin_id])
+
     if domain_id:
         where_conditions.append("c.DomainID = ?")
         params.append(domain_id)
@@ -1211,35 +1309,72 @@ def export_complaints_excel(
     if stage_id:
         where_conditions.append("c.StageID = ?")
         params.append(stage_id)
-    
+
     if harm_level_id:
         where_conditions.append("c.HarmLevelID = ?")
         params.append(harm_level_id)
-    
+
     if case_status_id:
         where_conditions.append("c.CaseStatusID = ?")
         params.append(case_status_id)
-    
+    elif tab == 'preparation':
+        where_conditions.append("c.CaseStatusID IN (4, 5)")
+    elif tab == 'workflow':
+        where_conditions.append("c.CaseStatusID NOT IN (4, 5)")
+
     if year:
         where_conditions.append("YEAR(c.FeedbackRecievedDate) = ?")
         params.append(year)
-    
+
     if month:
         where_conditions.append("MONTH(c.FeedbackRecievedDate) = ?")
         params.append(month)
-    
+
     if start_date:
         where_conditions.append("c.FeedbackRecievedDate >= ?")
         params.append(start_date)
-    
+
     if end_date:
         where_conditions.append("c.FeedbackRecievedDate <= ?")
         params.append(end_date)
-    
+
     where_clause = ""
     if where_conditions:
         where_clause = "WHERE " + " AND ".join(where_conditions)
-    
+
+    # Build ORDER BY — export respects active sort.
+    # Same sort keys as get_complaints_paginated's SORT_FIELD_MAP, but resolved against
+    # this query's own table aliases (export uses a separate FROM/JOIN structure).
+    # FeedbackIntentTypeName has no name join here (export uses an inline CASE WHEN for
+    # display instead) so it falls back to the raw FK — numeric, not alphabetical, but
+    # consistent ordering is still preserved.
+    EXPORT_SORT_FIELD_MAP = {
+        "FeedbackRecievedDate": "c.FeedbackRecievedDate",
+        "IncidentRequestCaseID": "CAST(c.IncidentRequestCaseID AS INT)",
+        "id": "CAST(c.IncidentRequestCaseID AS INT)",
+        "CreatedAt": "c.CreatedAt",
+        "UpdatedAt": "c.UpdatedAt",
+        "PatientName": "c.PatientName",
+        "SeverityID": "severity.SeverityOrder",
+        "HarmSeverityOrder": "harm.SeverityOrder",
+        "IncidentNumber": "inc.incident_number",
+        "SourceName": "source.SourceNameAr",
+        "FeedbackIntentTypeName": "c.FeedbackIntentTypeID",
+        "DomainName": "domain.DomainName",
+        "CategoryName": "category.CategoryName",
+        "SubCategoryName": "subcat.SubCategoryName",
+        "ClassificationName": "classif.Classification_AR",
+        "StatusDisplayOrder": "status.DisplayOrder",
+        "TargetDepartmentName": "target_depts.target_dept_names",
+    }
+    sort_field_expr = EXPORT_SORT_FIELD_MAP.get(sort_by, "c.FeedbackRecievedDate")
+    sort_dir = "DESC" if sort_order.lower() != "asc" else "ASC"
+    id_expr = EXPORT_SORT_FIELD_MAP["IncidentRequestCaseID"]
+    if sort_field_expr == id_expr:
+        order_by_clause = f"ORDER BY {sort_field_expr} {sort_dir}"
+    else:
+        order_by_clause = f"ORDER BY {sort_field_expr} {sort_dir}, {id_expr} ASC"
+
     # Query to fetch all matching records with all required fields
     # Note: Using OUTER APPLY with STRING_AGG for target departments (multiple per case)
     query = f"""
@@ -1251,7 +1386,7 @@ def export_complaints_excel(
             issuing_org.Name as issuing_org_unit_name,
             target_depts.target_dept_names as concerned_org_unit_name,
             source.SourceNameAr as source_name,
-            CASE 
+            CASE
                 WHEN c.FeedbackIntentTypeID = 1 THEN N'شكوى'
                 WHEN c.FeedbackIntentTypeID = 2 THEN N'ملاحظة'
                 WHEN c.FeedbackIntentTypeID = 3 THEN N'اقتراح'
@@ -1272,7 +1407,8 @@ def export_complaints_excel(
             risk_type.Name as feedback_risk_type,
             export_subcase.SectionExplanationText as section_answer,
             export_subcase.DepartmentExplanationText as department_answer,
-            export_subcase.AdministrationExplanationText as administration_answer
+            export_subcase.AdministrationExplanationText as administration_answer,
+            c.UpdatedAt as last_edited
         FROM dbo.APP_IncidentCase c
         LEFT JOIN AdminsrationUnit issuing_org ON c.IssuingOrgUnitID = issuing_org.UniqueID
         OUTER APPLY (
@@ -1302,7 +1438,7 @@ def export_complaints_excel(
         LEFT JOIN APP_LOOKUP_CLINICAL_RISK_TYPE risk_type ON c.ClinicalRiskTypeID = risk_type.ClinicalRiskTypeID
         LEFT JOIN dbo.APP_Incident inc ON c.incident_id = inc.incident_id
         {where_clause}
-        ORDER BY c.FeedbackRecievedDate DESC
+        {order_by_clause}
     """
     
     conn = get_connection()
@@ -1351,6 +1487,7 @@ def export_complaints_excel(
             'section_answer': 'جواب القسم',
             'department_answer': 'جواب الدائرة',
             'administration_answer': 'جواب الإدارة',
+            'last_edited': 'آخر تعديل',
         }
         
         for col_idx, col_name in enumerate(columns, start=1):

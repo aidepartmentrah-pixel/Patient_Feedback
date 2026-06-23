@@ -121,12 +121,16 @@ def get_incident_detail(incident_id: int) -> Optional[Dict[str, Any]]:
                 building.BuildingName as building,
                 
                 -- IN/OUT status (from is_inpatient flag)
-                CASE 
+                CASE
                     WHEN c.isINPatient = 1 THEN 'IN'
                     WHEN c.isINPatient = 0 THEN 'OUT'
                     ELSE NULL
-                END as in_out
-                
+                END as in_out,
+
+                -- Stage and Harm Level
+                stage_lkp.StageName as stage_name,
+                harm_lkp.HarmLevel as harm_level
+
             FROM dbo.APP_IncidentCase c
             LEFT JOIN AdminsrationUnit org_unit ON c.IssuingOrgUnitID = org_unit.UniqueID
             LEFT JOIN APP_LOOKUP_DOMAIN domain ON c.DomainID = domain.DomainID
@@ -135,6 +139,8 @@ def get_incident_detail(incident_id: int) -> Optional[Dict[str, Any]]:
             LEFT JOIN APP_LOOKUP_CLASSIFICATION classification ON c.ClassificationID = classification.ClassificationID
             LEFT JOIN APP_LOOKUP_SEVERITY severity ON c.SeverityID = severity.SeverityID
             LEFT JOIN APP_LOOKUP_BUILDING building ON c.BuildingID = building.BuildingID
+            LEFT JOIN APP_LOOKUP_CASE_STAGE stage_lkp ON c.StageID = stage_lkp.StageID
+            LEFT JOIN APP_LOOKUP_HARM_LEVEL harm_lkp ON c.HarmLevelID = harm_lkp.HarmID
             WHERE c.IncidentRequestCaseID = ?
         """
         

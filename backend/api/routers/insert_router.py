@@ -99,12 +99,7 @@ class IncidentCommonRequest(BaseModel):
     complaint_text: Optional[str] = None
     feedback_received_date: date
     issuing_department_id: int
-    feedback_intent_type_id: int = Field(
-        ...,
-        ge=1,
-        le=2,
-        description="Feedback intent type ID (1=Negative, 2=Positive)",
-    )
+    feedback_intent_type_id: Optional[int] = None
     patient_name: Optional[str] = ""
     is_inpatient: bool = True
     is_morbidity: bool = False
@@ -300,6 +295,43 @@ async def add_incident_with_cases(
                 "message_ar": f"حدث خطأ: {str(e)}",
             },
         )
+
+
+@router.get("/next-numbers")
+async def get_next_numbers(
+    cases: int = Query(1, ge=1, le=20, description="Number of case slots to preview"),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Return the estimated next Incident and Case numbers without creating anything.
+    Workers copy these onto their paper forms before the record is saved.
+    Numbers are confirmed (and may differ by ±1) once the record is actually saved.
+    """
+    require_logged_in(current_user)
+    try:
+        from backend.core.database import get_connection
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT
+                ISNULL(IDENT_CURRENT('dbo.APP_Incident'), 0)      + 1 AS next_incident_id,
+                ISNULL(IDENT_CURRENT('dbo.APP_IncidentCase'), 0)  + 1 AS next_case_id
+        """)
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        next_incident_id = int(row.next_incident_id)
+        next_case_id     = int(row.next_case_id)
+
+        return {
+            "success": True,
+            "incident_id":     next_incident_id,
+            "incident_number": f"INC-{str(next_incident_id).zfill(6)}",
+            "case_ids":        [next_case_id + i for i in range(cases)],
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": "PREVIEW_ERROR", "message": str(e)})
 
 
 @router.get("/{record_id}")
