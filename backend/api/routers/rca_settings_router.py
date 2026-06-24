@@ -56,6 +56,7 @@ class PairCreateRequest(BaseModel):
     category_id: int
     cause_text_ar: str
     cause_text_en: Optional[str] = None
+    cause_description_ar: Optional[str] = None
     action_text_ar: str
     action_text_en: Optional[str] = None
 
@@ -63,6 +64,7 @@ class PairCreateRequest(BaseModel):
 class PairUpdateRequest(BaseModel):
     cause_text_ar: str
     cause_text_en: Optional[str] = None
+    cause_description_ar: Optional[str] = None
     action_text_ar: str
     action_text_en: Optional[str] = None
 
@@ -342,7 +344,8 @@ async def create_rca_pair(
             cause_text_en=body.cause_text_en,
             action_text_ar=body.action_text_ar,
             action_text_en=body.action_text_en,
-            created_by=current_user.user_id
+            created_by=current_user.user_id,
+            cause_description_ar=body.cause_description_ar
         )
         return result
     except Exception as e:
@@ -368,7 +371,8 @@ async def update_rca_pair(
             cause_text_en=body.cause_text_en,
             action_text_ar=body.action_text_ar,
             action_text_en=body.action_text_en,
-            updated_by=current_user.user_id
+            updated_by=current_user.user_id,
+            cause_description_ar=body.cause_description_ar
         )
         if not ok:
             raise HTTPException(status_code=404, detail={

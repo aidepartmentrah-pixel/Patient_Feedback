@@ -254,6 +254,7 @@ def get_pairs(
         SELECT c.SuggestionID AS PairID, c.CategoryID,
                cat.CategoryNameEn, cat.CategoryNameAr,
                c.SuggestionTextAr AS CauseTextAr, c.SuggestionTextEn AS CauseTextEn,
+               c.DescriptionAr AS CauseDescriptionAr,
                a.SuggestionID AS ActionSuggestionID,
                a.SuggestionTextAr AS ActionTextAr, a.SuggestionTextEn AS ActionTextEn,
                c.SortOrder, c.IsActive
@@ -276,7 +277,8 @@ def create_pair(
     cause_text_en: Optional[str],
     action_text_ar: str,
     action_text_en: Optional[str],
-    created_by: Optional[int]
+    created_by: Optional[int],
+    cause_description_ar: Optional[str] = None
 ) -> Dict[str, int]:
     conn = get_connection()
     cursor = conn.cursor()
@@ -295,11 +297,11 @@ def create_pair(
             """
             INSERT INTO dbo.APP_RCASuggestion
                 (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr,
-                 SortOrder, IsActive, CreatedByUserID)
+                 DescriptionAr, SortOrder, IsActive, CreatedByUserID)
             OUTPUT INSERTED.SuggestionID
-            VALUES (?, 'CAUSE', ?, ?, ?, 1, ?)
+            VALUES (?, 'CAUSE', ?, ?, ?, ?, 1, ?)
             """,
-            (category_id, cause_text_en, cause_text_ar, next_sort, created_by)
+            (category_id, cause_text_en, cause_text_ar, cause_description_ar, next_sort, created_by)
         )
         cause_id = cursor.fetchone()[0]
 
@@ -339,7 +341,8 @@ def update_pair(
     cause_text_en: Optional[str],
     action_text_ar: str,
     action_text_en: Optional[str],
-    updated_by: Optional[int]
+    updated_by: Optional[int],
+    cause_description_ar: Optional[str] = None
 ) -> bool:
     conn = get_connection()
     cursor = conn.cursor()
@@ -359,11 +362,11 @@ def update_pair(
         cursor.execute(
             """
             UPDATE dbo.APP_RCASuggestion
-            SET SuggestionTextAr = ?, SuggestionTextEn = ?,
+            SET SuggestionTextAr = ?, SuggestionTextEn = ?, DescriptionAr = ?,
                 UpdatedAt = SYSUTCDATETIME(), UpdatedByUserID = ?
             WHERE SuggestionID = ?
             """,
-            (cause_text_ar, cause_text_en, updated_by, pair_id)
+            (cause_text_ar, cause_text_en, cause_description_ar, updated_by, pair_id)
         )
         cursor.execute(
             """
@@ -507,6 +510,7 @@ def get_pairs_grouped_by_category(subcase_id: int) -> List[Dict[str, Any]]:
             cat.SortOrder AS CategorySortOrder,
             c.SuggestionID AS PairID, a.SuggestionID AS ActionSuggestionID,
             c.SuggestionTextAr AS CauseTextAr, c.SuggestionTextEn AS CauseTextEn,
+            c.DescriptionAr AS CauseDescriptionAr,
             a.SuggestionTextAr AS ActionTextAr, a.SuggestionTextEn AS ActionTextEn,
             c.SortOrder AS PairSortOrder,
             CASE WHEN selc.SuggestionID IS NOT NULL OR sela.SuggestionID IS NOT NULL
@@ -529,7 +533,7 @@ def get_pairs_grouped_by_category(subcase_id: int) -> List[Dict[str, Any]]:
     categories: Dict[int, Dict[str, Any]] = {}
     for row in rows:
         (cat_id, cat_name_en, cat_name_ar, cat_sort,
-         pair_id, action_id, cause_ar, cause_en, action_ar, action_en,
+         pair_id, action_id, cause_ar, cause_en, cause_description_ar, action_ar, action_en,
          pair_sort, is_selected) = row
 
         if cat_id not in categories:
@@ -546,6 +550,7 @@ def get_pairs_grouped_by_category(subcase_id: int) -> List[Dict[str, Any]]:
             "action_suggestion_id": action_id,
             "cause_text_ar": cause_ar,
             "cause_text_en": cause_en,
+            "description_ar": cause_description_ar,
             "action_text_ar": action_ar,
             "action_text_en": action_en,
             "sort_order": pair_sort,
