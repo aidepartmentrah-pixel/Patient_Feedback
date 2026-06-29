@@ -28,6 +28,8 @@ from core.notification_config import (
     SMTP_PASSWORD,
     SUBCASE_ASSIGNMENT_SUBJECT,
     SUBCASE_ASSIGNMENT_BODY_TEMPLATE,
+    PUBLICATION_SUMMARY_SUBJECT,
+    PUBLICATION_SUMMARY_BODY_TEMPLATE,
     MAX_RETRIES,
     RETRY_DELAY_SECONDS,
 )
@@ -202,6 +204,58 @@ def send_subcase_assignment_notification(
     )
     
     return send_notification(to_email, subject, body)
+
+
+def send_publication_summary_notifications(
+    subcases: list
+) -> None:
+    """
+    Send one summary email per unique admin after a publication batch.
+
+    Groups the created subcases by target_org_unit_id, resolves the admin
+    email for each org unit, consolidates by email address (two org units
+    may share the same admin), and sends one email per unique recipient
+    with the total count of cases directed at them.
+
+    If subcases is empty (publication created nothing), nothing is sent.
+
+    Args:
+        subcases: list of {"subcase_id": int, "target_org_unit_id": int}
+                  as returned by create_subcases_for_incident().
+    """
+    if not subcases:
+        logger.debug("PUBLICATION NOTIFY: no subcases created, skipping notification")
+        return
+
+    # Map org_unit_id → count
+    count_by_org: dict = {}
+    for sc in subcases:
+        oid = sc.get("target_org_unit_id")
+        if oid is not None:
+            count_by_org[oid] = count_by_org.get(oid, 0) + 1
+
+    # Resolve admin email per org unit, consolidate by email address
+    count_by_email: dict = {}
+    for org_unit_id, count in count_by_org.items():
+        email = get_section_admin_email(org_unit_id)
+        if email:
+            count_by_email[email] = count_by_email.get(email, 0) + count
+        else:
+            logger.debug(
+                f"PUBLICATION NOTIFY: no admin email for org_unit {org_unit_id}, skipping"
+            )
+
+    if not count_by_email:
+        logger.info("PUBLICATION NOTIFY: no admin emails found for any org unit, nothing sent")
+        return
+
+    for email, count in count_by_email.items():
+        subject = PUBLICATION_SUMMARY_SUBJECT
+        body = PUBLICATION_SUMMARY_BODY_TEMPLATE.format(count=count)
+        send_notification(email, subject, body)
+        logger.info(
+            f"PUBLICATION NOTIFY: queued summary email to {email} — {count} case(s)"
+        )
 
 
 def get_section_admin_email(org_unit_id: int) -> Optional[str]:

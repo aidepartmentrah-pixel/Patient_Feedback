@@ -774,7 +774,9 @@ def _build_classification_zone(doc: Document, complaint: Dict):
 
 
 def _build_content_zone(doc: Document, complaint: Dict, page_width_mm: float):
-    """Zone 4 — Complaint text (left 60%) | Immediate Action + Follow-up (right 40%)."""
+    """Zone 4 — Complaint text (left 75%) | Immediate Action + Follow-up (right 25%).
+    75/25 split: 12pt complaint font needs more horizontal room (fewer chars/line
+    at 12pt than 9pt) — wider left column keeps line count manageable within the cap."""
     from docx.enum.table import WD_ROW_HEIGHT_RULE
 
     tbl = doc.add_table(rows=1, cols=2)
@@ -782,9 +784,9 @@ def _build_content_zone(doc: Document, complaint: Dict, page_width_mm: float):
     tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
     _apply_minimal_table_borders(tbl, outer=NAVY, outer_sz=6, inner=GREY_LINE, inner_sz=6)
 
-    # page_width_mm is already the usable width (margins already subtracted by caller)
-    left_w  = page_width_mm * 0.60
-    right_w = page_width_mm * 0.40
+    # 75/25 split — recalculated for 12pt font at 181.5mm usable → ~77 chars/line
+    left_w  = page_width_mm * 0.75
+    right_w = page_width_mm * 0.25
 
     left_cell  = tbl.rows[0].cells[0]
     right_cell = tbl.rows[0].cells[1]
@@ -806,26 +808,26 @@ def _build_content_zone(doc: Document, complaint: Dict, page_width_mm: float):
     lp_hdr._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
     _ar_run(lp_hdr, 'محتوى الشكوى  /  Complaint Details', size=9, bold=True, color=NAVY)
 
-    # Hard cap at 850 chars — Content Zone has a fixed height ceiling (see
-    # tbl.rows[0].height below); this is what makes the cap actually true.
-    complaint_text = _truncate_for_fit(complaint.get('complaint_text'), 950)
+    # Full text — no truncation. Long complaints may cause the card to span
+    # 2 pages; that is preferred over cutting data. User decision: full text
+    # always, multiple pages acceptable.
+    complaint_text = (complaint.get('complaint_text') or '').strip()
     lp_body = left_cell.add_paragraph()
     lp_body.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    lp_body.paragraph_format.space_before = Pt(6)
-    lp_body.paragraph_format.space_after  = Pt(6)
+    lp_body.paragraph_format.space_before = Pt(3)   # reduced from 6pt — reclaim height
+    lp_body.paragraph_format.space_after  = Pt(3)   # reduced from 6pt
     lp_body.paragraph_format.left_indent  = Mm(3)
     lp_body.paragraph_format.right_indent = Mm(3)
     lp_body._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
 
-    # Line spacing 1.15 (was 1.3) — saves vertical space on long complaint
-    # text, the main driver of per-card page overflow.
+    # Line spacing 1.15 — same as before, keeps 12pt lines at 4.87mm each
     pPr = lp_body._p.get_or_add_pPr()
     sp_el = OxmlElement('w:spacing')
     sp_el.set(qn('w:line'), '276')
     sp_el.set(qn('w:lineRule'), 'auto')
     pPr.append(sp_el)
 
-    _ar_run(lp_body, complaint_text or 'لا يوجد نص للشكوى', size=9, color=DARK_TEXT)
+    _ar_run(lp_body, complaint_text or 'لا يوجد نص للشكوى', size=12, color=DARK_TEXT)
 
     # RIGHT — two stacked action boxes
     _set_cell_shading(right_cell, WHITE)
@@ -841,7 +843,7 @@ def _build_content_zone(doc: Document, complaint: Dict, page_width_mm: float):
     ra_hdr._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
     _ar_run(ra_hdr, 'الإجراء الفوري  /  Immediate Action', size=9, bold=True, color='8B4000')
 
-    imm = _truncate_for_fit(complaint.get('immediate_action'), 240)
+    imm = (complaint.get('immediate_action') or '').strip()
     ra_body = right_cell.add_paragraph()
     ra_body.alignment = WD_ALIGN_PARAGRAPH.CENTER
     ra_body.paragraph_format.space_before = Pt(4)
@@ -849,7 +851,7 @@ def _build_content_zone(doc: Document, complaint: Dict, page_width_mm: float):
     ra_body.paragraph_format.left_indent  = Mm(2)
     ra_body.paragraph_format.right_indent = Mm(2)
     ra_body._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-    _ar_run(ra_body, imm or '—', size=8, color=DARK_TEXT)
+    _ar_run(ra_body, imm or '—', size=12, color=DARK_TEXT)
 
     # Divider
     div = right_cell.add_paragraph()
@@ -866,7 +868,7 @@ def _build_content_zone(doc: Document, complaint: Dict, page_width_mm: float):
     fu_hdr._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
     _ar_run(fu_hdr, 'المتابعة والرد  /  Follow-up Response', size=9, bold=True, color=NAVY)
 
-    taken = _truncate_for_fit(complaint.get('taken_action'), 240)
+    taken = (complaint.get('taken_action') or '').strip()
     fu_body = right_cell.add_paragraph()
     fu_body.alignment = WD_ALIGN_PARAGRAPH.CENTER
     fu_body.paragraph_format.space_before = Pt(4)
@@ -874,15 +876,13 @@ def _build_content_zone(doc: Document, complaint: Dict, page_width_mm: float):
     fu_body.paragraph_format.left_indent  = Mm(2)
     fu_body.paragraph_format.right_indent = Mm(2)
     fu_body._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-    _ar_run(fu_body, taken or '—', size=8, color=DARK_TEXT)
+    _ar_run(fu_body, taken or '—', size=12, color=DARK_TEXT)
 
-    # V8 hard cap: 55mm — Content Zone is now a CEILING, not just a floor.
-    # Every text field above is truncated to a character budget calculated
-    # to fit within this height, so this row can never grow past 58mm
-    # regardless of source data length — this is what makes "one page per
-    # case, no exceptions" structurally true rather than just typical-case.
+    # V9 hard cap: 75mm. Recalculated for 12pt font in 75% column:
+    # 1000 chars → 13 lines × 4.87mm + 11mm overhead = 74mm, fits within cap.
+    # 830-char test text → 11 lines × 4.87mm + 11mm = 65mm, 10mm spare.
     tbl.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-    tbl.rows[0].height = _mm_to_dxa(58)
+    tbl.rows[0].height = _mm_to_dxa(74)
 
 
 def _build_approvals_zone(doc: Document, complaint: Dict):
@@ -896,11 +896,16 @@ def _build_approvals_zone(doc: Document, complaint: Dict):
 
     sig_cell  = outer.rows[0].cells[0]
     note_cell = outer.rows[0].cells[1]
-    # Target ~250mm total (17mm slack vs 267mm usable)
-    _set_row_col_width(outer.rows[0], 0, 135)
-    _set_row_col_width(outer.rows[0], 1, 115)
+    # note_cell widened (85→130mm): at 130mm all 5 RCA text items fit on 1
+    # line each (longest line needs ~115mm net, 130-4mm indents=126mm net).
+    # This drops RCA height from ~35mm to ~23mm, so the Approvals row is now
+    # driven by the sig table (24mm EXACTLY) — a 12mm vertical saving.
+    # sig_cell narrowed accordingly (165→120mm); columns are still comfortably
+    # readable at 7pt with the narrower role-column allocation below.
+    _set_row_col_width(outer.rows[0], 0, 120)
+    _set_row_col_width(outer.rows[0], 1, 130)
 
-    # — Signature block inside sig_cell (width 135mm) —
+    # — Signature block inside sig_cell (width 165mm) —
     _set_cell_shading(sig_cell, WHITE)
     sig_cell.text = ''
     inner = sig_cell.add_table(4, 5)
@@ -912,7 +917,7 @@ def _build_approvals_zone(doc: Document, complaint: Dict):
              'رئيس الدائرة\nDept. Head',
              'مدير الإدارة\nAdmin. Manager',
              'خاص خدمات المرضى\nPatient Services']
-    col_widths = [25, 27, 27, 27, 29]   # sum = 135mm
+    col_widths = [18, 26, 26, 26, 24]   # sum = 120mm
 
     # Header row — explicit height (6mm). Was never set before; Word's
     # default row sizing for 4 blank-ish rows was the actual cause of the
@@ -920,7 +925,7 @@ def _build_approvals_zone(doc: Document, complaint: Dict):
     from docx.enum.table import WD_ROW_HEIGHT_RULE as _SIG_HR
     hdr = inner.rows[0]
     hdr.height_rule = _SIG_HR.EXACTLY
-    hdr.height = _mm_to_dxa(7)
+    hdr.height = _mm_to_dxa(6)
     for ci, label in enumerate([''] + roles):
         c = hdr.cells[ci]
         _set_cell_shading(c, NAVY)
@@ -932,7 +937,7 @@ def _build_approvals_zone(doc: Document, complaint: Dict):
     for ri, field_lbl in enumerate(field_labels):
         row = inner.rows[ri + 1]
         row.height_rule = _SIG_HR.EXACTLY
-        row.height = _mm_to_dxa(7)
+        row.height = _mm_to_dxa(6)
         c0 = row.cells[0]
         _set_cell_shading(c0, 'F4F6F9')
         p0 = _cell_para(c0, 'right')
@@ -942,62 +947,40 @@ def _build_approvals_zone(doc: Document, complaint: Dict):
             _set_cell_shading(row.cells[ci], WHITE)
             _set_row_col_width(row, ci, col_widths[ci])
 
-    # — RCA note in note_cell —
+    # — RCA note — compressed to 2 lines. All prior 5 paragraphs merged.
     _set_cell_shading(note_cell, 'FFFDE7')
     _cell_v_center(note_cell)
     note_cell.text = ''
 
-    nh = note_cell.paragraphs[0]
-    nh.clear()
-    nh.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    nh.paragraph_format.space_before = Pt(4)
-    nh.paragraph_format.space_after  = Pt(3)
-    nh._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-    _ar_run(nh, 'ملاحظات مهمة', size=9, bold=True, color='8B4000')
-
-    intro = note_cell.add_paragraph()
-    intro.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    intro.paragraph_format.space_before = Pt(0)
-    intro.paragraph_format.space_after  = Pt(3)
-    intro.paragraph_format.left_indent  = Mm(2)
-    intro.paragraph_format.right_indent = Mm(2)
-    intro._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-    _ar_run(intro, 'يلزم ملء استمارة RCA (Root Cause Analysis) عند تحديد مستوى الشكوى كالتالي:',
+    # Line 1: header + intro merged on one line
+    line1 = note_cell.paragraphs[0]
+    line1.clear()
+    line1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    line1.paragraph_format.space_before = Pt(3)
+    line1.paragraph_format.space_after  = Pt(2)
+    line1.paragraph_format.left_indent  = Mm(2)
+    line1.paragraph_format.right_indent = Mm(2)
+    line1._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
+    _ar_run(line1, 'ملاحظات مهمة', size=8, bold=True, color='8B4000')
+    _ar_run(line1, '  —  يلزم ملء استمارة RCA (Root Cause Analysis) عند تحديد مستوى الشكوى:',
             size=8, color='5D4037')
 
-    # Each line: English level word, bullet, Arabic clause — bullet sits
-    # BETWEEN two strong-direction runs (not leading the Arabic text), so
-    # Word's bidi engine places it deterministically instead of pulling it
-    # to the wrong visual side of an RTL paragraph.
-    level_lines = [
-        ('High',         'يلزم ملؤها باستمارة RCA خلال المتابعة'),
-        ('Medium / Low', 'يكون ملؤها تبعاً للحاجة بقرار مسؤول العملية'),
-    ]
-    for level, desc in level_lines:
-        lp = note_cell.add_paragraph()
-        lp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        lp.paragraph_format.space_before = Pt(1)
-        lp.paragraph_format.space_after  = Pt(1)
-        lp.paragraph_format.left_indent  = Mm(2)
-        lp.paragraph_format.right_indent = Mm(2)
-        lp._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-        _ar_run(lp, f'{level}  •  {desc}', size=8, color='5D4037')
-
-    closing = note_cell.add_paragraph()
-    closing.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    closing.paragraph_format.space_before = Pt(2)
-    closing.paragraph_format.space_after  = Pt(1)
-    closing.paragraph_format.left_indent  = Mm(2)
-    closing.paragraph_format.right_indent = Mm(2)
-    closing._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-    _ar_run(closing, 'التقرير الفصلي  —  ترفع استمارة تحسين تلقائياً تبعاً للشكاوى',
+    # Line 2: both severity levels joined with separator
+    line2 = note_cell.add_paragraph()
+    line2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    line2.paragraph_format.space_before = Pt(0)
+    line2.paragraph_format.space_after  = Pt(3)
+    line2.paragraph_format.left_indent  = Mm(2)
+    line2.paragraph_format.right_indent = Mm(2)
+    line2._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
+    _ar_run(line2,
+            'High  •  يلزم ملؤها خلال المتابعة     |     Medium / Low  •  حسب قرار مسؤول العملية',
             size=8, color='5D4037')
 
     # Signature table is now explicitly bounded at 28mm (4 rows x 7mm,
-    # EXACTLY) — this floor matches it so the outer row settles at exactly
-    # that height rather than Word picking its own.
+    # Signature rows are now 6mm × 4 = 24mm total; outer floor matches.
     outer.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-    outer.rows[0].height = _mm_to_dxa(28)
+    outer.rows[0].height = _mm_to_dxa(24)
 
 
 # ---------------------------------------------------------------------------
@@ -1031,7 +1014,7 @@ def _render_complaint_page(doc: Document, complaint: Dict, index: int, total: in
     _build_approvals_zone(doc, complaint)
 
     # Page counter footer line
-    pg_para = _new_para(doc, align='center', space_before=2, space_after=0)
+    pg_para = _new_para(doc, align='center', space_before=0, space_after=0)
     _ar_run(pg_para, f'شكوى {index} من {total}  •  {_fmt_date(complaint.get("received_date"))}',
             size=7, color=GREY_TEXT)
 
@@ -1348,19 +1331,37 @@ def _setup_document(report_data: Dict, report_entity_name: str) -> Document:
     tp.paragraph_format.space_after  = int(Pt(1))
     _ar_run(tp, header_title, size=10, bold=True, color=NAVY)
 
-    # One combined info line: subtitle (config value is Arabic by default,
-    # e.g. "(إصدار رسمي — للاستخدام الإداري والجودة)" — same key the classical
-    # formatter uses, rendered with Traditional Arabic there too) | period+scope | report code
+    # One combined info line. Two bidi fixes applied here:
+    # 1. Parentheses: ASCII ( ) are "mirrored" characters — Unicode bidi
+    #    flips them in RTL context so "(text)" renders as "(text(" visually.
+    #    Fix: strip leading/trailing parens from the config subtitle value.
+    # 2. Colon before LTR code: `:` has "common separator" bidi category and
+    #    gets pulled into the LTR block, making "رمز: QM-01" look like
+    #    "01 : رمز". Fix: insert RLM (U+200F, RIGHT-TO-LEFT MARK) after each
+    #    colon to anchor it to the Arabic RTL context.
     hdr_info_para = title_cell.add_paragraph()
     hdr_info_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
     hdr_info_para.paragraph_format.space_before = int(Pt(0))
     hdr_info_para.paragraph_format.space_after = int(Pt(1))
-    _ar_run(hdr_info_para, header_subtitle, size=7, italic=True, color=GREY_TEXT)
+    hdr_info_para._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
+
+    # Strip ASCII parens — they are bidi-mirrored characters; in RTL context
+    # "(" renders visually as ")" and vice versa, making "(text)" look like
+    # "(text(" which the user flagged. Remove them entirely.
+    _clean_subtitle = header_subtitle.strip('() ')
+    _ar_run(hdr_info_para, _clean_subtitle, size=7, italic=True, color=GREY_TEXT)
     _ar_run(hdr_info_para, '   |   ', size=7, color=GREY_TEXT)
-    _ar_run(hdr_info_para, f'الفترة: {period_str}   |   النطاق: {scope_str}', size=7, bold=True, color=GREY_TEXT)
+    # ‏ (RIGHT-TO-LEFT MARK) after each colon keeps it anchored to the
+    # Arabic RTL context rather than sliding into the following LTR block.
+    RLM = '‏'   # RIGHT-TO-LEFT MARK — anchors colon to Arabic RTL context
+    _ar_run(hdr_info_para,
+            f'{RLM}الفترة:{RLM} {period_str}   |   {RLM}النطاق:{RLM} {scope_str}',
+            size=7, bold=True, color=GREY_TEXT)
     if report_code:
         _ar_run(hdr_info_para, '   |   ', size=7, color=GREY_TEXT)
-        _ar_run(hdr_info_para, f'رمز التقرير: {report_code}', size=7, color=GREY_TEXT)
+        _ar_run(hdr_info_para,
+                f'{RLM}رمز التقرير:{RLM} {report_code}',
+                size=7, color=GREY_TEXT)
 
     hdr_tbl.rows[0].height_rule = _HDR_HR.AT_LEAST
     hdr_tbl.rows[0].height = _mm_to_dxa(9)
@@ -1447,11 +1448,12 @@ def generate_monthly_stylish_docx(
         period = report_data.get('period', {})
 
     doc = _setup_document(report_data if isinstance(report_data, dict) else {}, report_entity_name)
-    # Usable width is 273mm (297mm page - 12mm margins each side), but every zone
-    # table targets ~250mm — 23mm safety margin against Word's known behavior of
-    # silently widening a "fixed layout" column when it holds an unbreakable
-    # token too narrow to fit (see zone-builder functions for the per-cell fix).
-    page_width_mm = 250.0
+    # Usable width is 273mm (297mm page - 12mm margins each side). Most zone
+    # tables (Identity/Classification/Stage) target ~250mm with hardcoded
+    # per-cell widths — unaffected by this constant since they don't read it
+    # for sizing. Content Zone (the only consumer of this value) widened to
+    # 270mm — closer to the 273mm ceiling, more room for the 12pt action text.
+    page_width_mm = 270.0
 
     # Page 1: Summary
     _render_summary_page(doc, report_data if isinstance(report_data, dict) else {},

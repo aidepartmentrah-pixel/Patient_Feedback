@@ -860,6 +860,66 @@ def save_patient_services_decision(
     )
 
 
+def acknowledge_patient_services_decision(
+    subcase_id: int,
+    current_user
+) -> None:
+    """
+    Section / Department / Administration admin acknowledges a completed
+    Patient Services decision.
+
+    Transitions PATIENT_SERVICES_DECISION_COMPLETED → DECISION_ACKNOWLEDGED,
+    removing the item from the office's active inbox and placing it in their
+    archive as a read-only record.
+
+    Allowed roles: SECTION_ADMIN, DEPARTMENT_ADMIN, ADMINISTRATION_ADMIN
+
+    Args:
+        subcase_id:   Subcase ID
+        current_user: User object with scopes and user_id
+
+    Raises:
+        HTTPException(403): If role is not one of the three allowed roles
+        HTTPException(400): If subcase not found or already acknowledged
+    """
+    if current_user is None:
+        raise Exception("current_user cannot be None")
+
+    role_code = (
+        current_user.scopes[0].role_code
+        if current_user.scopes
+        else None
+    )
+    allowed_roles = ('SECTION_ADMIN', 'DEPARTMENT_ADMIN', 'ADMINISTRATION_ADMIN')
+    if role_code not in allowed_roles:
+        raise HTTPException(
+            status_code=403,
+            detail="Only SECTION_ADMIN, DEPARTMENT_ADMIN, or ADMINISTRATION_ADMIN can acknowledge a decision."
+        )
+
+    subcase = _load_subcase_or_fail(subcase_id)
+    _assert_status(subcase, ['PATIENT_SERVICES_DECISION_COMPLETED'])
+
+    # Scope check: subcase must be within user's allowed units
+    target_org_unit_id = subcase.get('target_org_unit_id')
+    allowed_unit_ids = getattr(current_user, 'allowed_unit_ids', None) or set()
+    if target_org_unit_id not in allowed_unit_ids:
+        raise HTTPException(
+            status_code=403,
+            detail="Subcase is outside your organizational scope."
+        )
+
+    success = administrative_subcase_db.acknowledge_decision_notification(
+        subcase_id=subcase_id,
+        user_id=current_user.user_id
+    )
+    if not success:
+        raise HTTPException(
+            status_code=400,
+            detail="لا يمكن تأكيد هذا القرار. قد يكون قد تمّ تأكيده مسبقًا."
+        )
+
+
 def reject_administration(
     subcase_id: int,
     rejection_text: str,

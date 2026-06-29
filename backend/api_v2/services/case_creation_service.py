@@ -12,8 +12,7 @@ from core.database import get_connection
 from api_v2.db_layer import administrative_subcase_db
 from api_v2.db_layer import seasonal_report_db
 from api.services.notification_service import (
-    send_subcase_assignment_notification,
-    get_section_admin_email
+    send_publication_summary_notifications,
 )
 
 # Configure logger
@@ -104,7 +103,7 @@ def _create_subcase(
 
     After creation, sends notification to section admin if they have an email.
     """
-    subcase_id = administrative_subcase_db.create_subcase(
+    return administrative_subcase_db.create_subcase(
         case_type=case_type,
         incident_id=incident_id,
         seasonal_report_id=seasonal_report_id,
@@ -115,24 +114,6 @@ def _create_subcase(
         department_deadline_at=department_deadline_at,
         administration_deadline_at=administration_deadline_at
     )
-    
-    # Send notification (async, non-blocking)
-    if subcase_id:
-        try:
-            admin_email = get_section_admin_email(target_org_unit_id)
-            if admin_email:
-                send_subcase_assignment_notification(
-                    to_email=admin_email,
-                    case_id=subcase_id
-                )
-                logger.info(f"NOTIFICATION: Queued email for subcase {subcase_id} to {admin_email}")
-            else:
-                logger.debug(f"NOTIFICATION: No admin email for org_unit {target_org_unit_id}")
-        except Exception as e:
-            # Log but don't fail - notification is non-critical
-            logger.warning(f"NOTIFICATION: Failed to send for subcase {subcase_id}: {str(e)}")
-    
-    return subcase_id
 
 
 def create_subcases_for_incident(incident_id: int, current_user) -> List[Dict[str, Any]]:
@@ -228,6 +209,12 @@ def create_subcases_for_incident(incident_id: int, current_user) -> List[Dict[st
             )
 
             created_subcases.append({"subcase_id": subcase_id, "target_org_unit_id": dept_id})
+
+        # One summary email per admin after the full batch is created
+        try:
+            send_publication_summary_notifications(created_subcases)
+        except Exception as e:
+            logger.warning(f"PUBLICATION NOTIFY: failed to send summary notifications: {str(e)}")
 
         return created_subcases
 

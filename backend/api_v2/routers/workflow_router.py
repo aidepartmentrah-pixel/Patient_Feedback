@@ -708,6 +708,15 @@ def act_on_case(
         )
         return {"success": True}
 
+    elif action == "ACKNOWLEDGE_DECISION":
+        # Section / Department / Administration admin acknowledges a completed
+        # Patient Services decision, moving it from active inbox to archive.
+        case_response_service.acknowledge_patient_services_decision(
+            subcase_id=subcase_id,
+            current_user=current_user
+        )
+        return {"success": True}
+
     else:
         raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
 

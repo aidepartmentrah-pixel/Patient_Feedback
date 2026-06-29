@@ -87,6 +87,8 @@ from api.routers.rca_settings_router import router as rca_settings_router
 from api_v2.routers.rca_inbox_router import router as rca_inbox_router
 # Publication Batch Router (HCAT Performance & Delay Monitoring - Session 1)
 from api_v2.routers.publication_batch_router import router as publication_batch_router
+# Supervisor Action Item Router (Action Item Coordination - Iteration 4)
+from api_v2.routers.supervisor_action_item_router import router as supervisor_action_item_router
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
@@ -219,6 +221,7 @@ app.include_router(policy_router)
 app.include_router(rca_settings_router)
 app.include_router(rca_inbox_router)
 app.include_router(publication_batch_router)
+app.include_router(supervisor_action_item_router)
 
 
 # ==================== BOOTSTRAP MIDDLEWARE ====================

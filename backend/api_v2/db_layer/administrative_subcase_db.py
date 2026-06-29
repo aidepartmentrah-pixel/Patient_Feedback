@@ -466,7 +466,21 @@ def get_subcases_by_status(status_code: str) -> List[Dict[str, Any]]:
                 CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
                 ISNULL(ic.IsMorbidity, 0) AS IsMorbidity,
                 ic.FeedbackRecievedDate,
-                ic.RecordTypeID
+                ic.RecordTypeID,
+
+                DATEDIFF(day, sub.CreatedAt, GETDATE()) AS WaitingDays,
+                ic.ComplaintText AS CaseDescription,
+                ic.PatientName,
+                cat.CategoryName,
+                sev.SeverityName,
+
+                -- Originating section/unit (immutable on the parent case, unlike
+                -- TargetOrgUnitID which can be repointed as the subcase escalates)
+                issuing_org.Name AS IssuingOrgUnitName,
+
+                -- Patient Services decision fields (null unless decision has been recorded)
+                sub.PatientServicesDecisionText
+
             FROM dbo.APP_AdministrativeSubcase sub
             LEFT JOIN dbo.AdminsrationUnit org
                 ON sub.TargetOrgUnitID = org.UniqueID
@@ -474,6 +488,12 @@ def get_subcases_by_status(status_code: str) -> List[Dict[str, Any]]:
                 ON sub.IncidentRequestCaseID = ic.IncidentRequestCaseID
             LEFT JOIN dbo.APP_Incident inc
                 ON ic.incident_id = inc.incident_id
+            LEFT JOIN dbo.APP_LOOKUP_CATEGORY cat
+                ON ic.CategoryID = cat.CategoryID
+            LEFT JOIN dbo.APP_LOOKUP_SEVERITY sev
+                ON ic.SeverityID = sev.SeverityID
+            LEFT JOIN dbo.AdminsrationUnit issuing_org
+                ON ic.IssuingOrgUnitID = issuing_org.UniqueID
             WHERE sub.Status = ?
             ORDER BY sub.CreatedAt DESC
         """
@@ -519,6 +539,13 @@ def get_subcases_by_status(status_code: str) -> List[Dict[str, Any]]:
                 "is_morbidity": bool(row.IsMorbidity),
                 "feedback_received_date": row.FeedbackRecievedDate,
                 "record_type_id": row.RecordTypeID,
+                "waiting_days": int(row.WaitingDays or 0),
+                "case_description": row.CaseDescription,
+                "patient_name": row.PatientName,
+                "category": row.CategoryName,
+                "severity": row.SeverityName or "NEUTRAL",
+                "issuing_org_unit_name": row.IssuingOrgUnitName,
+                "patient_services_decision_text": row.PatientServicesDecisionText,
             }
             for row in rows
         ]
@@ -722,6 +749,42 @@ def save_patient_services_decision(
         conn.commit()
         return cursor.rowcount > 0
 
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def acknowledge_decision_notification(
+    subcase_id: int,
+    user_id: int
+) -> bool:
+    """
+    Acknowledge a completed Patient Services decision.
+
+    Transitions status from PATIENT_SERVICES_DECISION_COMPLETED to
+    DECISION_ACKNOWLEDGED. The status guard prevents double-acknowledging
+    or acting on wrong-status subcases.
+
+    Returns:
+        True if updated, False if subcase not found or already acknowledged
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        now = datetime.now()
+        cursor.execute(
+            """
+            UPDATE dbo.APP_AdministrativeSubcase
+            SET Status          = 'DECISION_ACKNOWLEDGED',
+                UpdatedAt       = ?,
+                UpdatedByUserID = ?
+            WHERE SubcaseID = ?
+              AND Status    = 'PATIENT_SERVICES_DECISION_COMPLETED'
+            """,
+            (now, user_id, subcase_id)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
     finally:
         cursor.close()
         conn.close()
@@ -1428,7 +1491,10 @@ def get_subcases_with_details_for_administration() -> List[Dict[str, Any]]:
 
                 -- Seasonal Report Info (for SEASONAL_REPORT_RESPONSE)
                 sr.SeasonalReportID,
-                s.SeasonName
+                s.SeasonName,
+
+                -- Originating section/unit (immutable on the parent case)
+                issuing_org.Name AS IssuingOrgUnitName
 
             FROM dbo.APP_AdministrativeSubcase sub
             LEFT JOIN dbo.AdminsrationUnit org
@@ -1451,6 +1517,8 @@ def get_subcases_with_details_for_administration() -> List[Dict[str, Any]]:
                 ON sub.SeasonalReportID = sr.SeasonalReportID
             LEFT JOIN dbo.Season s
                 ON sr.SeasonID = s.UniqueID
+            LEFT JOIN dbo.AdminsrationUnit issuing_org
+                ON ic.IssuingOrgUnitID = issuing_org.UniqueID
 
             WHERE sub.Status = 'DEPT_ACCEPTED_PENDING_ADMIN'
               AND sub.Status NOT IN ('FORCE_CLOSED', 'FORCE_CLOSED_DRAFT', 'FORCE_CLOSED_COMPLETE')
@@ -1487,7 +1555,8 @@ def get_subcases_with_details_for_administration() -> List[Dict[str, Any]]:
                 "is_morbidity": bool(row.IsMorbidity),
                 "feedback_received_date": row.FeedbackRecievedDate,
                 "seasonal_report_id": row.SeasonalReportID,
-                "season_name": row.SeasonName
+                "season_name": row.SeasonName,
+                "issuing_org_unit_name": row.IssuingOrgUnitName,
             })
 
         return result
@@ -1556,7 +1625,8 @@ def get_subcases_by_statuses(status_codes: List[str]) -> List[Dict[str, Any]]:
                 CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
                 ISNULL(ic.IsMorbidity, 0) AS IsMorbidity,
                 ic.FeedbackRecievedDate,
-                ic.RecordTypeID
+                ic.RecordTypeID,
+                sub.PatientServicesDecisionText
             FROM dbo.APP_AdministrativeSubcase sub
             LEFT JOIN dbo.AdminsrationUnit org
                 ON sub.TargetOrgUnitID = org.UniqueID
@@ -1609,6 +1679,7 @@ def get_subcases_by_statuses(status_codes: List[str]) -> List[Dict[str, Any]]:
                 "is_morbidity": bool(row.IsMorbidity),
                 "feedback_received_date": row.FeedbackRecievedDate,
                 "record_type_id": row.RecordTypeID,
+                "patient_services_decision_text": row.PatientServicesDecisionText,
             }
             for row in rows
         ]
@@ -1661,7 +1732,11 @@ def get_force_closed_pipeline_cases() -> List[Dict[str, Any]]:
                 CASE WHEN ic.ClinicalRiskTypeID = 2 THEN 1 ELSE 0 END AS IsRedFlag,
                 CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
 
-                sr.SeasonalReportID
+                sr.SeasonalReportID,
+
+                -- Originating section/unit (immutable on the parent case — TargetOrgUnitID
+                -- has already been repointed to the Administration by this stage)
+                issuing_org.Name AS IssuingOrgUnitName
 
             FROM dbo.APP_AdministrativeSubcase sub
             LEFT JOIN dbo.AdminsrationUnit org
@@ -1676,6 +1751,8 @@ def get_force_closed_pipeline_cases() -> List[Dict[str, Any]]:
                 ON ic.CategoryID = cat.CategoryID
             LEFT JOIN dbo.APP_SeasonalOrgUnitReport sr
                 ON sub.SeasonalReportID = sr.SeasonalReportID
+            LEFT JOIN dbo.AdminsrationUnit issuing_org
+                ON ic.IssuingOrgUnitID = issuing_org.UniqueID
 
             WHERE sub.Status = 'FORCE_CLOSED_AT_ADMINISTRATION'
             ORDER BY sub.CreatedAt ASC
@@ -1703,6 +1780,7 @@ def get_force_closed_pipeline_cases() -> List[Dict[str, Any]]:
                 "is_red_flag":             bool(row.IsRedFlag),
                 "is_never_event":          bool(row.IsNeverEvent),
                 "seasonal_report_id":      row.SeasonalReportID,
+                "issuing_org_unit_name":   row.IssuingOrgUnitName,
             }
             for row in rows
         ]
@@ -1949,6 +2027,7 @@ def get_subcases_archived_for_section() -> List[Dict[str, Any]]:
     - FORCE_CLOSED: Legacy forcibly closed (terminal)
     - FORCE_CLOSED_DRAFT: Force closed, data not yet complete
     - FORCE_CLOSED_COMPLETE: Force closed, all data filled (terminal)
+    - DECISION_ACKNOWLEDGED: Section acknowledged a Patient Services decision (terminal)
 
     Returns:
         List of subcase dicts ordered by UpdatedAt DESC
@@ -1962,7 +2041,8 @@ def get_subcases_archived_for_section() -> List[Dict[str, Any]]:
         "FORCE_CLOSED",
         "FORCE_CLOSED_DRAFT",
         "FORCE_CLOSED_COMPLETE",
-        "FORCE_CLOSED_AT_SECTION"
+        "FORCE_CLOSED_AT_SECTION",
+        "DECISION_ACKNOWLEDGED",
     ]
     return get_subcases_by_statuses(archive_statuses)
 
@@ -1979,6 +2059,7 @@ def get_subcases_archived_for_department() -> List[Dict[str, Any]]:
     - FORCE_CLOSED: Legacy forcibly closed (terminal)
     - FORCE_CLOSED_DRAFT: Force closed, data not yet complete
     - FORCE_CLOSED_COMPLETE: Force closed, all data filled (terminal)
+    - DECISION_ACKNOWLEDGED: Dept-level user acknowledged a Patient Services decision (terminal)
 
     Returns:
         List of subcase dicts ordered by UpdatedAt DESC
@@ -1989,7 +2070,8 @@ def get_subcases_archived_for_department() -> List[Dict[str, Any]]:
         "RETURNED_TO_SECTION_FOR_REVISION",
         "FORCE_CLOSED",
         "FORCE_CLOSED_DRAFT",
-        "FORCE_CLOSED_COMPLETE"
+        "FORCE_CLOSED_COMPLETE",
+        "DECISION_ACKNOWLEDGED",
     ]
     return get_subcases_by_statuses(archive_statuses)
 
@@ -2005,6 +2087,7 @@ def get_subcases_archived_for_administration() -> List[Dict[str, Any]]:
     - FORCE_CLOSED_DRAFT: Force closed, data not yet complete
     - FORCE_CLOSED_COMPLETE: Force closed, all data filled (terminal)
     - RETURNED_TO_DEPT_FOR_REVISION: Admin sent back to department (still admin processed it)
+    - DECISION_ACKNOWLEDGED: Admin-level user acknowledged a Patient Services decision (terminal)
 
     Returns:
         List of subcase dicts ordered by UpdatedAt DESC
@@ -2014,7 +2097,8 @@ def get_subcases_archived_for_administration() -> List[Dict[str, Any]]:
         "FORCE_CLOSED",
         "FORCE_CLOSED_DRAFT",
         "FORCE_CLOSED_COMPLETE",
-        "RETURNED_TO_DEPT_FOR_REVISION"
+        "RETURNED_TO_DEPT_FOR_REVISION",
+        "DECISION_ACKNOWLEDGED",
     ]
     return get_subcases_by_statuses(archive_statuses)
 
@@ -2022,14 +2106,16 @@ def get_subcases_archived_for_administration() -> List[Dict[str, Any]]:
 def get_subcases_archived_for_complaint_supervisor() -> List[Dict[str, Any]]:
     """
     Fetch subcases that were reopened after section denial.
-    
+
     These are cases the complaint supervisor/worker reopened.
     Statuses: Cases that moved from SECTION_DENIED back to section:
     - RETURNED_TO_SECTION_FOR_REVISION: Case was reopened
     - SECTION_ACCEPTED_PENDING_DEPT: Section then approved (workflow continued)
     - DEPT_ACCEPTED_PENDING_ADMIN: Department then approved
     - ADMIN_APPROVED: Final approval
-    
+    - PATIENT_SERVICES_DECISION_COMPLETED: Supervisor recorded decision, target office not yet acknowledged
+    - DECISION_ACKNOWLEDGED: Target office acknowledged the completed decision
+
     Returns:
         List of subcase dicts ordered by UpdatedAt DESC
     """
@@ -2039,6 +2125,7 @@ def get_subcases_archived_for_complaint_supervisor() -> List[Dict[str, Any]]:
         "DEPT_ACCEPTED_PENDING_ADMIN",
         "ADMIN_APPROVED",
         "PATIENT_SERVICES_DECISION_COMPLETED",
+        "DECISION_ACKNOWLEDGED",
     ]
     return get_subcases_by_statuses(archive_statuses)
 
@@ -2388,9 +2475,14 @@ def get_subcase_fill_state(subcase_id: int) -> Optional[Dict[str, Any]]:
                 ic.ComplaintText    AS CaseDescription,
                 ic.PatientName,
                 inc.incident_number AS IncidentNumber,
+                dom.DomainName,
                 cat.CategoryName,
                 sc.SubCategoryName,
-                cls.Classification_EN AS ClassificationEN
+                cls.Classification_EN AS ClassificationEN,
+
+                -- Originating section/unit (immutable on the parent case, unlike
+                -- TargetOrgUnitID which can be repointed as the subcase escalates)
+                issuing_org.Name AS IssuingOrgUnitName
 
             FROM dbo.APP_AdministrativeSubcase sub
             LEFT JOIN dbo.APP_Users u_sec
@@ -2407,12 +2499,16 @@ def get_subcase_fill_state(subcase_id: int) -> Optional[Dict[str, Any]]:
                 ON sub.IncidentRequestCaseID = ic.IncidentRequestCaseID
             LEFT JOIN dbo.APP_Incident inc
                 ON ic.incident_id = inc.incident_id
+            LEFT JOIN dbo.APP_LOOKUP_DOMAIN dom
+                ON ic.DomainID = dom.DomainID
             LEFT JOIN dbo.APP_LOOKUP_CATEGORY cat
                 ON ic.CategoryID = cat.CategoryID
             LEFT JOIN dbo.APP_LOOKUP_SUBCATEGORY sc
                 ON ic.SubCategoryID = sc.SubCategoryID
             LEFT JOIN dbo.APP_LOOKUP_CLASSIFICATION cls
                 ON ic.ClassificationID = cls.ClassificationID
+            LEFT JOIN dbo.AdminsrationUnit issuing_org
+                ON ic.IssuingOrgUnitID = issuing_org.UniqueID
             WHERE sub.SubcaseID = ?
         """
         cursor.execute(query, (subcase_id,))
@@ -2463,9 +2559,11 @@ def get_subcase_fill_state(subcase_id: int) -> Optional[Dict[str, Any]]:
             "case_description": row.CaseDescription,
             "patient_name": row.PatientName,
             "incident_number": row.IncidentNumber,
+            "domain_name": row.DomainName,
             "category_name": row.CategoryName,
             "sub_category_name": row.SubCategoryName,
             "classification_en": row.ClassificationEN,
+            "issuing_org_unit_name": row.IssuingOrgUnitName,
         }
     finally:
         cursor.close()
