@@ -1,0 +1,191 @@
+======================================================================
+  CLASSIFICATION TRAINING PERFORMANCE REPORT
+======================================================================
+Generated: 20_07_2026
+======================================================================
+
+Model: Domain_Model
+  Training Records: 0
+  Classes: []
+  Metrics:
+    Accuracy:  0.000000
+    Precision: 0.000000
+    Recall:    0.000000
+    F1-Score:  0.000000
+----------------------------------------------------------------------
+
+Model: Category_Domain1
+  Training Records: 0
+  Classes: []
+  Metrics:
+    Accuracy:  0.000000
+    Precision: 0.000000
+    Recall:    0.000000
+    F1-Score:  0.000000
+----------------------------------------------------------------------
+
+Model: Category_Domain2
+  Training Records: 232
+  Classes: [2, 3, 4, 5]
+  Metrics:
+    Accuracy:  0.872340
+    Precision: 0.877913
+    Recall:    0.872340
+    F1-Score:  0.871260
+----------------------------------------------------------------------
+
+Model: Category_Domain3
+  Training Records: 80
+  Classes: [1, 2, 3, 6]
+  Metrics:
+    Accuracy:  0.750000
+    Precision: 0.760648
+    Recall:    0.750000
+    F1-Score:  0.747734
+----------------------------------------------------------------------
+
+Model: Subcategory_Cat1
+  Training Records: 25
+  Classes: [1, 2, 4]
+  Metrics:
+    Accuracy:  0.444444
+    Precision: 0.197531
+    Recall:    0.444444
+    F1-Score:  0.273504
+----------------------------------------------------------------------
+
+Model: Subcategory_Cat2
+  Training Records: 18
+  Classes: [3, 5, 6, 31]
+  Metrics:
+    Accuracy:  0.750000
+    Precision: 0.583333
+    Recall:    0.750000
+    F1-Score:  0.650000
+----------------------------------------------------------------------
+
+Model: Subcategory_Cat3
+  Training Records: 43
+  Classes: [6, 7, 8, 9]
+  Metrics:
+    Accuracy:  0.888889
+    Precision: 0.902778
+    Recall:    0.888889
+    F1-Score:  0.874074
+----------------------------------------------------------------------
+
+Model: Subcategory_Cat4
+  Training Records: 78
+  Classes: [9, 10, 11, 12]
+  Metrics:
+    Accuracy:  0.904762
+    Precision: 0.968254
+    Recall:    0.904762
+    F1-Score:  0.930688
+----------------------------------------------------------------------
+
+Model: Subcategory_Cat5
+  Training Records: 147
+  Classes: [13, 14, 15, 16, 17, 18, 19]
+  Metrics:
+    Accuracy:  0.560000
+    Precision: 0.549333
+    Recall:    0.560000
+    F1-Score:  0.548376
+----------------------------------------------------------------------
+
+Model: Subcategory_Cat6
+  Training Records: 0
+  Classes: []
+  Metrics:
+    Accuracy:  0.000000
+    Precision: 0.000000
+    Recall:    0.000000
+    F1-Score:  0.000000
+----------------------------------------------------------------------
+
+Model: Subcategory_Cat7
+  Training Records: 24
+  Classes: [5, 15, 22, 23, 24, 25, 26, 27]
+  Metrics:
+    Accuracy:  0.555556
+    Precision: 0.555556
+    Recall:    0.555556
+    F1-Score:  0.555556
+----------------------------------------------------------------------
+
+Model: Harm_Binary
+  Training Records: 388
+  Classes: [0, 1]
+  Metrics:
+    Accuracy:  0.927835
+    Precision: 0.933209
+    Recall:    0.927835
+    F1-Score:  0.909801
+----------------------------------------------------------------------
+
+Model: Harm_Ordinal_High
+  Training Records: 34
+  Classes: [4, 5, 6]
+  Metrics:
+    Accuracy:  0.600000
+    Precision: 0.360000
+    Recall:    0.600000
+    F1-Score:  0.450000
+----------------------------------------------------------------------
+
+Model: Harm_Ordinal_Low
+  Training Records: 345
+  Classes: [1, 2, 3]
+  Metrics:
+    Accuracy:  0.542169
+    Precision: 0.471162
+    Recall:    0.542169
+    F1-Score:  0.478065
+----------------------------------------------------------------------
+
+Model: Severity_Model
+  Training Records: 382
+  Classes: [1, 2, 3, 4]
+  Metrics:
+    Accuracy:  0.627660
+    Precision: 0.437724
+    Recall:    0.627660
+    F1-Score:  0.506875
+----------------------------------------------------------------------
+
+Model: Feedback_Type
+  Training Records: 369
+  Classes: [1, 2, 3, 4]
+  Metrics:
+    Accuracy:  1.000000
+    Precision: 1.000000
+    Recall:    1.000000
+    F1-Score:  1.000000
+----------------------------------------------------------------------
+
+Model: Improvement_Opportunity_Type
+  Training Records: 473
+  Classes: [1, 2, 3]
+  Metrics:
+    Accuracy:  0.943182
+    Precision: 0.910658
+    Recall:    0.943182
+    F1-Score:  0.926635
+----------------------------------------------------------------------
+
+Model: Classification_En
+  Training Records: 382
+  Classes: [np.int64(78), np.int64(79), np.int64(80), np.int64(81), np.int64(82), np.int64(83), np.int64(84), np.int64(85), np.int64(86), np.int64(88), np.int64(89), np.int64(90), np.int64(91), np.int64(93), np.int64(94), np.int64(95), np.int64(96), np.int64(97), np.int64(98), np.int64(99), np.int64(100), np.int64(102), np.int64(103), np.int64(104), np.int64(105), np.int64(106), np.int64(107), np.int64(108), np.int64(109), np.int64(110), np.int64(111), np.int64(112), np.int64(113), np.int64(114), np.int64(115), np.int64(116), np.int64(117), np.int64(118), np.int64(120), np.int64(121), np.int64(122), np.int64(123), np.int64(124), np.int64(125), np.int64(126), np.int64(127), np.int64(128), np.int64(129), np.int64(130), np.int64(131), np.int64(132), np.int64(133), np.int64(134), np.int64(135), np.int64(136), np.int64(137), np.int64(138), np.int64(139), np.int64(140), np.int64(141), np.int64(142), np.int64(143), np.int64(144), np.int64(145), np.int64(146), np.int64(148), np.int64(149), np.int64(150), np.int64(151), np.int64(152), np.int64(153), np.int64(154)]
+  Metrics:
+    Accuracy:  0.085106
+    Precision: 0.061550
+    Recall:    0.085106
+    F1-Score:  0.062985
+----------------------------------------------------------------------
+
+======================================================================
+Summary Statistics
+======================================================================
+Total Models Trained: 18
+Average F1-Score: 0.543642

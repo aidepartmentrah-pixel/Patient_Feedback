@@ -10,9 +10,9 @@ import re
 from datetime import datetime, date
 
 from .seasonal_word_adapter import SeasonalWordAdapter
+from . import patient_directory_service
+from .patient_directory_service import ExternalPatientUnavailableError
 from ..db_layer.patients_db import (
-    search_patients,
-    get_patient_profile,
     get_patient_incidents,
     get_incident_details,
     get_patient_incidents_for_export,
@@ -26,6 +26,19 @@ from ..db_layer.patients_db import (
     reactivate_reserve_patient
 )
 from ..db_layer.satisfaction_db import get_satisfactions_by_cases
+
+
+class PatientServiceError(Exception):
+    """
+    Raised for a distinctly external-API failure so routers can return a
+    clear 503-style "external search unavailable" response instead of a
+    generic 500 or a misleading 404. Carries the underlying
+    hospital_directory_client status string in `.status`.
+    """
+
+    def __init__(self, status: str, message: str):
+        self.status = status
+        super().__init__(message)
 
 
 # ==================== CREATE PATIENT ====================
@@ -284,33 +297,38 @@ def search_patients_service(
     limit: int = 50
 ) -> Dict[str, Any]:
     """
-    Search for patients.
-    
+    Search for patients (Patient History page). Merges HCAT's reserve table
+    with the Hospital Directory API — see patient_directory_service.
+
     Returns:
-        Dict with success flag, patients list, and count (matching insert page format)
+        Dict with success flag, patients list, count, and external_status/
+        external_message describing whether the external half of the search
+        succeeded, was skipped (unsupported filter), or failed.
     """
     # Validation
     if limit > 100:
         limit = 100  # Cap at 100 for privacy
-    
+
     if not any([query, mrn, phone, date_of_birth]):
         return {"success": True, "patients": [], "count": 0, "message": "At least one search criterion required"}
-    
+
     try:
-        patients = search_patients(
+        result = patient_directory_service.search_patients_history(
             query=query,
             mrn=mrn,
             phone=phone,
             date_of_birth=date_of_birth,
             limit=limit
         )
-        
+
         return {
             "success": True,
-            "patients": patients,
-            "count": len(patients)
+            "patients": result["patients"],
+            "count": len(result["patients"]),
+            "external_status": result["external_status"],
+            "external_message": result["external_message"],
         }
-    
+
     except Exception as e:
         raise Exception(f"Patient search failed: {str(e)}")
 
@@ -362,23 +380,26 @@ def get_all_reserve_patients_service(
 
 # ==================== GET PATIENT PROFILE ====================
 
-def get_patient_profile_service(patient_id: int) -> Dict[str, Any]:
+def get_patient_profile_service(patient_id) -> Dict[str, Any]:
     """
-    Get patient profile with all details.
-    
-    Returns:
-        Patient profile dict
+    Get patient profile with all details — routes to the reserve table or
+    the Hospital Directory API depending on the id shape (see
+    patient_directory_service.resolve_patient_profile).
+
+    Raises:
+        PatientServiceError: the id is external but the API is unreachable/
+            unauthorized/etc — distinct from "not found" so the router can
+            return a clear "external search unavailable" response.
     """
     try:
-        profile = get_patient_profile(patient_id)
-        
-        if not profile:
-            raise Exception(f"Patient {patient_id} not found")
-        
-        return profile
-    
-    except Exception as e:
-        raise Exception(f"Failed to get patient profile: {str(e)}")
+        profile = patient_directory_service.resolve_patient_profile(patient_id)
+    except ExternalPatientUnavailableError as e:
+        raise PatientServiceError(e.status, e.message)
+
+    if not profile:
+        raise Exception(f"Patient {patient_id} not found")
+
+    return profile
 
 
 # ==================== GET PATIENT INCIDENTS ====================
@@ -405,11 +426,14 @@ def get_patient_incidents_service(
             limit = 100
         if offset < 0:
             offset = 0
-        
+
         # Get patient name for incident query
-        profile = get_patient_profile(patient_id)
+        try:
+            profile = patient_directory_service.resolve_patient_profile(patient_id)
+        except ExternalPatientUnavailableError as e:
+            raise PatientServiceError(e.status, e.message)
         patient_name = profile['PatientName'] if profile else None
-        
+
         result = get_patient_incidents(
             patient_id=patient_id,
             patient_name=patient_name,
@@ -421,9 +445,11 @@ def get_patient_incidents_service(
             limit=limit,
             offset=offset
         )
-        
+
         return result
-    
+
+    except PatientServiceError:
+        raise
     except Exception as e:
         raise Exception(f"Failed to get patient incidents: {str(e)}")
 
@@ -524,7 +550,9 @@ def get_patient_full_history_service(
                 "offset": offset
             }
         }
-    
+
+    except PatientServiceError:
+        raise
     except Exception as e:
         raise Exception(f"Failed to get full patient history: {str(e)}")
 
@@ -554,21 +582,30 @@ def export_patient_history_service(
         For JSON: JSON export dict
     """
     try:
-        # Get export data
+        # Resolve profile once (reserve or external) and hand it to the
+        # DB-layer export builder — it no longer re-derives it itself.
+        try:
+            profile = patient_directory_service.resolve_patient_profile(patient_id)
+        except ExternalPatientUnavailableError as e:
+            raise PatientServiceError(e.status, e.message)
+
         export_data = get_patient_incidents_for_export(
             patient_id=patient_id,
+            profile=profile,
             from_date=from_date,
             to_date=to_date,
             include_profile=include_profile
         )
-        
+
         if format_type == "csv":
             return _generate_csv_export(export_data, patient_id)
         elif format_type == "word":
             return _generate_word_export(export_data, patient_id)
         else:
             return export_data
-    
+
+    except PatientServiceError:
+        raise
     except Exception as e:
         raise Exception(f"Failed to export patient history: {str(e)}")
 
@@ -649,9 +686,9 @@ def delete_patient_service(
 ) -> Dict[str, Any]:
     """
     Delete a patient from the reserve table (APP_RESERVE_PATIENT) ONLY.
-    
-    This function does NOT touch the hospital patient view (APP_VIEWTABLE_PATIENT_ADMISSION).
-    Hospital patients cannot be deleted - they are read-only.
+
+    This function does NOT touch external (Hospital Directory API) patients.
+    External patients cannot be deleted - they are read-only.
     
     Behavior:
     - If patient has associated incidents: soft-delete (deactivate by setting IsActive=0)
@@ -681,14 +718,20 @@ def delete_patient_service(
         # STEP 1: Verify patient exists in RESERVE table only
         # ============================================
         reserve_patient = get_reserve_patient_by_id(patient_id)
-        
+
         if not reserve_patient:
-            # Check if it's a hospital patient (read-only)
-            hospital_patient = get_patient_profile(patient_id)
-            if hospital_patient and hospital_patient.get('source') == 'hospital':
+            # Check if it's an external (Hospital Directory API) patient,
+            # read-only. In practice this endpoint's path param is typed
+            # `int`, so an external id (an "ext__..." string) can never
+            # reach here — this check just documents/preserves the intent.
+            try:
+                external_patient = patient_directory_service.resolve_patient_profile(patient_id)
+            except ExternalPatientUnavailableError:
+                external_patient = None
+            if external_patient and external_patient.get('source') == 'external':
                 raise ValueError(
-                    f"Patient ID {patient_id} is from the hospital system and cannot be deleted. "
-                    "Hospital patients are read-only."
+                    f"Patient ID {patient_id} is from the Hospital Directory system and cannot be deleted. "
+                    "External patients are read-only."
                 )
             raise ValueError(f"Patient with ID {patient_id} not found in reserve table")
         

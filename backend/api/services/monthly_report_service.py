@@ -14,6 +14,8 @@ from ..db_layer.reports_db import (
     get_monthly_statistics,
     get_monthly_intent_counts_by_unit,
     get_monthly_notice_summary,
+    debug_expand_org_units,
+    resolve_most_specific_scope,
 )
 
 
@@ -103,36 +105,48 @@ class MonthlyReportService:
             except (ValueError, TypeError) as e:
                 raise ValueError(f"Invalid date format: {e}. Use ISO format (YYYY-MM-DD)")
         
-        # Phase 2.5.7: Validate any client-provided org unit IDs are in scope
-        # Collect all requested unit IDs for validation
+        # Phase 2.5.7: Validate any client-provided org unit IDs are in scope.
+        # This validation intentionally considers EVERY ID the client sent
+        # (across all three levels) — it's an any-of check, so extra ancestor
+        # IDs sent alongside a more specific one don't weaken it.
         requested_unit_ids = []
-        
+
         if administration_ids:
             admin_id_list = [int(x.strip()) for x in administration_ids.split(",") if x.strip()]
             requested_unit_ids.extend(admin_id_list)
-        
+
         if department_ids:
             dept_id_list = [int(x.strip()) for x in department_ids.split(",") if x.strip()]
             requested_unit_ids.extend(dept_id_list)
-        
+
         if section_ids:
             section_id_list = [int(x.strip()) for x in section_ids.split(",") if x.strip()]
             requested_unit_ids.extend(section_id_list)
-        
+
         # Validate: All requested units must be in user's scope
         if requested_unit_ids:
             require_any_unit_in_scope(current_user, requested_unit_ids)
-        
+
         # Security boundary: always use the full user scope for IssuingOrgUnitID filter
         filters["allowed_unit_ids"] = list(current_user.allowed_unit_ids)
-        
+
         # Target department filter: when specific sections/depts/admins are requested,
         # filter by TARGET departments (APP_IncidentCaseTargetDepartment) — this is the
         # dimension that determines which section a complaint is ABOUT, not who filed it.
-        # Expand requested IDs to include all descendants (e.g., admin → all its sections)
-        if requested_unit_ids:
-            from ..db_layer.reports_db import debug_expand_org_units
-            expanded_target_ids = debug_expand_org_units(requested_unit_ids)
+        #
+        # Only the MOST SPECIFIC requested level is used (Section > Department >
+        # Administration), not a union of all three. The Reporting page's picker
+        # cascades Administration -> Department -> Section without clearing
+        # ancestor selections once a deeper level is chosen, so a normal "pick
+        # one Section" journey sends all three ID fields together. Unioning
+        # their expanded descendant sets (the old behavior here) silently
+        # widened a Section selection back out to the whole Administration's
+        # subtree, since descendants(admin) ⊇ descendants(dept) ⊇ {section}.
+        scope_level, scope_ids = resolve_most_specific_scope(
+            administration_ids, department_ids, section_ids
+        )
+        if scope_ids:
+            expanded_target_ids = debug_expand_org_units(scope_ids)
             filters["target_unit_ids"] = expanded_target_ids
         
         # Handle scope parameter (if needed for future enhancements)

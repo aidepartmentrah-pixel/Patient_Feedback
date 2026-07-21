@@ -1,12 +1,21 @@
 """
 Patients Database Layer
 Queries patient information and related incidents from SQL Server.
+
+SESSION C1 NOTE: this module is now RESERVE-ONLY (APP_RESERVE_PATIENT).
+External (hospital-system) patient reads go through
+core/hospital_directory_client.py + api/services/patient_directory_service.py
+instead of the old dbo.VW_PatientAdmission view — this file no longer
+imports PATIENT_ADMISSION_TABLE at all. Incident matching for a patient
+(get_incident_stats_for_name) is keyed purely on the PatientName text
+snapshot on APP_IncidentCase, which was already true regardless of whether
+the patient came from the hospital view or the reserve table (see
+Investigation 1 §5 — APP_IncidentCase has no patient FK, only free text).
 """
 
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from core.database import get_connection
-from core.table_config import PATIENT_ADMISSION_TABLE
 
 
 # ==================== CREATE PATIENT (RESERVE TABLE) ====================
@@ -331,135 +340,100 @@ def search_patients(
     limit: int = 50
 ) -> List[Dict[str, Any]]:
     """
-    Search for patients by name, MRN, phone, or date of birth.
-    Uses UNION to search both hospital (APP_VIEWTABLE_PATIENT_ADMISSION) 
-    and reserve (APP_RESERVE_PATIENT) tables.
-    
+    Search RESERVE patients (APP_RESERVE_PATIENT) only, by name, MRN, phone,
+    or date of birth.
+
+    External (hospital-system) patients are no longer read from SQL Server —
+    see api/services/patient_directory_service.py, which calls this function
+    for the reserve half of a merged search and hospital_directory_client
+    for the external half.
+
     Args:
         query: Partial match on patient name
         mrn: Match on MedicalFileNumber
         phone: Partial match on phone number
         date_of_birth: Exact match on date of birth (YYYY-MM-DD)
         limit: Max results to return
-    
+
     Returns:
-        List of patient search results with lightweight fields
+        List of patient search results with lightweight fields, source='reserve'
     """
     conn = get_connection()
     cursor = conn.cursor()
-    
+
     try:
-        conditions_hospital = []
-        conditions_reserve = []
-        params_hospital = []
-        params_reserve = []
-        
-        # Build dynamic WHERE clauses for both sources
+        conditions = []
+        params = []
+
         if query:
-            conditions_hospital.append("(FullName LIKE ? OR FirstName LIKE ? OR LastName LIKE ?)")
-            params_hospital.extend([f"%{query}%", f"%{query}%", f"%{query}%"])
-            conditions_reserve.append("(FullName LIKE ? OR FirstName LIKE ? OR LastName LIKE ?)")
-            params_reserve.extend([f"%{query}%", f"%{query}%", f"%{query}%"])
-        
+            conditions.append("(FullName LIKE ? OR FirstName LIKE ? OR LastName LIKE ?)")
+            params.extend([f"%{query}%", f"%{query}%", f"%{query}%"])
+
         if mrn:
-            conditions_hospital.append("MedicalFileNumber LIKE ?")
-            params_hospital.append(f"%{mrn}%")
-            conditions_reserve.append("MedicalFileNumber LIKE ?")
-            params_reserve.append(f"%{mrn}%")
-        
+            conditions.append("MedicalFileNumber LIKE ?")
+            params.append(f"%{mrn}%")
+
         if phone:
-            conditions_hospital.append("PhoneNumber1 LIKE ?")
-            params_hospital.append(f"%{phone}%")
-            conditions_reserve.append("PhoneNumber1 LIKE ?")
-            params_reserve.append(f"%{phone}%")
-        
+            conditions.append("PhoneNumber1 LIKE ?")
+            params.append(f"%{phone}%")
+
         if date_of_birth:
-            conditions_hospital.append("CONVERT(DATE, BirthDate) = ?")
-            params_hospital.append(date_of_birth)
-            conditions_reserve.append("CONVERT(DATE, BirthDate) = ?")
-            params_reserve.append(date_of_birth)
-        
-        where_hospital = " AND ".join(conditions_hospital) if conditions_hospital else "1=1"
-        where_reserve = " AND ".join(conditions_reserve) if conditions_reserve else "1=1"
-        
-        # UNION query combining both sources
+            conditions.append("CONVERT(DATE, BirthDate) = ?")
+            params.append(date_of_birth)
+
+        where_clause = " AND ".join(conditions) if conditions else "1=1"
+
         query_str = f"""
-            SELECT TOP {limit} * FROM (
-                -- Hospital patients
-                SELECT
-                    PatientAdmissionID as patient_id,
-                    MedicalFileNumber as mrn,
-                    FullName as full_name,
-                    FirstName as first_name,
-                    LastName as last_name,
-                    CONVERT(VARCHAR(10), BirthDate, 23) as date_of_birth,
-                    DATEDIFF(YEAR, BirthDate, GETDATE()) as age,
-                    CASE 
-                        WHEN SEX = 'M' THEN 'Male'
-                        WHEN SEX = 'F' THEN 'Female'
-                        ELSE SEX
-                    END as gender,
-                    PhoneNumber1 as phone,
-                    'hospital' as source
-                FROM dbo.{PATIENT_ADMISSION_TABLE}
-                WHERE {where_hospital}
-                
-                UNION ALL
-                
-                -- Reserve patients
-                SELECT
-                    PatientAdmissionID as patient_id,
-                    MedicalFileNumber as mrn,
-                    FullName as full_name,
-                    FirstName as first_name,
-                    LastName as last_name,
-                    CONVERT(VARCHAR(10), BirthDate, 23) as date_of_birth,
-                    DATEDIFF(YEAR, BirthDate, GETDATE()) as age,
-                    CASE 
-                        WHEN SEX = 'M' THEN 'Male'
-                        WHEN SEX = 'F' THEN 'Female'
-                        ELSE SEX
-                    END as gender,
-                    PhoneNumber1 as phone,
-                    'reserve' as source
-                FROM dbo.APP_RESERVE_PATIENT
-                WHERE {where_reserve}
-            ) AS CombinedPatients
+            SELECT TOP (?)
+                PatientAdmissionID as patient_id,
+                MedicalFileNumber as mrn,
+                FullName as full_name,
+                FirstName as first_name,
+                LastName as last_name,
+                CONVERT(VARCHAR(10), BirthDate, 23) as date_of_birth,
+                DATEDIFF(YEAR, BirthDate, GETDATE()) as age,
+                CASE
+                    WHEN SEX = 'M' THEN 'Male'
+                    WHEN SEX = 'F' THEN 'Female'
+                    ELSE SEX
+                END as gender,
+                PhoneNumber1 as phone,
+                'reserve' as source
+            FROM dbo.APP_RESERVE_PATIENT
+            WHERE {where_clause}
             ORDER BY full_name ASC
         """
-        
-        # Combine parameters for both queries
-        all_params = params_hospital + params_reserve
-        
-        cursor.execute(query_str, all_params)
+
+        cursor.execute(query_str, [limit] + params)
         columns = [col[0] for col in cursor.description]
         rows = cursor.fetchall()
-        
+
         return [dict(zip(columns, row)) for row in rows]
-    
+
     finally:
         conn.close()
 
 
 # ==================== GET PATIENT PROFILE ====================
 
-def get_patient_profile(patient_id: int) -> Optional[Dict[str, Any]]:
+def get_reserve_patient_profile(patient_id: int) -> Optional[Dict[str, Any]]:
     """
-    Get complete patient profile information.
-    Uses UNION to search both hospital and reserve tables.
-    
+    Get a RESERVE patient's profile fields (demographics only — no incident
+    stats; see get_incident_stats_for_name for that, shared with external
+    patients since both are matched against APP_IncidentCase.PatientName the
+    same way).
+
     Args:
-        patient_id: Patient unique identifier
-    
+        patient_id: The patient's PatientAdmissionID (reserve table)
+
     Returns:
-        Patient profile dict or None if not found
+        Patient profile dict (source='reserve') or None if not found
     """
     conn = get_connection()
     cursor = conn.cursor()
-    
+
     try:
-        # Query both hospital and reserve tables
-        cursor.execute(f"""
+        cursor.execute("""
             SELECT TOP 1
                 PatientAdmissionID as PatientID,
                 MedicalFileNumber as MRN,
@@ -467,11 +441,11 @@ def get_patient_profile(patient_id: int) -> Optional[Dict[str, Any]]:
                 FirstName as PatientNameEnglish,
                 CONVERT(VARCHAR(10), BirthDate, 23) as DateOfBirth,
                 DATEDIFF(YEAR, BirthDate, GETDATE()) as Age,
-                CASE 
+                CASE
                     WHEN SEX = 'M' THEN 'Male'
                     WHEN SEX = 'F' THEN 'Female'
-                    WHEN SEX = 'ذكر' THEN 'Male'
-                    WHEN SEX = 'أنثى' THEN 'Female'
+                    WHEN SEX = N'ذكر' THEN 'Male'
+                    WHEN SEX = N'أنثى' THEN 'Female'
                     ELSE SEX
                 END as Gender,
                 '' as Nationality,
@@ -481,46 +455,54 @@ def get_patient_profile(patient_id: int) -> Optional[Dict[str, Any]]:
                 '' as EmergencyContact,
                 '' as EmergencyPhone,
                 CONVERT(VARCHAR(19), SystemTime, 121) as RegistrationDate
-            FROM (
-                SELECT PatientAdmissionID, MedicalFileNumber, FullName, FirstName, BirthDate, SEX, PhoneNumber1, SystemTime
-                FROM dbo.{PATIENT_ADMISSION_TABLE} WHERE PatientAdmissionID = ?
-                UNION ALL
-                SELECT PatientAdmissionID, MedicalFileNumber, FullName, FirstName, BirthDate, SEX, PhoneNumber1, SystemTime
-                FROM dbo.APP_RESERVE_PATIENT WHERE PatientAdmissionID = ?
-            ) AS CombinedPatients
-        """, patient_id, patient_id)
-        
+            FROM dbo.APP_RESERVE_PATIENT
+            WHERE PatientAdmissionID = ?
+        """, patient_id)
+
         row = cursor.fetchone()
         if not row:
             return None
-        
+
         columns = [col[0] for col in cursor.description]
         profile = dict(zip(columns, row))
-        
-        # Get total incidents count and last visit date using correct PatientAdmissionID
-        cursor.execute(f"""
-            SELECT 
+        profile['source'] = 'reserve'
+        return profile
+
+    finally:
+        conn.close()
+
+
+def get_incident_stats_for_name(patient_name: str) -> Dict[str, Any]:
+    """
+    Count incidents and find the last feedback date for a patient, matched
+    purely by the PatientName text snapshot on APP_IncidentCase — the only
+    linkage that has ever existed for incidents (no FK, see Investigation 1
+    §5). Used for both reserve and external patient profiles alike, since
+    neither is ever joined to APP_IncidentCase by ID.
+
+    Returns:
+        {"TotalIncidents": int, "LastVisitDate": str|None}
+    """
+    if not patient_name:
+        return {"TotalIncidents": 0, "LastVisitDate": None}
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT
                 COUNT(*) as TotalIncidents,
                 MAX(CONVERT(VARCHAR(10), FeedbackRecievedDate, 23)) as LastVisitDate
             FROM dbo.APP_IncidentCase ic
-            WHERE ic.PatientName = ? 
-               OR ic.PatientName IN (
-                    SELECT FullName FROM dbo.{PATIENT_ADMISSION_TABLE} WHERE PatientAdmissionID = ?
-                    UNION ALL
-                    SELECT FullName FROM dbo.APP_RESERVE_PATIENT WHERE PatientAdmissionID = ?
-               )
-        """, profile['PatientName'], patient_id, patient_id)
-        
-        incident_row = cursor.fetchone()
-        if incident_row:
-            profile['TotalIncidents'] = incident_row[0] or 0
-            profile['LastVisitDate'] = incident_row[1]
-        else:
-            profile['TotalIncidents'] = 0
-            profile['LastVisitDate'] = None
-        
-        return profile
-    
+            WHERE ic.PatientName = ?
+        """, patient_name)
+
+        row = cursor.fetchone()
+        if row:
+            return {"TotalIncidents": row[0] or 0, "LastVisitDate": row[1]}
+        return {"TotalIncidents": 0, "LastVisitDate": None}
+
     finally:
         conn.close()
 
@@ -547,28 +529,19 @@ def get_patient_metrics(
     """
     conn = get_connection()
     cursor = conn.cursor()
-    
+
     try:
-        # Get all possible patient names from UNION
-        cursor.execute(f"""
-            SELECT DISTINCT FullName FROM (
-                SELECT FullName FROM dbo.{PATIENT_ADMISSION_TABLE} WHERE PatientAdmissionID = ?
-                UNION ALL
-                SELECT FullName FROM dbo.APP_RESERVE_PATIENT WHERE PatientAdmissionID = ?
-            ) AS PatientNames
-        """, patient_id, patient_id)
-        
-        patient_names = [row[0] for row in cursor.fetchall()]
-        
-        # Build dynamic WHERE clause
-        if patient_names:
-            placeholders = ','.join('?' * len(patient_names))
-            conditions = [f"ic.PatientName IN ({placeholders})"]
-            params = list(patient_names)
+        # Matched purely on the PatientName text snapshot (see
+        # get_incident_stats_for_name docstring) — patient_id is no longer
+        # used to re-derive a name here; the caller (patients_service)
+        # already resolved patient_name via the profile lookup.
+        if patient_name:
+            conditions = ["ic.PatientName = ?"]
+            params = [patient_name]
         else:
-            conditions = ["1=0"]  # No patient found
+            conditions = ["1=0"]  # No patient name — nothing to match
             params = []
-        
+
         if from_date:
             conditions.append("CONVERT(DATE, ic.FeedbackRecievedDate) >= ?")
             params.append(from_date)
@@ -746,13 +719,9 @@ def get_patient_incidents(
                 incident_dict['is_never_event'] = bool(incident_dict['is_never_event'])
             incidents.append(incident_dict)
         
-        # Get patient name for response
-        patient_profile = get_patient_profile(patient_id)
-        patient_name_result = patient_profile['PatientName'] if patient_profile else "Unknown"
-        
         return {
             "patient_id": patient_id,
-            "full_name": patient_name_result,
+            "full_name": patient_name or "Unknown",
             "incidents": incidents,
             "total": total,
             "limit": limit,
@@ -845,26 +814,34 @@ def get_incident_details(patient_id: int, incident_id: int) -> Optional[Dict[str
 # ==================== EXPORT PATIENT HISTORY ====================
 
 def get_patient_incidents_for_export(
-    patient_id: int,
+    patient_id: Any,
+    profile: Optional[Dict[str, Any]] = None,
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
     include_profile: bool = True
 ) -> Dict[str, Any]:
     """
     Get patient data for export in CSV or JSON format.
-    
+
     Args:
-        patient_id: Patient unique identifier
+        patient_id: Patient identifier (reserve int or external composite id)
+        profile: The patient's already-resolved profile dict (from
+            api.services.patient_directory_service.resolve_patient_profile),
+            or None if the patient could not be resolved. Resolving here
+            used to mean a fallback UNION query against the hospital view;
+            since the caller (patients_service) already resolves the
+            profile through the reserve/external adapter before calling
+            this, that fallback is no longer needed.
         from_date: Filter from date (YYYY-MM-DD)
         to_date: Filter to date (YYYY-MM-DD)
         include_profile: Include patient profile in export
-    
+
     Returns:
         Dict with patient profile and incidents
     """
     conn = get_connection()
     cursor = conn.cursor()
-    
+
     try:
         export_data = {
             "export_date": datetime.now().isoformat(),
@@ -872,75 +849,25 @@ def get_patient_incidents_for_export(
             "patient": None,
             "incidents": []
         }
-        
-        # Get patient profile if requested (check both hospital and reserve)
-        if include_profile:
-            # Try to get from APP_Patient first
-            profile = get_patient_profile(patient_id)
-            
-            # If not found, try to get from reserve or hospital view
-            if not profile:
-                cursor.execute(f"""
-                    SELECT 
-                        PatientAdmissionID as patient_id,
-                        MedicalFileNumber as mrn,
-                        FullName as full_name
-                    FROM (
-                        SELECT PatientAdmissionID, MedicalFileNumber, FullName
-                        FROM dbo.{PATIENT_ADMISSION_TABLE}
-                        WHERE PatientAdmissionID = ?
-                        
-                        UNION ALL
-                        
-                        SELECT PatientAdmissionID, MedicalFileNumber, FullName
-                        FROM dbo.APP_RESERVE_PATIENT
-                        WHERE PatientAdmissionID = ?
-                    ) AS CombinedPatients
-                """, patient_id, patient_id)
-                
-                row = cursor.fetchone()
-                if row:
-                    export_data["patient"] = {
-                        "patient_id": row[0],
-                        "mrn": row[1],
-                        "full_name": row[2],
-                        "total_incidents": 0  # Will be computed below
-                    }
-            else:
-                export_data["patient"] = {
-                    "patient_id": profile['PatientID'],
-                    "mrn": profile['MRN'],
-                    "full_name": profile['PatientName'],
-                    "total_incidents": profile['TotalIncidents']
-                }
-        
-        # Get patient name(s) for incident matching
-        cursor.execute(f"""
-            SELECT DISTINCT FullName FROM (
-                SELECT FullName FROM dbo.{PATIENT_ADMISSION_TABLE} WHERE PatientAdmissionID = ?
-                UNION ALL
-                SELECT FullName FROM dbo.APP_RESERVE_PATIENT WHERE PatientAdmissionID = ?
-            ) AS PatientNames
-        """, patient_id, patient_id)
-        
-        patient_names = [row[0] for row in cursor.fetchall()]
-        
-        # Build dynamic WHERE clause for patient matching
-        patient_conditions = []
-        params = []
-        
-        if patient_names:
-            placeholders = ','.join('?' * len(patient_names))
-            patient_conditions.append(f"ic.PatientName IN ({placeholders})")
-            params.extend(patient_names)
-        
-        # Fallback: if no patient names, return empty
-        if not patient_conditions:
-            export_data["incidents"] = []
+
+        patient_name = profile.get('PatientName') if profile else None
+
+        if include_profile and profile:
+            export_data["patient"] = {
+                "patient_id": profile.get('PatientID', patient_id),
+                "mrn": profile.get('MRN'),
+                "full_name": patient_name,
+                "total_incidents": profile.get('TotalIncidents', 0)
+            }
+
+        # No resolved name — nothing in APP_IncidentCase can match (see
+        # get_incident_stats_for_name docstring for why name is the only key).
+        if not patient_name:
             return export_data
-        
-        conditions = [f"({' OR '.join(patient_conditions)})"]
-        
+
+        conditions = ["ic.PatientName = ?"]
+        params = [patient_name]
+
         if from_date:
             conditions.append("CONVERT(DATE, ic.FeedbackRecievedDate) >= ?")
             params.append(from_date)

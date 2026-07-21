@@ -14,8 +14,13 @@ class CreateNoteRequest(BaseModel):
     """Request model for creating a new drawer note."""
     note_text: str = Field(..., description="The note content")
     label_ids: List[int] = Field(..., description="List of label IDs to attach to note")
-    patient_admission_id: Optional[int] = Field(None, description="Optional patient admission ID to link note to a patient")
-    
+    patient_admission_id: Optional[int] = Field(None, description="Optional reserve patient admission ID to link note to a patient")
+    external_patient_id: Optional[str] = Field(
+        None,
+        description="Optional Hospital Directory API patient id (from patient search) to link note to a patient. "
+                    "Mutually exclusive with patient_admission_id.",
+    )
+
     class Config:
         json_schema_extra = {
             "example": {
@@ -59,7 +64,8 @@ class NoteResponse(BaseModel):
     created_by_name: str = Field(..., description="Creator username")
     label_ids: List[int] = Field(..., description="Attached label IDs")
     is_deleted: bool = Field(False, description="Whether note is soft-deleted")
-    patient_admission_id: Optional[int] = Field(None, description="Linked patient admission ID")
+    patient_admission_id: Optional[int] = Field(None, description="Linked reserve patient admission ID")
+    external_patient_id: Optional[str] = Field(None, description="Linked Hospital Directory API patient id")
     patient_name: Optional[str] = Field(None, description="Patient name (if linked)")
     
     class Config:

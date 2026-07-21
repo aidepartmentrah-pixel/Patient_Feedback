@@ -4,10 +4,8 @@ train_severity_model.py
 Training script for SEVERITY LEVEL (ordinal 1–4)
 using embedding_text123 only.
 
-Outputs:
-- Severity_OrdinalModel.pkl
-- severity_metrics.txt
-- severity_confusion_matrix.png
+Writes versioned evaluation artifacts + model into run_dir (see
+run_versioning.py) — no longer writes to a fixed live path automatically.
 """
 
 import json
@@ -15,19 +13,8 @@ import sqlite3
 from pathlib import Path
 import numpy as np
 import pandas as pd
-import joblib
 import traceback
 import mord
-from sklearn.metrics import (
-    accuracy_score,
-    f1_score,
-    classification_report,
-    confusion_matrix,
-    precision_score,
-    recall_score,
-)
-import matplotlib.pyplot as plt
-import os
 
 # Import standardized metrics helper
 import sys
@@ -35,22 +22,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 from models_directory.Classification_Models.Hierarchical_Classification_Model.Helper_Functions import (
     compute_standardized_metrics,
 )
+from models_directory.Classification_Models.Maintainance import run_versioning
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
-# TWO LEVELS UP
-DB_PATH = SCRIPT_DIR.parent.parent / "patient_feedback_ml.db"
+# TWO LEVELS UP (default; overridable via base_path)
+_DEFAULT_DB_PATH = SCRIPT_DIR.parent.parent / "patient_feedback_ml.db"
 
 TRAIN_TABLE = "table_feedback_train"
 TEST_TABLE = "table_feedback_test"
 
 EMBED_COL = "embedding_text123"
 TARGET_COL = "severity_level"
-
-MODEL_PATH = SCRIPT_DIR / "Severity_OrdinalModel.pkl"
-REPORT_PATH = SCRIPT_DIR / "severity_metrics.txt"
-CM_PATH = SCRIPT_DIR / "severity_confusion_matrix.png"
 
 
 # -------------- Helpers -----------------
@@ -88,41 +72,19 @@ def parse_embedding_series(series: pd.Series) -> np.ndarray:
     return np.vstack(out)
 
 
-def save_confusion_matrix(cm, labels, out_path, title):
-    fig, ax = plt.subplots(figsize=(6, 5))
-    im = ax.imshow(cm, interpolation="nearest")
-    ax.set_title(title)
-    ax.set_xlabel("Predicted")
-    ax.set_ylabel("True")
-    plt.colorbar(im, ax=ax)
-
-    ax.set_xticks(np.arange(len(labels)))
-    ax.set_yticks(np.arange(len(labels)))
-    ax.set_xticklabels(labels)
-    ax.set_yticklabels(labels)
-
-    thresh = cm.max() / 2 if cm.max() != 0 else 0
-    for i in range(cm.shape[0]):
-        for j in range(cm.shape[1]):
-            ax.text(
-                j, i, str(cm[i, j]),
-                ha="center", va="center",
-                color="white" if cm[i, j] > thresh else "black"
-            )
-
-    fig.tight_layout()
-    fig.savefig(out_path)
-    plt.close(fig)
-
-
 # ---------------------------------------------------------
 # 🚀 FUNCTION VERSION — THIS IS WHAT YOU NEED
 # ---------------------------------------------------------
-def train_severity_model():
+def train_severity_model(base_path=None, run_dir=None):
     """
     Trains the severity model and returns:
-        model, standardized_metrics_dict
+        model, standardized_metrics_dict (merged with roc_pr/warnings/artifacts
+        when run_dir is supplied)
     """
+    if run_dir is None:
+        run_dir = run_versioning.get_run_dir(run_versioning.generate_run_id())
+
+    DB_PATH = base_path or _DEFAULT_DB_PATH
 
     try:
         df_train = load_table(DB_PATH, TRAIN_TABLE)
@@ -148,28 +110,38 @@ def train_severity_model():
         y_pred_orig = y_pred + 1  # Remap back to 1-4 range
         unique_labels = sorted([1, 2, 3, 4])
         
+        model_name = "Severity_Model"
         standardized_metrics = compute_standardized_metrics(
-            model_name="Severity_Model",
+            model_name=model_name,
             y_train=df_train[TARGET_COL].astype(int).to_numpy(),
             y_test=y_test_orig,
             y_pred=y_pred_orig,
             label_names=unique_labels,
         )
 
-        # Save model
-        joblib.dump(model, MODEL_PATH)
+        # ---------- Versioned evaluation artifacts ----------
+        # Display space: original 1-4 severity levels (fixes a pre-existing
+        # bug where the old confusion-matrix image used the shifted 0-3
+        # space while the text report used 1-4 — now both consistently use
+        # display space).
+        y_proba = model.predict_proba(X_test)
+        proba_class_order = model.classes_.tolist() if hasattr(model, "classes_") else sorted(np.unique(y_train).tolist())
 
-        # Save report
-        with open(REPORT_PATH, "w", encoding="utf-8") as f:
-            f.write("Severity Level – Ordinal Model Metrics\n\n")
-            f.write(f"Accuracy: {standardized_metrics['accuracy']}\n")
-            f.write(f"F1: {standardized_metrics['f1']}\n\n")
-            f.write(classification_report(y_test, y_pred, zero_division=0))
+        eval_result = run_versioning.save_evaluation_artifacts(
+            run_dir=run_dir,
+            model_name=model_name,
+            y_true_display=y_test_orig.tolist(),
+            y_pred_display=y_pred_orig.tolist(),
+            display_labels=unique_labels,
+            y_proba=y_proba,
+            proba_class_order=proba_class_order,
+            y_true_for_curves=y_test,
+        )
+        model_entry = run_versioning.register_model_artifact(run_dir, model_name, model, serializer="joblib")
+        eval_result["artifacts"].append(model_entry)
+        standardized_metrics.update(eval_result)
 
-        # Confusion matrix
-        cm = confusion_matrix(y_test, y_pred)
-        label_list = sorted(list(set(y_train) | set(y_test)))
-        save_confusion_matrix(cm, label_list, CM_PATH, "Severity Confusion Matrix")
+        print(f"Artifacts written to: {run_dir}")
 
         return model, standardized_metrics
 

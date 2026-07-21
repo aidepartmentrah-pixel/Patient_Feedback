@@ -34,9 +34,21 @@ from backend.api.services.patients_service import (
     export_patient_history_service,
     create_patient_service,
     get_all_reserve_patients_service,
-    delete_patient_service
+    delete_patient_service,
+    PatientServiceError
 )
 from backend.api_v2.schemas.profile_schemas import PatientProfileV2Response, EntityMeta
+
+
+def _external_unavailable_http_exception(e: "PatientServiceError") -> HTTPException:
+    """See api/routers/patients_router.py's twin helper — same contract."""
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "error": "EXTERNAL_PATIENT_UNAVAILABLE",
+            "message": f"Hospital Directory API unavailable ({e.status}): {str(e)}",
+        },
+    )
 
 
 # ============================================================
@@ -176,7 +188,7 @@ async def search_patients(
 
 
 @router.get("/{patient_id}/profile", response_model=PatientProfileV2Response, summary="Get patient profile")
-async def get_patient_profile(patient_id: int):
+async def get_patient_profile(patient_id: str):
     """
     Get complete patient profile information.
     
@@ -212,6 +224,8 @@ async def get_patient_profile(patient_id: int):
         )
     except HTTPException:
         raise
+    except PatientServiceError as e:
+        raise _external_unavailable_http_exception(e)
     except Exception as e:
         if "not found" in str(e):
             raise HTTPException(status_code=404, detail=str(e))
@@ -223,7 +237,7 @@ async def get_patient_profile(patient_id: int):
 
 @router.get("/{patient_id}/incidents", summary="Get patient incidents")
 async def get_patient_incidents(
-    patient_id: int,
+    patient_id: str,
     from_date: Optional[str] = Query(None),
     to_date: Optional[str] = Query(None),
     department: Optional[str] = Query(None),
@@ -245,6 +259,8 @@ async def get_patient_incidents(
             offset=offset
         )
         return result
+    except PatientServiceError as e:
+        raise _external_unavailable_http_exception(e)
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -253,7 +269,7 @@ async def get_patient_incidents(
 
 
 @router.get("/{patient_id}/incidents/{incident_id}", summary="Get incident details")
-async def get_incident_details(patient_id: int, incident_id: int):
+async def get_incident_details(patient_id: str, incident_id: int):
     """Get full details for a specific incident."""
     try:
         incident = get_incident_details_service(patient_id, incident_id)
@@ -274,7 +290,7 @@ async def get_incident_details(patient_id: int, incident_id: int):
 
 @router.get("/{patient_id}/full-history", summary="Get patient full history")
 async def get_patient_full_history(
-    patient_id: int,
+    patient_id: str,
     from_date: Optional[str] = Query(None),
     to_date: Optional[str] = Query(None),
     department: Optional[str] = Query(None),
@@ -296,6 +312,8 @@ async def get_patient_full_history(
             offset=offset
         )
         return result
+    except PatientServiceError as e:
+        raise _external_unavailable_http_exception(e)
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -305,7 +323,7 @@ async def get_patient_full_history(
 
 @router.get("/{patient_id}/export", summary="Export patient history")
 async def export_patient_history(
-    patient_id: int,
+    patient_id: str,
     format: str = Query("json", description="Export format: 'csv', 'json', or 'word'"),
     from_date: Optional[str] = Query(None),
     to_date: Optional[str] = Query(None),
@@ -356,6 +374,8 @@ async def export_patient_history(
     
     except HTTPException:
         raise
+    except PatientServiceError as e:
+        raise _external_unavailable_http_exception(e)
     except Exception as e:
         raise HTTPException(
             status_code=500,

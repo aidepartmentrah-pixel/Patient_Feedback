@@ -135,54 +135,45 @@ class ReportExportService:
             scope_is_all = False  # Track if this is an "all" scope report
             
             if filters:
-                # Determine which entity is being reported on
+                # Determine which entity is being reported on. Most-specific-
+                # wins (Section > Department > Administration), matching the
+                # same priority resolve_most_specific_scope() applies to the
+                # actual data filter in monthly_report_service — otherwise a
+                # request carrying all three ID fields (the Reporting page's
+                # cascading picker always does this) would label the export
+                # with the broader Administration/Department name instead of
+                # the specific unit that actually scoped the data.
                 administration_ids = filters.get("administration_ids")
                 department_ids = filters.get("department_ids")
                 section_ids = filters.get("section_ids")
-                
-                if administration_ids:
-                    if administration_ids == "all":
-                        report_entity_type = "all_administrations"
-                        scope_is_all = True
-                        report_entity_name = "جميع الإدارات"  # All Administrations
-                    else:
-                        report_entity_type = "administration"
-                        # Get specific administration name
-                        try:
-                            from ..db_layer.admin_units import get_admin_unit_by_id
-                            unit = get_admin_unit_by_id(int(administration_ids.split(',')[0]))
-                            report_entity_name = unit.Name if unit else None
-                        except:
-                            pass
-                elif department_ids:
-                    if department_ids == "all":
-                        report_entity_type = "all_departments"
-                        scope_is_all = True
-                        report_entity_name = "جميع الأقسام"  # All Departments
-                    else:
-                        report_entity_type = "department"
-                        try:
-                            from ..db_layer.admin_units import get_admin_unit_by_id
-                            unit = get_admin_unit_by_id(int(department_ids.split(',')[0]))
-                            report_entity_name = unit.Name if unit else None
-                        except:
-                            pass
-                elif section_ids:
-                    if section_ids == "all":
-                        report_entity_type = "all_sections"
-                        scope_is_all = True
-                        report_entity_name = "جميع الشعب"  # All Sections
-                    else:
-                        report_entity_type = "section"
-                        try:
-                            from ..db_layer.admin_units import get_admin_unit_by_id
-                            unit = get_admin_unit_by_id(int(section_ids.split(',')[0]))
-                            report_entity_name = unit.Name if unit else None
-                        except:
-                            pass
+
+                if section_ids == "all":
+                    report_entity_type = "all_sections"
+                    scope_is_all = True
+                    report_entity_name = "جميع الشعب"  # All Sections
+                elif department_ids == "all":
+                    report_entity_type = "all_departments"
+                    scope_is_all = True
+                    report_entity_name = "جميع الأقسام"  # All Departments
+                elif administration_ids == "all":
+                    report_entity_type = "all_administrations"
+                    scope_is_all = True
+                    report_entity_name = "جميع الإدارات"  # All Administrations
                 else:
-                    # Hospital level (no specific filter)
-                    report_entity_type = "hospital"
+                    from ..db_layer.reports_db import resolve_most_specific_scope
+                    scope_level, scope_ids = resolve_most_specific_scope(
+                        administration_ids, department_ids, section_ids
+                    )
+                    if scope_level == "hospital":
+                        report_entity_type = "hospital"
+                    else:
+                        report_entity_type = scope_level
+                        try:
+                            from ..db_layer.admin_units import get_admin_unit_by_id
+                            unit = get_admin_unit_by_id(scope_ids[0])
+                            report_entity_name = unit.Name if unit else None
+                        except Exception:
+                            pass
             
             # Step 2: Generate file based on format
             if file_format == "pdf":

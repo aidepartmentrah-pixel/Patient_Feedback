@@ -14,10 +14,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 import numpy as np
 import pandas as pd
-import joblib
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix, precision_score, recall_score
-import matplotlib.pyplot as plt
 
 from project_paths import get_db_path
 from models_directory.Classification_Models.Hierarchical_Classification_Model.Helper_Functions import (
@@ -25,16 +22,13 @@ from models_directory.Classification_Models.Hierarchical_Classification_Model.He
     parse_embedding_series,
     compute_standardized_metrics,
 )
+from models_directory.Classification_Models.Maintainance import run_versioning
 
 # ============================
 # CONSTANTS
 # ============================
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-MODEL_DIR = SCRIPT_DIR
-MODEL_PATH = MODEL_DIR / "harm_binary_model.pkl"
-REPORT_PATH = MODEL_DIR / "harm_binary_metrics.txt"
-CM_PATH = MODEL_DIR / "harm_binary_confusion.png"
 
 TRAIN_TABLE = "table_feedback_train"
 TEST_TABLE = "table_feedback_test"
@@ -44,41 +38,22 @@ TARGET_COL = "harm_level"
 
 
 # ============================
-# VISUALIZATION
-# ============================
-
-def save_confusion_matrix(cm, labels, path):
-    plt.figure(figsize=(5, 4))
-    plt.imshow(cm, cmap="Blues")
-    plt.colorbar()
-    plt.xticks(range(len(labels)), labels)
-    plt.yticks(range(len(labels)), labels)
-    plt.xlabel("Predicted")
-    plt.ylabel("Actual")
-    plt.title("Harm Binary Confusion Matrix")
-
-    for i in range(cm.shape[0]):
-        for j in range(cm.shape[1]):
-            plt.text(j, i, cm[i, j], ha="center", va="center")
-
-    plt.tight_layout()
-    plt.savefig(path)
-    plt.close()
-
-
-# ============================
 # TRAIN FUNCTION
 # ============================
 
-def train_harm_binary(base_path: str | None = None):
+def train_harm_binary(base_path: str | None = None, run_dir=None):
     """
     Train binary harm-level classifier.
 
     Returns:
-        model, standardized_metrics
+        model, standardized_metrics (merged with roc_pr/warnings/artifacts
+        when run_dir is supplied — see run_versioning.save_evaluation_artifacts)
     """
 
     try:
+        if run_dir is None:
+            run_dir = run_versioning.get_run_dir(run_versioning.generate_run_id())
+
         db_path = base_path or get_db_path()
 
         df_train = load_table(db_path, TRAIN_TABLE)
@@ -113,19 +88,23 @@ def train_harm_binary(base_path: str | None = None):
             label_names=unique_labels,
         )
 
-        # Save report
-        with open(REPORT_PATH, "w", encoding="utf-8") as f:
-            f.write("=== Harm Binary Classification ===\n")
-            f.write(f"Accuracy: {standardized_metrics['accuracy']:.4f}\n")
-            f.write(f"F1 Score: {standardized_metrics['f1']:.4f}\n\n")
-            f.write(classification_report(y_test, y_pred))
-
-        # Save confusion matrix
-        cm = confusion_matrix(y_test, y_pred)
-        save_confusion_matrix(cm, ["Low", "High"], CM_PATH)
-
-        # Save model
-        joblib.dump(model, MODEL_PATH)
+        if run_dir is not None:
+            # Positive class = "High" harm (1) — the clinically actionable class.
+            y_proba = model.predict_proba(X_test)
+            class_order = model.classes_.tolist()
+            eval_result = run_versioning.save_evaluation_artifacts(
+                run_dir=run_dir,
+                model_name="Harm_Binary",
+                y_true_display=y_test,
+                y_pred_display=y_pred,
+                display_labels=unique_labels,
+                y_proba=y_proba,
+                proba_class_order=class_order,
+                positive_label=1,
+            )
+            model_entry = run_versioning.register_model_artifact(run_dir, "harm_binary", model, serializer="joblib")
+            eval_result["artifacts"].append(model_entry)
+            standardized_metrics.update(eval_result)
 
         print("[OK] Harm binary model trained successfully")
 

@@ -26,6 +26,41 @@ from typing import List, Dict, Any, Optional
 from api_v2.db_layer import administrative_subcase_db
 
 
+def _exclude_acknowledged_decisions(subcases: List[Dict[str, Any]], level: str) -> List[Dict[str, Any]]:
+    """
+    Decision propagation: PATIENT_SERVICES_DECISION_COMPLETED stays visible to
+    each level independently (see APP_SubcaseDecisionAcknowledgment) until
+    THAT level has acknowledged it, rather than vanishing from every level's
+    inbox the moment any single one of them acknowledges.
+    """
+    if not subcases:
+        return subcases
+    acked_ids = administrative_subcase_db.get_acknowledged_subcase_ids_for_level(level)
+    if not acked_ids:
+        return subcases
+    return [s for s in subcases if s.get('subcase_id') not in acked_ids]
+
+
+def _include_own_level_acknowledged_decisions(subcases: List[Dict[str, Any]], level: str) -> List[Dict[str, Any]]:
+    """
+    Decision propagation, archive side: once THIS level has acknowledged a
+    completed decision, show it in this level's archive even though the
+    subcase's global Status may still be PATIENT_SERVICES_DECISION_COMPLETED
+    (other levels haven't acknowledged yet, so it hasn't flipped to
+    DECISION_ACKNOWLEDGED). Without this, an early-acknowledging level would
+    see the case in neither its active inbox nor its archive.
+    """
+    acked_ids = administrative_subcase_db.get_acknowledged_subcase_ids_for_level(level)
+    if not acked_ids:
+        return subcases
+    existing_ids = {s.get('subcase_id') for s in subcases}
+    extra = [
+        s for s in administrative_subcase_db.get_subcases_by_statuses(['PATIENT_SERVICES_DECISION_COMPLETED'])
+        if s.get('subcase_id') in acked_ids and s.get('subcase_id') not in existing_ids
+    ]
+    return subcases + extra
+
+
 # =============================================================================
 # STATUS → ROLE RESPONSIBILITY MAP (MODEL A)
 # =============================================================================
@@ -122,13 +157,16 @@ def get_section_inbox(current_user) -> List[Dict[str, Any]]:
     """
     Get inbox for Section Administrator role.
 
-    Returns four buckets merged:
+    Returns three buckets merged:
       1. SUBMITTED_TO_SECTION / RETURNED_TO_SECTION_FOR_REVISION — active work.
       2. FORCE_CLOSED_AT_SECTION — escalated cases shown for awareness only
          (view-only; section cannot grant themselves more time).
-      3. WAITING_PATIENT_SERVICES_DECISION — informational FYI; decision pending.
-      4. PATIENT_SERVICES_DECISION_COMPLETED — decision has arrived; section must
+      3. PATIENT_SERVICES_DECISION_COMPLETED — decision has arrived; section must
          acknowledge it (allowedActions: ["view", "acknowledge_decision"]).
+
+    WAITING_PATIENT_SERVICES_DECISION is intentionally NOT shown here — a case
+    pending a Patient Services decision simply doesn't appear in this inbox
+    until the decision is complete (no interim "waiting" FYI row).
 
     Args:
         current_user: User object with role, section_id, department_id attributes
@@ -138,9 +176,10 @@ def get_section_inbox(current_user) -> List[Dict[str, Any]]:
 
     active        = administrative_subcase_db.get_subcases_pending_for_section()
     escalated     = administrative_subcase_db.get_subcases_by_statuses(['FORCE_CLOSED_AT_SECTION'])
-    pending_ps    = administrative_subcase_db.get_subcases_by_statuses(['WAITING_PATIENT_SERVICES_DECISION'])
-    completed_ps  = administrative_subcase_db.get_subcases_by_statuses(['PATIENT_SERVICES_DECISION_COMPLETED'])
-    subcases      = active + escalated + pending_ps + completed_ps
+    completed_ps  = _exclude_acknowledged_decisions(
+        administrative_subcase_db.get_subcases_by_statuses(['PATIENT_SERVICES_DECISION_COMPLETED']), 'section'
+    )
+    subcases      = active + escalated + completed_ps
 
     # =========================================================================
     # SECURITY LOCK — Scope filtering MUST NOT be removed or bypassed
@@ -155,10 +194,12 @@ def get_department_inbox(current_user) -> List[Dict[str, Any]]:
     Get inbox for Department Administrator role.
     
     Returns subcases with statuses defined in STATUS_ROLE_MAP for DEPARTMENT_ADMIN,
-    plus WAITING_PATIENT_SERVICES_DECISION shown informationally (view-only) so the
-    department knows a case under their scope is awaiting the Patient Services
-    scientific decision.
+    plus PATIENT_SERVICES_DECISION_COMPLETED once a decision has arrived.
     Statuses are: SECTION_ACCEPTED_PENDING_DEPT, RETURNED_TO_DEPT_FOR_REVISION
+
+    WAITING_PATIENT_SERVICES_DECISION is intentionally NOT shown here — a case
+    pending a Patient Services decision simply doesn't appear in this inbox
+    until the decision is complete (no interim "waiting" FYI row).
 
     Args:
         current_user: User object with role, section_id, department_id attributes
@@ -173,9 +214,10 @@ def get_department_inbox(current_user) -> List[Dict[str, Any]]:
     if not current_user.scopes or current_user.scopes[0].role_code != 'DEPARTMENT_ADMIN':
         raise ValueError("User must be a Department Administrator to access department inbox")
 
-    pending_ps   = administrative_subcase_db.get_subcases_by_statuses(['WAITING_PATIENT_SERVICES_DECISION'])
-    completed_ps = administrative_subcase_db.get_subcases_by_statuses(['PATIENT_SERVICES_DECISION_COMPLETED'])
-    subcases = administrative_subcase_db.get_subcases_pending_for_department() + pending_ps + completed_ps
+    completed_ps = _exclude_acknowledged_decisions(
+        administrative_subcase_db.get_subcases_by_statuses(['PATIENT_SERVICES_DECISION_COMPLETED']), 'department'
+    )
+    subcases = administrative_subcase_db.get_subcases_pending_for_department() + completed_ps
     
     # =========================================================================
     # SECURITY LOCK — Scope filtering MUST NOT be removed or bypassed
@@ -201,10 +243,12 @@ def get_administration_inbox(current_user) -> List[Dict[str, Any]]:
     Get inbox for Administration Administrator role.
     
     Returns subcases with statuses defined in STATUS_ROLE_MAP for ADMINISTRATION_ADMIN,
-    plus WAITING_PATIENT_SERVICES_DECISION shown informationally (view-only) so the
-    administration knows a case under their scope is awaiting the Patient Services
-    scientific decision.
+    plus PATIENT_SERVICES_DECISION_COMPLETED once a decision has arrived.
     Status is: DEPT_ACCEPTED_PENDING_ADMIN
+
+    WAITING_PATIENT_SERVICES_DECISION is intentionally NOT shown here — a case
+    pending a Patient Services decision simply doesn't appear in this inbox
+    until the decision is complete (no interim "waiting" FYI row).
 
     Args:
         current_user: User object with role, section_id, department_id attributes
@@ -219,9 +263,10 @@ def get_administration_inbox(current_user) -> List[Dict[str, Any]]:
     if not current_user.scopes or current_user.scopes[0].role_code != 'ADMINISTRATION_ADMIN':
         raise ValueError("User must be an Administration Administrator to access administration inbox")
 
-    pending_ps   = administrative_subcase_db.get_subcases_by_statuses(['WAITING_PATIENT_SERVICES_DECISION'])
-    completed_ps = administrative_subcase_db.get_subcases_by_statuses(['PATIENT_SERVICES_DECISION_COMPLETED'])
-    subcases = administrative_subcase_db.get_subcases_pending_for_administration() + pending_ps + completed_ps
+    completed_ps = _exclude_acknowledged_decisions(
+        administrative_subcase_db.get_subcases_by_statuses(['PATIENT_SERVICES_DECISION_COMPLETED']), 'administration'
+    )
+    subcases = administrative_subcase_db.get_subcases_pending_for_administration() + completed_ps
     
     # =========================================================================
     # SECURITY LOCK — Scope filtering MUST NOT be removed or bypassed
@@ -423,8 +468,10 @@ def get_section_archive(current_user) -> List[Dict[str, Any]]:
         List of archive items (view-only)
     """
     # Get subcases that have moved past section stage
-    subcases = administrative_subcase_db.get_subcases_archived_for_section()
-    
+    subcases = _include_own_level_acknowledged_decisions(
+        administrative_subcase_db.get_subcases_archived_for_section(), 'section'
+    )
+
     # SECURITY LOCK — Scope filtering still applies
     filtered_subcases = _apply_scope_filter(subcases, current_user)
     
@@ -450,8 +497,10 @@ def get_department_archive(current_user) -> List[Dict[str, Any]]:
         List of archive items (view-only)
     """
     # Get subcases that have moved past department stage
-    subcases = administrative_subcase_db.get_subcases_archived_for_department()
-    
+    subcases = _include_own_level_acknowledged_decisions(
+        administrative_subcase_db.get_subcases_archived_for_department(), 'department'
+    )
+
     # SECURITY LOCK — Scope filtering
     filtered_subcases = _apply_scope_filter(subcases, current_user)
     
@@ -477,8 +526,10 @@ def get_administration_archive(current_user) -> List[Dict[str, Any]]:
         List of archive items (view-only)
     """
     # Get subcases that have moved past administration stage
-    subcases = administrative_subcase_db.get_subcases_archived_for_administration()
-    
+    subcases = _include_own_level_acknowledged_decisions(
+        administrative_subcase_db.get_subcases_archived_for_administration(), 'administration'
+    )
+
     # SECURITY LOCK — Scope filtering
     filtered_subcases = _apply_scope_filter(subcases, current_user)
     
@@ -851,14 +902,28 @@ def _build_display_metadata(s: Dict[str, Any]) -> Dict[str, Any]:
     if is_force_closed: workflow_indicators.append('FORCE_CLOSED')
     if is_late:         workflow_indicators.append('LATE')
 
-    incident_date = s.get('feedback_received_date')
-    display_date = incident_date or s.get('created_at')
+    # Incident Date: when the incident actually occurred (user-entered).
+    # Received Date: when the Complaints Office received the complaint (was "Feedback Date").
+    # Publication Date: when the case entered workflow — the subcase's own CreatedAt,
+    # stamped once at publish time (case_creation_service.py). This is the anchor
+    # already used for due dates/deadlines, and is what the Notification/Inbox list
+    # should display — it marks the point the user became responsible for the case,
+    # not when the incident happened or was reported.
+    incident_date = s.get('incident_date')
+    received_date = s.get('feedback_received_date')
+    publication_date = s.get('created_at')
+    display_date = publication_date or received_date
 
     return {
         "message_type": message_type,
         "message_category": message_category,
         "current_level": current_level,
         "target_level": target_level,
+        # The real "who should solve this" target is TargetOrgUnitID / org_unit_name
+        # (already returned separately below). issuing_org_unit_name is the distinct
+        # "where this happened / who reported it" source unit, entered at complaint
+        # creation via APP_IncidentCaseTargetDepartment / IssuingOrgUnitID.
+        "issuing_org_unit_name": s.get('issuing_org_unit_name'),
         "is_force_closed": is_force_closed,
         "force_closed_at_level": force_closed_at_level,
         "is_late": is_late,
@@ -868,6 +933,8 @@ def _build_display_metadata(s: Dict[str, Any]) -> Dict[str, Any]:
         "clinical_indicators": clinical_indicators,
         "workflow_indicators": workflow_indicators,
         "incident_date": incident_date.isoformat() if hasattr(incident_date, 'isoformat') else None,
+        "received_date": received_date.isoformat() if hasattr(received_date, 'isoformat') else None,
+        "publication_date": publication_date.isoformat() if hasattr(publication_date, 'isoformat') else None,
         "display_date": display_date.isoformat() if hasattr(display_date, 'isoformat') else None,
     }
 

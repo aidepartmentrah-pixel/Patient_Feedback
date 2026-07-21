@@ -89,6 +89,8 @@ from api_v2.routers.rca_inbox_router import router as rca_inbox_router
 from api_v2.routers.publication_batch_router import router as publication_batch_router
 # Supervisor Action Item Router (Action Item Coordination - Iteration 4)
 from api_v2.routers.supervisor_action_item_router import router as supervisor_action_item_router
+# Action Item Change Notice Router (Action Item Coordination - AIC-S7 Notifications)
+from api_v2.routers.action_item_notice_router import router as action_item_notice_router
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
@@ -222,6 +224,7 @@ app.include_router(rca_settings_router)
 app.include_router(rca_inbox_router)
 app.include_router(publication_batch_router)
 app.include_router(supervisor_action_item_router)
+app.include_router(action_item_notice_router)
 
 
 # ==================== BOOTSTRAP MIDDLEWARE ====================
@@ -312,6 +315,59 @@ async def startup_ml_warmup():
         elapsed = time.time() - start
         logger.error(f"[ML WARMUP] Failed after {elapsed:.3f} seconds: {e}")
         logger.warning("[ML WARMUP] Server will continue - first classification may be slow")
+
+
+@app.on_event("startup")
+async def startup_ml_embedding_worker():
+    """
+    Stage 6 of the ML architecture consolidation (see
+    ML_ARCHITECTURE_DECISION_RECORD.md): start the background worker that
+    processes ml.EmbeddingProcessingJob rows (registered by case creation/
+    import/edit — see case_service.py) asynchronously and in batches.
+    Runs as a daemon thread inside this process, reusing whatever embedding
+    model startup_ml_warmup() already loaded above. Also sweeps any jobs
+    left stuck in 'Processing' from a prior crash/restart back to
+    RetryPending before starting.
+    """
+    import logging
+    logger = logging.getLogger("ml_embedding_worker")
+
+    if bootstrap_module.BOOTSTRAP_MODE:
+        logger.info("[ML WORKER] Skipped - running in BOOTSTRAP mode")
+        return
+
+    try:
+        from ml_mapping.embedding_worker import start_worker_background_thread
+        start_worker_background_thread()
+        logger.info("[ML WORKER] Background embedding worker started")
+    except Exception as e:
+        logger.error(f"[ML WORKER] Failed to start: {e}")
+        logger.warning("[ML WORKER] Server will continue - embedding jobs will remain Pending until this is fixed")
+
+
+@app.on_event("startup")
+async def startup_ml_training_reconciliation():
+    """
+    Stage 12 of the ML architecture consolidation: a training run killed
+    mid-process (unlike the embedding worker above, which already reconciles
+    stuck jobs) leaves training_progress.json's is_running flag permanently
+    True, which would otherwise block all future training runs with a 409
+    forever. Reconciles that stale state once per process start.
+    """
+    import logging
+    logger = logging.getLogger("ml_training_reconciliation")
+
+    if bootstrap_module.BOOTSTRAP_MODE:
+        logger.info("[TRAINING RECONCILE] Skipped - running in BOOTSTRAP mode")
+        return
+
+    try:
+        from api.services.training_service import reconcile_stuck_training_runs
+        result = reconcile_stuck_training_runs()
+        if result.get("reconciled"):
+            logger.info(f"[TRAINING RECONCILE] Cleared stale training state: {result}")
+    except Exception as e:
+        logger.error(f"[TRAINING RECONCILE] Failed: {e}")
 
 
 @app.on_event("startup")

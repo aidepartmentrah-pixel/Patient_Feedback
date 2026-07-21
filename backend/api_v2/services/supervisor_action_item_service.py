@@ -101,6 +101,16 @@ def list_action_items_for_user(current_user) -> List[Dict[str, Any]]:
     return db.get_supervisor_action_items_by_org_units(allowed_unit_ids)
 
 
+def list_unacknowledged_for_user(current_user) -> List[Dict[str, Any]]:
+    """
+    List unacknowledged supervisor action item assignments for the current
+    user's inbox notifications — items targeted directly at them, or at an
+    org unit in their scope when no specific target user was set.
+    """
+    allowed_unit_ids = list(getattr(current_user, "allowed_unit_ids", None) or [])
+    return db.get_unacknowledged_supervisor_action_items_for_user(current_user.user_id, allowed_unit_ids)
+
+
 def complete_action_item(current_user, action_item_id: int) -> Dict[str, Any]:
     item = _get_or_raise(action_item_id)
     _require_status(item, "PENDING", "completed")
@@ -124,6 +134,25 @@ def cancel_action_item(current_user, action_item_id: int) -> Dict[str, Any]:
         raise SupervisorActionItemError(f"Action item {action_item_id} not found.")
 
     db.create_audit_log_entry(action_item_id, "CANCELLED", current_user.user_id)
+    return db.get_supervisor_action_item_by_id(action_item_id)
+
+
+def acknowledge_action_item(current_user, action_item_id: int) -> Dict[str, Any]:
+    """
+    Acknowledge receipt of a supervisor action item assignment.
+
+    Pure notification side-channel — independent of Status (Pending/
+    Completed/Cancelled). Authorization is the same as completion: the
+    target unit's scope, or the specifically named target user.
+    """
+    item = _get_or_raise(action_item_id)
+    _require_target_access(current_user, item)
+
+    if not db.acknowledge_supervisor_action_item(action_item_id, current_user.user_id):
+        if item["acknowledged_at"] is not None:
+            return db.get_supervisor_action_item_by_id(action_item_id)
+        raise SupervisorActionItemError(f"Action item {action_item_id} not found.")
+
     return db.get_supervisor_action_item_by_id(action_item_id)
 
 

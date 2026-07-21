@@ -466,6 +466,7 @@ def get_subcases_by_status(status_code: str) -> List[Dict[str, Any]]:
                 CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
                 ISNULL(ic.IsMorbidity, 0) AS IsMorbidity,
                 ic.FeedbackRecievedDate,
+                ic.IncidentDate,
                 ic.RecordTypeID,
 
                 DATEDIFF(day, sub.CreatedAt, GETDATE()) AS WaitingDays,
@@ -538,6 +539,7 @@ def get_subcases_by_status(status_code: str) -> List[Dict[str, Any]]:
                 "is_never_event": bool(row.IsNeverEvent),
                 "is_morbidity": bool(row.IsMorbidity),
                 "feedback_received_date": row.FeedbackRecievedDate,
+                "incident_date": row.IncidentDate,
                 "record_type_id": row.RecordTypeID,
                 "waiting_days": int(row.WaitingDays or 0),
                 "case_description": row.CaseDescription,
@@ -785,6 +787,55 @@ def acknowledge_decision_notification(
         )
         conn.commit()
         return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_decision_acknowledgment_levels(subcase_id: int) -> set:
+    """Return the set of OrgLevel values already acknowledged for this subcase."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT OrgLevel FROM dbo.APP_SubcaseDecisionAcknowledgment WHERE SubcaseID = ?",
+            subcase_id
+        )
+        return {row.OrgLevel for row in cursor.fetchall()}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_acknowledged_subcase_ids_for_level(level: str) -> set:
+    """Return the set of SubcaseIDs already acknowledged by the given OrgLevel — bulk lookup for inbox filtering."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT SubcaseID FROM dbo.APP_SubcaseDecisionAcknowledgment WHERE OrgLevel = ?",
+            level
+        )
+        return {row.SubcaseID for row in cursor.fetchall()}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def insert_decision_acknowledgment(subcase_id: int, level: str, user_id: int) -> None:
+    """Record that `level` has acknowledged the completed decision on this subcase."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            INSERT INTO dbo.APP_SubcaseDecisionAcknowledgment
+                (SubcaseID, OrgLevel, AcknowledgedByUserID, AcknowledgedAt)
+            VALUES (?, ?, ?, ?)
+            """,
+            (subcase_id, level, user_id, datetime.now())
+        )
+        conn.commit()
     finally:
         cursor.close()
         conn.close()
@@ -1252,10 +1303,16 @@ def get_subcases_with_details_for_section() -> List[Dict[str, Any]]:
                 CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
                 ISNULL(ic.IsMorbidity, 0) AS IsMorbidity,
                 ic.FeedbackRecievedDate,
+                ic.IncidentDate,
 
                 -- Seasonal Report Info (for SEASONAL_REPORT_RESPONSE)
                 sr.SeasonalReportID,
-                s.SeasonName
+                s.SeasonName,
+
+                -- Time-distinction fields (Session 9B) — section is the acting level here
+                sub.SectionDeadlineAt,
+                sub.SectionExtraTimeGrantedAt,
+                sub.SectionLateReply
 
             FROM dbo.APP_AdministrativeSubcase sub
             LEFT JOIN dbo.AdminsrationUnit org
@@ -1307,8 +1364,12 @@ def get_subcases_with_details_for_section() -> List[Dict[str, Any]]:
                 "is_never_event": bool(row.IsNeverEvent),
                 "is_morbidity": bool(row.IsMorbidity),
                 "feedback_received_date": row.FeedbackRecievedDate,
+                "incident_date": row.IncidentDate,
                 "seasonal_report_id": row.SeasonalReportID,
-                "season_name": row.SeasonName
+                "season_name": row.SeasonName,
+                "deadline_at": row.SectionDeadlineAt,
+                "extra_time_granted_at": row.SectionExtraTimeGrantedAt,
+                "is_late": bool(row.SectionLateReply),
             })
 
         return result
@@ -1369,10 +1430,16 @@ def get_subcases_with_details_for_department() -> List[Dict[str, Any]]:
                 CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
                 ISNULL(ic.IsMorbidity, 0) AS IsMorbidity,
                 ic.FeedbackRecievedDate,
+                ic.IncidentDate,
 
                 -- Seasonal Report Info (for SEASONAL_REPORT_RESPONSE)
                 sr.SeasonalReportID,
-                s.SeasonName
+                s.SeasonName,
+
+                -- Time-distinction fields (Session 9B) — department is the acting level here
+                sub.DepartmentDeadlineAt,
+                sub.DepartmentExtraTimeGrantedAt,
+                sub.DepartmentLateReply
 
             FROM dbo.APP_AdministrativeSubcase sub
             LEFT JOIN dbo.AdminsrationUnit org
@@ -1427,8 +1494,12 @@ def get_subcases_with_details_for_department() -> List[Dict[str, Any]]:
                 "is_never_event": bool(row.IsNeverEvent),
                 "is_morbidity": bool(row.IsMorbidity),
                 "feedback_received_date": row.FeedbackRecievedDate,
+                "incident_date": row.IncidentDate,
                 "seasonal_report_id": row.SeasonalReportID,
-                "season_name": row.SeasonName
+                "season_name": row.SeasonName,
+                "deadline_at": row.DepartmentDeadlineAt,
+                "extra_time_granted_at": row.DepartmentExtraTimeGrantedAt,
+                "is_late": bool(row.DepartmentLateReply),
             })
 
         return result
@@ -1488,13 +1559,19 @@ def get_subcases_with_details_for_administration() -> List[Dict[str, Any]]:
                 CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
                 ISNULL(ic.IsMorbidity, 0) AS IsMorbidity,
                 ic.FeedbackRecievedDate,
+                ic.IncidentDate,
 
                 -- Seasonal Report Info (for SEASONAL_REPORT_RESPONSE)
                 sr.SeasonalReportID,
                 s.SeasonName,
 
                 -- Originating section/unit (immutable on the parent case)
-                issuing_org.Name AS IssuingOrgUnitName
+                issuing_org.Name AS IssuingOrgUnitName,
+
+                -- Time-distinction fields (Session 9B) — administration is the acting level here
+                sub.AdministrationDeadlineAt,
+                sub.AdministrationExtraTimeGrantedAt,
+                sub.AdministrationLateReply
 
             FROM dbo.APP_AdministrativeSubcase sub
             LEFT JOIN dbo.AdminsrationUnit org
@@ -1554,9 +1631,13 @@ def get_subcases_with_details_for_administration() -> List[Dict[str, Any]]:
                 "is_never_event": bool(row.IsNeverEvent),
                 "is_morbidity": bool(row.IsMorbidity),
                 "feedback_received_date": row.FeedbackRecievedDate,
+                "incident_date": row.IncidentDate,
                 "seasonal_report_id": row.SeasonalReportID,
                 "season_name": row.SeasonName,
                 "issuing_org_unit_name": row.IssuingOrgUnitName,
+                "deadline_at": row.AdministrationDeadlineAt,
+                "extra_time_granted_at": row.AdministrationExtraTimeGrantedAt,
+                "is_late": bool(row.AdministrationLateReply),
             })
 
         return result
@@ -1625,8 +1706,15 @@ def get_subcases_by_statuses(status_codes: List[str]) -> List[Dict[str, Any]]:
                 CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
                 ISNULL(ic.IsMorbidity, 0) AS IsMorbidity,
                 ic.FeedbackRecievedDate,
+                ic.IncidentDate,
                 ic.RecordTypeID,
-                sub.PatientServicesDecisionText
+                sub.PatientServicesDecisionText,
+
+                -- The real "who should solve this" target is TargetOrgUnitID
+                -- (org.Name above). IssuingOrgUnitID is the separate, distinct
+                -- "where this happened / who reported it" source unit.
+                issuing_org.Name AS IssuingOrgUnitName
+
             FROM dbo.APP_AdministrativeSubcase sub
             LEFT JOIN dbo.AdminsrationUnit org
                 ON sub.TargetOrgUnitID = org.UniqueID
@@ -1634,6 +1722,8 @@ def get_subcases_by_statuses(status_codes: List[str]) -> List[Dict[str, Any]]:
                 ON sub.IncidentRequestCaseID = ic.IncidentRequestCaseID
             LEFT JOIN dbo.APP_Incident inc
                 ON ic.incident_id = inc.incident_id
+            LEFT JOIN dbo.AdminsrationUnit issuing_org
+                ON ic.IssuingOrgUnitID = issuing_org.UniqueID
             WHERE sub.Status IN ({placeholders})
             ORDER BY sub.UpdatedAt DESC
         """
@@ -1678,8 +1768,10 @@ def get_subcases_by_statuses(status_codes: List[str]) -> List[Dict[str, Any]]:
                 "is_never_event": bool(row.IsNeverEvent),
                 "is_morbidity": bool(row.IsMorbidity),
                 "feedback_received_date": row.FeedbackRecievedDate,
+                "incident_date": row.IncidentDate,
                 "record_type_id": row.RecordTypeID,
                 "patient_services_decision_text": row.PatientServicesDecisionText,
+                "issuing_org_unit_name": row.IssuingOrgUnitName,
             }
             for row in rows
         ]
@@ -1736,7 +1828,11 @@ def get_force_closed_pipeline_cases() -> List[Dict[str, Any]]:
 
                 -- Originating section/unit (immutable on the parent case — TargetOrgUnitID
                 -- has already been repointed to the Administration by this stage)
-                issuing_org.Name AS IssuingOrgUnitName
+                issuing_org.Name AS IssuingOrgUnitName,
+
+                sub.AdministrationDeadlineAt,
+                sub.AdministrationExtraTimeGrantedAt,
+                sub.AdministrationExtraTimeGrantedBy
 
             FROM dbo.APP_AdministrativeSubcase sub
             LEFT JOIN dbo.AdminsrationUnit org
@@ -1781,6 +1877,9 @@ def get_force_closed_pipeline_cases() -> List[Dict[str, Any]]:
                 "is_never_event":          bool(row.IsNeverEvent),
                 "seasonal_report_id":      row.SeasonalReportID,
                 "issuing_org_unit_name":   row.IssuingOrgUnitName,
+                "administration_deadline_at":            row.AdministrationDeadlineAt,
+                "administration_extra_time_granted_at":  row.AdministrationExtraTimeGrantedAt,
+                "administration_extra_time_granted_by":  row.AdministrationExtraTimeGrantedBy,
             }
             for row in rows
         ]
@@ -1834,9 +1933,14 @@ def get_force_closed_section_cases_for_department() -> List[Dict[str, Any]]:
                 CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
                 ISNULL(ic.IsMorbidity, 0) AS IsMorbidity,
                 ic.FeedbackRecievedDate,
+                ic.IncidentDate,
 
                 sr.SeasonalReportID,
-                s.SeasonName
+                s.SeasonName,
+
+                sub.SectionDeadlineAt,
+                sub.SectionExtraTimeGrantedAt,
+                sub.SectionLateReply
 
             FROM dbo.APP_AdministrativeSubcase sub
             LEFT JOIN dbo.AdminsrationUnit org
@@ -1887,8 +1991,13 @@ def get_force_closed_section_cases_for_department() -> List[Dict[str, Any]]:
                 "is_never_event": bool(row.IsNeverEvent),
                 "is_morbidity": bool(row.IsMorbidity),
                 "feedback_received_date": row.FeedbackRecievedDate,
+                "incident_date": row.IncidentDate,
                 "seasonal_report_id": row.SeasonalReportID,
-                "season_name": row.SeasonName
+                "season_name": row.SeasonName,
+                "deadline_at": row.SectionDeadlineAt,
+                "extra_time_granted_at": row.SectionExtraTimeGrantedAt,
+                "is_late": bool(row.SectionLateReply),
+                "is_force_closed": True,
             }
             for row in rows
         ]
@@ -1943,9 +2052,14 @@ def get_force_closed_department_cases_for_administration() -> List[Dict[str, Any
                 CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
                 ISNULL(ic.IsMorbidity, 0) AS IsMorbidity,
                 ic.FeedbackRecievedDate,
+                ic.IncidentDate,
 
                 sr.SeasonalReportID,
-                s.SeasonName
+                s.SeasonName,
+
+                sub.DepartmentDeadlineAt,
+                sub.DepartmentExtraTimeGrantedAt,
+                sub.DepartmentLateReply
 
             FROM dbo.APP_AdministrativeSubcase sub
             LEFT JOIN dbo.AdminsrationUnit org
@@ -1998,8 +2112,13 @@ def get_force_closed_department_cases_for_administration() -> List[Dict[str, Any
                 "is_never_event": bool(row.IsNeverEvent),
                 "is_morbidity": bool(row.IsMorbidity),
                 "feedback_received_date": row.FeedbackRecievedDate,
+                "incident_date": row.IncidentDate,
                 "seasonal_report_id": row.SeasonalReportID,
-                "season_name": row.SeasonName
+                "season_name": row.SeasonName,
+                "deadline_at": row.DepartmentDeadlineAt,
+                "extra_time_granted_at": row.DepartmentExtraTimeGrantedAt,
+                "is_late": bool(row.DepartmentLateReply),
+                "is_force_closed": True,
             }
             for row in rows
         ]
@@ -3252,6 +3371,7 @@ _ACCOUNTABILITY_SELECT = """
         CASE WHEN ic.ClinicalRiskTypeID = 3 THEN 1 ELSE 0 END AS IsNeverEvent,
         ISNULL(ic.IsMorbidity, 0) AS IsMorbidity,
         ic.FeedbackRecievedDate,
+        ic.IncidentDate,
         ic.RecordTypeID
     FROM dbo.APP_AdministrativeSubcase sub
     LEFT JOIN dbo.AdminsrationUnit org
@@ -3302,6 +3422,7 @@ def _rows_to_subcase_dicts(rows) -> List[Dict[str, Any]]:
             "is_never_event": bool(row.IsNeverEvent),
             "is_morbidity": bool(row.IsMorbidity),
             "feedback_received_date": row.FeedbackRecievedDate,
+            "incident_date": row.IncidentDate,
             "record_type_id": row.RecordTypeID,
         })
     return result

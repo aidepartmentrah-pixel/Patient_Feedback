@@ -4,6 +4,7 @@ Handles template generation, Excel parsing, validation, and controlled import.
 """
 
 import base64
+import hashlib
 from datetime import datetime, date
 from io import BytesIO
 from typing import Dict, Any, List, Optional, Tuple
@@ -15,6 +16,19 @@ from openpyxl.utils import get_column_letter
 
 from core.database import get_connection
 from ..db_layer import import_db
+from ..db_layer import ml_import_batch_db
+from ..db_layer.incident_parent import assign_case_to_incident
+from .case_service import create_case
+
+# Source-system tag for ml.ImportSourceRecordMap — generalizes the exact
+# idempotency pattern already proven by dbo.APP_DataMigration_Map for the
+# Phase K legacy-migration path (see ML_ARCHITECTURE_DECISION_RECORD.md 4.8).
+EXCEL_IMPORT_SOURCE_SYSTEM = "ExcelImportTemplate"
+
+# Clinical risk type ID meaning "Ordinary" (no red flag / never event) —
+# used as the default when the optional "Feedback Risk Type" column is blank,
+# since case_service.create_case() requires clinical_risk_type_id.
+DEFAULT_CLINICAL_RISK_TYPE_ID = 1
 
 
 # ============================================================
@@ -196,9 +210,37 @@ def generate_template() -> BytesIO:
 def process_upload(file_bytes: bytes, created_by_user_id: int = 1) -> Dict[str, Any]:
     """
     Full import pipeline:
-      parse → group → validate → import valid groups → report
+      checksum dedup → parse → group → validate → per-group duplicate check
+      → import valid groups → report
     Returns a structured report dict including base64-encoded rejected Excel.
     """
+    file_checksum = hashlib.sha256(file_bytes).hexdigest()
+
+    # 0. Batch-level duplicate check — has this exact file already been
+    # imported successfully? (see ML_ARCHITECTURE_DECISION_RECORD.md 4.8)
+    batch_conn = get_connection()
+    batch_cursor = batch_conn.cursor()
+    try:
+        existing_batch = ml_import_batch_db.find_batch_by_checksum(batch_cursor, file_checksum)
+        if existing_batch:
+            return _empty_report(
+                f"This exact file was already imported successfully on "
+                f"{existing_batch['UploadedAt']} (batch #{existing_batch['ImportBatchID']}). "
+                f"Re-upload blocked to prevent duplicate cases."
+            )
+
+        import_batch_id = ml_import_batch_db.create_import_batch(
+            batch_cursor,
+            original_file_name=None,
+            file_checksum=file_checksum,
+            template_version="v1",
+            uploaded_by_user_id=created_by_user_id,
+        )
+        batch_conn.commit()
+    finally:
+        batch_cursor.close()
+        batch_conn.close()
+
     data = import_db.load_all_lookups()
     maps = data["maps"]
 
@@ -227,6 +269,29 @@ def process_upload(file_bytes: bytes, created_by_user_id: int = 1) -> Dict[str, 
             })
         all_warnings.extend(result.get("warnings", []))
 
+    # 3.5 Record-level duplicate check — has this Incident Group Key already
+    # been imported in a previous upload? Checked before any case creation.
+    dedup_conn = get_connection()
+    dedup_cursor = dedup_conn.cursor()
+    try:
+        still_valid_groups = []
+        for group_key, group_rows, validation in valid_groups:
+            already_imported = ml_import_batch_db.find_group_already_imported(
+                dedup_cursor, EXCEL_IMPORT_SOURCE_SYSTEM, group_key
+            )
+            if already_imported:
+                rejected_groups.append({
+                    "group_key": group_key,
+                    "rows": group_rows,
+                    "reason": f"Incident Group Key '{group_key}' was already imported previously — duplicate",
+                })
+            else:
+                still_valid_groups.append((group_key, group_rows, validation))
+        valid_groups = still_valid_groups
+    finally:
+        dedup_cursor.close()
+        dedup_conn.close()
+
     # 4. Import valid groups
     imported: List[Dict[str, Any]] = []
     new_patients_count = 0
@@ -234,7 +299,8 @@ def process_upload(file_bytes: bytes, created_by_user_id: int = 1) -> Dict[str, 
     for group_key, group_rows, validation in valid_groups:
         try:
             imp_result = _import_group(group_key, validation["validated_rows"],
-                                       validation["is_new_patient"], created_by_user_id)
+                                       validation["is_new_patient"], created_by_user_id,
+                                       import_batch_id)
             imported.append(imp_result)
             if validation["is_new_patient"]:
                 new_patients_count += 1
@@ -252,10 +318,32 @@ def process_upload(file_bytes: bytes, created_by_user_id: int = 1) -> Dict[str, 
         rejected_b64 = base64.b64encode(rej_buf.getvalue()).decode()
 
     total_imported_rows = sum(r["rows_imported"] for r in imported)
-    total_rejected_rows = sum(len(r["rows"]) for r in rejected_groups)
+    total_failed_rows_within_groups = sum(r.get("rows_failed", 0) for r in imported)
+    total_rejected_rows = sum(len(r["rows"]) for r in rejected_groups) + total_failed_rows_within_groups
+
+    # 6. Update batch summary (best-effort — never blocks the response)
+    try:
+        summary_conn = get_connection()
+        summary_cursor = summary_conn.cursor()
+        try:
+            ml_import_batch_db.update_batch_summary(
+                summary_cursor, import_batch_id,
+                total_rows=len(rows),
+                accepted_rows=total_imported_rows,
+                rejected_rows=total_rejected_rows,
+                created_case_count=total_imported_rows,
+                status="Completed",
+            )
+            summary_conn.commit()
+        finally:
+            summary_cursor.close()
+            summary_conn.close()
+    except Exception as e:
+        print(f"[IMPORT BATCH WARNING] Failed to update batch summary: {e}")
 
     return {
         "summary": {
+            "import_batch_id": import_batch_id,
             "total_groups": len(groups),
             "imported_groups": len(imported),
             "rejected_groups": len(rejected_groups),
@@ -544,12 +632,74 @@ def _validate_group(group_key: str, rows: List[Dict], maps: Dict) -> Dict[str, A
 # INTERNAL — IMPORT
 # ============================================================
 
+def _build_case_service_payload(vrow: Dict, patient_name: str) -> Dict[str, Any]:
+    """
+    Translate an import_service validated-row dict into the data shape
+    case_service.create_case() expects. The Excel template doesn't collect a
+    distinct "incident date" or a "requires explanation" checkbox, so both
+    get sensible defaults (incident_date falls back to the complaint date,
+    matching the same fallback used elsewhere in the app; requires_explanation
+    defaults to False — the FSM's own red-flag/never-event check, driven by
+    the template's optional Risk Type column, is what actually opens the
+    explanation workflow for imported rows that need it).
+    """
+    return {
+        "record_type_id": 1,  # Excel import template is complaint-only, not Notice
+        "patient_name": patient_name,
+        "feedback_received_date": vrow["feedback_date"],
+        "incident_date": vrow["feedback_date"],
+        "feedback_intent_type_id": vrow["feedback_intent_id"],
+        "source_id": vrow.get("source_id"),
+        "issuing_department_id": vrow["issuing_org_unit_id"],
+        "domain_id": vrow.get("domain_id"),
+        "category_id": vrow.get("category_id"),
+        "subcategory_id": vrow.get("subcategory_id"),
+        "classification_id": vrow.get("classification_id"),
+        "severity_id": vrow.get("severity_id"),
+        "stage_id": vrow.get("stage_id"),
+        "harm_id": vrow.get("harm_id"),
+        "clinical_risk_type_id": vrow.get("risk_type_id") or DEFAULT_CLINICAL_RISK_TYPE_ID,
+        "requires_explanation": False,
+        "building_id": vrow.get("building_id") or 1,  # default building when blank
+        "is_inpatient": vrow.get("is_inpatient", False),
+        "is_morbidity": False,
+        "complaint_text": vrow["complaint_text"],
+        "immediate_action": vrow.get("immediate_action") or "",
+        "taken_action": vrow.get("taken_action") or "",
+        "target_department_ids": vrow.get("target_dept_ids") or [],
+        "doctors": [
+            {"doctor_id": doc_id, "doctor_name": doc_name}
+            for doc_id, doc_name in vrow.get("doctor_ids", [])
+        ],
+        "employees": [
+            {"employee_id": emp_id, "full_name": ""}
+            for emp_id in vrow.get("worker_ids", [])
+        ],
+    }
+
+
 def _import_group(
     group_key: str,
     validated_rows: List[Dict],
     is_new_patient: bool,
     created_by_user_id: int,
+    import_batch_id: Optional[int] = None,
 ) -> Dict[str, Any]:
+    """
+    Create the shared incident parent for this group, then create each row's
+    case through the centralized case_service.create_case() (context=
+    'BulkImport') — the same validation/FSM/ML-job-registration logic manual
+    insert uses, rather than a separate raw-SQL implementation.
+
+    Each row is its own atomic unit (case + its ml.EmbeddingProcessingJob
+    commit together, inside create_case()). This means a later row failing
+    within a group does NOT roll back earlier rows already committed in the
+    same group — a deliberate trade-off (see ML_ARCHITECTURE_DECISION_RECORD.md
+    Stage 4) that favors per-case durability and ML-job guarantees over
+    whole-group atomicity. Partial success is reported accurately via
+    rows_imported/rows_failed/row_errors rather than silently rolling back
+    already-valid rows or misreporting the whole group as rejected.
+    """
     first = validated_rows[0]
     patient_name = first["patient_name"]
 
@@ -562,75 +712,72 @@ def _import_group(
         if is_new_patient:
             import_db.create_reserve_patient(patient_name, created_by_user_id, cursor)
 
-        # Create incident
+        # Create the shared incident parent for this group
         incident_id = import_db.insert_incident(
             patient_name=patient_name,
             feedback_intent_type_id=first["feedback_intent_id"],
             issuing_org_unit_id=first["issuing_org_unit_id"],
-            building_id=first.get("building_id") or 1,   # default building when blank
+            building_id=first.get("building_id") or 1,
             is_inpatient=first.get("is_inpatient", False),
             created_by_user_id=created_by_user_id,
             cursor=cursor,
         )
-
-        subcases_created = 0
-
-        for vrow in validated_rows:
-            case_id = import_db.insert_case(
-                incident_id=incident_id,
-                complaint_text=vrow["complaint_text"],
-                immediate_action=vrow.get("immediate_action") or "",
-                taken_action=vrow.get("taken_action") or "",
-                feedback_date=vrow["feedback_date"],
-                patient_name=patient_name,
-                issuing_org_unit_id=vrow["issuing_org_unit_id"],
-                created_by_user_id=created_by_user_id,
-                is_inpatient=vrow.get("is_inpatient", False),
-                clinical_risk_type_id=vrow.get("risk_type_id"),
-                feedback_intent_type_id=vrow["feedback_intent_id"],
-                building_id=vrow.get("building_id") or 1,   # default building when blank
-                domain_id=vrow.get("domain_id"),
-                category_id=vrow.get("category_id"),
-                subcategory_id=vrow.get("subcategory_id"),
-                classification_id=vrow.get("classification_id"),
-                severity_id=vrow.get("severity_id"),
-                stage_id=vrow.get("stage_id"),
-                harm_id=vrow.get("harm_id"),
-                source_id=vrow.get("source_id"),
-                cursor=cursor,
-            )
-
-            # Target depts + subcases (DRAFT)
-            for i, dept_id in enumerate(vrow["target_dept_ids"]):
-                import_db.insert_target_dept(case_id, dept_id, is_primary=(i == 0),
-                                             assigned_by_user_id=created_by_user_id, cursor=cursor)
-                import_db.insert_subcase_draft(case_id, dept_id, created_by_user_id, cursor)
-                subcases_created += 1
-
-            # Doctors
-            for doc_id, doc_name in vrow["doctor_ids"]:
-                import_db.insert_case_doctor(case_id, doc_id, doc_name, created_by_user_id, cursor)
-
-            # Workers
-            for wrk_id in vrow["worker_ids"]:
-                import_db.insert_case_employee(case_id, wrk_id, created_by_user_id, cursor)
-
         conn.commit()
-
-        return {
-            "group_key": group_key,
-            "incident_id": incident_id,
-            "rows_imported": len(validated_rows),
-            "subcases_created": subcases_created,
-            "new_patient": is_new_patient,
-        }
-
     except Exception:
         conn.rollback()
-        raise
-    finally:
         cursor.close()
         conn.close()
+        raise
+    cursor.close()
+    conn.close()
+
+    rows_imported = 0
+    row_errors: List[Dict[str, Any]] = []
+
+    for idx, vrow in enumerate(validated_rows, start=1):
+        try:
+            data = _build_case_service_payload(vrow, patient_name)
+            result = create_case(data, context='BulkImport', save_mode='workflow')
+
+            if not result.get("success"):
+                row_errors.append({"row_index": idx, "error": result.get("message", "Unknown error")})
+                continue
+
+            case_id = int(result["id"])
+
+            # Link this case to the group's shared incident parent
+            assign_case_to_incident(case_id, incident_id)
+
+            # Record-level import idempotency mapping (generalizes
+            # APP_DataMigration_Map's proven pattern). One group can span
+            # multiple rows/cases, so each gets its own '{group_key}#{idx}'
+            # external ID — group-level dedup uses a prefix match instead
+            # (see find_group_already_imported).
+            external_record_id = f"{group_key}#{idx}"
+            map_conn = get_connection()
+            map_cursor = map_conn.cursor()
+            try:
+                ml_import_batch_db.record_source_map(
+                    map_cursor, import_batch_id, EXCEL_IMPORT_SOURCE_SYSTEM, external_record_id, case_id
+                )
+                map_conn.commit()
+            finally:
+                map_cursor.close()
+                map_conn.close()
+
+            rows_imported += 1
+
+        except Exception as exc:
+            row_errors.append({"row_index": idx, "error": str(exc)})
+
+    return {
+        "group_key": group_key,
+        "incident_id": incident_id,
+        "rows_imported": rows_imported,
+        "rows_failed": len(row_errors),
+        "row_errors": row_errors,
+        "new_patient": is_new_patient,
+    }
 
 
 # ============================================================

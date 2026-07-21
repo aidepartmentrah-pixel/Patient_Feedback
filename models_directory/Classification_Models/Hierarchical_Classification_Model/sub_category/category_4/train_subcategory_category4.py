@@ -4,8 +4,6 @@ import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
-from sklearn.metrics import  classification_report,confusion_matrix
-import joblib
 
 from models_directory.Classification_Models.Hierarchical_Classification_Model.Helper_Functions import (
     load_table,
@@ -14,6 +12,7 @@ from models_directory.Classification_Models.Hierarchical_Classification_Model.He
     compute_metrics,
     compute_standardized_metrics,
 )
+from models_directory.Classification_Models.Maintainance import run_versioning
 from project_paths import get_db_path
 
 
@@ -21,18 +20,17 @@ from project_paths import get_db_path
 # TRAIN FUNCTION
 # ============================
 
-def train_subcategory_cat4(base_path=None):
+def train_subcategory_cat4(base_path=None, run_dir=None):
     """
-    Train Logistic Regression, Random Forest, and XGBoost for subcategories of CATEGORY=1.
-    Returns trained models and metrics dictionary.
+    Train Logistic Regression, Random Forest, and XGBoost for subcategories of CATEGORY=4.
+    Returns the winning model + standardized_metrics (merged with
+    roc_pr/warnings/artifacts/candidate_selection when run_dir is supplied).
     """
+    if run_dir is None:
+        run_dir = run_versioning.get_run_dir(run_versioning.generate_run_id())
 
     # ---------- Paths ----------
-    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
     DB_PATH = get_db_path() if base_path is None else base_path
-
-    MODEL_DIR = os.path.join(SCRIPT_DIR, "vocab_models")
-    os.makedirs(MODEL_DIR, exist_ok=True)
 
     TABLE_TRAIN = "table_feedback_train"
     TABLE_TEST = "table_feedback_test"
@@ -40,8 +38,6 @@ def train_subcategory_cat4(base_path=None):
     CATEGORY_COL = "category"
     SUBCAT_COL = "sub_category"
     TARGET_CATEGORY = 4
-
-    REPORT_FILE = os.path.join(MODEL_DIR, "report_subcat_cat4.txt")
 
     # ---------- Load Data ----------
     print("Loading train/test tables...")
@@ -75,7 +71,6 @@ def train_subcategory_cat4(base_path=None):
     print("Training Logistic Regression...")
     lr = LogisticRegression(max_iter=5000, class_weight="balanced")
     lr.fit(X_train, y_train)
-    joblib.dump(lr, os.path.join(MODEL_DIR, "lr_subcat_cat4.pkl"))
     lr_pred = lr.predict(X_test)
     results["lr"] = compute_metrics(y_test, lr_pred, all_labels=unique_labels)
     trained_models["lr"] = lr
@@ -85,7 +80,6 @@ def train_subcategory_cat4(base_path=None):
     print("Training Random Forest...")
     rf = RandomForestClassifier(n_estimators=400, class_weight="balanced", random_state=42)
     rf.fit(X_train, y_train)
-    joblib.dump(rf, os.path.join(MODEL_DIR, "rf_subcat_cat4.pkl"))
     rf_pred = rf.predict(X_test)
     results["rf"] = compute_metrics(y_test, rf_pred, all_labels=unique_labels)
     trained_models["rf"] = rf
@@ -112,7 +106,6 @@ def train_subcategory_cat4(base_path=None):
         random_state=42
     )
     xgb.fit(X_train, y_train_temp)
-    xgb.save_model(os.path.join(MODEL_DIR, "xgb_subcat_cat4.json"))
 
     preds_temp = xgb.predict(X_test)
     if preds_temp.ndim == 2:
@@ -130,42 +123,41 @@ def train_subcategory_cat4(base_path=None):
     print(f"\n Best model: {best_model_name} (F1={results[best_model_name]['f1']:.4f})")
 
     # ---------- Compute Standardized Metrics ----------
+    model_name = f"Subcategory_Category4_{best_model_name}"
     standardized_metrics = compute_standardized_metrics(
-        model_name=f"Subcategory_Category4_{best_model_name}",
+        model_name=model_name,
         y_train=y_train,
         y_test=y_test,
         y_pred=best_pred,
         label_names=unique_labels,
     )
+    standardized_metrics["candidate_selection"] = {
+        name: results[name] for name in ("lr", "rf", "xgb")
+    }
+
+    # ---------- Versioned evaluation artifacts (winning model only) ----------
+    y_proba = best_model.predict_proba(X_test)
+    proba_class_order = best_model.classes_.tolist()
+    y_true_for_curves = y_test_temp if best_model_name == "xgb" else y_test
+
+    eval_result = run_versioning.save_evaluation_artifacts(
+        run_dir=run_dir,
+        model_name=model_name,
+        y_true_display=y_test.tolist(),
+        y_pred_display=best_pred.tolist() if hasattr(best_pred, "tolist") else list(best_pred),
+        display_labels=unique_labels,
+        y_proba=y_proba,
+        proba_class_order=proba_class_order,
+        y_true_for_curves=y_true_for_curves,
+    )
+    serializer = "xgboost_native" if best_model_name == "xgb" else "joblib"
+    model_entry = run_versioning.register_model_artifact(run_dir, model_name, best_model, serializer=serializer)
+    eval_result["artifacts"].append(model_entry)
+    standardized_metrics.update(eval_result)
+
+    print(f"Artifacts written to: {run_dir}")
 
     return best_model, standardized_metrics
-
-    # ---------- Generate Report ----------
-    with open(REPORT_FILE, "w", encoding="utf-8") as f:
-        f.write("=== SUBCATEGORY MODEL (CATEGORY = 1) ===\n\n")
-        for name, model in [("Logistic Regression", lr), ("Random Forest", rf), ("XGBoost", xgb)]:
-            f.write(f"\n---- {name} ----\n")
-            if name == "XGBoost":
-                preds = preds_xgb
-            elif name == "Random Forest":
-                preds = rf_pred
-            else:
-                preds = lr_pred
-
-            f.write("\nClassification Report:\n")
-            f.write(classification_report(y_test, preds, zero_division=0))
-            cm = confusion_matrix(y_test, preds)
-            f.write("\nConfusion Matrix:\n")
-            f.write(str(cm))
-            f.write("\n\n")
-
-    print("==========================================")
-    print(" SUBCATEGORY MODEL (CATEGORY=4) TRAINED")
-    print(" MODELS SAVED IN:", MODEL_DIR)
-    print(" REPORT SAVED:", REPORT_FILE)
-    print("==========================================\n")
-
-    return trained_models, results
 
 # ============================
 # STANDALONE RUN

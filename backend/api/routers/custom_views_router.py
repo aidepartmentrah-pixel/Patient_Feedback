@@ -30,9 +30,11 @@ class CustomViewBase(BaseModel):
     ShowImmediateAction: Optional[bool] = False
     ShowTakenAction: Optional[bool] = False
     ShowFeedbackRecievedDate: Optional[bool] = False
+    ShowIncidentDate: Optional[bool] = False
     ShowPatientName: Optional[bool] = False
     ShowIssuingOrgUnitID: Optional[bool] = False
     ShowCreatedAt: Optional[bool] = False
+    ShowPublicationDate: Optional[bool] = False
     ShowCreatedByUserID: Optional[bool] = False
     ShowIsInPatient: Optional[bool] = False
     ShowClinicalRiskTypeID: Optional[bool] = False
@@ -60,6 +62,17 @@ class CustomViewBase(BaseModel):
     ShowLateIndicator: Optional[bool] = False
     ShowForceClosedIndicator: Optional[bool] = False
     ShowLastEdited: Optional[bool] = False
+    ShowRcaReplies: Optional[bool] = False
+    ShowComplaintSummary: Optional[bool] = False
+    ShowCustomerServiceDecision: Optional[bool] = False
+    ShowCustomerServiceDecisionDate: Optional[bool] = False
+    ShowRecordType: Optional[bool] = False
+    ShowSectionEntry: Optional[bool] = False
+    ShowSectionDeadline: Optional[bool] = False
+    ShowDepartmentEntry: Optional[bool] = False
+    ShowDepartmentDeadline: Optional[bool] = False
+    ShowAdministrationEntry: Optional[bool] = False
+    ShowAdministrationDeadline: Optional[bool] = False
 
     class Config:
         populate_by_name = True

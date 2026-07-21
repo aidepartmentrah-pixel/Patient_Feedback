@@ -5,8 +5,8 @@ UI loading rule: one representative row per level.
 Save rule: overwrite ALL rows at that level (standardized).
 Missing rows are created automatically on save.
 
-Section semantics (NEW):
-    LowSeverityLimit    = total incidents per HCAT classification
+Section semantics:
+    LowSeverityLimit    = low-severity incidents per HCAT classification
     MediumSeverityLimit = medium incidents per HCAT classification
     HighSeverityLimit   = high incidents per HCAT classification
 
@@ -33,7 +33,7 @@ from ..db_layer.org_unit_policy import (
 # ──────────────────────────────────────────────────────────────
 
 def _section_ui(row: dict | None) -> dict:
-    """Map DB row → section card fields (NEW semantics)."""
+    """Map DB row → section card fields."""
     if not row:
         return {"all_limit": 10, "medium_limit": 5, "high_limit": 3}
     return {
@@ -104,7 +104,7 @@ def save_sections_policy(
 ) -> int:
     """
     Overwrite ALL section policy rows with the new standardized values.
-    LowSeverityLimit  → all_limit   (total incidents per classification)
+    LowSeverityLimit  → all_limit   (low-severity incidents per classification)
     MediumSeverityLimit → medium_limit
     HighSeverityLimit   → high_limit
     Domain limits are zeroed (not applicable to sections).

@@ -21,6 +21,7 @@ def _row_to_dict(u):
         "ParentID": u.ParentID,
         "Type": u.Type,
         "Name": u.Name,
+        "Frozen": u.Frozen,
     }
 
 
@@ -337,9 +338,29 @@ def get_dashboard_hierarchy(current_user: CurrentUser) -> dict:
 
     raw_units = admin_units.get_admin_unit_tree()
     units = [_row_to_dict(u) for u in raw_units]
-    
-    # Filter to only units in user's allowed scope
-    allowed_unit_ids = current_user.allowed_unit_ids
+
+    # Exclude frozen (retired/test) units so they never leak into the
+    # Administration/Department/Section selectors.
+    units = [u for u in units if not u.get("Frozen")]
+
+    # allowed_unit_ids only ever contains a user's own unit and its
+    # descendants (see scope_resolver.resolve_user_scope) - it never
+    # includes ancestors. But the tree below is built top-down, starting
+    # from self-parented Administration roots: a Section or Department
+    # admin's own ancestor chain is therefore missing from `units`, so
+    # Step 1 never finds a root to walk down from and the whole hierarchy
+    # comes back empty for them. Pull their ancestor chain in here, purely
+    # so the tree can be constructed and rendered - this does NOT widen
+    # what data they can query, since actual access control is enforced
+    # separately (via current_user.allowed_unit_ids) in the stats endpoints.
+    allowed_unit_ids = set(current_user.allowed_unit_ids)
+    if len(current_user.scopes) == 1:
+        ancestor_info = admin_units.get_unit_hierarchy(current_user.scopes[0].org_unit_id)
+        if ancestor_info:
+            if ancestor_info.get("parent_id"):
+                allowed_unit_ids.add(ancestor_info["parent_id"])
+            if ancestor_info.get("grandparent_id"):
+                allowed_unit_ids.add(ancestor_info["grandparent_id"])
     units = [u for u in units if u["UniqueID"] in allowed_unit_ids]
 
     Administration = []

@@ -3,11 +3,8 @@ import sqlite3
 from pathlib import Path
 import numpy as np
 import pandas as pd
-import joblib
 import traceback
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report, confusion_matrix
-import matplotlib.pyplot as plt
 import sys
 
 # --------------------------------------------------
@@ -17,12 +14,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 from models_directory.Classification_Models.Hierarchical_Classification_Model.Helper_Functions import (
     compute_standardized_metrics,
 )
+from models_directory.Classification_Models.Maintainance import run_versioning
 
 # --------------------------------------------------
 # CONFIG
 # --------------------------------------------------
 SCRIPT_DIR = Path(__file__).resolve().parent
-DB_PATH = SCRIPT_DIR.parent.parent / "patient_feedback_ml.db"
+_DEFAULT_DB_PATH = SCRIPT_DIR.parent.parent / "patient_feedback_ml.db"
 
 TRAIN_TABLE = "table_feedback_train"
 TEST_TABLE = "table_feedback_test"
@@ -30,12 +28,8 @@ TEST_TABLE = "table_feedback_test"
 EMBED_COL = "embedding_text123"
 TARGET_COL = "classification_en"
 
-MODEL_PATH = SCRIPT_DIR / "ClassificationEN_Model.pkl"
-REPORT_PATH = SCRIPT_DIR / "classification_en_metrics.txt"
-CM_PATH = SCRIPT_DIR / "classification_en_confusion_matrix.png"
-
 # IMPORTANT: BASE ID
-CLASS_BASE = 78   
+CLASS_BASE = 78
 
 # --------------------------------------------------
 # Helpers
@@ -72,30 +66,15 @@ def parse_embedding_series(series: pd.Series) -> np.ndarray:
     return np.vstack(vectors)
 
 
-def save_confusion_matrix(cm, labels, out_path, title):
-    fig, ax = plt.subplots(figsize=(12, 10))
-    ax.imshow(cm)
-    ax.set_title(title)
-    ax.set_xlabel("Predicted")
-    ax.set_ylabel("True")
-
-    ax.set_xticks(range(len(labels)))
-    ax.set_yticks(range(len(labels)))
-    ax.set_xticklabels(labels, rotation=90, fontsize=7)
-    ax.set_yticklabels(labels, fontsize=7)
-
-    for i in range(cm.shape[0]):
-        for j in range(cm.shape[1]):
-            ax.text(j, i, cm[i, j], ha="center", va="center", fontsize=6)
-
-    fig.tight_layout()
-    fig.savefig(out_path)
-    plt.close(fig)
-
 # --------------------------------------------------
 # TRAINING
 # --------------------------------------------------
-def train_classification_en_model():
+def train_classification_en_model(base_path=None, run_dir=None):
+    if run_dir is None:
+        run_dir = run_versioning.get_run_dir(run_versioning.generate_run_id())
+
+    DB_PATH = base_path or _DEFAULT_DB_PATH
+
     try:
         df_train = load_table(DB_PATH, TRAIN_TABLE)
         df_test = load_table(DB_PATH, TEST_TABLE)
@@ -146,36 +125,38 @@ def train_classification_en_model():
         # ------------------------------
         # Metrics (REAL IDs)
         # ------------------------------
+        model_name = "ClassificationEN_Model"
+        labels = sorted(set(y_train_real) | set(y_test_real))
         metrics = compute_standardized_metrics(
-            model_name="ClassificationEN_Model",
+            model_name=model_name,
             y_train=y_train_real,
             y_test=y_test_real,
             y_pred=y_pred_real,
-            label_names=sorted(set(y_train_real) | set(y_test_real)),
+            label_names=labels,
         )
 
-        # Save model
-        joblib.dump(model, MODEL_PATH)
+        # ---------- Versioned evaluation artifacts ----------
+        # Display space: real classification_en IDs. Proba/curve space: the
+        # CLASS_BASE-shifted local space the model was actually fit on
+        # (model.classes_, never assumed).
+        y_proba = model.predict_proba(X_test)
+        proba_class_order = model.classes_.tolist() if hasattr(model, "classes_") else sorted(np.unique(y_train).tolist())
 
-        # Report
-        with open(REPORT_PATH, "w", encoding="utf-8") as f:
-            f.write("Classification EN Model Metrics\n\n")
-            f.write(f"Accuracy: {metrics['accuracy']}\n")
-            f.write(f"F1: {metrics['f1']}\n\n")
-            f.write(classification_report(y_test_real, y_pred_real, zero_division=0))
-
-        # Confusion matrix
-        labels = sorted(set(y_train_real) | set(y_test_real))
-        cm = confusion_matrix(y_test_real, y_pred_real, labels=labels)
-
-        save_confusion_matrix(
-            cm,
-            labels=[str(x) for x in labels],
-            out_path=CM_PATH,
-            title="Classification_EN Confusion Matrix (REAL IDs)"
+        eval_result = run_versioning.save_evaluation_artifacts(
+            run_dir=run_dir,
+            model_name=model_name,
+            y_true_display=y_test_real.tolist(),
+            y_pred_display=y_pred_real.tolist(),
+            display_labels=labels,
+            y_proba=y_proba,
+            proba_class_order=proba_class_order,
+            y_true_for_curves=y_test,
         )
+        model_entry = run_versioning.register_model_artifact(run_dir, model_name, model, serializer="joblib")
+        eval_result["artifacts"].append(model_entry)
+        metrics.update(eval_result)
 
-        print("Training finished successfully.")
+        print(f"Training finished successfully. Artifacts written to: {run_dir}")
         return model, metrics
 
     except Exception:

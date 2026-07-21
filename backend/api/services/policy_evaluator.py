@@ -11,7 +11,7 @@ Hospital         → whole-hospital domain totals.
 
 Failure formula (STRICTLY GREATER THAN):
     Section classification fails if:
-        total_cases  > LowSeverityLimit    (all incidents per classification)
+        low_cases    > LowSeverityLimit    (low-severity incidents per classification)
         medium_cases > MediumSeverityLimit
         high_cases   > HighSeverityLimit
 
@@ -83,20 +83,20 @@ def _evaluate_sections(
         name = section["name"]
         pol  = policy_map.get(uid)
 
-        all_limit    = pol["LowSeverityLimit"]    if pol else None
+        low_limit    = pol["LowSeverityLimit"]    if pol else None
         medium_limit = pol["MediumSeverityLimit"] if pol else None
         high_limit   = pol["HighSeverityLimit"]   if pol else None
 
         classifications = _query_section_classification_counts(uid, date_from, date_to)
 
         for cls in classifications:
-            total  = cls["total_cases"]
+            low    = cls["low_cases"]
             medium = cls["medium_cases"]
             high   = cls["high_cases"]
 
             violated: List[str] = []
-            if all_limit    is not None and total  > all_limit:
-                violated.append(f"total>{all_limit}")
+            if low_limit    is not None and low    > low_limit:
+                violated.append(f"low>{low_limit}")
             if medium_limit is not None and medium > medium_limit:
                 violated.append(f"medium>{medium_limit}")
             if high_limit   is not None and high   > high_limit:
@@ -108,10 +108,11 @@ def _evaluate_sections(
                 "classification_id":       cls["classification_id"],
                 "classification_name":     cls["classification_name"],
                 "classification_name_en":  cls["classification_name_en"],
-                "total_cases":             total,
+                "total_cases":             cls["total_cases"],
+                "low_cases":               low,
                 "medium_cases":            medium,
                 "high_cases":              high,
-                "all_limit":               all_limit,
+                "low_limit":               low_limit,
                 "medium_limit":            medium_limit,
                 "high_limit":              high_limit,
                 "is_violating":            len(violated) > 0,
@@ -219,6 +220,8 @@ def _query_section_classification_counts(
             cl.Classification_AR  AS classification_name,
             cl.Classification_EN  AS classification_name_en,
             COUNT(DISTINCT ic.IncidentRequestCaseID) AS total_cases,
+            COUNT(DISTINCT CASE WHEN ic.SeverityID = 1
+                                THEN ic.IncidentRequestCaseID END) AS low_cases,
             COUNT(DISTINCT CASE WHEN ic.SeverityID = 2
                                 THEN ic.IncidentRequestCaseID END) AS medium_cases,
             COUNT(DISTINCT CASE WHEN ic.SeverityID = 3
@@ -247,8 +250,9 @@ def _query_section_classification_counts(
                 "classification_name":    row[1] or "",
                 "classification_name_en": row[2] or "",
                 "total_cases":            row[3] or 0,
-                "medium_cases":           row[4] or 0,
-                "high_cases":             row[5] or 0,
+                "low_cases":              row[4] or 0,
+                "medium_cases":           row[5] or 0,
+                "high_cases":             row[6] or 0,
             }
             for row in rows
         ]

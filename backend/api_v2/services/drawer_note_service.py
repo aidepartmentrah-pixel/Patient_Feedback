@@ -19,57 +19,88 @@ Author: Phase G Implementation
 
 from api_v2.db_layer import drawer_note_db
 from api_v2.db_layer import drawer_label_db
+from core import hospital_directory_client as directory_client
+from api.services.patient_directory_service import ExternalPatientUnavailableError
 
 
-def create_note_with_labels(note_text, label_ids, created_by_user_id, created_by_name, patient_admission_id=None):
+def create_note_with_labels(
+    note_text, label_ids, created_by_user_id, created_by_name,
+    patient_admission_id=None, external_patient_id=None,
+):
     """
     Create a new drawer note with labels.
-    
+
     Business Rules:
     - Text cannot be empty (after trim)
     - Must have at least one label
     - All labels must exist and be active
-    - Patient is optional
-    
+    - Patient is optional; if given, EITHER patient_admission_id (reserve)
+      OR external_patient_id (Hospital Directory API) — not both
+
     Args:
         note_text (str): The note content
         label_ids (list): List of label IDs to attach
         created_by_user_id (int): User ID creating the note
         created_by_name (str): User name creating the note
-        patient_admission_id (int, optional): Patient admission ID to link the note to
-    
+        patient_admission_id (int, optional): Reserve patient to link the note to
+        external_patient_id (str, optional): Hospital Directory API patient id
+            (the opaque id returned by patient search) to link the note to —
+            the name is resolved and snapshotted from the API at creation
+            time, never trusted from client input, never re-fetched later
+
     Returns:
         int: The created note ID
-    
+
     Raises:
         ValueError: If validation fails
+        ExternalPatientUnavailableError: external_patient_id given but the
+            Hospital Directory API could not be reached/authenticated/etc,
+            or the visit no longer exists (404)
     """
     # Trim and validate text
     trimmed_text = note_text.strip() if note_text else ""
     if not trimmed_text:
         raise ValueError("Note text cannot be empty")
-    
+
     # Validate labels not empty
     if not label_ids or len(label_ids) == 0:
         raise ValueError("Note must have at least one label")
-    
+
+    if patient_admission_id is not None and external_patient_id is not None:
+        raise ValueError("A note can link to at most one patient — provide either patient_admission_id or external_patient_id, not both")
+
     # Validate all labels exist and are active
     valid_label_ids = drawer_label_db.get_label_ids_exist(label_ids)
     if len(valid_label_ids) != len(label_ids):
         invalid_ids = set(label_ids) - set(valid_label_ids)
         raise ValueError(f"Invalid or inactive label IDs: {invalid_ids}")
-    
+
+    external_patient_name = None
+    if external_patient_id is not None:
+        decoded = directory_client.decode_external_patient_id(external_patient_id)
+        if not decoded:
+            raise ValueError(f"Invalid external_patient_id: {external_patient_id}")
+        ext_id, visit_id = decoded
+        result = directory_client.get_patient_visit(ext_id, visit_id)
+        if result["status"] == "not_found":
+            raise ValueError(f"External patient {external_patient_id} was not found")
+        if result["status"] != "ok":
+            raise ExternalPatientUnavailableError(result["status"], result["message"])
+        external_patient_name = result["patient"].get("full_name")
+
     # Insert note
     note_id = drawer_note_db.insert_note(
         note_text=trimmed_text,
         created_by_user_id=created_by_user_id,
         created_by_name=created_by_name,
-        patient_admission_id=patient_admission_id
+        patient_admission_id=patient_admission_id,
+        external_patient_id=external_patient_id,
+        external_patient_name=external_patient_name,
     )
-    
+
     # Attach labels
     drawer_note_db.attach_labels_to_note(note_id, label_ids)
-    
+
     return note_id
 
 

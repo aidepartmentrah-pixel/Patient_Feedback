@@ -18,6 +18,9 @@ from api.db_layer.incident_case import create_incident_case
 from api.db_layer.incident_case_target_department import add_target_department
 from api.db_layer.incident_case_doctor import add_doctor_to_case
 from api.db_layer.incident_parent import create_incident_parent, assign_case_to_incident
+from api.db_layer import ml_case_training_db
+from api.db_layer import ml_embedding_job_db
+from api.services.case_service import _build_ml_training_fields
 
 
 def create_record_migrated(
@@ -343,13 +346,17 @@ def create_record_migrated(
         print(f"[MIGRATION] Linked case {new_id} to incident {incident_id}")
 
         # -----------------------------
-        # ML INSERT HOOK (SAFE / NON-BLOCKING)
-        # Keep for model improvement
+        # ML training record (SAFE / NON-BLOCKING)
+        # Registers this migrated case in ml.CaseTrainingRecord + enqueues
+        # its embedding job, the same way case_service.create_case() does
+        # for manual/import inserts, so it becomes training-eligible.
         # -----------------------------
         try:
-            from ml_mapping import add_corrected_record_to_ml
-            add_corrected_record_to_ml(data)
-            print(f"[MIGRATION] ML hook executed for case {new_id}")
+            ml_fields = _build_ml_training_fields(data)
+            ml_case_training_db.upsert_case_training_record(cursor, new_id, ml_fields)
+            ml_embedding_job_db.insert_embedding_job(cursor, new_id, 'Create')
+            conn.commit()
+            print(f"[MIGRATION] ML training record + embedding job registered for case {new_id}")
         except Exception as e:
             print(f"[MIGRATION ML WARNING] {str(e)}")
             import traceback

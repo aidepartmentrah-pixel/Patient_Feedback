@@ -3,12 +3,9 @@ import sqlite3
 from pathlib import Path
 import numpy as np
 import pandas as pd
-import joblib
 import traceback
 import mord
 from sklearn.dummy import DummyClassifier
-from sklearn.metrics import classification_report, confusion_matrix
-import matplotlib.pyplot as plt
 import sys
 
 # --------------------------------------------------
@@ -18,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 from models_directory.Classification_Models.Hierarchical_Classification_Model.Helper_Functions import (
     compute_standardized_metrics,
 )
+from models_directory.Classification_Models.Maintainance import run_versioning
 
 # --------------------------------------------------
 # Paths
@@ -31,9 +29,7 @@ TEST_TABLE = "table_feedback_test"
 EMBED_COL = "embedding_text123"
 TARGET_COL = "feedback_type"
 
-MODEL_PATH = SCRIPT_DIR / "FeedbackType_OrdinalModel.pkl"
-REPORT_PATH = SCRIPT_DIR / "feedback_type_metrics.txt"
-CM_PATH = SCRIPT_DIR / "feedback_type_confusion_matrix.png"
+FEEDBACK_TYPE_NAMES = {1: "Improvement", 2: "Notice", 3: "Critique", 4: "Other"}
 
 
 # --------------------------------------------------
@@ -71,32 +67,14 @@ def parse_embedding_series(series: pd.Series) -> np.ndarray:
     return np.vstack(vectors)
 
 
-def save_confusion_matrix(cm, labels, out_path, title):
-    fig, ax = plt.subplots(figsize=(6, 5))
-    im = ax.imshow(cm)
-    ax.set_title(title)
-    ax.set_xlabel("Predicted")
-    ax.set_ylabel("True")
-
-    ax.set_xticks(range(len(labels)))
-    ax.set_yticks(range(len(labels)))
-    ax.set_xticklabels(labels)
-    ax.set_yticklabels(labels)
-
-    for i in range(cm.shape[0]):
-        for j in range(cm.shape[1]):
-            ax.text(j, i, cm[i, j], ha="center", va="center")
-
-    fig.tight_layout()
-    fig.savefig(out_path)
-    plt.close(fig)
-
-
 # --------------------------------------------------
 # TRAINING
 # --------------------------------------------------
-def train_feedback_type_model():
+def train_feedback_type_model(run_dir=None):
     try:
+        if run_dir is None:
+            run_dir = run_versioning.get_run_dir(run_versioning.generate_run_id())
+
         df_train = load_table(DB_PATH, TRAIN_TABLE)
         df_test = load_table(DB_PATH, TEST_TABLE)
 
@@ -119,11 +97,19 @@ def train_feedback_type_model():
             model = DummyClassifier(strategy="most_frequent")
             model.fit(X_train, y_train)
             y_pred = model.predict(X_test)
+            # No shift here — DummyClassifier is fit directly on the
+            # original 1..4 label space, unlike the ordinal branch below.
+            y_true_for_curves = y_test
         else:
-            # Ordinal classification
+            # Ordinal classification. mord.LogisticIT is fit on labels
+            # shifted to 0-indexed (y_train - 1); predictions are shifted
+            # back (+1) for reporting. Its predict_proba() columns are in
+            # the SHIFTED space, so ROC/PR must use the shifted true labels
+            # too — never the display-space y_test.
             model = mord.LogisticIT()
             model.fit(X_train, y_train - 1)
             y_pred = model.predict(X_test) + 1
+            y_true_for_curves = y_test - 1
 
         metrics = compute_standardized_metrics(
             model_name="FeedbackType_Ordinal_Model",
@@ -133,21 +119,35 @@ def train_feedback_type_model():
             label_names=[1, 2, 3, 4],
         )
 
-        joblib.dump(model, MODEL_PATH)
+        # Display space: friendly names, matching the original confusion
+        # matrix's implicit 1=Improvement/2=Notice/3=Critique/4=Other mapping.
+        y_test_named = [FEEDBACK_TYPE_NAMES[v] for v in y_test]
+        y_pred_named = [FEEDBACK_TYPE_NAMES[v] for v in y_pred]
+        display_labels = [FEEDBACK_TYPE_NAMES[v] for v in [1, 2, 3, 4]]
 
-        with open(REPORT_PATH, "w", encoding="utf-8") as f:
-            f.write("Feedback Type Model Metrics\n\n")
-            f.write(f"Accuracy: {metrics['accuracy']}\n")
-            f.write(f"F1: {metrics['f1']}\n\n")
-            f.write(classification_report(y_test, y_pred, zero_division=0))
+        # ROC/PR probability space: whatever the model itself actually
+        # produced (never assumed) — falls back to sorted unique training
+        # labels only if the estimator doesn't expose classes_ at all.
+        y_proba = model.predict_proba(X_test)
+        raw_class_order = getattr(model, "classes_", None)
+        if raw_class_order is None:
+            class_order = sorted(np.unique(y_true_for_curves).tolist())
+        else:
+            class_order = raw_class_order.tolist() if hasattr(raw_class_order, "tolist") else list(raw_class_order)
 
-        cm = confusion_matrix(y_test, y_pred)
-        save_confusion_matrix(
-            cm,
-            labels=["Improvement", "Notice", "Critique", "Other"],
-            out_path=CM_PATH,
-            title="Feedback Type Confusion Matrix"
+        eval_result = run_versioning.save_evaluation_artifacts(
+            run_dir=run_dir,
+            model_name="FeedbackType_Ordinal_Model",
+            y_true_display=y_test_named,
+            y_pred_display=y_pred_named,
+            display_labels=display_labels,
+            y_proba=y_proba,
+            proba_class_order=class_order,
+            y_true_for_curves=y_true_for_curves,
         )
+        model_entry = run_versioning.register_model_artifact(run_dir, "feedback_type", model, serializer="joblib")
+        eval_result["artifacts"].append(model_entry)
+        metrics.update(eval_result)
 
         return model, metrics
 

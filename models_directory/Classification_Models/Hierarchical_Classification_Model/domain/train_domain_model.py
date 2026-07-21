@@ -5,10 +5,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import LabelEncoder
 from xgboost import XGBClassifier
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, f1_score
-import joblib
 
-from model_training.Complaint_Model.Stacked.train_stacked_model import save_confusion_matrix
 from models_directory.Classification_Models.Hierarchical_Classification_Model.Helper_Functions import (
     load_table,
     parse_embedding,
@@ -16,6 +13,7 @@ from models_directory.Classification_Models.Hierarchical_Classification_Model.He
     compute_metrics,
     compute_standardized_metrics,
 )
+from models_directory.Classification_Models.Maintainance import run_versioning
 from project_paths import get_db_path
 
 
@@ -23,11 +21,15 @@ from project_paths import get_db_path
 # TRAIN FUNCTION
 # ============================
 
-def train_domain_models(base_path=None):
+def train_domain_models(base_path=None, run_dir=None):
     """
     Train Logistic Regression, Random Forest, XGBoost for domain classification.
-    Returns trained models and metrics dictionary.
+    Returns trained model and standardized_metrics (merged with
+    roc_pr/warnings/artifacts/candidate_selection when run_dir is supplied).
     """
+
+    if run_dir is None:
+        run_dir = run_versioning.get_run_dir(run_versioning.generate_run_id())
 
     DB_PATH = get_db_path() if base_path is None else base_path
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -41,7 +43,6 @@ def train_domain_models(base_path=None):
     LABEL_COL = "domain"
 
     LABEL_MAP_FILE = os.path.join(SCRIPT_DIR, "label_map_domain.json")
-    REPORT_FILE = os.path.join(MODEL_DIR, "domain_metrics.txt")
 
     # ---------- Load Data ----------
     print(f"Using database: {DB_PATH}")
@@ -92,7 +93,6 @@ def train_domain_models(base_path=None):
     print("Training Logistic Regression...")
     lr = LogisticRegression(max_iter=5000, class_weight=class_weight_vector)
     lr.fit(X_train, y_train)
-    joblib.dump(lr, os.path.join(MODEL_DIR, "lr_domain.pkl"))
     lr_pred = lr.predict(X_test)
     results["lr"] = compute_metrics(y_test, lr_pred)
     trained_models["lr"] = lr
@@ -102,7 +102,6 @@ def train_domain_models(base_path=None):
     print("Training Random Forest...")
     rf = RandomForestClassifier(n_estimators=500, class_weight=class_weight_vector, random_state=42)
     rf.fit(X_train, y_train)
-    joblib.dump(rf, os.path.join(MODEL_DIR, "rf_domain.pkl"))
     rf_pred = rf.predict(X_test)
     results["rf"] = compute_metrics(y_test, rf_pred)
     trained_models["rf"] = rf
@@ -123,7 +122,6 @@ def train_domain_models(base_path=None):
         random_state=42
     )
     xgb.fit(X_train, y_train)
-    xgb.save_model(os.path.join(MODEL_DIR, "xgb_domain.json"))
     xgb_pred = xgb.predict(X_test)
     results["xgb"] = compute_metrics(y_test, xgb_pred)
     trained_models["xgb"] = xgb
@@ -133,50 +131,55 @@ def train_domain_models(base_path=None):
     best_model_name = max(results.keys(), key=lambda k: results[k]["f1"])
     best_model = trained_models[best_model_name]
     best_pred = all_preds[best_model_name]
-    
+
     print(f"\n Best model: {best_model_name} (F1={results[best_model_name]['f1']:.4f})")
 
     # ---------- Compute Standardized Metrics ----------
+    model_name = f"Domain_{best_model_name}"
     standardized_metrics = compute_standardized_metrics(
-        model_name=f"Domain_{best_model_name}",
+        model_name=model_name,
         y_train=y_train,
         y_test=y_test,
         y_pred=best_pred,
         label_names=label_names.tolist(),
     )
+    # Candidate-selection transparency: all 3 candidates' selection metrics
+    # are recorded even though only the winner gets full run artifacts below.
+    standardized_metrics["candidate_selection"] = {
+        name: results[name] for name in ("lr", "rf", "xgb")
+    }
 
-    # ---------- Generate Report ----------
-    report_lines = ["======== DOMAIN CLASSIFICATION REPORT ========\n"]
-    for name in ["lr", "rf", "xgb"]:
-        if name == "lr":
-            y_pred = lr_pred
-        elif name == "rf":
-            y_pred = rf_pred
-        else:
-            y_pred = xgb_pred
+    # ---------- Versioned evaluation artifacts (winning model only) ----------
+    # Display space: original domain label values (le decodes the encoded
+    # 0..n-1 space back to what's actually stored in dbo.APP_IncidentCase).
+    y_test_display = le.inverse_transform(y_test)
+    y_pred_display = le.inverse_transform(best_pred)
 
-        acc = accuracy_score(y_test, y_pred)
-        f1 = f1_score(y_test, y_pred, average="macro")
-        cls_report = classification_report(y_test, y_pred)
+    # ROC/PR probability space: whatever the winning model actually produced
+    # (model.classes_ is the encoded 0..n-1 space all 3 candidates share here,
+    # never assumed to equal range(n) even though it will in practice).
+    y_proba = best_model.predict_proba(X_test)
+    class_order = best_model.classes_.tolist()
 
-        report_lines.append(f"\n===== {name} =====\n")
-        report_lines.append(f"Accuracy: {acc:.4f}\n")
-        report_lines.append(f"F1 Macro: {f1:.4f}\n")
-        report_lines.append("Classification Report:\n")
-        report_lines.append(cls_report + "\n")
-
-        cm = confusion_matrix(y_test, y_pred)
-        cm_path = os.path.join(MODEL_DIR, f"cm_{name.lower()}.png")
-        save_confusion_matrix(cm, label_names, cm_path, f"Confusion Matrix - {name}")
-
-    with open(REPORT_FILE, "w", encoding="utf-8") as f:
-        f.write("\n".join(report_lines))
+    eval_result = run_versioning.save_evaluation_artifacts(
+        run_dir=run_dir,
+        model_name=model_name,
+        y_true_display=y_test_display.tolist(),
+        y_pred_display=y_pred_display.tolist(),
+        display_labels=label_names.tolist(),
+        y_proba=y_proba,
+        proba_class_order=class_order,
+        y_true_for_curves=y_test,
+    )
+    serializer = "xgboost_native" if best_model_name == "xgb" else "joblib"
+    model_entry = run_versioning.register_model_artifact(run_dir, model_name, best_model, serializer=serializer)
+    eval_result["artifacts"].append(model_entry)
+    standardized_metrics.update(eval_result)
 
     print("\n===============================")
     print(" DOMAIN MODELS TRAINED WITH MANUAL WEIGHTS")
     print("===============================")
-    print(f"Saved models in : {MODEL_DIR}")
-    print(f"Saved report   : {REPORT_FILE}")
+    print(f"Winning model: {best_model_name}, artifacts written to: {run_dir}")
 
     return best_model, standardized_metrics
 

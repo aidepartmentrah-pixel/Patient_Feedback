@@ -44,7 +44,7 @@ router = APIRouter(prefix="/api/org-policy", tags=["Org Policy"])
 # ──────────────────────────────────────────────────────────────
 
 class SectionPolicyRequest(BaseModel):
-    all_limit:    int = Field(..., ge=0, description="Total incidents per HCAT classification (LowSeverityLimit)")
+    all_limit:    int = Field(..., ge=0, description="Low-severity incidents per HCAT classification (LowSeverityLimit)")
     medium_limit: int = Field(..., ge=0, description="Medium incidents per HCAT classification (MediumSeverityLimit)")
     high_limit:   int = Field(..., ge=0, description="High incidents per HCAT classification (HighSeverityLimit)")
 
@@ -131,7 +131,7 @@ async def update_sections_policy(
     Missing rows are created automatically.
 
     Semantic mapping:
-        all_limit    → LowSeverityLimit    (total incidents per HCAT classification)
+        all_limit    → LowSeverityLimit    (low-severity incidents per HCAT classification)
         medium_limit → MediumSeverityLimit (medium incidents per HCAT classification)
         high_limit   → HighSeverityLimit   (high incidents per HCAT classification)
     """

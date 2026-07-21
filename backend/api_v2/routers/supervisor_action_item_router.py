@@ -87,6 +87,19 @@ def list_action_items(
     return {"items": items}
 
 
+@router.get("/unacknowledged")
+def list_unacknowledged_action_items(
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    List unacknowledged supervisor action item assignments for the current
+    user's inbox — items targeted directly at them, or at an org unit in
+    their scope when no specific target user was set.
+    """
+    items = service.list_unacknowledged_for_user(current_user)
+    return {"items": items}
+
+
 @router.post("/{action_item_id}/complete")
 def complete_action_item(
     action_item_id: int,
@@ -120,6 +133,30 @@ def cancel_action_item(
     """
     try:
         item = service.cancel_action_item(current_user, action_item_id)
+        return {"item": item}
+    except service.NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except service.ForbiddenError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except service.SupervisorActionItemError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/{action_item_id}/acknowledge")
+def acknowledge_action_item(
+    action_item_id: int,
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Acknowledge receipt of a supervisor action item assignment (inbox notification).
+
+    Pure notification side-channel — does not change Status. Calling this
+    on an already-acknowledged item is a safe no-op (idempotent).
+
+    Authorization: the target unit's scope, or the specifically named target user.
+    """
+    try:
+        item = service.acknowledge_action_item(current_user, action_item_id)
         return {"item": item}
     except service.NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))

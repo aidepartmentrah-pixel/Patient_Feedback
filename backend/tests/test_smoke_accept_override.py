@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 def test_accept_text_constant_exists():
     from api_v2.services.case_response_service import ACCEPT_TEXT
-    assert ACCEPT_TEXT == "قبول الشكوى", f"ACCEPT_TEXT is '{ACCEPT_TEXT}', expected 'قبول الشكوى'"
+    assert ACCEPT_TEXT == "قبول الرد", f"ACCEPT_TEXT is '{ACCEPT_TEXT}', expected 'قبول الرد'"
     print(f"  ACCEPT_TEXT = '{ACCEPT_TEXT}' ✓")
 
 

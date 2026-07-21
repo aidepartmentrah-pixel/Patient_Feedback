@@ -1,12 +1,12 @@
 HIGH Harm Ordinal Model
-Accuracy: 0.6666666666666666
-F1: 0.5333333333333333
+Accuracy: 0.7777777777777778
+F1: 0.7777777777777778
 
               precision    recall  f1-score   support
 
-           0       0.67      1.00      0.80         4
-           1       0.00      0.00      0.00         2
+           0       0.86      0.86      0.86         7
+           1       0.50      0.50      0.50         2
 
-    accuracy                           0.67         6
-   macro avg       0.33      0.50      0.40         6
-weighted avg       0.44      0.67      0.53         6
+    accuracy                           0.78         9
+   macro avg       0.68      0.68      0.68         9
+weighted avg       0.78      0.78      0.78         9

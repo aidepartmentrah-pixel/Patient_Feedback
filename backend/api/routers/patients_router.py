@@ -17,8 +17,26 @@ from ..services.patients_service import (
     get_patient_full_history_service,
     export_patient_history_service,
     create_patient_service,
-    get_all_reserve_patients_service
+    get_all_reserve_patients_service,
+    PatientServiceError
 )
+
+
+def _external_unavailable_http_exception(e: "PatientServiceError") -> HTTPException:
+    """
+    A patient_id resolved to an EXTERNAL (Hospital Directory API) identity,
+    but the API call failed for a reason distinct from "not found" — surface
+    this as 503, never silently as a 404/empty result (see Session C1
+    requirements: a network failure must be a clear "external search
+    unavailable" state).
+    """
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "error": "EXTERNAL_PATIENT_UNAVAILABLE",
+            "message": f"Hospital Directory API unavailable ({e.status}): {str(e)}",
+        },
+    )
 
 
 router = APIRouter(prefix="/api/patients", tags=["Patients - History"])
@@ -579,7 +597,7 @@ async def search_patients_endpoint(
 # ==================== B.2 GET PATIENT PROFILE ====================
 
 @router.get("/{patient_id}/profile")
-async def get_patient_profile_endpoint(patient_id: int):
+async def get_patient_profile_endpoint(patient_id: str):
     """
     Get complete patient profile information.
     
@@ -622,6 +640,10 @@ async def get_patient_profile_endpoint(patient_id: int):
         if not profile:
             raise HTTPException(status_code=404, detail=f"Patient {patient_id} not found")
         return profile
+    except HTTPException:
+        raise
+    except PatientServiceError as e:
+        raise _external_unavailable_http_exception(e)
     except Exception as e:
         if "not found" in str(e):
             raise HTTPException(status_code=404, detail=str(e))
@@ -632,7 +654,7 @@ async def get_patient_profile_endpoint(patient_id: int):
 
 @router.get("/{patient_id}/incidents")
 async def get_patient_incidents_endpoint(
-    patient_id: int,
+    patient_id: str,
     from_date: Optional[str] = Query(None, description="Filter from date (YYYY-MM-DD)"),
     to_date: Optional[str] = Query(None, description="Filter to date (YYYY-MM-DD)"),
     department: Optional[str] = Query(None, description="Filter by department"),
@@ -703,6 +725,8 @@ async def get_patient_incidents_endpoint(
             offset=offset
         )
         return result
+    except PatientServiceError as e:
+        raise _external_unavailable_http_exception(e)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get incidents: {str(e)}")
 
@@ -710,7 +734,7 @@ async def get_patient_incidents_endpoint(
 # ==================== B.4 GET INCIDENT DETAILS ====================
 
 @router.get("/{patient_id}/incidents/{incident_id}")
-async def get_incident_details_endpoint(patient_id: int, incident_id: int):
+async def get_incident_details_endpoint(patient_id: str, incident_id: int):
     """
     Get full details for a specific incident.
     
@@ -771,7 +795,7 @@ async def get_incident_details_endpoint(patient_id: int, incident_id: int):
 
 @router.get("/{patient_id}/full-history")
 async def get_patient_full_history_endpoint(
-    patient_id: int,
+    patient_id: str,
     from_date: Optional[str] = Query(None),
     to_date: Optional[str] = Query(None),
     department: Optional[str] = Query(None),
@@ -820,6 +844,8 @@ async def get_patient_full_history_endpoint(
             offset=offset
         )
         return result
+    except PatientServiceError as e:
+        raise _external_unavailable_http_exception(e)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get full history: {str(e)}")
 
@@ -828,7 +854,7 @@ async def get_patient_full_history_endpoint(
 
 @router.get("/{patient_id}/export")
 async def export_patient_history_endpoint(
-    patient_id: int,
+    patient_id: str,
     format: str = Query("json", description="Export format: 'csv' or 'json'"),
     from_date: Optional[str] = Query(None, description="Export from date (YYYY-MM-DD)"),
     to_date: Optional[str] = Query(None, description="Export to date (YYYY-MM-DD)"),
@@ -918,5 +944,7 @@ async def export_patient_history_endpoint(
     
     except HTTPException:
         raise
+    except PatientServiceError as e:
+        raise _external_unavailable_http_exception(e)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")

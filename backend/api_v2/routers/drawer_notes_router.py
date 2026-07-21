@@ -24,6 +24,7 @@ from backend.api_v2.guards.drawer_notes_guards import require_drawer_notes_role
 from backend.api.schemas.auth_models import CurrentUser
 from backend.api_v2.services import drawer_note_service
 from backend.api_v2.services.drawer_note_export_service import build_drawer_notes_word_export
+from backend.api.services.patient_directory_service import ExternalPatientUnavailableError
 from backend.api_v2.schemas.drawer_note_schemas import (
     CreateNoteRequest,
     UpdateNoteTextRequest,
@@ -83,15 +84,21 @@ def create_drawer_note(
             label_ids=request.label_ids,
             created_by_user_id=current_user.user_id,
             created_by_name=current_user.username,
-            patient_admission_id=request.patient_admission_id
+            patient_admission_id=request.patient_admission_id,
+            external_patient_id=request.external_patient_id,
         )
-        
+
         return CreateNoteResponse(note_id=note_id, success=True)
-        
+
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
+        )
+    except ExternalPatientUnavailableError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Hospital Directory API unavailable ({e.status}): {e.message}"
         )
 
 
@@ -152,6 +159,7 @@ def list_drawer_notes(
             label_ids=note.get('label_ids', []),
             is_deleted=note.get('is_deleted', False),
             patient_admission_id=note.get('patient_admission_id'),
+            external_patient_id=note.get('external_patient_id'),
             patient_name=note.get('patient_name')
         )
         for note in notes
@@ -206,6 +214,7 @@ def get_drawer_note(
         label_ids=note.get('label_ids', []),
         is_deleted=note.get('is_deleted', False),
         patient_admission_id=note.get('patient_admission_id'),
+        external_patient_id=note.get('external_patient_id'),
         patient_name=note.get('patient_name')
     )
 

@@ -18,8 +18,22 @@ from fastapi import HTTPException
 from core.database import get_connection
 from backend.api_v2.db_layer import administrative_subcase_db
 from backend.api_v2.db_layer import action_item_subcase_db
+from backend.api_v2.db_layer import action_item_change_notice_db
 from backend.api.db_layer import auth_db
 from backend.api.db_layer import incident_case_feedback
+
+# APP_IncidentCase.RecordTypeID value identifying a "Notice" record (see
+# backend/database_migrations/phase_notice_record_type.sql). Notices must
+# never be routed to Patient Services regardless of ClinicalRiskTypeID.
+_RECORD_TYPE_NOTICE = 2
+
+# Role → decision-propagation level (see phase_decision_propagation.sql /
+# APP_SubcaseDecisionAcknowledgment.OrgLevel).
+_ROLE_TO_LEVEL = {
+    'SECTION_ADMIN': 'section',
+    'DEPARTMENT_ADMIN': 'department',
+    'ADMINISTRATION_ADMIN': 'administration',
+}
 
 
 # ============================================================
@@ -83,19 +97,47 @@ def _upsert_action_items(
     - Existing items not referenced in the payload → DELETE
 
     This replaces _replace_action_items to preserve stable record identities.
+
+    When an item is edited by someone other than its original creator
+    (the normal case-escalation pattern, where a higher level revises
+    items carried up from a lower level), a pending change notice is
+    recorded for the original creator — see AIC-S7 Notification Foundation.
     """
     existing = action_item_subcase_db.get_action_items_by_subcase(subcase_id)
-    existing_ids = {item['action_item_id'] for item in existing}
+    existing_by_id = {item['action_item_id']: item for item in existing}
     kept_ids = set()
 
     for item in action_items:
         aid = item.get('action_item_id')
-        if aid and aid in existing_ids:
+        if aid and aid in existing_by_id:
+            prior = existing_by_id[aid]
+            new_title = item['title']
+            new_description = item.get('description')
+            new_due_date = item.get('due_date')
+
+            changed = (
+                prior['title'] != new_title
+                or prior['description'] != new_description
+                or prior['due_date'] != new_due_date
+            )
+            if changed and prior['created_by_user_id'] != current_user.user_id:
+                action_item_change_notice_db.upsert_change_notice(
+                    action_item_id=aid,
+                    recipient_user_id=prior['created_by_user_id'],
+                    old_title=prior['title'],
+                    new_title=new_title,
+                    old_description=prior['description'],
+                    new_description=new_description,
+                    old_due_date=prior['due_date'],
+                    new_due_date=new_due_date,
+                    changed_by_user_id=current_user.user_id
+                )
+
             action_item_subcase_db.update_action_item(
                 action_item_id=aid,
-                title=item['title'],
-                description=item.get('description'),
-                due_date=item.get('due_date'),
+                title=new_title,
+                description=new_description,
+                due_date=new_due_date,
                 updated_by_user_id=current_user.user_id
             )
             kept_ids.add(aid)
@@ -110,7 +152,7 @@ def _upsert_action_items(
                 assigned_to_user_id=item.get('assigned_to_user_id')
             )
 
-    for eid in existing_ids - kept_ids:
+    for eid in set(existing_by_id.keys()) - kept_ids:
         action_item_subcase_db.delete_action_item(eid)
 
 
@@ -319,7 +361,7 @@ def get_subcase_response(subcase_id: int, current_user) -> Dict[str, Any]:
 
 
 # Constant text written by all quick-accept paths
-ACCEPT_TEXT = 'قبول الشكوى'
+ACCEPT_TEXT = 'قبول الرد'
 
 
 # ============================================================
@@ -773,14 +815,17 @@ def approve_administration(
     _assert_status(subcase, ['DEPT_ACCEPTED_PENDING_ADMIN', 'FORCE_CLOSED_AT_DEPARTMENT'])
 
     # Detect whether this is an administrative complaint subcase.
-    # ClinicalRiskTypeID == 1 means ordinary complaint (not Notice=2, not Never Event=3).
+    # ClinicalRiskTypeID == 1 means ordinary complaint (not Never Event=3, etc).
+    # RecordTypeID is the authoritative Notice discriminator (ClinicalRiskTypeID
+    # is not reliably set to 2 for Notices) — excluded explicitly so Notices
+    # never route to Patient Services regardless of their clinical risk value.
     # Seasonal-report subcases have no incident_request_case_id → is_complaint stays False.
     is_complaint = False
     incident_id = subcase.get('incident_request_case_id')
     if incident_id:
         from backend.api.db_layer import incident_case as incident_case_db
         incident = incident_case_db.get_incident_case_by_id(incident_id)
-        if incident and incident.get('ClinicalRiskTypeID') == 1:
+        if incident and incident.get('ClinicalRiskTypeID') == 1 and incident.get('RecordTypeID') != _RECORD_TYPE_NOTICE:
             is_complaint = True
 
     # Write acceptance text so the field is never left empty
@@ -909,14 +954,32 @@ def acknowledge_patient_services_decision(
             detail="Subcase is outside your organizational scope."
         )
 
-    success = administrative_subcase_db.acknowledge_decision_notification(
-        subcase_id=subcase_id,
-        user_id=current_user.user_id
-    )
-    if not success:
+    # Decision propagation: record this level's acknowledgment separately from
+    # the other levels that also handled this case, so the item stays visible
+    # to each level until THAT level (not just any one of them) acknowledges it.
+    level = _ROLE_TO_LEVEL[role_code]
+    already_acked = administrative_subcase_db.get_decision_acknowledgment_levels(subcase_id)
+    if level in already_acked:
         raise HTTPException(
             status_code=400,
             detail="لا يمكن تأكيد هذا القرار. قد يكون قد تمّ تأكيده مسبقًا."
+        )
+    administrative_subcase_db.insert_decision_acknowledgment(
+        subcase_id=subcase_id, level=level, user_id=current_user.user_id
+    )
+
+    # Only flip the subcase to DECISION_ACKNOWLEDGED once section, department,
+    # AND administration have all acknowledged — unconditionally, regardless of
+    # whether *EnteredByUserID tracking says a level "touched" the case. Cases
+    # created before that tracking existed left every level as untouched=False,
+    # which meant the old "only touched levels must ack" check finalized on the
+    # very first ack for those cases — closing it for every level before the
+    # others even saw it. Always requiring all three removes that ambiguity.
+    all_acked = already_acked | {level}
+    if {'section', 'department', 'administration'} <= all_acked:
+        administrative_subcase_db.acknowledge_decision_notification(
+            subcase_id=subcase_id,
+            user_id=current_user.user_id
         )
 
 
@@ -1012,7 +1075,7 @@ def override_administration(
     if incident_id:
         from backend.api.db_layer import incident_case as incident_case_db
         incident = incident_case_db.get_incident_case_by_id(incident_id)
-        if incident and incident.get('ClinicalRiskTypeID') == 1:
+        if incident and incident.get('ClinicalRiskTypeID') == 1 and incident.get('RecordTypeID') != _RECORD_TYPE_NOTICE:
             is_complaint = True
 
     # Replace all action items (always — admin creates their own set)
@@ -1502,12 +1565,14 @@ def fill_explanation_on_behalf(
             # Mirror approve_administration()'s complaint-routing rule:
             # ClinicalRiskTypeID == 1 (ordinary complaint) hands off to Patient
             # Services for the scientific decision instead of going terminal.
+            # RecordTypeID is checked explicitly since Notices are not reliably
+            # excluded by ClinicalRiskTypeID alone.
             is_complaint = False
             incident_id = subcase.get('incident_request_case_id')
             if incident_id:
                 from backend.api.db_layer import incident_case as incident_case_db
                 incident = incident_case_db.get_incident_case_by_id(incident_id)
-                if incident and incident.get('ClinicalRiskTypeID') == 1:
+                if incident and incident.get('ClinicalRiskTypeID') == 1 and incident.get('RecordTypeID') != _RECORD_TYPE_NOTICE:
                     is_complaint = True
 
             if is_complaint:

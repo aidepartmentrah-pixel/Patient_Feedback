@@ -1,24 +1,33 @@
 """
-Monthly Report – Stylish Word Formatter  (HCAT Reporting Refactor – Session 6)
+Monthly Report - Stylish Word Formatter (Formal Hospital Form Rewrite)
 
 Philosophy
 ----------
-Investigation-assistant document, not just an archive.
-Each complaint occupies one full landscape page structured as a visual card.
-Notices are grouped compactly (multiple per page).
+This formatter reproduces the hospital's official paper form
+("Stylish Reporting Template") as closely as practical: a restrained,
+table-based, formal document — not a modern dashboard export.
 
-Layout per complaint card (5 zones):
-  Zone 1 – Identity    : 7 labeled boxes  (who / where / when)
-  Zone 2 – Class       : 7 labeled boxes  (domain / category / classification)
-                         + Severity badge  + Harm Stage dot-scale
-  Zone 3 – Stage flow  : 5-step visual timeline + Status badge
-  Zone 4 – Content     : Complaint narrative (left 60%) | Actions (right 40%)
-  Zone 5 – Approvals   : 4-role signature block + RCA instruction note
+Two independent page templates:
+  - Complaint / Improvement Opportunity form (one full landscape page
+    per complaint): scope strip, classification table, complaint-data
+    block (narrative gets the majority of the width), immediate-action /
+    actions-taken block, approval/signature grid, RCA instruction note.
+  - Notice / Commendation form (one flowing table, multiple notices per
+    page): scope strip once, then a 7-column table, then the approval
+    grid once at the end.
 
-Pure renderer: zero DB queries, zero calculations.
+An optional trailing appendix page renders the unit-distribution data
+(intent_counts) that has no equivalent on the paper form, kept plain
+and separate from the two literal form pages.
+
+Pure renderer: zero DB queries, zero business-logic calculations.
 All data arrives pre-computed in report_data.
 
-Imports low-level helpers from workflow_activity_word_formatter — no parallel utilities.
+Imports low-level OOXML helpers from workflow_activity_word_formatter —
+no parallel utilities; other reports depend on that shared module, so
+it is never modified from here. Local wrappers below cover two proven
+gotchas: complex-script Arabic font (_ar_run) and tblGrid sync
+(_set_row_col_width) — see their docstrings.
 """
 
 import os
@@ -28,8 +37,8 @@ from typing import Any, Dict, List, Optional
 from docx import Document
 from docx.shared import Pt, Mm, Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
-from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
-from docx.enum.section import WD_ORIENT
+from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE
+from docx.enum.section import WD_ORIENT, WD_SECTION
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
@@ -82,98 +91,43 @@ def _set_row_col_width(row, col_idx: int, mm: float):
 # CONSTANTS
 # ---------------------------------------------------------------------------
 
-NAVY       = '1C3A7A'
-NAVY_LIGHT = 'EBF3FB'   # identity zone bg
-MINT_LIGHT = 'EAFAF1'   # classification zone bg
-STAGE_BG   = 'F4F6F9'   # stage zone bg
-WHITE      = 'FFFFFF'
-GREY_LINE  = 'D0D7E4'
-GREY_TEXT  = '6B7A99'
-DARK_TEXT  = '1A1A2E'
+NAVY        = '1C3A7A'   # used sparingly — headings/accents only, not fills
+NAVY_LIGHT  = 'EBF3FB'   # scope-strip shading
+HEADER_CYAN = 'D6EAF8'   # classification / notice table header shading
+ACTION_CREAM = 'FFF9DB'  # immediate-action / actions-taken header shading
+WHITE       = 'FFFFFF'
+GREY_LINE   = 'D0D7E4'
+GREY_TEXT   = '6B7A99'
+DARK_TEXT   = '1A1A2E'
 
-# Severity
-_SEV = {
-    'low':    ('D5F5E3', '1E8449', '▼', 'منخفض', 'LOW'),
-    'medium': ('FEF9E7', 'D4AC0D', '►', 'متوسط', 'MEDIUM'),
-    'high':   ('FADBD8', 'C0392B', '▲', 'مرتفع', 'HIGH'),
-}
+BORDER_OUTER = '2B2B2B'  # near-black, thin — formal paper-form look
+BORDER_INNER = '999999'
 
-# Harm stage — 5 levels, escalating palette
-_HARM = [
-    ('بلا ضرر',   'No Harm',        'D5E8D4', '82B366'),
-    ('طفيف',      'Minor',          'DAE8FC', '6C8EBF'),
-    ('متوسطة',    'Moderate',       'FFF2CC', 'D6B656'),
-    ('ضرر شديد',  'Severe Harm',    'F8CECC', 'B85450'),
-    ('وفاة',      'Death',          'E1D5E7', '9673A6'),
-]
+# Usable width: A4 landscape 297mm - 12mm left - 12mm right = 273mm.
+# Every table below targets <=270mm (3mm safety margin).
+USABLE_WIDTH_MM = 273.0
+MAX_TABLE_WIDTH_MM = 270.0
 
-# Stage of care — 5 steps
-_STAGES = [
-    ('القبول',             'Admission'),
-    ('الفحص والتشخيص',    'Examination & Diagnosis'),
-    ('الرعاية في القسم',  'Care on the Ward'),
-    ('الإجراء / العملية', 'Operation / Procedure'),
-    ('الخروج / التحويل',  'Discharge / Transfer'),
-]
-
-# Arabic month names for summary page
-_MONTHS_AR = {
-    1: 'يناير', 2: 'فبراير', 3: 'مارس', 4: 'أبريل',
-    5: 'مايو', 6: 'يونيو', 7: 'يوليو', 8: 'أغسطس',
-    9: 'سبتمبر', 10: 'أكتوبر', 11: 'نوفمبر', 12: 'ديسمبر',
-}
+# Last-resort truncation ceilings (character counts) — reactivated only as
+# a safety net for pathological outliers, not a normal-case page budget.
+# Normal complaints (~1,200 chars) fit page 1 comfortably within these caps.
+NARRATIVE_MAX_CHARS = 6000
+ACTION_MAX_CHARS    = 3000
+NOTICE_MAX_CHARS    = 3000
 
 
 # ---------------------------------------------------------------------------
 # LOW-LEVEL DOCX UTILITIES (supplement to imported helpers)
 # ---------------------------------------------------------------------------
 
-def _apply_borders_no_vertical(table, outer: str = 'AAAAAA', outer_sz: int = 4,
-                               inner_h: str = 'DDDDDD', inner_h_sz: int = 4):
-    """
-    Like the shared _apply_minimal_table_borders, but drops the vertical
-    inner gridlines entirely (insideV=none). Softens dense grids (e.g. the
-    signature block) that otherwise read as a spreadsheet, while keeping
-    horizontal row separators and the outer border for structure.
-    """
-    tbl = table._tbl
-    tblPr = tbl.find(qn('w:tblPr'))
-    if tblPr is None:
-        tblPr = OxmlElement('w:tblPr')
-        tbl.insert(0, tblPr)
-    for old in tblPr.findall(qn('w:tblBorders')):
-        tblPr.remove(old)
-    bdr = OxmlElement('w:tblBorders')
-    for name, color, sz in [
-        ('top', outer, outer_sz), ('left', outer, outer_sz),
-        ('bottom', outer, outer_sz), ('right', outer, outer_sz),
-        ('insideH', inner_h, inner_h_sz),
-    ]:
-        b = OxmlElement(f'w:{name}')
-        b.set(qn('w:val'), 'single')
-        b.set(qn('w:sz'), str(sz))
-        b.set(qn('w:space'), '0')
-        b.set(qn('w:color'), color)
-        bdr.append(b)
-    v = OxmlElement('w:insideV')
-    v.set(qn('w:val'), 'none')
-    v.set(qn('w:sz'), '0')
-    v.set(qn('w:space'), '0')
-    v.set(qn('w:color'), 'auto')
-    bdr.append(v)
-    tblPr.append(bdr)
-
-
 def _truncate_for_fit(text: str, max_chars: int,
                        marker: str = '… (النص الكامل في النظام)') -> str:
     """
-    Hard single-page guarantee: Content Zone is capped at a fixed height
-    (not just a floor), so any field that could grow past its character
-    budget gets cut at the last word boundary and tagged with a marker
-    pointing back to the system for the full record. Without this, a
-    sufficiently long complaint_text/immediate_action/taken_action makes
-    the per-complaint page structurally unbounded — this is what makes
-    "one page per case, no exceptions" actually true regardless of data.
+    Last-resort safety net: cuts text at the last word boundary before
+    max_chars and appends a marker pointing back to the system for the
+    full record. Normal-length content never reaches this ceiling —
+    truncation should only fire for pathological outliers (e.g. pasted
+    logs), never for an ordinary long complaint.
     """
     text = (text or '').strip()
     if len(text) <= max_chars:
@@ -185,67 +139,6 @@ def _truncate_for_fit(text: str, max_chars: int,
     return cut.rstrip(' ,.;:،؛') + ' ' + marker
 
 
-def _set_cell_borders(cell, color: str = GREY_LINE, sz: int = 4):
-    """Apply uniform single-line borders to a cell."""
-    tc = cell._tc
-    tcPr = tc.get_or_add_tcPr()
-    for old in tcPr.findall(qn('w:tcBorders')):
-        tcPr.remove(old)
-    bdr = OxmlElement('w:tcBorders')
-    for side in ('top', 'left', 'bottom', 'right'):
-        b = OxmlElement(f'w:{side}')
-        b.set(qn('w:val'), 'single')
-        b.set(qn('w:sz'), str(sz))
-        b.set(qn('w:space'), '0')
-        b.set(qn('w:color'), color)
-        bdr.append(b)
-    tcPr.append(bdr)
-
-
-def _remove_cell_borders(cell):
-    """Remove all borders from a cell (none style)."""
-    tc = cell._tc
-    tcPr = tc.get_or_add_tcPr()
-    for old in tcPr.findall(qn('w:tcBorders')):
-        tcPr.remove(old)
-    bdr = OxmlElement('w:tcBorders')
-    for side in ('top', 'left', 'bottom', 'right', 'insideH', 'insideV'):
-        b = OxmlElement(f'w:{side}')
-        b.set(qn('w:val'), 'none')
-        b.set(qn('w:sz'), '0')
-        b.set(qn('w:space'), '0')
-        b.set(qn('w:color'), 'auto')
-        bdr.append(b)
-    tcPr.append(bdr)
-
-
-def _set_table_outer_border(table, color: str = NAVY, sz: int = 8):
-    """Navy outer border, no inner borders."""
-    tbl = table._tbl
-    tblPr = tbl.find(qn('w:tblPr'))
-    if tblPr is None:
-        tblPr = OxmlElement('w:tblPr')
-        tbl.insert(0, tblPr)
-    for old in tblPr.findall(qn('w:tblBorders')):
-        tblPr.remove(old)
-    bdr = OxmlElement('w:tblBorders')
-    for name in ('top', 'left', 'bottom', 'right'):
-        b = OxmlElement(f'w:{name}')
-        b.set(qn('w:val'), 'single')
-        b.set(qn('w:sz'), str(sz))
-        b.set(qn('w:space'), '0')
-        b.set(qn('w:color'), color)
-        bdr.append(b)
-    for name in ('insideH', 'insideV'):
-        b = OxmlElement(f'w:{name}')
-        b.set(qn('w:val'), 'none')
-        b.set(qn('w:sz'), '0')
-        b.set(qn('w:space'), '0')
-        b.set(qn('w:color'), 'auto')
-        bdr.append(b)
-    tblPr.append(bdr)
-
-
 def _cell_v_center(cell):
     cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
 
@@ -254,6 +147,7 @@ def _labeled_cell(cell, label: str, value: str,
                   label_color: str = GREY_TEXT,
                   value_color: str = DARK_TEXT,
                   value_size: int = 10,
+                  label_size: int = 7,
                   value_bold: bool = True,
                   bg: str = None,
                   align: str = 'right'):
@@ -267,22 +161,59 @@ def _labeled_cell(cell, label: str, value: str,
     _cell_v_center(cell)
     cell.text = ''
 
-    # label — bilingual "X / Y" → always centered
     lp = cell.paragraphs[0]
     lp.clear()
     lp.alignment = WD_ALIGN_PARAGRAPH.CENTER
     lp.paragraph_format.space_before = Pt(3)
     lp.paragraph_format.space_after  = Pt(1)
     lp._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-    _ar_run(lp, label, size=7, color=label_color)
+    _ar_run(lp, label, size=label_size, color=label_color)
 
-    # value — pure Arabic/data → right-aligned (RTL start)
     vp = cell.add_paragraph()
     vp.alignment = WD_ALIGN_PARAGRAPH.RIGHT if align == 'right' else WD_ALIGN_PARAGRAPH.CENTER
     vp.paragraph_format.space_before = Pt(2)
     vp.paragraph_format.space_after  = Pt(3)
     vp._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
     _ar_run(vp, value or '—', size=value_size, bold=value_bold, color=value_color)
+
+
+def _bold_underline_value_cell(cell, text: str):
+    """Classification table's data-row cells: bold + underlined value, centered."""
+    p = _cell_para(cell, 'center')
+    run = _ar_run(p, text or '—', size=9, bold=True, color=DARK_TEXT)
+    run.font.underline = True
+
+
+def _rotate_cell(cell):
+    """Sets bottom-to-top text direction (w:textDirection btLr) on a cell."""
+    tcPr = cell._tc.get_or_add_tcPr()
+    direction = OxmlElement('w:textDirection')
+    direction.set(qn('w:val'), 'btLr')
+    tcPr.append(direction)
+
+
+def _vertical_label_cell(cell, text_ar: str):
+    """Rotated (bottom-to-top) side label, e.g. 'بيانات الشكوى' / 'المتابعة'."""
+    _set_cell_shading(cell, NAVY)
+    _rotate_cell(cell)
+    p = _cell_para(cell, 'center')
+    _ar_run(p, text_ar, size=9, bold=True, color=WHITE)
+
+
+def _vertical_header_cell(cell, label: str):
+    """Rotated classification-table header cell (short label, cyan bg)."""
+    _set_cell_shading(cell, HEADER_CYAN)
+    _rotate_cell(cell)
+    p = _cell_para(cell, 'center')
+    _ar_run(p, label, size=7, bold=True, color=NAVY)
+
+
+def _vertical_bold_underline_value_cell(cell, text: str):
+    """Rotated classification-table data cell: bold + underlined value."""
+    _rotate_cell(cell)
+    p = _cell_para(cell, 'center')
+    run = _ar_run(p, text or '—', size=8, bold=True, color=DARK_TEXT)
+    run.font.underline = True
 
 
 def _spacer_para(doc: Document, pt: float = 2):
@@ -293,7 +224,7 @@ def _spacer_para(doc: Document, pt: float = 2):
 
 def _gap(doc: Document, mm: float):
     """
-    Precise vertical gap between zones, in mm. Uses a near-zero-size run
+    Precise vertical gap between blocks, in mm. Uses a near-zero-size run
     so the empty paragraph's own line-height doesn't add unaccounted
     height — the gap is controlled almost entirely by space_after.
     """
@@ -312,43 +243,38 @@ def _page_break(doc: Document):
     run.add_break(WD_BREAK.PAGE)
 
 
-def _zone_label_row(table, col_span: int, label_ar: str, label_en: str,
-                    bg: str = NAVY, text_color: str = WHITE):
-    """Single merged header row across all columns — zone title strip."""
-    row = table.add_row()
-    row.height = _mm_to_dxa(6)
-    from docx.enum.table import WD_ROW_HEIGHT_RULE
-    row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
+def _set_row_cant_split(row):
+    """Keeps a row from splitting across a page break — whole row jumps instead."""
+    trPr = row._tr.get_or_add_trPr()
+    trPr.append(OxmlElement('w:cantSplit'))
 
-    cell = row.cells[0]
-    # Merge across all columns
-    if col_span > 1:
-        cell = row.cells[0].merge(row.cells[col_span - 1])
 
-    _set_cell_shading(cell, bg)
-    p = cell.paragraphs[0]
-    p.clear()
-    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p.paragraph_format.space_before = Pt(0)
-    p.paragraph_format.space_after  = Pt(0)
-    p._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-    _ar_run(p, label_ar, size=8, bold=True, color=text_color)
-    if label_en:
-        _ar_run(p, f'  /  {label_en}', size=7, color=text_color)
+def _set_table_header_repeat(row):
+    """Marks a row as a repeating header on multi-page tables."""
+    trPr = row._tr.get_or_add_trPr()
+    trPr.append(OxmlElement('w:tblHeader'))
+
+
+def _load_report_config() -> Dict[str, Any]:
+    try:
+        from ..db_layer.report_config_db import get_report_config
+        return get_report_config() or {}
+    except Exception:
+        return {}
 
 
 # ---------------------------------------------------------------------------
 # TARGET DEPARTMENT HELPERS
 # ---------------------------------------------------------------------------
 
-def _primary_target(complaint: Dict) -> Dict:
-    tds = complaint.get('target_departments') or []
+def _primary_target(record: Dict) -> Dict:
+    tds = record.get('target_departments') or []
     primary = next((d for d in tds if d.get('is_primary')), tds[0] if tds else {})
     return primary
 
 
-def _target_names(complaint: Dict):
-    p = _primary_target(complaint)
+def _target_names(record: Dict):
+    p = _primary_target(record)
     return (
         p.get('section_name') or '—',
         p.get('department_name') or '—',
@@ -356,665 +282,395 @@ def _target_names(complaint: Dict):
     )
 
 
-def _target_display(complaint: Dict) -> str:
+def _target_display(record: Dict) -> str:
     """Most specific named target unit as a single string."""
-    p = _primary_target(complaint)
+    p = _primary_target(record)
     return (p.get('section_name') or p.get('department_name') or
             p.get('administration_name') or '—')
 
 
-# ---------------------------------------------------------------------------
-# SEVERITY BADGE  (3-cell mini-table)
-# ---------------------------------------------------------------------------
-
-def _severity_key(raw: str) -> str:
-    r = (raw or '').lower()
-    if 'high' in r or 'مرتفع' in r:   return 'high'
-    if 'medium' in r or 'متوسط' in r: return 'medium'
-    return 'low'
-
-
-def _build_severity_cell(parent_cell, severity_raw: str):
-    """Render a 3-cell Low/Medium/High badge inside the given cell."""
-    _cell_v_center(parent_cell)
-    parent_cell.text = ''
-
-    lp = parent_cell.paragraphs[0]
-    lp.clear()
-    lp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    lp.paragraph_format.space_before = Pt(1)
-    lp.paragraph_format.space_after  = Pt(1)
-    _ar_run(lp, 'مستوى الخطورة / Severity', size=7, color=GREY_TEXT)
-
-    # Inner mini-table — width must fit within parent cell (~36mm)
-    inner = parent_cell.add_table(1, 3)
-    inner.autofit = False
-    inner.alignment = WD_TABLE_ALIGNMENT.CENTER
-    _apply_minimal_table_borders(inner, outer='CCCCCC', outer_sz=4, inner='CCCCCC', inner_sz=4)
-
-    key = _severity_key(severity_raw)
-    levels = [('low', 'Low', 'منخفض'), ('medium', 'Medium', 'متوسط'), ('high', 'High', 'مرتفع')]
-    for ci, (lk, en, ar) in enumerate(levels):
-        cfg = _SEV[lk]
-        c = inner.rows[0].cells[ci]
-        is_selected = (lk == key)
-        _set_cell_shading(c, cfg[0] if is_selected else 'F8F9FA')
-        _cell_v_center(c)
-        cp = c.paragraphs[0]
-        cp.clear()
-        cp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        cp.paragraph_format.space_before = Pt(1)
-        cp.paragraph_format.space_after  = Pt(1)
-        _ar_run(cp, cfg[2] + ' ' if is_selected else '   ',
-                size=8, bold=is_selected, color=cfg[1] if is_selected else 'AAAAAA')
-        _ar_run(cp, ar, size=8, bold=is_selected,
-                color=cfg[1] if is_selected else 'CCCCCC')
-
-    # Column widths — 13mm each = 39mm total (parent cell 43mm, 4mm padding).
-    # "Medium" (6 chars) at 8pt needs ~9.3mm minimum; old 10mm cell had almost
-    # no buffer, letting Word silently expand the column past tblLayout=fixed.
-    for ci in range(3):
-        _set_row_col_width(inner.rows[0], ci, 13)
+def _scope_labels(report_entity_name: Optional[str], report_entity_type: Optional[str]):
+    """Maps the report-level scope (single name+type) onto the 3-way strip."""
+    name = report_entity_name or '—'
+    t = (report_entity_type or '').lower()
+    if 'administration' in t:
+        return name, '—', '—'
+    if 'department' in t:
+        return '—', name, '—'
+    if 'section' in t:
+        return '—', '—', name
+    return '—', '—', '—'
 
 
 # ---------------------------------------------------------------------------
-# HARM STAGE DOT-SCALE  (5-cell mini-table)
+# SCOPE STRIP  (الإدارة / الدائرة / الوحدة الإدارية-القسم / الشهر)
 # ---------------------------------------------------------------------------
 
-def _harm_key(raw: str) -> int:
-    """Map harm_level string to 0-based index into _HARM."""
-    r = (raw or '').lower()
-    if 'death' in r or 'وفاة' in r:           return 4
-    if 'severe' in r or 'ضرر شديد' in r:      return 3
-    if 'moderate' in r or 'متوسطة' in r:      return 2
-    if 'minor' in r or 'طفيف' in r:           return 1
-    return 0  # No harm / unknown
+_STRIP_WIDTHS = [68, 68, 68, 66]  # sum = 270mm
 
 
-def _build_harm_cell(parent_cell, harm_raw: str):
-    """5-dot scale rendered as a mini-table inside the given cell."""
-    _cell_v_center(parent_cell)
-    parent_cell.text = ''
-
-    lp = parent_cell.paragraphs[0]
-    lp.clear()
-    lp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    lp.paragraph_format.space_before = Pt(1)
-    lp.paragraph_format.space_after  = Pt(1)
-    _ar_run(lp, 'مرحلة الضرر / Harm Stage', size=7, color=GREY_TEXT)
-
-    selected_idx = _harm_key(harm_raw)
-
-    # Inner mini-table — width must fit within parent cell (~54mm), 5 cols × 10mm = 50mm
-    inner = parent_cell.add_table(2, 5)
-    inner.autofit = False
-    inner.alignment = WD_TABLE_ALIGNMENT.CENTER
-    _apply_minimal_table_borders(inner, outer='DDDDDD', outer_sz=4, inner='DDDDDD', inner_sz=2)
-
-    for ci, (ar, en, bg_sel, fg_sel) in enumerate(_HARM):
-        is_sel = (ci == selected_idx)
-        is_before = (ci < selected_idx)
-
-        # Row 0: dot
-        dot_cell = inner.rows[0].cells[ci]
-        _set_cell_shading(dot_cell, bg_sel if is_sel else ('F0F0F0' if is_before else 'FAFAFA'))
-        _cell_v_center(dot_cell)
-        dp = dot_cell.paragraphs[0]
-        dp.clear()
-        dp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        dp.paragraph_format.space_before = Pt(1)
-        dp.paragraph_format.space_after  = Pt(1)
-        sym = '■' if is_sel else ('▪' if is_before else '□')
-        _ar_run(dp, sym, size=10, bold=is_sel, color=fg_sel if is_sel else ('AAAAAA' if is_before else 'CCCCCC'))
-
-        # Row 1: label
-        lbl_cell = inner.rows[1].cells[ci]
-        _set_cell_shading(lbl_cell, 'FFFFFF')
-        _cell_v_center(lbl_cell)
-        lp2 = lbl_cell.paragraphs[0]
-        lp2.clear()
-        lp2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        lp2.paragraph_format.space_before = Pt(0)
-        lp2.paragraph_format.space_after  = Pt(1)
-        _ar_run(lp2, ar, size=6, bold=is_sel, color=fg_sel if is_sel else GREY_TEXT)
-
-    # Column widths — 12mm each = 60mm total (parent cell 64mm, 4mm padding).
-    # "متوسطة" (Moderate, single unbreakable Arabic word, 6 chars) needs ~9mm
-    # at 6pt; old 9mm cell had ~0mm buffer — Word silently expanded it past
-    # tblLayout=fixed rather than clip the word.
-    for ci in range(5):
-        for ri in range(2):
-            _set_row_col_width(inner.rows[ri], ci, 12)
-
-
-# ---------------------------------------------------------------------------
-# STAGE OF CARE FLOW  (5-step visual bar)
-# ---------------------------------------------------------------------------
-
-def _stage_key(raw: str) -> int:
-    """Map stage_name to 0-based index in _STAGES."""
-    r = (raw or '').lower()
-    if 'discharge' in r or 'transfer' in r or 'خروج' in r: return 4
-    if 'operation' in r or 'procedure' in r or 'إجراء' in r or 'عملية' in r: return 3
-    if 'ward' in r or 'رعاية' in r: return 2
-    if 'examination' in r or 'diagnosis' in r or 'فحص' in r: return 1
-    if 'admission' in r or 'قبول' in r: return 0
-    return -1  # unknown
-
-
-def _build_stage_row(doc: Document, stage_raw: str, status_raw: str,
-                     risk_type: str, page_width_mm: float):
-    """
-    Full-width stage-flow table.
-    Cols: [5 stage cells + 1 status cell + 1 risk-type cell].
-    """
-    sel_idx = _stage_key(stage_raw)
-
-    # 9 cols: stage0 | arrow | stage1 | arrow | stage2 | arrow | stage3 | arrow | stage4 + status + risk
-    # Simpler: 7 cols (5 stages + status + risk), no explicit arrow cells
-    n_cols = 7
-    tbl = doc.add_table(rows=2, cols=n_cols)
+def _four_cell_strip(doc: Document, admin_name: str, dept_name: str,
+                     sec_name: str, period_label: str):
+    tbl = doc.add_table(rows=1, cols=4)
     tbl.autofit = False
     tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-    _apply_minimal_table_borders(tbl, outer=NAVY, outer_sz=6, inner='E4E8F0', inner_sz=2)
+    _apply_minimal_table_borders(tbl, outer=BORDER_OUTER, outer_sz=6, inner=BORDER_INNER, inner_sz=3)
     _set_rtl_table(tbl)
 
-    # Header strip
-    hdr_row = tbl.rows[0]
-    hdr_cell = hdr_row.cells[0].merge(hdr_row.cells[n_cols - 1])
-    _set_cell_shading(hdr_cell, NAVY)
-    hp = hdr_cell.paragraphs[0]
-    hp.clear()
-    hp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    hp.paragraph_format.space_before = Pt(0)
-    hp.paragraph_format.space_after  = Pt(0)
-    _ar_run(hp, 'مرحلة تقديم الخدمة / Stage of Care', size=8, bold=True, color=WHITE)
-
-    # Data row — target ~250mm (17mm slack vs 267mm usable). Stage cells already
-    # have generous room for their content (multi-word, wraps fine) so trimmed
-    # slightly; risk-type badge widened ("Never Event" = 11 unbreakable chars).
-    data_row = tbl.rows[1]
-    stage_widths = [36.0, 42.0, 39.0, 42.0, 42.0]   # 5 stages = 201mm
-    status_width  = 26.0
-    risk_width    = 23.0                             # 201+26+23 = 250mm
-
-    for ci, (ar, en) in enumerate(_STAGES):
-        cell = data_row.cells[ci]
-        is_sel = (ci == sel_idx)
-        is_prev = (ci < sel_idx) and sel_idx >= 0
-        bg = NAVY if is_sel else (NAVY_LIGHT if is_prev else STAGE_BG)
-        txt_color = WHITE if is_sel else (NAVY if is_prev else GREY_TEXT)
-
-        _set_cell_shading(cell, bg)
-        _cell_v_center(cell)
-
-        cp = cell.paragraphs[0]
-        cp.clear()
-        cp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        cp.paragraph_format.space_before = Pt(3)
-        cp.paragraph_format.space_after  = Pt(1)
-        cp._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-        _ar_run(cp, ar, size=8, bold=is_sel, color=txt_color)
-
-        ep = cell.add_paragraph()
-        ep.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        ep.paragraph_format.space_before = Pt(0)
-        ep.paragraph_format.space_after  = Pt(3)
-        _ar_run(ep, en, size=6, color=txt_color)
-
-        _set_row_col_width(data_row, ci, stage_widths[ci])
-
-    # Visual divider between the 5-stage progression (cols 0-4) and the
-    # Status/Risk-type metadata badges (cols 5-6) — those two are NOT part
-    # of the stage sequence, so a distinct double-line border separates
-    # them from the flow, instead of all 7 cells reading as one sequence.
-    for cell_idx, side in ((4, 'right'), (5, 'left')):
-        tc = data_row.cells[cell_idx]._tc
-        tcPr = tc.get_or_add_tcPr()
-        tcBorders = tcPr.find(qn('w:tcBorders'))
-        if tcBorders is None:
-            tcBorders = OxmlElement('w:tcBorders')
-            tcPr.append(tcBorders)
-        b = OxmlElement(f'w:{side}')
-        b.set(qn('w:val'), 'double')
-        b.set(qn('w:sz'), '18')
-        b.set(qn('w:space'), '0')
-        b.set(qn('w:color'), NAVY)
-        tcBorders.append(b)
-
-    # Status cell (col 5)
-    st_cell = data_row.cells[5]
-    status_lower = (status_raw or '').lower()
-    if 'close' in status_lower or 'مغلق' in status_lower:
-        st_bg, st_fg = 'D5F5E3', '1E8449'
-        st_label = 'مغلق / Closed'
-    else:
-        st_bg, st_fg = 'FEF9E7', 'D4AC0D'
-        st_label = 'مفتوح / Open'
-
-    _set_cell_shading(st_cell, st_bg)
-    _cell_v_center(st_cell)
-    sp = st_cell.paragraphs[0]
-    sp.clear()
-    sp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    sp.paragraph_format.space_before = Pt(2)
-    sp.paragraph_format.space_after  = Pt(1)
-    sp._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-    _ar_run(sp, 'الحالة / Status', size=7, color=GREY_TEXT)
-    vp = st_cell.add_paragraph()
-    vp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    vp.paragraph_format.space_before = Pt(1)
-    vp.paragraph_format.space_after  = Pt(2)
-    _ar_run(vp, st_label, size=9, bold=True, color=st_fg)
-    _set_row_col_width(data_row, 5, status_width)
-
-    # Risk type cell (col 6)
-    rk_cell = data_row.cells[6]
-    rk_lower = (risk_type or '').lower()
-    if 'never' in rk_lower:
-        rk_bg, rk_fg = 'FADBD8', 'C0392B'
-    elif 'red' in rk_lower or 'flag' in rk_lower:
-        rk_bg, rk_fg = 'FEF9E7', 'D4AC0D'
-    else:
-        rk_bg, rk_fg = 'F4F6F9', GREY_TEXT
-
-    _set_cell_shading(rk_cell, rk_bg)
-    _cell_v_center(rk_cell)
-    rp = rk_cell.paragraphs[0]
-    rp.clear()
-    rp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    rp.paragraph_format.space_before = Pt(2)
-    rp.paragraph_format.space_after  = Pt(1)
-    _ar_run(rp, 'نوع السجل', size=7, color=GREY_TEXT)
-    rvp = rk_cell.add_paragraph()
-    rvp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    rvp.paragraph_format.space_before = Pt(1)
-    rvp.paragraph_format.space_after  = Pt(2)
-    _ar_run(rvp, risk_type or 'Ordinary', size=8, bold=True, color=rk_fg)
-    _set_row_col_width(data_row, 6, risk_width)
-
-    # Header row height — AT_LEAST (not EXACTLY): a too-tight exact height on
-    # a merged cell can collapse to invisible in some renderers.
-    from docx.enum.table import WD_ROW_HEIGHT_RULE
-    hdr_row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-    hdr_row.height = _mm_to_dxa(7)
-
-    # 17mm (slightly taller than Identity's 15mm to give the divider/group
-    # styling a bit more breathing room).
-    data_row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-    data_row.height = _mm_to_dxa(17)
-
-
-# ---------------------------------------------------------------------------
-# COMPLAINT CARD ZONES
-# ---------------------------------------------------------------------------
-
-def _build_identity_zone(doc: Document, complaint: Dict, period: Dict,
-                         report_entity_name: str, report_entity_type: str):
-    """Zone 1 — 7-box identity row."""
-    sec_name, dept_name, admin_name = _target_names(complaint)
-
-    # Derive month display from period
-    period_label = period.get('label_ar') or period.get('label') or '—'
-
-    cols = 7
-    tbl = doc.add_table(rows=2, cols=cols)
-    tbl.autofit = False
-    tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-    _apply_minimal_table_borders(tbl, outer=NAVY, outer_sz=8, inner='E4E8F0', inner_sz=2)
-    _set_rtl_table(tbl)
-
-    # Header strip
-    hdr = tbl.rows[0]
-    hdr_cell = hdr.cells[0].merge(hdr.cells[cols - 1])
-    _set_cell_shading(hdr_cell, NAVY)
-    hp = hdr_cell.paragraphs[0]
-    hp.clear()
-    hp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    hp.paragraph_format.space_before = Pt(0)
-    hp.paragraph_format.space_after  = Pt(0)
-    _ar_run(hp, 'بيانات الحالة  /  Case Identity', size=9, bold=True, color=WHITE)
-
-    from docx.enum.table import WD_ROW_HEIGHT_RULE
-    hdr.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-    hdr.height = _mm_to_dxa(7)
-
-    # Data row
-    data = tbl.rows[1]
-    inc_id = complaint.get('incident_id')
-    id_str = f"INC-{int(inc_id):06d}" if inc_id is not None else str(complaint.get('id', '—'))
-
+    row = tbl.rows[0]
     boxes = [
-        ('القسم / Section',         sec_name),
-        ('الدائرة / Department',     dept_name),
         ('الإدارة / Administration', admin_name),
-        ('الشهر / Month',            period_label),
-        ('تاريخ التلقي / Received',  _fmt_date(complaint.get('received_date'))),
-        ('رقم الشكوى / Case No.',    id_str),
-        ('نوع السجل / Type',         complaint.get('feedback_intent_type_name_ar') or 'شكوى'),
+        ('الدائرة / Circle', dept_name),
+        ('الوحدة الإدارية/القسم / Section', sec_name),
+        ('الشهر / Month', period_label),
     ]
+    for ci, (label, value) in enumerate(boxes):
+        _labeled_cell(row.cells[ci], label, value, bg=NAVY_LIGHT,
+                      value_size=9.5, label_size=7.5, align='center')
+        _set_row_col_width(row, ci, _STRIP_WIDTHS[ci])
 
-    # sum = 244mm (target ~250mm budget, 23mm slack vs 267mm usable).
-    # Case No./Received widened (unbreakable digit-strings); Section/Dept/Admin
-    # trimmed (multi-word Arabic wraps fine across 2 lines, low overflow risk).
-    widths = [37, 40, 40, 27, 36, 38, 26]
-    for ci, ((label, value), w) in enumerate(zip(boxes, widths)):
-        cell = data.cells[ci]
-        _labeled_cell(cell, label, value, bg=NAVY_LIGHT, value_size=9, align='center')
-        _set_row_col_width(data, ci, w)
-
-    # Standardized to 15mm to match Stage row's rhythm (Classification stays
-    # taller at 18mm — it genuinely needs the room for its nested mini-tables).
-    data.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-    data.height = _mm_to_dxa(15)
+    row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+    row.height = _mm_to_dxa(13)
+    _set_row_cant_split(row)
+    return tbl
 
 
-def _build_classification_zone(doc: Document, complaint: Dict):
-    """Zone 2 — 8-box classification row:
-    Source | Patient | Domain | Category | Sub-Category | Classification | Severity | Harm."""
-    cols = 8
-    tbl = doc.add_table(rows=2, cols=cols)
+# ---------------------------------------------------------------------------
+# CLASSIFICATION TABLE  (11 columns, label-only header + bold/underline data)
+# ---------------------------------------------------------------------------
+
+def _case_number(complaint: Dict) -> str:
+    inc_id = complaint.get('incident_id')
+    if inc_id is not None:
+        try:
+            return f"INC-{int(inc_id):06d}"
+        except (TypeError, ValueError):
+            return str(inc_id)
+    return str(complaint.get('id', '—'))
+
+
+# RTL reading order (index 0 = rightmost column once bidiVisual is applied).
+# Three distinct dates are shown side by side:
+#   - received_date (تاريخ تلقي الملاحظة): the date the feedback reached
+#     Patient Services. This is the field that actually determines which
+#     month a case is reported under — see the date_filter WHERE-clause in
+#     reports_db.get_filtered_complaints, which filters exclusively on
+#     FeedbackRecievedDate. Never IncidentDate.
+#   - incident_date (تاريخ وقوع الحادثة): the date the underlying event
+#     occurred. Display-only — plays no role in month/period classification.
+#   - publication_date (تاريخ النشر): the date the case first entered
+#     workflow (earliest APP_AdministrativeSubcase.CreatedAt) — same
+#     definition already used by Table View and Inbox. Display-only.
+#
+# The 3 dates + case number are rendered ROTATED (header and value both) so
+# the Classification/Classification columns can be doubled and Severity/Harm
+# widened without exceeding the page budget — see _ROTATED_CLASS_COLS below.
+# Rotating the value (not just the header) needs real vertical room for a
+# ~10-char string, so the data row is taller here (22mm vs the previous
+# 11mm) than a purely horizontal table would need.
+# Sum of widths = 269mm (<= 270mm target ceiling).
+_CLASS_COLS = [
+    ('الاستلام', 8, lambda c: _fmt_date(c.get('received_date'))),
+    ('الحادثة', 8, lambda c: _fmt_date(c.get('incident_date'))),
+    ('النشر', 8, lambda c: _fmt_date(c.get('publication_date'))),
+    ('الرقم', 8, _case_number),
+    ('Problem Domain\nالمجال', 20, lambda c: c.get('domain_name') or '—'),
+    ('Problem Category\nفئة المشكلة', 22, lambda c: c.get('category_name') or '—'),
+    ('Sub-Category\nالفئة الفرعية', 22, lambda c: c.get('subcategory_name') or '—'),
+    ('Classification (Arb.)', 40, lambda c: c.get('classification_name') or '—'),
+    ('Classification (Eng.)', 40, lambda c: c.get('classification_name_en') or '—'),
+    ('Severity\nالخطورة', 19, lambda c: c.get('severity_name') or '—'),
+    ('Stage\nالمرحلة', 20, lambda c: c.get('stage_name') or '—'),
+    ('Harm\nالضرر', 21, lambda c: c.get('harm_level') or '—'),
+    ('Status\nالحالة', 15, lambda c: c.get('status_name') or '—'),
+    ('Complaint Field Type\nنوع السجل', 18, lambda c: c.get('clinical_risk_type_name') or 'Ordinary'),
+]
+
+# Indices of the 4 rotated columns (received/incident/publication date, case number).
+_ROTATED_CLASS_COLS = {0, 1, 2, 3}
+
+
+def _classification_table(doc: Document, complaint: Dict):
+    n = len(_CLASS_COLS)
+    tbl = doc.add_table(rows=2, cols=n)
     tbl.autofit = False
     tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-    _apply_minimal_table_borders(tbl, outer=NAVY, outer_sz=6, inner='E4E8F0', inner_sz=2)
+    _apply_minimal_table_borders(tbl, outer=BORDER_OUTER, outer_sz=6, inner=BORDER_INNER, inner_sz=3)
     _set_rtl_table(tbl)
 
-    from docx.enum.table import WD_ROW_HEIGHT_RULE
-
-    # Header strip
     hdr = tbl.rows[0]
-    hdr_cell = hdr.cells[0].merge(hdr.cells[cols - 1])
-    _set_cell_shading(hdr_cell, '2E6DA4')
-    hp = hdr_cell.paragraphs[0]
-    hp.clear()
-    hp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    hp.paragraph_format.space_before = Pt(0)
-    hp.paragraph_format.space_after  = Pt(0)
-    _ar_run(hp, 'التصنيف والتحليل  /  Classification & Analysis', size=9, bold=True, color=WHITE)
+    for ci, (label, w, _getter) in enumerate(_CLASS_COLS):
+        c = hdr.cells[ci]
+        if ci in _ROTATED_CLASS_COLS:
+            _vertical_header_cell(c, label)
+        else:
+            _set_cell_shading(c, HEADER_CYAN)
+            cp = _cell_para(c, 'center')
+            _ar_run(cp, label, size=6.5, bold=True, color=NAVY)
+        _set_row_col_width(hdr, ci, w)
     hdr.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-    hdr.height = _mm_to_dxa(7)
+    hdr.height = _mm_to_dxa(12)
+    _set_row_cant_split(hdr)
 
-    # Data row
     data = tbl.rows[1]
-
-    class_ar = complaint.get('classification_name') or '—'
-    subcat    = complaint.get('subcategory_name') or '—'
-
-    # Cols 0-5: labeled boxes (Source | Patient | Domain | Category | Sub-Category | Classification)
-    # Severity (43mm) fits its widened 39mm inner table; Harm (64mm) fits its widened 60mm
-    # inner table — these two were the overflow source: short unbreakable English words
-    # ("Moderate", "Medium") in 9-10mm cells at 6-8pt don't actually fit, so Word silently
-    # expands them past tblLayout=fixed. Other cols trimmed to compensate (multi-word
-    # Arabic/English content wraps fine, low overflow risk). Total = 250mm (17mm slack).
-    simple_boxes = [
-        ('المصدر / Source',            complaint.get('source_name') or '—'),
-        ('المريض / Patient',           complaint.get('patient_name') or '—'),
-        ('المجال / Domain',            complaint.get('domain_name') or '—'),
-        ('فئة المشكلة / Category',     complaint.get('category_name') or '—'),
-        ('الفئة الفرعية / Sub-Cat.',   subcat),
-        ('التصنيف / Classification',   class_ar),
-    ]
-    widths = [22, 26, 22, 25, 24, 24, 43, 64]
-    for ci, (label, value) in enumerate(simple_boxes):
-        _labeled_cell(data.cells[ci], label, value, bg=MINT_LIGHT, value_size=8, align='center')
-        _set_row_col_width(data, ci, widths[ci])
-
-    # Col 6: Severity badge (mini-table)
-    _build_severity_cell(data.cells[6], complaint.get('severity_name') or '')
-    _set_cell_shading(data.cells[6], MINT_LIGHT)
-    _set_row_col_width(data, 6, widths[6])
-
-    # Col 7: Harm stage scale (mini-table)
-    _build_harm_cell(data.cells[7], complaint.get('harm_level') or '')
-    _set_cell_shading(data.cells[7], MINT_LIGHT)
-    _set_row_col_width(data, 7, widths[7])
-
+    for ci, (_label, w, getter) in enumerate(_CLASS_COLS):
+        if ci in _ROTATED_CLASS_COLS:
+            _vertical_bold_underline_value_cell(data.cells[ci], getter(complaint))
+        else:
+            _bold_underline_value_cell(data.cells[ci], getter(complaint))
+        _set_row_col_width(data, ci, w)
     data.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-    data.height = _mm_to_dxa(18)
+    data.height = _mm_to_dxa(22)
+    _set_row_cant_split(data)
+    return tbl
 
 
-def _build_content_zone(doc: Document, complaint: Dict, page_width_mm: float):
-    """Zone 4 — Complaint text (left 75%) | Immediate Action + Follow-up (right 25%).
-    75/25 split: 12pt complaint font needs more horizontal room (fewer chars/line
-    at 12pt than 9pt) — wider left column keeps line count manageable within the cap."""
-    from docx.enum.table import WD_ROW_HEIGHT_RULE
+# ---------------------------------------------------------------------------
+# COMPLAINT DATA BLOCK  (بيانات الشكوى)
+# ---------------------------------------------------------------------------
 
-    tbl = doc.add_table(rows=1, cols=2)
+# Label cell first (index 0) so it renders at the RIGHT edge under RTL
+# bidiVisual — Arabic reads right-to-left, so the "بيانات الشكوى" side label
+# belongs where reading starts, not at the left.
+_COMPLAINT_DATA_WIDTHS = [8, 22, 18, 26, 196]  # sum = 270mm; narrative = 196mm (74.8%)
+
+
+def _complaint_data_block(doc: Document, complaint: Dict):
+    tbl = doc.add_table(rows=1, cols=5)
     tbl.autofit = False
     tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-    _apply_minimal_table_borders(tbl, outer=NAVY, outer_sz=6, inner=GREY_LINE, inner_sz=6)
+    _apply_minimal_table_borders(tbl, outer=BORDER_OUTER, outer_sz=6, inner=BORDER_INNER, inner_sz=3)
+    _set_rtl_table(tbl)
 
-    # 75/25 split — recalculated for 12pt font at 181.5mm usable → ~77 chars/line
-    left_w  = page_width_mm * 0.75
-    right_w = page_width_mm * 0.25
+    row = tbl.rows[0]
+    label_cell, issuing_cell, source_cell, patient_cell, narrative_cell = row.cells
 
-    left_cell  = tbl.rows[0].cells[0]
-    right_cell = tbl.rows[0].cells[1]
+    _labeled_cell(issuing_cell, 'قسم الصادر', complaint.get('section_name') or '—',
+                  value_size=9, label_size=7.5, align='center')
+    _labeled_cell(source_cell, 'المصدر', complaint.get('source_name') or '—',
+                  value_size=9, label_size=7.5, align='center')
+    _labeled_cell(patient_cell, 'P.Name', complaint.get('patient_name') or '—',
+                  value_size=9, label_size=7.5, align='center')
 
-    _set_row_col_width(tbl.rows[0], 0, left_w)
-    _set_row_col_width(tbl.rows[0], 1, right_w)
+    _cell_v_center(narrative_cell)
+    narrative_cell.text = ''
+    nh = narrative_cell.paragraphs[0]
+    nh.clear()
+    nh.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    nh.paragraph_format.space_before = Pt(2)
+    nh.paragraph_format.space_after  = Pt(2)
+    nh._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
+    _ar_run(nh, 'محتوى الشكوى  /  Complaint Details', size=8, bold=True, color=NAVY)
 
-    # LEFT — complaint text
-    _set_cell_shading(left_cell, WHITE)
-    _cell_v_center(left_cell)
-    left_cell.text = ''
-
-    lp_hdr = left_cell.paragraphs[0]
-    lp_hdr.clear()
-    _set_para_shading(lp_hdr, NAVY_LIGHT)
-    lp_hdr.alignment = WD_ALIGN_PARAGRAPH.CENTER   # bilingual label → centered
-    lp_hdr.paragraph_format.space_before = Pt(6)
-    lp_hdr.paragraph_format.space_after  = Pt(6)
-    lp_hdr._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-    _ar_run(lp_hdr, 'محتوى الشكوى  /  Complaint Details', size=9, bold=True, color=NAVY)
-
-    # Full text — no truncation. Long complaints may cause the card to span
-    # 2 pages; that is preferred over cutting data. User decision: full text
-    # always, multiple pages acceptable.
-    complaint_text = (complaint.get('complaint_text') or '').strip()
-    lp_body = left_cell.add_paragraph()
-    lp_body.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    lp_body.paragraph_format.space_before = Pt(3)   # reduced from 6pt — reclaim height
-    lp_body.paragraph_format.space_after  = Pt(3)   # reduced from 6pt
-    lp_body.paragraph_format.left_indent  = Mm(3)
-    lp_body.paragraph_format.right_indent = Mm(3)
-    lp_body._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-
-    # Line spacing 1.15 — same as before, keeps 12pt lines at 4.87mm each
-    pPr = lp_body._p.get_or_add_pPr()
+    text = _truncate_for_fit(complaint.get('complaint_text') or '', NARRATIVE_MAX_CHARS)
+    nb = narrative_cell.add_paragraph()
+    nb.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    nb.paragraph_format.space_before = Pt(3)
+    nb.paragraph_format.space_after  = Pt(3)
+    nb.paragraph_format.right_indent = Mm(3)
+    nb.paragraph_format.left_indent  = Mm(3)
+    nb._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
+    pPr = nb._p.get_or_add_pPr()
     sp_el = OxmlElement('w:spacing')
-    sp_el.set(qn('w:line'), '276')
+    sp_el.set(qn('w:line'), '265')
     sp_el.set(qn('w:lineRule'), 'auto')
     pPr.append(sp_el)
+    _ar_run(nb, text or 'لا يوجد نص للشكوى', size=11, color=DARK_TEXT)
 
-    _ar_run(lp_body, complaint_text or 'لا يوجد نص للشكوى', size=12, color=DARK_TEXT)
+    _vertical_label_cell(label_cell, 'بيانات الشكوى')
 
-    # RIGHT — two stacked action boxes
-    _set_cell_shading(right_cell, WHITE)
-    right_cell.text = ''
+    for ci, w in enumerate(_COMPLAINT_DATA_WIDTHS):
+        _set_row_col_width(row, ci, w)
 
-    # Immediate Action
-    ra_hdr = right_cell.paragraphs[0]
-    ra_hdr.clear()
-    _set_para_shading(ra_hdr, 'FEF9E7')
-    ra_hdr.alignment = WD_ALIGN_PARAGRAPH.CENTER   # bilingual label → centered
-    ra_hdr.paragraph_format.space_before = Pt(6)
-    ra_hdr.paragraph_format.space_after  = Pt(6)
-    ra_hdr._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-    _ar_run(ra_hdr, 'الإجراء الفوري  /  Immediate Action', size=9, bold=True, color='8B4000')
-
-    imm = (complaint.get('immediate_action') or '').strip()
-    ra_body = right_cell.add_paragraph()
-    ra_body.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    ra_body.paragraph_format.space_before = Pt(4)
-    ra_body.paragraph_format.space_after  = Pt(4)
-    ra_body.paragraph_format.left_indent  = Mm(2)
-    ra_body.paragraph_format.right_indent = Mm(2)
-    ra_body._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-    _ar_run(ra_body, imm or '—', size=12, color=DARK_TEXT)
-
-    # Divider
-    div = right_cell.add_paragraph()
-    div.paragraph_format.space_before = Pt(4)
-    div.paragraph_format.space_after  = Pt(0)
-    _set_para_bottom_border(div, color=GREY_LINE, sz=4)
-
-    # Follow-up / Taken Action
-    fu_hdr = right_cell.add_paragraph()
-    _set_para_shading(fu_hdr, 'EBF3FB')
-    fu_hdr.alignment = WD_ALIGN_PARAGRAPH.CENTER   # bilingual label → centered
-    fu_hdr.paragraph_format.space_before = Pt(6)
-    fu_hdr.paragraph_format.space_after  = Pt(6)
-    fu_hdr._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-    _ar_run(fu_hdr, 'المتابعة والرد  /  Follow-up Response', size=9, bold=True, color=NAVY)
-
-    taken = (complaint.get('taken_action') or '').strip()
-    fu_body = right_cell.add_paragraph()
-    fu_body.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    fu_body.paragraph_format.space_before = Pt(4)
-    fu_body.paragraph_format.space_after  = Pt(4)
-    fu_body.paragraph_format.left_indent  = Mm(2)
-    fu_body.paragraph_format.right_indent = Mm(2)
-    fu_body._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-    _ar_run(fu_body, taken or '—', size=12, color=DARK_TEXT)
-
-    # V9 hard cap: 75mm. Recalculated for 12pt font in 75% column:
-    # 1000 chars → 13 lines × 4.87mm + 11mm overhead = 74mm, fits within cap.
-    # 830-char test text → 11 lines × 4.87mm + 11mm = 65mm, 10mm spare.
-    tbl.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-    tbl.rows[0].height = _mm_to_dxa(74)
+    row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+    row.height = _mm_to_dxa(20)
+    # Deliberately NOT cantSplit — a long narrative should flow onto a
+    # continuation page rather than jump whole and leave a blank gap.
+    return tbl
 
 
-def _build_approvals_zone(doc: Document, complaint: Dict):
-    """Zone 5 — 4-role signature block (left) + RCA instruction note (right)."""
-    from docx.enum.table import WD_ROW_HEIGHT_RULE
+# ---------------------------------------------------------------------------
+# ACTION BLOCK  (Immediate Action | Actions Taken) — المتابعة
+# ---------------------------------------------------------------------------
 
-    outer = doc.add_table(rows=1, cols=2)
-    outer.autofit = False
-    outer.alignment = WD_TABLE_ALIGNMENT.CENTER
-    _apply_minimal_table_borders(outer, outer=NAVY, outer_sz=6, inner=GREY_LINE, inner_sz=4)
+# Label cell first (index 0) so it renders at the RIGHT edge under RTL
+# bidiVisual, same rationale as _COMPLAINT_DATA_WIDTHS above.
+_ACTION_WIDTHS = [8, 131, 131]  # sum = 270mm
 
-    sig_cell  = outer.rows[0].cells[0]
-    note_cell = outer.rows[0].cells[1]
-    # note_cell widened (85→130mm): at 130mm all 5 RCA text items fit on 1
-    # line each (longest line needs ~115mm net, 130-4mm indents=126mm net).
-    # This drops RCA height from ~35mm to ~23mm, so the Approvals row is now
-    # driven by the sig table (24mm EXACTLY) — a 12mm vertical saving.
-    # sig_cell narrowed accordingly (165→120mm); columns are still comfortably
-    # readable at 7pt with the narrower role-column allocation below.
-    _set_row_col_width(outer.rows[0], 0, 120)
-    _set_row_col_width(outer.rows[0], 1, 130)
 
-    # — Signature block inside sig_cell (width 165mm) —
-    _set_cell_shading(sig_cell, WHITE)
-    sig_cell.text = ''
-    inner = sig_cell.add_table(4, 5)
-    inner.autofit = False
-    _apply_borders_no_vertical(inner, outer='AAAAAA', outer_sz=4, inner_h='E8E8E8', inner_h_sz=3)
-    _set_rtl_table(inner)
+def _action_block(doc: Document, complaint: Dict):
+    tbl = doc.add_table(rows=1, cols=3)
+    tbl.autofit = False
+    tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+    _apply_minimal_table_borders(tbl, outer=BORDER_OUTER, outer_sz=6, inner=BORDER_INNER, inner_sz=3)
+    _set_rtl_table(tbl)
 
-    roles = ['مسؤول العملية\nProcess Owner',
-             'رئيس الدائرة\nDept. Head',
-             'مدير الإدارة\nAdmin. Manager',
-             'خاص خدمات المرضى\nPatient Services']
-    col_widths = [18, 26, 26, 26, 24]   # sum = 120mm
+    row = tbl.rows[0]
+    label_cell, immediate_cell, taken_cell = row.cells
 
-    # Header row — explicit height (6mm). Was never set before; Word's
-    # default row sizing for 4 blank-ish rows was the actual cause of the
-    # repeated page-2 spillover (~35-45mm unbounded vs the 27mm this gives).
-    from docx.enum.table import WD_ROW_HEIGHT_RULE as _SIG_HR
-    hdr = inner.rows[0]
-    hdr.height_rule = _SIG_HR.EXACTLY
-    hdr.height = _mm_to_dxa(6)
-    for ci, label in enumerate([''] + roles):
+    def _fill(cell, header_ar, header_en, text):
+        _set_cell_shading(cell, WHITE)
+        cell.text = ''
+        hp = cell.paragraphs[0]
+        hp.clear()
+        _set_para_shading(hp, ACTION_CREAM)
+        hp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        hp.paragraph_format.space_before = Pt(2)
+        hp.paragraph_format.space_after  = Pt(2)
+        hp._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
+        _ar_run(hp, f'{header_ar}  /  {header_en}', size=8, bold=True, color=NAVY)
+
+        body_text = _truncate_for_fit(text or '', ACTION_MAX_CHARS)
+        bp = cell.add_paragraph()
+        bp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        bp.paragraph_format.space_before = Pt(3)
+        bp.paragraph_format.space_after  = Pt(3)
+        bp.paragraph_format.right_indent = Mm(2)
+        bp.paragraph_format.left_indent  = Mm(2)
+        bp._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
+        _ar_run(bp, body_text or '—', size=10, color=DARK_TEXT)
+
+    _fill(immediate_cell, 'الإجراءات الفورية', 'Immediate Action', complaint.get('immediate_action'))
+    _fill(taken_cell, 'الإجراءات المتخذة', 'Actions Taken', complaint.get('taken_action'))
+    _vertical_label_cell(label_cell, 'المتابعة')
+
+    for ci, w in enumerate(_ACTION_WIDTHS):
+        _set_row_col_width(row, ci, w)
+
+    row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+    row.height = _mm_to_dxa(20)
+    _set_row_cant_split(row)
+    return tbl
+
+
+# ---------------------------------------------------------------------------
+# APPROVAL / SIGNATURE GRID
+# ---------------------------------------------------------------------------
+
+_APPROVAL_ROLES = [
+    'مسؤول العملية\nProcess Owner',
+    'رئيس الدائرة\nDept. Head',
+    'مدير الإدارة\nAdmin. Manager',
+    'خاص خدمات المرضى\nPatient Services',
+]
+_APPROVAL_COL_WIDTHS = [30, 60, 60, 60, 60]  # sum = 270mm
+
+
+def _approval_grid(doc: Document):
+    tbl = doc.add_table(rows=4, cols=5)
+    tbl.autofit = False
+    tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+    _apply_minimal_table_borders(tbl, outer=BORDER_OUTER, outer_sz=6, inner=BORDER_INNER, inner_sz=3)
+    _set_rtl_table(tbl)
+
+    # Header row height cut 40% (7mm -> 4.2mm); Name/Date/Signature rows cut
+    # 30% (10/10/14mm -> 7/7/9.8mm) — this table only needs to hold a single
+    # signature line each, not the generous defaults from the original design.
+    hdr = tbl.rows[0]
+    hdr.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+    hdr.height = _mm_to_dxa(4.2)
+    for ci, label in enumerate([''] + _APPROVAL_ROLES):
         c = hdr.cells[ci]
-        _set_cell_shading(c, NAVY)
+        _set_cell_shading(c, 'F2F2F2')
         cp = _cell_para(c, 'center')
-        _ar_run(cp, label, size=7, bold=True, color=WHITE)
-        _set_row_col_width(hdr, ci, col_widths[ci])
+        _ar_run(cp, label, size=7.5, bold=True, color=DARK_TEXT)
+        _set_row_col_width(hdr, ci, _APPROVAL_COL_WIDTHS[ci])
+    _set_row_cant_split(hdr)
 
-    field_labels = ['الاسم / Name', 'التاريخ / Date', 'التوقيع / Signature']
-    for ri, field_lbl in enumerate(field_labels):
-        row = inner.rows[ri + 1]
-        row.height_rule = _SIG_HR.EXACTLY
-        row.height = _mm_to_dxa(6)
+    field_rows = [('الاسم / Name', 7), ('التاريخ / Date', 7), ('التوقيع / Signature', 9.8)]
+    for ri, (field_lbl, h) in enumerate(field_rows):
+        row = tbl.rows[ri + 1]
+        row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+        row.height = _mm_to_dxa(h)
         c0 = row.cells[0]
-        _set_cell_shading(c0, 'F4F6F9')
+        _set_cell_shading(c0, 'F8F8F8')
         p0 = _cell_para(c0, 'right')
         _ar_run(p0, field_lbl, size=8, bold=True, color=NAVY)
-        _set_row_col_width(row, 0, col_widths[0])
+        _set_row_col_width(row, 0, _APPROVAL_COL_WIDTHS[0])
         for ci in range(1, 5):
             _set_cell_shading(row.cells[ci], WHITE)
-            _set_row_col_width(row, ci, col_widths[ci])
+            _set_row_col_width(row, ci, _APPROVAL_COL_WIDTHS[ci])
+        _set_row_cant_split(row)
+    return tbl
 
-    # — RCA note — compressed to 2 lines. All prior 5 paragraphs merged.
-    _set_cell_shading(note_cell, 'FFFDE7')
-    _cell_v_center(note_cell)
-    note_cell.text = ''
 
-    # Line 1: header + intro merged on one line
-    line1 = note_cell.paragraphs[0]
-    line1.clear()
-    line1.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    line1.paragraph_format.space_before = Pt(3)
-    line1.paragraph_format.space_after  = Pt(2)
-    line1.paragraph_format.left_indent  = Mm(2)
-    line1.paragraph_format.right_indent = Mm(2)
-    line1._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-    _ar_run(line1, 'ملاحظات مهمة', size=8, bold=True, color='8B4000')
-    _ar_run(line1, '  —  يلزم ملء استمارة RCA (Root Cause Analysis) عند تحديد مستوى الشكوى:',
-            size=8, color='5D4037')
+# ---------------------------------------------------------------------------
+# RCA / QUARTERLY INSTRUCTION NOTE  (complaint pages only)
+# ---------------------------------------------------------------------------
 
-    # Line 2: both severity levels joined with separator
-    line2 = note_cell.add_paragraph()
-    line2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    line2.paragraph_format.space_before = Pt(0)
-    line2.paragraph_format.space_after  = Pt(3)
-    line2.paragraph_format.left_indent  = Mm(2)
-    line2.paragraph_format.right_indent = Mm(2)
-    line2._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-    _ar_run(line2,
-            'High  •  يلزم ملؤها خلال المتابعة     |     Medium / Low  •  حسب قرار مسؤول العملية',
-            size=8, color='5D4037')
+_RCA_NOTE_LINE1 = (
+    'ملاحظة: 1- التقرير الشهري: الشكاوى المصنفة High يلزم ملء استمارة تحليل السبب الجذري '
+    'RCA (Root Cause Analysis) إذا لم يتم ملؤها خلال المتابعة، أما المصنفة Medium أو Low '
+    'فملؤها يكون تبعاً للحاجة بناءً على قرار مسؤول العملية.'
+)
+_RCA_NOTE_LINE2 = '2- التقرير الفصلي: ترفع استمارة تحسين تلقائياً تبعاً لـ Target الشكاوى.'
 
-    # Signature table is now explicitly bounded at 28mm (4 rows x 7mm,
-    # Signature rows are now 6mm × 4 = 24mm total; outer floor matches.
-    outer.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-    outer.rows[0].height = _mm_to_dxa(24)
+
+def _instruction_note(doc: Document):
+    tbl = doc.add_table(rows=1, cols=1)
+    tbl.autofit = False
+    tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+    _apply_minimal_table_borders(tbl, outer=BORDER_OUTER, outer_sz=4, inner=BORDER_INNER, inner_sz=4)
+
+    row = tbl.rows[0]
+    _set_row_col_width(row, 0, sum(_APPROVAL_COL_WIDTHS))
+    cell = row.cells[0]
+    _set_cell_shading(cell, 'FFFDE7')
+    cell.text = ''
+
+    p1 = cell.paragraphs[0]
+    p1.clear()
+    p1.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    p1.paragraph_format.space_before = Pt(3)
+    p1.paragraph_format.space_after  = Pt(2)
+    p1.paragraph_format.right_indent = Mm(2)
+    p1.paragraph_format.left_indent  = Mm(2)
+    p1._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
+    _ar_run(p1, _RCA_NOTE_LINE1, size=7.5, color='5D4037')
+
+    p2 = cell.add_paragraph()
+    p2.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    p2.paragraph_format.space_before = Pt(0)
+    p2.paragraph_format.space_after  = Pt(3)
+    p2.paragraph_format.right_indent = Mm(2)
+    p2.paragraph_format.left_indent  = Mm(2)
+    p2._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
+    _ar_run(p2, _RCA_NOTE_LINE2, size=7.5, color='5D4037')
+
+    row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+    row.height = _mm_to_dxa(14)
+    _set_row_cant_split(row)
+    return tbl
 
 
 # ---------------------------------------------------------------------------
 # FULL COMPLAINT PAGE
 # ---------------------------------------------------------------------------
 
-def _render_complaint_page(doc: Document, complaint: Dict, index: int, total: int,
-                            period: Dict, page_width_mm: float,
-                            report_entity_name: str, report_entity_type: str):
-    # Zone 1: Identity
-    _build_identity_zone(doc, complaint, period, report_entity_name, report_entity_type)
-    _gap(doc, 1.8)   # 60% of 3mm
+def _render_complaint_page(doc: Document, complaint: Dict, index: int, total: int, period: Dict):
+    # Inter-block gaps cut 50% (2/2/2/2/1.5mm -> 1/1/1/1/0.75mm) to reclaim
+    # vertical space — the page was running short on height for a single
+    # complaint to fit on one page.
+    sec_name, dept_name, admin_name = _target_names(complaint)
+    period_label = period.get('label_ar') or period.get('label') or '—'
+    _four_cell_strip(doc, admin_name, dept_name, sec_name, period_label)
+    _gap(doc, 1)
 
-    # Zone 2: Classification
-    _build_classification_zone(doc, complaint)
-    _gap(doc, 1.8)   # 60% of 3mm
+    _classification_table(doc, complaint)
+    _gap(doc, 1)
 
-    # Zone 3: Stage of care
-    _build_stage_row(doc,
-                     complaint.get('stage_name') or '',
-                     complaint.get('status_name') or '',
-                     complaint.get('clinical_risk_type_name') or 'Ordinary',
-                     page_width_mm)
-    _gap(doc, 2.4)   # 60% of 4mm
+    _complaint_data_block(doc, complaint)
+    _gap(doc, 1)
 
-    # Zone 4: Content
-    _build_content_zone(doc, complaint, page_width_mm)
-    _gap(doc, 2.4)   # 60% of 4mm
+    _action_block(doc, complaint)
+    _gap(doc, 1)
 
-    # Zone 5: Approvals
-    _build_approvals_zone(doc, complaint)
+    _approval_grid(doc)
+    _gap(doc, 0.75)
 
-    # Page counter footer line
-    pg_para = _new_para(doc, align='center', space_before=0, space_after=0)
+    _instruction_note(doc)
+
+    pg_para = _new_para(doc, align='center', space_before=2, space_after=0)
     _ar_run(pg_para, f'شكوى {index} من {total}  •  {_fmt_date(complaint.get("received_date"))}',
             size=7, color=GREY_TEXT)
 
@@ -1022,280 +678,195 @@ def _render_complaint_page(doc: Document, complaint: Dict, index: int, total: in
 
 
 # ---------------------------------------------------------------------------
-# NOTICE COMPACT CARD  (multiple per page)
+# NOTICES SECTION  (flowing table, multiple per page)
 # ---------------------------------------------------------------------------
 
-def _render_notice_card(doc: Document, notice: Dict):
-    """Compact 3-row notice card."""
-    from docx.enum.table import WD_ROW_HEIGHT_RULE
+# RTL reading order (index 0 = rightmost). Sum of widths = 270mm.
+_NOTICE_COLS = [
+    ('تاريخ تلقي الملاحظة', 20),
+    ('الرقم', 20),
+    ('قسم الصادر', 26),
+    ('المصدر', 20),
+    ('P.Name', 26),
+    ('تفصيل الملاحظة', 128),
+    ('الوحدة المنوّه بها', 30),
+]
 
-    target_unit = _target_display(notice)
+
+def _notice_case_number(notice: Dict) -> str:
     inc_id = notice.get('incident_id')
-    id_str = f"RTG-{int(inc_id):06d}" if inc_id is not None else str(notice.get('id', '—'))
+    if inc_id is not None:
+        try:
+            return f"RTG-{int(inc_id):06d}"
+        except (TypeError, ValueError):
+            return str(inc_id)
+    return str(notice.get('id', '—'))
 
-    tbl = doc.add_table(rows=3, cols=6)
+
+def _render_notices_section(doc: Document, notices: List[Dict],
+                             report_entity_name: Optional[str],
+                             report_entity_type: Optional[str],
+                             period: Dict):
+    admin_name, dept_name, sec_name = _scope_labels(report_entity_name, report_entity_type)
+    period_label = period.get('label_ar') or period.get('label') or '—'
+    _four_cell_strip(doc, admin_name, dept_name, sec_name, period_label)
+    _gap(doc, 3)
+
+    n = len(_NOTICE_COLS)
+    tbl = doc.add_table(rows=1, cols=n)
     tbl.autofit = False
     tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-    _apply_minimal_table_borders(tbl, outer=NAVY, outer_sz=6, inner='DCEEE2', inner_sz=2)
+    _apply_minimal_table_borders(tbl, outer=BORDER_OUTER, outer_sz=6, inner=BORDER_INNER, inner_sz=3)
     _set_rtl_table(tbl)
 
-    # Row 0: Identity strip (light teal header)
-    id_row = tbl.rows[0]
-    id_header = id_row.cells[0].merge(id_row.cells[5])
-    _set_cell_shading(id_header, '1B7A5E')
-    hp = id_header.paragraphs[0]
-    hp.clear()
-    hp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    hp.paragraph_format.space_before = Pt(1)
-    hp.paragraph_format.space_after  = Pt(1)
-    hp._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-    _ar_run(hp, f'تنويه / Notice   —   {id_str}   |   {_fmt_date(notice.get("received_date"))}   |   المصدر: {notice.get("source_name") or "—"}   |   {notice.get("patient_name") or "—"}',
-            size=8, bold=True, color=WHITE)
-    id_row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-    id_row.height = _mm_to_dxa(7)
+    hdr = tbl.rows[0]
+    for ci, (label, w) in enumerate(_NOTICE_COLS):
+        c = hdr.cells[ci]
+        _set_cell_shading(c, HEADER_CYAN)
+        cp = _cell_para(c, 'center')
+        _ar_run(cp, label, size=8, bold=True, color=NAVY)
+        _set_row_col_width(hdr, ci, w)
+    hdr.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+    hdr.height = _mm_to_dxa(8)
+    _set_table_header_repeat(hdr)
+    _set_row_cant_split(hdr)
 
-    # Row 1: Notice text (large, readable)
-    txt_row = tbl.rows[1]
-    txt_cell = txt_row.cells[0].merge(txt_row.cells[3])
-    _set_cell_shading(txt_cell, 'F0FFF8')
-    txt_cell.text = ''
-    tp = txt_cell.paragraphs[0]
-    tp.clear()
-    tp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    tp.paragraph_format.space_before = Pt(5)
-    tp.paragraph_format.space_after  = Pt(5)
-    tp.paragraph_format.right_indent = Mm(3)
-    tp._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-    pPr = tp._p.get_or_add_pPr()
-    sp_el = OxmlElement('w:spacing')
-    sp_el.set(qn('w:line'), '300')
-    sp_el.set(qn('w:lineRule'), 'auto')
-    pPr.append(sp_el)
-    notice_text = (notice.get('notice_text') or '').strip()
-    _ar_run(tp, f'" {notice_text} "' if notice_text else '—', size=10, italic=True, color='1B5E20')
+    for notice in notices:
+        row = tbl.add_row()
+        vals = [
+            _fmt_date(notice.get('received_date')),
+            _notice_case_number(notice),
+            notice.get('section_name') or '—',
+            notice.get('source_name') or '—',
+            notice.get('patient_name') or '—',
+            _truncate_for_fit(notice.get('notice_text') or '', NOTICE_MAX_CHARS) or '—',
+            _target_display(notice),
+        ]
+        for ci, (val, (_label, w)) in enumerate(zip(vals, _NOTICE_COLS)):
+            c = row.cells[ci]
+            _cell_v_center(c)
+            c.text = ''
+            p = c.paragraphs[0]
+            p.clear()
+            p.alignment = WD_ALIGN_PARAGRAPH.RIGHT if ci == 5 else WD_ALIGN_PARAGRAPH.CENTER
+            p._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
+            _ar_run(p, val, size=8.5, color=DARK_TEXT)
+            _set_row_col_width(row, ci, w)
+        row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+        row.height = _mm_to_dxa(9)
+        _set_row_cant_split(row)
 
-    # Target unit cell (col 4-5 merged)
-    target_cell = txt_row.cells[4].merge(txt_row.cells[5])
-    _set_cell_shading(target_cell, 'E8F5E9')
-    _cell_v_center(target_cell)
-    _labeled_cell(target_cell, 'الوحدة المُنوَّه بها / Praised Unit', target_unit,
-                  value_size=9, value_color='1B5E20', bg='E8F5E9')
+    if not notices:
+        row = tbl.add_row()
+        merged = row.cells[0].merge(row.cells[n - 1])
+        cp = _cell_para(merged, 'center')
+        _ar_run(cp, 'لا توجد تنويهات لهذه الفترة', size=9, italic=True, color=GREY_TEXT)
+        row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+        row.height = _mm_to_dxa(9)
 
-    txt_row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-    txt_row.height = _mm_to_dxa(18)
-
-    # Row 2: Section info — was 6 cols with a wasted empty 88mm trailing cell
-    # (true total 280mm, exceeding even the old 267mm usable). Merged the
-    # unused cell into Type; target ~250mm total (17mm safety margin).
-    info_row = tbl.rows[2]
-    info_meta = [
-        ('قسم الصادر / Issuing', notice.get('section_name') or '—'),
-        ('الدائرة / Department',  notice.get('department_name') or '—'),
-        ('الإدارة / Admin',       notice.get('administration_name') or '—'),
-        ('الحالة / Status',       notice.get('status_name') or '—'),
-    ]
-    widths_n = [48, 48, 48, 30]
-    for ci, (lbl, val) in enumerate(info_meta):
-        _labeled_cell(info_row.cells[ci], lbl, val, bg='F4FBF7', value_size=8)
-        _set_row_col_width(info_row, ci, widths_n[ci])
-
-    type_cell = info_row.cells[4].merge(info_row.cells[5])
-    _labeled_cell(type_cell, 'نوع السجل / Type',
-                  notice.get('feedback_intent_type_name_ar') or 'تنويه',
-                  bg='F4FBF7', value_size=8)
-    # Merged cell spans 2 underlying grid columns — both must be set explicitly,
-    # otherwise the unset one keeps its stale auto-generated grid width and
-    # still counts toward the table's real total even though visually merged away.
-    _set_row_col_width(info_row, 4, 38)
-    _set_row_col_width(info_row, 5, 38)   # 48+48+48+30+38+38 = 250mm
-
-    info_row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-    info_row.height = _mm_to_dxa(10)
-
-    _spacer_para(doc, 3)
+    _gap(doc, 3)
+    _approval_grid(doc)
 
 
 # ---------------------------------------------------------------------------
-# SUMMARY PAGE
+# APPENDIX PAGE  (intent_counts — unit distribution, plain formal style)
 # ---------------------------------------------------------------------------
 
-def _render_summary_page(doc: Document, report_data: Dict,
-                          report_entity_name: str, report_entity_type: str):
-    """Page 1: Period info + Intent counts table."""
-    from docx.enum.table import WD_ROW_HEIGHT_RULE
+def _render_appendix_page(doc: Document, intent_counts: Dict):
+    title = _new_para(doc, align='center', space_before=0, space_after=6)
+    _ar_run(title, 'ملحق: توزيع السجلات حسب الوحدة  /  Appendix: Records by Unit',
+            size=13, bold=True, color=NAVY)
 
-    period   = report_data.get('period', {})
-    counts   = report_data.get('intent_counts', {})
-    complaints = report_data.get('complaints', [])
-    notices    = report_data.get('notices', [])
-
-    # Title block
-    title_p = _new_para(doc, align='center', space_before=0, space_after=4)
-    _ar_run(title_p, 'ملخص التقرير الشهري  /  Monthly Report Summary',
-            size=16, bold=True, color=NAVY)
-
-    # Period + scope
-    scope_p = _new_para(doc, align='center', space_before=0, space_after=6)
-    scope_name = report_entity_name or 'المستشفى (Hospital Level)'
-    _ar_run(scope_p, f'الفترة: {period.get("label_ar") or period.get("label", "—")}   |   النطاق: {scope_name}',
-            size=11, color=GREY_TEXT)
-
-    # Stats bar (3 boxes)
-    stats_tbl = doc.add_table(rows=2, cols=3)
-    stats_tbl.autofit = False
-    stats_tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-    _apply_minimal_table_borders(stats_tbl, outer=NAVY, outer_sz=8, inner=GREY_LINE, inner_sz=6)
-    _set_rtl_table(stats_tbl)
-
-    hdr_r = stats_tbl.rows[0]
-    hdr_merged = hdr_r.cells[0].merge(hdr_r.cells[2])
-    _set_cell_shading(hdr_merged, NAVY)
-    shp = hdr_merged.paragraphs[0]
-    shp.clear()
-    shp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    shp.paragraph_format.space_before = Pt(2)
-    shp.paragraph_format.space_after  = Pt(2)
-    _ar_run(shp, 'إجمالي السجلات للفترة  /  Total Records for Period', size=10, bold=True, color=WHITE)
-    hdr_r.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-    hdr_r.height = _mm_to_dxa(8)
-
-    total_complaints = len(complaints)
-    total_notices    = len(notices)
-    data_r = stats_tbl.rows[1]
-    stat_boxes = [
-        ('إجمالي الشكاوى\nComplaints', str(total_complaints), 'FADBD8', 'C0392B'),
-        ('إجمالي التنويهات\nNotices',  str(total_notices),    'D5F5E3', '1E8449'),
-        ('المجموع الكلي\nCombined Total', str(total_complaints + total_notices), NAVY_LIGHT, NAVY),
-    ]
-    stat_widths = [88, 88, 90]
-    for ci, (lbl, val, bg, fg) in enumerate(stat_boxes):
-        c = data_r.cells[ci]
-        _set_cell_shading(c, bg)
-        _cell_v_center(c)
-        c.text = ''
-        vp = c.paragraphs[0]
-        vp.clear()
-        vp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        vp.paragraph_format.space_before = Pt(4)
-        vp.paragraph_format.space_after  = Pt(2)
-        _ar_run(vp, val, size=22, bold=True, color=fg)
-        lp = c.add_paragraph()
-        lp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        lp.paragraph_format.space_before = Pt(0)
-        lp.paragraph_format.space_after  = Pt(4)
-        _ar_run(lp, lbl, size=8, color=GREY_TEXT)
-        _set_row_col_width(data_r, ci, stat_widths[ci])
-
-    data_r.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-    data_r.height = _mm_to_dxa(24)
-
-    _spacer_para(doc, 6)
-
-    # Intent counts detail table
-    sections  = counts.get('sections', [])
-    depts     = counts.get('departments', [])
-    admins    = counts.get('administrations', [])
+    sections = intent_counts.get('sections') or []
+    depts    = intent_counts.get('departments') or []
+    admins   = intent_counts.get('administrations') or []
 
     rows_data = []
-    for u in sections:      rows_data.append((u, 'قسم (Section)'))
-    for u in depts:         rows_data.append((u, 'دائرة (Department)'))
-    for u in admins:        rows_data.append((u, 'إدارة (Administration)'))
+    for u in sections: rows_data.append((u, 'قسم / Section'))
+    for u in depts:    rows_data.append((u, 'دائرة / Department'))
+    for u in admins:   rows_data.append((u, 'إدارة / Administration'))
 
-    if rows_data:
-        title2 = _new_para(doc, align='center', space_before=4, space_after=3)
-        _set_para_bottom_border(title2, color=NAVY, sz=6)
-        _ar_run(title2, 'توزيع الشكاوى والتنويهات بحسب الوحدة  /  Complaint & Notice Count by Unit',
-                size=11, bold=True, color=NAVY)
+    if not rows_data:
+        ep = _new_para(doc, align='center', space_before=10, space_after=0)
+        _ar_run(ep, 'لا توجد بيانات توزيع لهذه الفترة.', size=10, italic=True, color=GREY_TEXT)
+        return
 
-        ct = doc.add_table(rows=1, cols=5)
-        ct.autofit = False
-        ct.alignment = WD_TABLE_ALIGNMENT.CENTER
-        _apply_minimal_table_borders(ct, outer=NAVY, outer_sz=6, inner=GREY_LINE, inner_sz=4)
-        _set_rtl_table(ct)
+    headers = [
+        ('اسم الوحدة / Unit Name', 90),
+        ('نوع الوحدة / Type', 50),
+        ('الشكاوى / Complaints', 40),
+        ('التنويهات / Notices', 40),
+        ('المجموع / Total', 40),
+    ]
+    tbl = doc.add_table(rows=1, cols=len(headers))
+    tbl.autofit = False
+    tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+    _apply_minimal_table_borders(tbl, outer=BORDER_OUTER, outer_sz=6, inner=BORDER_INNER, inner_sz=3)
+    _set_rtl_table(tbl)
 
-        headers = [
-            ('اسم الوحدة / Unit Name', 80),
-            ('نوع الوحدة / Type', 45),
-            ('الشكاوى / Complaints', 38),
-            ('التنويهات / Notices', 38),
-            ('المجموع / Total', 35),
+    hdr = tbl.rows[0]
+    for ci, (label, w) in enumerate(headers):
+        c = hdr.cells[ci]
+        _set_cell_shading(c, 'F2F2F2')
+        cp = _cell_para(c, 'center')
+        _ar_run(cp, label, size=8.5, bold=True, color=DARK_TEXT)
+        _set_row_col_width(hdr, ci, w)
+    hdr.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+    hdr.height = _mm_to_dxa(8)
+    _set_table_header_repeat(hdr)
+    _set_row_cant_split(hdr)
+
+    for ri, (unit, type_lbl) in enumerate(rows_data):
+        row = tbl.add_row()
+        bg = 'F7F7F7' if ri % 2 == 0 else WHITE
+        vals = [
+            unit.get('unit_name', '—'), type_lbl,
+            str(unit.get('complaint_count', 0)),
+            str(unit.get('notice_count', 0)),
+            str(unit.get('total_count', 0)),
         ]
-        for ci, (hdr_txt, w) in enumerate(headers):
-            c = ct.rows[0].cells[ci]
-            _set_cell_shading(c, NAVY)
-            cp = _cell_para(c, 'center')
-            _ar_run(cp, hdr_txt, size=8, bold=True, color=WHITE)
-            _set_row_col_width(ct.rows[0], ci, w)
-
-        for ri, (unit, type_lbl) in enumerate(rows_data):
-            row = ct.add_row()
-            bg = 'F4F6F9' if ri % 2 == 0 else WHITE
-            vals = [
-                unit.get('unit_name', '—'),
-                type_lbl,
-                str(unit.get('complaint_count', 0)),
-                str(unit.get('notice_count', 0)),
-                str(unit.get('total_count', 0)),
-            ]
-            widths_c = [80, 45, 38, 38, 35]
-            for ci, (val, w) in enumerate(zip(vals, widths_c)):
-                c = row.cells[ci]
-                _set_cell_shading(c, bg)
-                _cell_v_center(c)
-                cp = _cell_para(c, 'center' if ci > 0 else 'right')
-                _ar_run(cp, val, size=9, color=DARK_TEXT)
-                _set_row_col_width(row, ci, w)
-
-    _page_break(doc)
+        for ci, (val, (_label, w)) in enumerate(zip(vals, headers)):
+            c = row.cells[ci]
+            _set_cell_shading(c, bg)
+            cp = _cell_para(c, 'center' if ci > 0 else 'right')
+            _ar_run(cp, val, size=9, color=DARK_TEXT)
+            _set_row_col_width(row, ci, w)
+        row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+        row.height = _mm_to_dxa(7)
+        _set_row_cant_split(row)
 
 
 # ---------------------------------------------------------------------------
-# DOCUMENT SETUP + REPEATING HEADER
+# SECTION SETUP + REPEATING HEADER/FOOTER
 # ---------------------------------------------------------------------------
 
-def _setup_document(report_data: Dict, report_entity_name: str) -> Document:
-    """Create document, set landscape A4, configure repeating header."""
-    doc = Document()
-    doc.styles['Normal'].font.name = 'Traditional Arabic'
-    doc.styles['Normal'].font.size = Pt(10)
-
-    sec = doc.sections[0]
+def _setup_section(sec, title_ar: str, subtitle: str, footer_text: str,
+                    report_code: str, period_str: str):
+    """
+    Configures page geometry and a compact repeating header/footer for one
+    document section. python-docx section-property inheritance across
+    doc.add_section() is not fully reliable, so every geometry value is
+    re-applied explicitly on every call rather than assumed inherited.
+    """
     sec.page_width    = int(Mm(297))
     sec.page_height   = int(Mm(210))
     sec.orientation   = WD_ORIENT.LANDSCAPE
-    sec.left_margin   = int(Mm(12))   # recovered from 15mm — more canvas for content
+    sec.left_margin   = int(Mm(12))
     sec.right_margin  = int(Mm(12))
-    sec.top_margin    = int(Mm(13))   # only safe because header is now a single ~9mm row, not 4 stacked paragraphs
-    sec.bottom_margin = int(Mm(3))    # footer trimmed to 6pt to fit
+    sec.top_margin    = int(Mm(13))
+    sec.bottom_margin = int(Mm(3))
     sec.header_distance = int(Mm(4))
     sec.footer_distance = int(Mm(3))
 
+    sec.header.is_linked_to_previous = False
+    sec.footer.is_linked_to_previous = False
+
     logo_path = os.path.join(os.path.dirname(__file__), '..', '..', 'assets', 'logo.png')
 
-    # Load config — same keys as the classical formatter and Settings page
-    try:
-        from ..db_layer.report_config_db import get_report_config
-        cfg = get_report_config()
-    except Exception:
-        cfg = {}
-    header_title    = cfg.get('header_title',
-                              'التقرير الشهري لفرص التحسين والإجراءات التصحيحية الواردة من المرضى وذويهم')
-    header_subtitle = cfg.get('header_subtitle', 'HCAT Monthly Patient Feedback Report')
-    footer_text     = cfg.get('footer_text',
-                              'نؤمن أن الابتكار لا يكون فقط في التقنيات، بل في أسلوب الخدمة والتواصل والتعاطف')
-    report_code     = cfg.get('report_code', '')
-
-    period     = report_data.get('period', {})
-    period_str = (f"{period.get('start_date', '—')}  —  {period.get('end_date', '—')}")
-    scope_str  = report_entity_name or 'مستوى المستشفى'
-
-    # ── Repeating header — compact single-row table (logo beside the title
+    # Repeating header — compact single-row table (logo beside the title
     # block, not stacked above it) so total header height fits a 13mm top
     # margin. Plain 2-column table, no borders, no merged cells, AT_LEAST
-    # height — avoids both Round-1 collapse causes (merged-cell + EXACTLY,
-    # and _Cell.add_table() rejecting a width kwarg) since neither applies
-    # to a borderless, unmerged, header-level add_table(rows, cols, width).
-    from docx.enum.table import WD_ROW_HEIGHT_RULE as _HDR_HR
+    # height — a proven-safe pattern from the previous implementation.
     hdr = sec.header
     hdr.paragraphs[0].clear()
 
@@ -1309,7 +880,6 @@ def _setup_document(report_data: Dict, report_entity_name: str) -> Document:
     _set_row_col_width(hdr_tbl.rows[0], 0, 32)
     _set_row_col_width(hdr_tbl.rows[0], 1, 241)
 
-    # Logo — small, square-ish (178x179px), 0.35in keeps row height ~9mm
     _cell_v_center(logo_cell)
     logo_cell.text = ''
     lp = logo_cell.paragraphs[0]
@@ -1321,7 +891,6 @@ def _setup_document(report_data: Dict, report_entity_name: str) -> Document:
     except Exception:
         pass
 
-    # Title + info line, stacked inside the (wider) second column
     _cell_v_center(title_cell)
     title_cell.text = ''
     tp = title_cell.paragraphs[0]
@@ -1329,63 +898,56 @@ def _setup_document(report_data: Dict, report_entity_name: str) -> Document:
     tp.alignment = WD_ALIGN_PARAGRAPH.CENTER
     tp.paragraph_format.space_before = int(Pt(0))
     tp.paragraph_format.space_after  = int(Pt(1))
-    _ar_run(tp, header_title, size=10, bold=True, color=NAVY)
+    _ar_run(tp, title_ar, size=10, bold=True, color=NAVY)
 
-    # One combined info line. Two bidi fixes applied here:
-    # 1. Parentheses: ASCII ( ) are "mirrored" characters — Unicode bidi
-    #    flips them in RTL context so "(text)" renders as "(text(" visually.
-    #    Fix: strip leading/trailing parens from the config subtitle value.
-    # 2. Colon before LTR code: `:` has "common separator" bidi category and
-    #    gets pulled into the LTR block, making "رمز: QM-01" look like
-    #    "01 : رمز". Fix: insert RLM (U+200F, RIGHT-TO-LEFT MARK) after each
-    #    colon to anchor it to the Arabic RTL context.
+    # Info line — three bidi fixes preserved/added:
+    # 1. Strip ASCII parens from config text (bidi-mirrors backwards in RTL).
+    # 2. Insert RLM (U+200F) after each colon preceding an LTR token, so the
+    #    colon stays anchored to the Arabic RTL context.
+    # 3. Wrap each LTR chunk (the date range, the report code) in Unicode
+    #    directional isolates (U+2066 LRI ... U+2069 PDI). Without this, the
+    #    digits/dashes of "2026-01-01 — 2026-01-31" are only weakly-LTR on
+    #    their own and can get reordered by the bidi algorithm relative to
+    #    the surrounding Arabic — isolating the whole chunk forces it to stay
+    #    together as one atomic left-to-right unit regardless of context.
     hdr_info_para = title_cell.add_paragraph()
     hdr_info_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
     hdr_info_para.paragraph_format.space_before = int(Pt(0))
     hdr_info_para.paragraph_format.space_after = int(Pt(1))
     hdr_info_para._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
 
-    # Strip ASCII parens — they are bidi-mirrored characters; in RTL context
-    # "(" renders visually as ")" and vice versa, making "(text)" look like
-    # "(text(" which the user flagged. Remove them entirely.
-    _clean_subtitle = header_subtitle.strip('() ')
-    _ar_run(hdr_info_para, _clean_subtitle, size=7, italic=True, color=GREY_TEXT)
+    clean_subtitle = (subtitle or '').strip('() ')
+    _ar_run(hdr_info_para, clean_subtitle, size=7, italic=True, color=GREY_TEXT)
     _ar_run(hdr_info_para, '   |   ', size=7, color=GREY_TEXT)
-    # ‏ (RIGHT-TO-LEFT MARK) after each colon keeps it anchored to the
-    # Arabic RTL context rather than sliding into the following LTR block.
-    RLM = '‏'   # RIGHT-TO-LEFT MARK — anchors colon to Arabic RTL context
-    _ar_run(hdr_info_para,
-            f'{RLM}الفترة:{RLM} {period_str}   |   {RLM}النطاق:{RLM} {scope_str}',
-            size=7, bold=True, color=GREY_TEXT)
+    RLM = '‏'
+    LRI, PDI = '⁦', '⁩'
+    _ar_run(hdr_info_para, f'{RLM}الفترة:{RLM} {LRI}{period_str}{PDI}', size=7, bold=True, color=GREY_TEXT)
     if report_code:
         _ar_run(hdr_info_para, '   |   ', size=7, color=GREY_TEXT)
-        _ar_run(hdr_info_para,
-                f'{RLM}رمز التقرير:{RLM} {report_code}',
-                size=7, color=GREY_TEXT)
+        _ar_run(hdr_info_para, f'{RLM}رمز التقرير:{RLM} {LRI}{report_code}{PDI}', size=7, color=GREY_TEXT)
 
-    hdr_tbl.rows[0].height_rule = _HDR_HR.AT_LEAST
+    hdr_tbl.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
     hdr_tbl.rows[0].height = _mm_to_dxa(9)
 
-    # Blue separator line (matches classical formatter) — minimal height
+    # Thin separator line under the header
     hdr_sep = hdr.add_paragraph()
     hdr_sep.alignment = WD_ALIGN_PARAGRAPH.CENTER
     hdr_sep.paragraph_format.space_before = int(Pt(0))
     hdr_sep.paragraph_format.space_after  = int(Pt(0))
     hdr_sep_run = hdr_sep.add_run('')
     hdr_sep_run.font.size = int(Pt(2))
-    _pPr = hdr_sep._element.get_or_add_pPr()
-    _pBdr = OxmlElement('w:pBdr')
-    _bot = OxmlElement('w:bottom')
-    _bot.set(qn('w:val'), 'single')
-    _bot.set(qn('w:sz'), '12')
-    _bot.set(qn('w:space'), '1')
-    _bot.set(qn('w:color'), '4472C4')
-    _pBdr.append(_bot)
-    _pPr.append(_pBdr)
+    pPr = hdr_sep._element.get_or_add_pPr()
+    pBdr = OxmlElement('w:pBdr')
+    bot = OxmlElement('w:bottom')
+    bot.set(qn('w:val'), 'single')
+    bot.set(qn('w:sz'), '12')
+    bot.set(qn('w:space'), '1')
+    bot.set(qn('w:color'), '4472C4')
+    pBdr.append(bot)
+    pPr.append(pBdr)
 
-    # ── Footer (compact — single tiny line, fits a 3mm bottom margin) ──
+    # Footer — compact single line
     ftr = sec.footer
-    ftr.is_linked_to_previous = False
     fp = ftr.paragraphs[0]
     fp.clear()
     fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -1394,12 +956,15 @@ def _setup_document(report_data: Dict, report_entity_name: str) -> Document:
     _set_para_bottom_border(fp, color=GREY_LINE, sz=4)
     _ar_run(fp, footer_text, size=6, italic=True, color=GREY_TEXT)
 
-    return doc
-
 
 # ---------------------------------------------------------------------------
 # PUBLIC ENTRY POINT
 # ---------------------------------------------------------------------------
+
+_COMPLAINT_TITLE_DEFAULT = 'التقرير الشهري لفرص التحسين من المرضى ومرافقيهم'
+_NOTICE_TITLE = 'التقرير الشهري للتنويهات من المرضى ومرافقيهم'
+_APPENDIX_TITLE = 'ملحق التقرير الشهري — توزيع السجلات حسب الوحدة'
+
 
 def generate_monthly_stylish_docx(
     report_data: Dict[str, Any],
@@ -1412,7 +977,8 @@ def generate_monthly_stylish_docx(
     report_section: str = None,
 ) -> bytes:
     """
-    Generate the Stylish Monthly Report DOCX.
+    Generate the Stylish Monthly Report DOCX — a formal, table-based
+    document closely modeled on the hospital's official paper form.
 
     Args:
         report_data: Prepared report model from get_detailed_monthly_report()
@@ -1424,73 +990,85 @@ def generate_monthly_stylish_docx(
         bytes: Valid DOCX file content.
     """
     # Normalise inputs
-    complaints = []
-    notices    = []
+    complaints: List[Dict] = []
+    notices: List[Dict] = []
     try:
         if isinstance(report_data, dict):
             raw = report_data.get('complaints', [])
             complaints = raw if isinstance(raw, list) else []
-            notices    = report_data.get('notices', []) or []
+            notices = report_data.get('notices', []) or []
         elif isinstance(report_data, list):
             complaints = report_data
     except Exception:
         complaints = []
 
-    # Derive scope label
     if not report_entity_name:
         if report_administration:    report_entity_name = report_administration
         elif report_department:      report_entity_name = report_department
         elif report_section:         report_entity_name = report_section
         else:                        report_entity_name = 'مستوى المستشفى'
 
-    period = {}
+    period: Dict = {}
+    intent_counts: Dict = {}
     if isinstance(report_data, dict):
-        period = report_data.get('period', {})
+        period = report_data.get('period', {}) or {}
+        intent_counts = report_data.get('intent_counts', {}) or {}
 
-    doc = _setup_document(report_data if isinstance(report_data, dict) else {}, report_entity_name)
-    # Usable width is 273mm (297mm page - 12mm margins each side). Most zone
-    # tables (Identity/Classification/Stage) target ~250mm with hardcoded
-    # per-cell widths — unaffected by this constant since they don't read it
-    # for sizing. Content Zone (the only consumer of this value) widened to
-    # 270mm — closer to the 273mm ceiling, more room for the 12pt action text.
-    page_width_mm = 270.0
+    cfg = _load_report_config()
+    subtitle = cfg.get('header_subtitle', 'Health Care Analysis Tool - HCAT')
+    footer_text = cfg.get('footer_text',
+                          'نؤمن أن الابتكار لا يكون فقط في التقنيات، بل في أسلوب الخدمة والتواصل والتعاطف')
+    report_code = cfg.get('report_code', '')
+    complaint_title = cfg.get('header_title', _COMPLAINT_TITLE_DEFAULT)
+    period_str = f"{period.get('start_date', '—')}  —  {period.get('end_date', '—')}"
 
-    # Page 1: Summary
-    _render_summary_page(doc, report_data if isinstance(report_data, dict) else {},
-                         report_entity_name, report_entity_type or 'hospital')
+    doc = Document()
+    doc.styles['Normal'].font.name = 'Traditional Arabic'
+    doc.styles['Normal'].font.size = Pt(10)
 
-    # Complaint cards (one per page, unlimited)
-    total_c = len(complaints)
-    for idx, complaint in enumerate(complaints, start=1):
-        try:
-            _render_complaint_page(doc, complaint, idx, total_c,
-                                   period, page_width_mm,
-                                   report_entity_name, report_entity_type or '')
-        except Exception as e:
-            print(f'[STYLISH] Warning: failed to render complaint #{idx}: {e}')
-            _page_break(doc)
+    has_appendix = any((intent_counts.get(k) or []) for k in ('sections', 'departments', 'administrations'))
 
-    # Notice page(s) — compact cards grouped
-    if notices:
-        # Notice section header page intro paragraph
-        notice_hdr = _new_para(doc, align='center', space_before=0, space_after=6)
-        _set_para_shading(notice_hdr, NAVY)
-        _ar_run(notice_hdr,
-                f'التنويهات  /  Notices   —   إجمالي: {len(notices)}',
-                size=14, bold=True, color=WHITE)
-        _spacer_para(doc, 4)
+    plan: List[str] = []
+    if complaints: plan.append('complaints')
+    if notices:    plan.append('notices')
+    if has_appendix: plan.append('appendix')
+    if not plan: plan = ['empty']
 
-        for notice in notices:
+    titles = {
+        'complaints': complaint_title,
+        'notices': _NOTICE_TITLE,
+        'appendix': _APPENDIX_TITLE,
+        'empty': complaint_title,
+    }
+
+    first = True
+    for kind in plan:
+        sec = doc.sections[0] if first else doc.add_section(WD_SECTION.NEW_PAGE)
+        first = False
+        _setup_section(sec, titles[kind], subtitle, footer_text, report_code, period_str)
+
+        if kind == 'complaints':
+            total_c = len(complaints)
+            for idx, complaint in enumerate(complaints, start=1):
+                try:
+                    _render_complaint_page(doc, complaint, idx, total_c, period)
+                except Exception as e:
+                    print(f'[STYLISH] Warning: failed to render complaint #{idx}: {e}')
+                    _page_break(doc)
+        elif kind == 'notices':
             try:
-                _render_notice_card(doc, notice)
+                _render_notices_section(doc, notices, report_entity_name, report_entity_type, period)
             except Exception as e:
-                print(f'[STYLISH] Warning: failed to render notice: {e}')
-
-    # Empty state
-    if not complaints and not notices:
-        ep = _new_para(doc, align='center', space_before=20, space_after=0)
-        _ar_run(ep, 'لا توجد سجلات لهذه الفترة — No records for this period.',
-                size=13, italic=True, color=GREY_TEXT)
+                print(f'[STYLISH] Warning: failed to render notices section: {e}')
+        elif kind == 'appendix':
+            try:
+                _render_appendix_page(doc, intent_counts)
+            except Exception as e:
+                print(f'[STYLISH] Warning: failed to render appendix: {e}')
+        elif kind == 'empty':
+            ep = _new_para(doc, align='center', space_before=20, space_after=0)
+            _ar_run(ep, 'لا توجد سجلات لهذه الفترة — No records for this period.',
+                    size=13, italic=True, color=GREY_TEXT)
 
     buf = BytesIO()
     doc.save(buf)

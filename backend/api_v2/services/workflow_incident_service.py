@@ -95,6 +95,7 @@ def get_incident_detail(incident_id: int) -> Optional[Dict[str, Any]]:
                 c.ImmediateAction as immediate_action,
                 c.TakenAction as taken_action,
                 c.FeedbackRecievedDate as feedback_received_date,
+                c.IncidentDate as incident_date,
                 c.PatientName as patient_name,
                 c.CreatedAt as created_at,
                 c.isINPatient as is_inpatient,
@@ -157,6 +158,8 @@ def get_incident_detail(incident_id: int) -> Optional[Dict[str, Any]]:
         # Format dates
         if result.get('feedback_received_date'):
             result['feedback_received_date'] = result['feedback_received_date'].strftime('%Y-%m-%d')
+        if result.get('incident_date'):
+            result['incident_date'] = result['incident_date'].strftime('%Y-%m-%d')
         if result.get('created_at'):
             result['created_at'] = result['created_at'].isoformat()
         

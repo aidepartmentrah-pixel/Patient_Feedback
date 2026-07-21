@@ -29,6 +29,26 @@ from ..db_layer.satisfaction_db import get_satisfactions_by_cases
 
 # ==================== HELPER FUNCTIONS ====================
 
+def _parse_multi_int(value: Optional[str]) -> Optional[List[int]]:
+    """
+    Parse a comma-separated string of IDs (e.g. "5,12,7") into a list of ints.
+    Also accepts a single bare int/str for backward compatibility with callers
+    that still pass one scalar value. Returns None if nothing usable is present.
+    """
+    if value is None or value == "":
+        return None
+    try:
+        ids = [int(v.strip()) for v in str(value).split(",") if v.strip() != ""]
+    except ValueError:
+        return None
+    return ids or None
+
+
+def _in_clause(column_expr: str, ids: List[int]) -> str:
+    """Build a parameterized SQL IN (...) clause for the given column expression."""
+    placeholders = ",".join("?" * len(ids))
+    return f"{column_expr} IN ({placeholders})"
+
 def _get_workflow_status(incident_id: int, cursor=None) -> Optional[Dict[str, Any]]:
     """
     Get workflow status for an incident (subcases information).
@@ -172,12 +192,17 @@ def get_complaints_paginated(
     target_department_id: Optional[int] = None,
     target_dept_parent_id: Optional[int] = None,
     target_admin_id: Optional[int] = None,
-    domain_id: Optional[int] = None,
-    category_id: Optional[int] = None,
-    severity_id: Optional[int] = None,
-    stage_id: Optional[int] = None,
-    harm_level_id: Optional[int] = None,
-    case_status_id: Optional[int] = None,
+    domain_id: Optional[str] = None,
+    category_id: Optional[str] = None,
+    subcategory_id: Optional[str] = None,
+    classification_id: Optional[str] = None,
+    severity_id: Optional[str] = None,
+    stage_id: Optional[str] = None,
+    harm_level_id: Optional[str] = None,
+    case_status_id: Optional[str] = None,
+    clinical_risk_type_id: Optional[str] = None,
+    feedback_intent_type_id: Optional[str] = None,
+    source_id: Optional[str] = None,
     year: Optional[int] = None,
     month: Optional[int] = None,
     start_date: Optional[str] = None,
@@ -209,22 +234,36 @@ def get_complaints_paginated(
     # not the raw FK id, since FK assignment order is not guaranteed to match severity rank.
     SORT_FIELD_MAP = {
         "FeedbackRecievedDate": "c.FeedbackRecievedDate",
+        "IncidentDate": "c.IncidentDate",
         "IncidentRequestCaseID": "CAST(c.IncidentRequestCaseID AS INT)",
         "id": "CAST(c.IncidentRequestCaseID AS INT)",
         "CreatedAt": "c.CreatedAt",
         "UpdatedAt": "c.UpdatedAt",
+        "PublicationDate": "subcase_pub.CreatedAt",
         "PatientName": "c.PatientName",
         "SeverityID": "severity.SeverityOrder",
         "HarmSeverityOrder": "harm.SeverityOrder",
         "IncidentNumber": "i.incident_number",
         "SourceName": "source.SourceName",
         "FeedbackIntentTypeName": "feedback_intent.NameEn",
+        "ClinicalRiskTypeName": "clinical_risk.Name",
+        "StageName": "stage.StageName",
         "DomainName": "domain.DomainName",
         "CategoryName": "category.CategoryName",
         "SubCategoryName": "subcategory.SubCategoryName",
         "ClassificationName": "classification.Classification_AR",
         "StatusDisplayOrder": "status.DisplayOrder",
         "TargetDepartmentName": "target_depts.target_dept_names",
+        "RcaReplies": "rca_replies.rca_replies_text",
+        "ComplaintSummary": "LEFT(c.ComplaintText, 150)",
+        "CustomerServiceDecision": "subcase_ans.PatientServicesDecisionText",
+        "CustomerServiceDecisionDate": "subcase_ans.PatientServicesDecisionAt",
+        "SectionEntry": "subcase_ans.SectionEntryTimestamp",
+        "SectionDeadline": "subcase_ans.SectionDeadlineAt",
+        "DepartmentEntry": "subcase_ans.DepartmentEntryTimestamp",
+        "DepartmentDeadline": "subcase_ans.DepartmentDeadlineAt",
+        "AdministrationEntry": "subcase_ans.AdministrationEntryTimestamp",
+        "AdministrationDeadline": "subcase_ans.AdministrationDeadlineAt",
     }
     if sort_by not in SORT_FIELD_MAP:
         sort_by = "FeedbackRecievedDate"
@@ -271,39 +310,75 @@ def get_complaints_paginated(
             )
             params.extend(list(restrict_to_unit_ids))
 
-    # Domain filter
-    if domain_id:
-        where_conditions.append("c.DomainID = ?")
-        params.append(domain_id)
-    
-    # Category filter
-    if category_id:
-        where_conditions.append("c.CategoryID = ?")
-        params.append(category_id)
-    
-    # Severity filter
-    if severity_id:
-        where_conditions.append("c.SeverityID = ?")
-        params.append(severity_id)
-    
+    # Domain filter (accepts comma-separated multi-select IDs)
+    domain_ids = _parse_multi_int(domain_id)
+    if domain_ids:
+        where_conditions.append(_in_clause("c.DomainID", domain_ids))
+        params.extend(domain_ids)
+
+    # Category filter (accepts comma-separated multi-select IDs)
+    category_ids = _parse_multi_int(category_id)
+    if category_ids:
+        where_conditions.append(_in_clause("c.CategoryID", category_ids))
+        params.extend(category_ids)
+
+    # Subcategory filter (accepts comma-separated multi-select IDs)
+    subcategory_ids = _parse_multi_int(subcategory_id)
+    if subcategory_ids:
+        where_conditions.append(_in_clause("c.SubCategoryID", subcategory_ids))
+        params.extend(subcategory_ids)
+
+    # Classification filter (accepts comma-separated multi-select IDs)
+    classification_ids = _parse_multi_int(classification_id)
+    if classification_ids:
+        where_conditions.append(_in_clause("c.ClassificationID", classification_ids))
+        params.extend(classification_ids)
+
+    # Severity filter (accepts comma-separated multi-select IDs)
+    severity_ids = _parse_multi_int(severity_id)
+    if severity_ids:
+        where_conditions.append(_in_clause("c.SeverityID", severity_ids))
+        params.extend(severity_ids)
+
     # Stage filter
-    if stage_id:
-        where_conditions.append("c.StageID = ?")
-        params.append(stage_id)
-    
-    # Harm level filter
-    if harm_level_id:
-        where_conditions.append("c.HarmLevelID = ?")
-        params.append(harm_level_id)
-    
-    # Case status filter
-    if case_status_id:
-        where_conditions.append("c.CaseStatusID = ?")
-        params.append(case_status_id)
+    stage_ids = _parse_multi_int(stage_id)
+    if stage_ids:
+        where_conditions.append(_in_clause("c.StageID", stage_ids))
+        params.extend(stage_ids)
+
+    # Harm level filter (accepts comma-separated multi-select IDs)
+    harm_level_ids = _parse_multi_int(harm_level_id)
+    if harm_level_ids:
+        where_conditions.append(_in_clause("c.HarmLevelID", harm_level_ids))
+        params.extend(harm_level_ids)
+
+    # Case status filter (accepts comma-separated multi-select IDs)
+    case_status_ids = _parse_multi_int(case_status_id)
+    if case_status_ids:
+        where_conditions.append(_in_clause("c.CaseStatusID", case_status_ids))
+        params.extend(case_status_ids)
     elif tab == 'preparation':
         where_conditions.append("c.CaseStatusID IN (4, 5)")
     elif tab == 'workflow':
         where_conditions.append("c.CaseStatusID NOT IN (4, 5)")
+
+    # Clinical risk type filter (accepts comma-separated multi-select IDs)
+    clinical_risk_type_ids = _parse_multi_int(clinical_risk_type_id)
+    if clinical_risk_type_ids:
+        where_conditions.append(_in_clause("c.ClinicalRiskTypeID", clinical_risk_type_ids))
+        params.extend(clinical_risk_type_ids)
+
+    # Feedback intent type filter (accepts comma-separated multi-select IDs)
+    feedback_intent_type_ids = _parse_multi_int(feedback_intent_type_id)
+    if feedback_intent_type_ids:
+        where_conditions.append(_in_clause("c.FeedbackIntentTypeID", feedback_intent_type_ids))
+        params.extend(feedback_intent_type_ids)
+
+    # Source filter (accepts comma-separated multi-select IDs)
+    source_ids = _parse_multi_int(source_id)
+    if source_ids:
+        where_conditions.append(_in_clause("c.SourceID", source_ids))
+        params.extend(source_ids)
 
     # Target section filter (exact section ID)
     if target_department_id:
@@ -387,7 +462,9 @@ def get_complaints_paginated(
             LEFT(c.ComplaintText, 150) as complaint_summary,
             c.ComplaintText as complaint_text,
             c.FeedbackRecievedDate as received_date,
+            c.IncidentDate as incident_date,
             c.CreatedAt as created_at,
+            subcase_pub.CreatedAt as publication_date,
             c.PatientName as patient_name,
 
             -- Issuing organizational unit
@@ -455,6 +532,21 @@ def get_complaints_paginated(
             subcase_ans.DepartmentExplanationText as department_answer,
             subcase_ans.AdministrationExplanationText as administration_answer,
 
+            -- Customer Service Decision (most recent subcase's Patient Services decision)
+            subcase_ans.PatientServicesDecisionText as customer_service_decision,
+            subcase_ans.PatientServicesDecisionAt as customer_service_decision_date,
+
+            -- Per-level entry/deadline timestamps (most recent subcase per case)
+            subcase_ans.SectionEntryTimestamp as section_entry,
+            subcase_ans.SectionDeadlineAt as section_deadline,
+            subcase_ans.DepartmentEntryTimestamp as department_entry,
+            subcase_ans.DepartmentDeadlineAt as department_deadline,
+            subcase_ans.AdministrationEntryTimestamp as administration_entry,
+            subcase_ans.AdministrationDeadlineAt as administration_deadline,
+
+            -- RCA Replies: selected Cause -> Corrective Action pairs across the case's subcase(s)
+            rca_replies.rca_replies_text as rca_replies,
+
             -- Other fields
             c.ImmediateAction as immediate_action,
             c.TakenAction as taken_action,
@@ -487,17 +579,49 @@ def get_complaints_paginated(
             SELECT TOP 1
                 SectionExplanationText,
                 DepartmentExplanationText,
-                AdministrationExplanationText
+                AdministrationExplanationText,
+                PatientServicesDecisionText,
+                PatientServicesDecisionAt,
+                SectionEntryTimestamp,
+                SectionDeadlineAt,
+                DepartmentEntryTimestamp,
+                DepartmentDeadlineAt,
+                AdministrationEntryTimestamp,
+                AdministrationDeadlineAt
             FROM dbo.APP_AdministrativeSubcase
             WHERE IncidentRequestCaseID = c.IncidentRequestCaseID
             ORDER BY CreatedAt DESC
         ) subcase_ans
+        OUTER APPLY (
+            -- Aggregate selected RCA Cause -> Corrective Action pairs across all
+            -- of this case's subcases (a case may target more than one subcase).
+            SELECT STRING_AGG(
+                CONCAT(
+                    N'Cause: ', ISNULL(cause.SuggestionTextAr, cause.SuggestionTextEn),
+                    N' -> Action: ', ISNULL(action.SuggestionTextAr, action.SuggestionTextEn)
+                ),
+                N' | '
+            ) as rca_replies_text
+            FROM dbo.APP_AdministrativeSubcase sub
+            JOIN dbo.APP_SubcaseRCASuggestionSelection sel ON sel.SubcaseID = sub.SubcaseID
+            JOIN dbo.APP_RCASuggestion cause ON cause.SuggestionID = sel.SuggestionID AND cause.SuggestionType = 'CAUSE'
+            JOIN dbo.APP_RCASuggestion action ON action.SuggestionID = cause.PairedSuggestionID
+            WHERE sub.IncidentRequestCaseID = c.IncidentRequestCaseID
+        ) rca_replies
         OUTER APPLY (
             SELECT STRING_AGG(au.Name, N', ') as target_dept_names
             FROM dbo.APP_IncidentCaseTargetDepartment td
             JOIN dbo.AdminsrationUnit au ON td.DepartmentID = au.UniqueID
             WHERE td.IncidentRequestCaseID = c.IncidentRequestCaseID
         ) target_depts
+        OUTER APPLY (
+            -- Publication Date: the moment this case first entered workflow
+            -- (earliest subcase CreatedAt). NULL for cases never published.
+            SELECT TOP 1 CreatedAt
+            FROM dbo.APP_AdministrativeSubcase
+            WHERE IncidentRequestCaseID = c.IncidentRequestCaseID
+            ORDER BY CreatedAt ASC
+        ) subcase_pub
         {where_clause}
         {order_by_clause}
         OFFSET ? ROWS
@@ -534,10 +658,19 @@ def get_complaints_paginated(
 
             if complaint.get('received_date'):
                 complaint['received_date'] = complaint['received_date'].strftime('%Y-%m-%d')
+            if complaint.get('incident_date'):
+                complaint['incident_date'] = complaint['incident_date'].strftime('%Y-%m-%d')
             if complaint.get('created_at'):
                 complaint['created_at'] = complaint['created_at'].isoformat()
+            if complaint.get('publication_date'):
+                complaint['publication_date'] = complaint['publication_date'].isoformat()
             if complaint.get('last_edited'):
                 complaint['last_edited'] = complaint['last_edited'].isoformat()
+            if complaint.get('customer_service_decision_date'):
+                complaint['customer_service_decision_date'] = complaint['customer_service_decision_date'].isoformat()
+            for level_field in ('section_entry', 'section_deadline', 'department_entry', 'department_deadline', 'administration_entry', 'administration_deadline'):
+                if complaint.get(level_field):
+                    complaint[level_field] = complaint[level_field].isoformat()
 
             if complaint.get('received_date'):
                 try:
@@ -572,16 +705,21 @@ def get_complaints_paginated(
             'issuing_org_unit_id': issuing_org_unit_id,
             'domain_id': domain_id,
             'category_id': category_id,
+            'subcategory_id': subcategory_id,
+            'classification_id': classification_id,
             'severity_id': severity_id,
             'stage_id': stage_id,
             'harm_level_id': harm_level_id,
             'case_status_id': case_status_id,
+            'clinical_risk_type_id': clinical_risk_type_id,
+            'feedback_intent_type_id': feedback_intent_type_id,
+            'source_id': source_id,
             'year': year,
             'month': month,
             'start_date': start_date,
             'end_date': end_date
         }
-        
+
         return {
             'complaints': complaints,
             'pagination': {
@@ -785,8 +923,10 @@ def get_complaint_by_id(complaint_id: int) -> Optional[Dict[str, Any]]:
             c.ImmediateAction as immediate_action,
             c.TakenAction as taken_action,
             c.FeedbackRecievedDate as received_date,
+            c.IncidentDate as incident_date,
             c.PatientName as patient_name,
             c.CreatedAt as created_at,
+            c.UpdatedAt as updated_at,
             c.CreatedByUserID as created_by_user_id,
             c.isINPatient as is_inpatient,
             c.IsMorbidity as is_morbidity,
@@ -891,8 +1031,12 @@ def get_complaint_by_id(complaint_id: int) -> Optional[Dict[str, Any]]:
         # Format dates
         if complaint.get('received_date'):
             complaint['received_date'] = complaint['received_date'].strftime('%Y-%m-%d')
+        if complaint.get('incident_date'):
+            complaint['incident_date'] = complaint['incident_date'].strftime('%Y-%m-%d')
         if complaint.get('created_at'):
             complaint['created_at'] = complaint['created_at'].isoformat()
+        if complaint.get('updated_at'):
+            complaint['updated_at'] = complaint['updated_at'].isoformat()
         
         # Fetch target departments.
         # Uses OUTER APPLY to walk the hierarchy by Type rather than by position,
@@ -1041,12 +1185,17 @@ def get_complaints_count(
     target_department_id: Optional[int] = None,
     target_dept_parent_id: Optional[int] = None,
     target_admin_id: Optional[int] = None,
-    domain_id: Optional[int] = None,
-    category_id: Optional[int] = None,
-    severity_id: Optional[int] = None,
-    stage_id: Optional[int] = None,
-    harm_level_id: Optional[int] = None,
-    case_status_id: Optional[int] = None,
+    domain_id: Optional[str] = None,
+    category_id: Optional[str] = None,
+    subcategory_id: Optional[str] = None,
+    classification_id: Optional[str] = None,
+    severity_id: Optional[str] = None,
+    stage_id: Optional[str] = None,
+    harm_level_id: Optional[str] = None,
+    case_status_id: Optional[str] = None,
+    clinical_risk_type_id: Optional[str] = None,
+    feedback_intent_type_id: Optional[str] = None,
+    source_id: Optional[str] = None,
     year: Optional[int] = None,
     month: Optional[int] = None,
     start_date: Optional[str] = None,
@@ -1117,33 +1266,64 @@ def get_complaints_count(
         """)
         params.append(target_admin_id)
 
-    if domain_id:
-        where_conditions.append("c.DomainID = ?")
-        params.append(domain_id)
+    domain_ids = _parse_multi_int(domain_id)
+    if domain_ids:
+        where_conditions.append(_in_clause("c.DomainID", domain_ids))
+        params.extend(domain_ids)
 
-    if category_id:
-        where_conditions.append("c.CategoryID = ?")
-        params.append(category_id)
+    category_ids = _parse_multi_int(category_id)
+    if category_ids:
+        where_conditions.append(_in_clause("c.CategoryID", category_ids))
+        params.extend(category_ids)
 
-    if severity_id:
-        where_conditions.append("c.SeverityID = ?")
-        params.append(severity_id)
+    subcategory_ids = _parse_multi_int(subcategory_id)
+    if subcategory_ids:
+        where_conditions.append(_in_clause("c.SubCategoryID", subcategory_ids))
+        params.extend(subcategory_ids)
 
-    if stage_id:
-        where_conditions.append("c.StageID = ?")
-        params.append(stage_id)
+    classification_ids = _parse_multi_int(classification_id)
+    if classification_ids:
+        where_conditions.append(_in_clause("c.ClassificationID", classification_ids))
+        params.extend(classification_ids)
 
-    if harm_level_id:
-        where_conditions.append("c.HarmLevelID = ?")
-        params.append(harm_level_id)
+    severity_ids = _parse_multi_int(severity_id)
+    if severity_ids:
+        where_conditions.append(_in_clause("c.SeverityID", severity_ids))
+        params.extend(severity_ids)
 
-    if case_status_id:
-        where_conditions.append("c.CaseStatusID = ?")
-        params.append(case_status_id)
+    stage_ids = _parse_multi_int(stage_id)
+    if stage_ids:
+        where_conditions.append(_in_clause("c.StageID", stage_ids))
+        params.extend(stage_ids)
+
+    harm_level_ids = _parse_multi_int(harm_level_id)
+    if harm_level_ids:
+        where_conditions.append(_in_clause("c.HarmLevelID", harm_level_ids))
+        params.extend(harm_level_ids)
+
+    case_status_ids = _parse_multi_int(case_status_id)
+    if case_status_ids:
+        where_conditions.append(_in_clause("c.CaseStatusID", case_status_ids))
+        params.extend(case_status_ids)
     elif tab == 'preparation':
         where_conditions.append("c.CaseStatusID IN (4, 5)")
     elif tab == 'workflow':
         where_conditions.append("c.CaseStatusID NOT IN (4, 5)")
+
+    clinical_risk_type_ids = _parse_multi_int(clinical_risk_type_id)
+    if clinical_risk_type_ids:
+        where_conditions.append(_in_clause("c.ClinicalRiskTypeID", clinical_risk_type_ids))
+        params.extend(clinical_risk_type_ids)
+
+    feedback_intent_type_ids = _parse_multi_int(feedback_intent_type_id)
+    if feedback_intent_type_ids:
+        where_conditions.append(_in_clause("c.FeedbackIntentTypeID", feedback_intent_type_ids))
+        params.extend(feedback_intent_type_ids)
+
+    source_ids = _parse_multi_int(source_id)
+    if source_ids:
+        where_conditions.append(_in_clause("c.SourceID", source_ids))
+        params.extend(source_ids)
 
     if year:
         where_conditions.append("YEAR(c.FeedbackRecievedDate) = ?")
@@ -1178,12 +1358,14 @@ def get_complaints_count(
     try:
         cursor.execute(query, params)
         total_count = cursor.fetchone().total
-        
+
         filters_applied = {
             'search': search,
             'issuing_org_unit_id': issuing_org_unit_id,
             'domain_id': domain_id,
             'category_id': category_id,
+            'subcategory_id': subcategory_id,
+            'classification_id': classification_id,
             'severity_id': severity_id,
             'stage_id': stage_id,
             'harm_level_id': harm_level_id,
@@ -1210,12 +1392,17 @@ def export_complaints_excel(
     target_department_id: Optional[int] = None,
     target_dept_parent_id: Optional[int] = None,
     target_admin_id: Optional[int] = None,
-    domain_id: Optional[int] = None,
-    category_id: Optional[int] = None,
-    severity_id: Optional[int] = None,
-    stage_id: Optional[int] = None,
-    harm_level_id: Optional[int] = None,
-    case_status_id: Optional[int] = None,
+    domain_id: Optional[str] = None,
+    category_id: Optional[str] = None,
+    subcategory_id: Optional[str] = None,
+    classification_id: Optional[str] = None,
+    severity_id: Optional[str] = None,
+    stage_id: Optional[str] = None,
+    harm_level_id: Optional[str] = None,
+    case_status_id: Optional[str] = None,
+    clinical_risk_type_id: Optional[str] = None,
+    feedback_intent_type_id: Optional[str] = None,
+    source_id: Optional[str] = None,
     year: Optional[int] = None,
     month: Optional[int] = None,
     start_date: Optional[str] = None,
@@ -1294,33 +1481,64 @@ def export_complaints_excel(
         """)
         params.extend([target_admin_id, target_admin_id])
 
-    if domain_id:
-        where_conditions.append("c.DomainID = ?")
-        params.append(domain_id)
+    domain_ids = _parse_multi_int(domain_id)
+    if domain_ids:
+        where_conditions.append(_in_clause("c.DomainID", domain_ids))
+        params.extend(domain_ids)
 
-    if category_id:
-        where_conditions.append("c.CategoryID = ?")
-        params.append(category_id)
+    category_ids = _parse_multi_int(category_id)
+    if category_ids:
+        where_conditions.append(_in_clause("c.CategoryID", category_ids))
+        params.extend(category_ids)
 
-    if severity_id:
-        where_conditions.append("c.SeverityID = ?")
-        params.append(severity_id)
+    subcategory_ids = _parse_multi_int(subcategory_id)
+    if subcategory_ids:
+        where_conditions.append(_in_clause("c.SubCategoryID", subcategory_ids))
+        params.extend(subcategory_ids)
 
-    if stage_id:
-        where_conditions.append("c.StageID = ?")
-        params.append(stage_id)
+    classification_ids = _parse_multi_int(classification_id)
+    if classification_ids:
+        where_conditions.append(_in_clause("c.ClassificationID", classification_ids))
+        params.extend(classification_ids)
 
-    if harm_level_id:
-        where_conditions.append("c.HarmLevelID = ?")
-        params.append(harm_level_id)
+    severity_ids = _parse_multi_int(severity_id)
+    if severity_ids:
+        where_conditions.append(_in_clause("c.SeverityID", severity_ids))
+        params.extend(severity_ids)
 
-    if case_status_id:
-        where_conditions.append("c.CaseStatusID = ?")
-        params.append(case_status_id)
+    stage_ids = _parse_multi_int(stage_id)
+    if stage_ids:
+        where_conditions.append(_in_clause("c.StageID", stage_ids))
+        params.extend(stage_ids)
+
+    harm_level_ids = _parse_multi_int(harm_level_id)
+    if harm_level_ids:
+        where_conditions.append(_in_clause("c.HarmLevelID", harm_level_ids))
+        params.extend(harm_level_ids)
+
+    case_status_ids = _parse_multi_int(case_status_id)
+    if case_status_ids:
+        where_conditions.append(_in_clause("c.CaseStatusID", case_status_ids))
+        params.extend(case_status_ids)
     elif tab == 'preparation':
         where_conditions.append("c.CaseStatusID IN (4, 5)")
     elif tab == 'workflow':
         where_conditions.append("c.CaseStatusID NOT IN (4, 5)")
+
+    clinical_risk_type_ids = _parse_multi_int(clinical_risk_type_id)
+    if clinical_risk_type_ids:
+        where_conditions.append(_in_clause("c.ClinicalRiskTypeID", clinical_risk_type_ids))
+        params.extend(clinical_risk_type_ids)
+
+    feedback_intent_type_ids = _parse_multi_int(feedback_intent_type_id)
+    if feedback_intent_type_ids:
+        where_conditions.append(_in_clause("c.FeedbackIntentTypeID", feedback_intent_type_ids))
+        params.extend(feedback_intent_type_ids)
+
+    source_ids = _parse_multi_int(source_id)
+    if source_ids:
+        where_conditions.append(_in_clause("c.SourceID", source_ids))
+        params.extend(source_ids)
 
     if year:
         where_conditions.append("YEAR(c.FeedbackRecievedDate) = ?")
@@ -1584,6 +1802,25 @@ def export_complaints(
         'audit_logged': True,
         'status': 'pending'
     }
+
+
+def get_cases_for_incident(incident_id: int) -> List[Dict[str, Any]]:
+    """
+    Get all cases for an incident with full field data (same shape as get_complaint_by_id).
+    Used by EditRecord to load the complete incident with all its cases.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT IncidentRequestCaseID FROM dbo.APP_IncidentCase WHERE incident_id = ? ORDER BY IncidentRequestCaseID",
+            (incident_id,)
+        )
+        case_ids = [row[0] for row in cursor.fetchall()]
+    finally:
+        conn.close()
+
+    return [get_complaint_by_id(cid) for cid in case_ids]
 
 
 def get_table_views() -> Dict[str, Any]:
@@ -1932,6 +2169,7 @@ def _insert_historical_record(payload: Dict[str, Any], cursor, conn) -> Dict[str
                 ImmediateAction,
                 TakenAction,
                 FeedbackRecievedDate,
+                IncidentDate,
                 PatientName,
                 IssuingOrgUnitID,
                 isINPatient,
@@ -1951,14 +2189,17 @@ def _insert_historical_record(payload: Dict[str, Any], cursor, conn) -> Dict[str
                 CreatedByUserID,
                 CreatedAt
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE())
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE())
         """
-        
+
         cursor.execute(insert_query, (
             payload.get('complaint_text'),
             payload.get('immediate_action'),
             payload.get('taken_action'),
             payload.get('feedback_received_date'),
+            # Historical imports have no recorded incident date; approximate
+            # with the received date, same as the backfill for pre-existing rows.
+            payload.get('incident_date') or payload.get('feedback_received_date'),
             payload.get('patient_name'),
             payload.get('issuing_department_id'),
             0,  # isINPatient default to outpatient

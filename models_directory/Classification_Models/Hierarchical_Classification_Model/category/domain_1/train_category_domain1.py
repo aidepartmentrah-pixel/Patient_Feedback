@@ -4,8 +4,6 @@ import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
-from sklearn.metrics import  classification_report,confusion_matrix
-import joblib
 
 from models_directory.Classification_Models.Hierarchical_Classification_Model.Helper_Functions import (
     load_table,
@@ -14,6 +12,7 @@ from models_directory.Classification_Models.Hierarchical_Classification_Model.He
     compute_metrics,
     compute_standardized_metrics,
 )
+from models_directory.Classification_Models.Maintainance import run_versioning
 from project_paths import get_db_path
 
 
@@ -21,24 +20,17 @@ from project_paths import get_db_path
 # MAIN TRAIN FUNCTION
 # ============================
 
-def train_category_domain1(base_path=None):
+def train_category_domain1(base_path=None, run_dir=None):
+    """Train LR, RF, XGB for a given domain and return the winning model +
+    standardized_metrics (merged with roc_pr/warnings/artifacts/candidate_selection
+    when run_dir is supplied)."""
+    if run_dir is None:
+        run_dir = run_versioning.get_run_dir(run_versioning.generate_run_id())
+
     table_train="table_feedback_train"
     table_test="table_feedback_test"
     domain = 1
-    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-    # Database folder: 4 levels up, then 'models_directory'
     db_path = get_db_path() if base_path is None else base_path
-    model_dir = os.path.join(SCRIPT_DIR, "vocab_models")
-
-    """Train LR, RF, XGB for a given domain and return trained models + metrics"""
-
-    # ---------- Paths ----------
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    if db_path is None:
-        db_path = os.path.join(BASE_DIR, "models_directory", "patient_feedback_ml.db")
-    if model_dir is None:
-        model_dir = os.path.join(BASE_DIR, "vocab_models")
-    os.makedirs(model_dir, exist_ok=True)
 
     # ---------- Load Data ----------
     df_train = load_table(db_path, table_train)
@@ -64,7 +56,6 @@ def train_category_domain1(base_path=None):
     print("Training Logistic Regression...")
     lr = LogisticRegression(max_iter=5000, class_weight="balanced")
     lr.fit(X_train, y_train)
-    joblib.dump(lr, os.path.join(model_dir, f"lr_category_domain{domain}.pkl"))
 
     lr_pred = lr.predict(X_test)
     results["lr"] = compute_metrics(y_test, lr_pred)
@@ -79,7 +70,6 @@ def train_category_domain1(base_path=None):
         random_state=42
     )
     rf.fit(X_train, y_train)
-    joblib.dump(rf, os.path.join(model_dir, f"rf_category_domain{domain}.pkl"))
 
     rf_pred = rf.predict(X_test)
     results["rf"] = compute_metrics(y_test, rf_pred)
@@ -108,7 +98,6 @@ def train_category_domain1(base_path=None):
         random_state=42
     )
     xgb.fit(X_train, y_train_temp)
-    xgb.save_model(os.path.join(model_dir, f"xgb_category_domain{domain}.json"))
 
     preds_temp = xgb.predict(X_test)
     if preds_temp.ndim == 2:  # probabilities
@@ -128,13 +117,43 @@ def train_category_domain1(base_path=None):
 
     # ---------- Compute Standardized Metrics ----------
     unique_labels = sorted(np.unique(y_train).tolist())
+    model_name = f"Category_Domain{domain}_{best_model_name}"
     standardized_metrics = compute_standardized_metrics(
-        model_name=f"Category_Domain{domain}_{best_model_name}",
+        model_name=model_name,
         y_train=y_train,
         y_test=y_test,
         y_pred=best_pred,
         label_names=unique_labels,
     )
+    standardized_metrics["candidate_selection"] = {
+        name: results[name] for name in ("lr", "rf", "xgb")
+    }
+
+    # ---------- Versioned evaluation artifacts (winning model only) ----------
+    # Only XGBoost is fit on the remapped 0..n space here (LR/RF are fit
+    # directly on the real category values) — proba_class_order/
+    # y_true_for_curves must reflect whichever space the winner actually
+    # produced probabilities in, never assumed.
+    y_proba = best_model.predict_proba(X_test)
+    proba_class_order = best_model.classes_.tolist()
+    y_true_for_curves = y_test_temp if best_model_name == "xgb" else y_test
+
+    eval_result = run_versioning.save_evaluation_artifacts(
+        run_dir=run_dir,
+        model_name=model_name,
+        y_true_display=y_test.tolist(),
+        y_pred_display=best_pred.tolist() if hasattr(best_pred, "tolist") else list(best_pred),
+        display_labels=unique_labels,
+        y_proba=y_proba,
+        proba_class_order=proba_class_order,
+        y_true_for_curves=y_true_for_curves,
+    )
+    serializer = "xgboost_native" if best_model_name == "xgb" else "joblib"
+    model_entry = run_versioning.register_model_artifact(run_dir, model_name, best_model, serializer=serializer)
+    eval_result["artifacts"].append(model_entry)
+    standardized_metrics.update(eval_result)
+
+    print(f"Artifacts written to: {run_dir}")
 
     return best_model, standardized_metrics
 

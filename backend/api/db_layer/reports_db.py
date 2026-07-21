@@ -74,7 +74,51 @@ def debug_expand_org_units(unit_ids: List[int]) -> List[int]:
     return list(expanded)
 
 
-def build_org_filter_condition(building_id: Optional[int] = None, idara_id: Optional[int] = None, 
+def resolve_most_specific_scope(
+    administration_ids: Optional[str] = None,
+    department_ids: Optional[str] = None,
+    section_ids: Optional[str] = None,
+) -> Tuple[str, List[int]]:
+    """
+    Resolve which single organizational level actually governs a report's
+    scope, given up to three comma-separated ID strings that may ALL be
+    populated simultaneously — e.g. a UI that cascades Administration ->
+    Department -> Section without clearing ancestor selections once a more
+    specific level is chosen (the Reporting page's picker does exactly this).
+
+    Returns the most specific non-empty level only — Section > Department >
+    Administration — so an ancestor ID sent alongside a more specific one is
+    ignored rather than unioned in. Without this, "select one Section" after
+    narrowing via Administration/Department silently widens the report back
+    out to the whole Administration's subtree, since descendants(admin) is a
+    superset of descendants(dept) is a superset of {section}.
+
+    Returns:
+        (level, ids) where level is 'section' | 'department' |
+        'administration' | 'hospital', and ids is the parsed int list for
+        that level (empty list for 'hospital').
+    """
+    def _parse(raw: Optional[str]) -> List[int]:
+        if not raw:
+            return []
+        return [int(x.strip()) for x in raw.split(",") if x.strip()]
+
+    section = _parse(section_ids)
+    if section:
+        return "section", section
+
+    department = _parse(department_ids)
+    if department:
+        return "department", department
+
+    administration = _parse(administration_ids)
+    if administration:
+        return "administration", administration
+
+    return "hospital", []
+
+
+def build_org_filter_condition(building_id: Optional[int] = None, idara_id: Optional[int] = None,
                               dayra_id: Optional[int] = None, qism_id: Optional[int] = None) -> str:
     """
     Build a tree-aware organizational filtering condition for target departments.
@@ -103,32 +147,25 @@ def build_org_filter_condition(building_id: Optional[int] = None, idara_id: Opti
         Filter by idara_id=3 will find complaints where ANY target department is in:
         [3, 28, 24, 43, 44, 45, 46, 47]
     """
-    # Collect ALL selected organizational unit IDs (supporting multiple levels)
-    selected_unit_ids = []
-    
-    # Priority order: Section > Department > Administration
-    # If you specify Section, it takes precedence (most specific)
+    # Priority order: Section > Department > Administration. Mutually
+    # exclusive by construction (not a union) — if a more specific level is
+    # present, broader ancestor IDs passed alongside it are ignored rather
+    # than unioned in. See resolve_most_specific_scope() for the identical
+    # logic applied to the Monthly report path; kept as two implementations
+    # only because this function's params are already-scalar/list building
+    # blocks rather than raw comma-separated strings.
     if qism_id:
-        if isinstance(qism_id, list):
-            selected_unit_ids.extend(qism_id)
-        else:
-            selected_unit_ids.append(qism_id)
+        selected_unit_ids = list(qism_id) if isinstance(qism_id, list) else [qism_id]
         print(f"[ORG FILTER] Section filter: {qism_id}")
-    
-    if dayra_id:
-        if isinstance(dayra_id, list):
-            selected_unit_ids.extend(dayra_id)
-        else:
-            selected_unit_ids.append(dayra_id)
+    elif dayra_id:
+        selected_unit_ids = list(dayra_id) if isinstance(dayra_id, list) else [dayra_id]
         print(f"[ORG FILTER] Department filter: {dayra_id}")
-            
-    if idara_id:
-        if isinstance(idara_id, list):
-            selected_unit_ids.extend(idara_id)
-        else:
-            selected_unit_ids.append(idara_id)
+    elif idara_id:
+        selected_unit_ids = list(idara_id) if isinstance(idara_id, list) else [idara_id]
         print(f"[ORG FILTER] Administration filter: {idara_id}")
-    
+    else:
+        selected_unit_ids = []
+
     if building_id:
         # For building/hospital level, return all (no org filtering)
         print(f"[ORG FILTER] Hospital/Building level - no org filter applied")
@@ -267,6 +304,7 @@ def get_filtered_complaints(
         ic.ImmediateAction as immediate_action,
         ic.TakenAction as taken_action,
         ic.FeedbackRecievedDate as received_date,
+        ic.IncidentDate as incident_date,
         ic.PatientName as patient_name,
         ic.CreatedAt as created_at,
         ic.CreatedByUserID as created_by_user_id,
@@ -335,14 +373,22 @@ def get_filtered_complaints(
         
         -- Explanation Status
         ic.ExplanationStatusID as explanation_status_id,
-        explanation_status.StatusName as explanation_status_name
+        explanation_status.StatusName as explanation_status_name,
+
+        -- Publication Date — same definition as Table View/Inbox: the moment
+        -- this case first entered workflow (earliest subcase CreatedAt).
+        -- NULL for cases never published. Deliberately NOT the newer
+        -- APP_PublicationBatch table, which only covers cases published via
+        -- the "Publish All" bulk endpoint — this OUTER APPLY covers every
+        -- path that creates a subcase, matching table_view_service.py.
+        subcase_pub.CreatedAt as publication_date
     FROM dbo.APP_IncidentCase ic
-    
+
     -- Join issuing organizational unit hierarchy (Section -> Department -> Administration)
     LEFT JOIN dbo.AdminsrationUnit issuing_section ON ic.IssuingOrgUnitID = issuing_section.UniqueID
     LEFT JOIN dbo.AdminsrationUnit issuing_dept ON issuing_section.ParentID = issuing_dept.UniqueID
     LEFT JOIN dbo.AdminsrationUnit issuing_admin ON issuing_dept.ParentID = issuing_admin.UniqueID
-    
+
     LEFT JOIN dbo.APP_LOOKUP_DOMAIN domain ON ic.DomainID = domain.DomainID
     LEFT JOIN dbo.APP_LOOKUP_CATEGORY category ON ic.CategoryID = category.CategoryID
     LEFT JOIN dbo.APP_LOOKUP_SUBCATEGORY subcategory ON ic.SubCategoryID = subcategory.SubCategoryID
@@ -356,6 +402,15 @@ def get_filtered_complaints(
     LEFT JOIN dbo.APP_LOOKUP_FEEDBACK_INTENT_TYPE feedback_intent ON ic.FeedbackIntentTypeID = feedback_intent.FeedbackIntentTypeID
     LEFT JOIN dbo.APP_LOOKUP_SOURCE source ON ic.SourceID = source.SourceID
     LEFT JOIN dbo.APP_LOOKUP_EXPLANATION_STATUS explanation_status ON ic.ExplanationStatusID = explanation_status.StatusID
+    OUTER APPLY (
+        -- Publication Date: the moment this case first entered workflow
+        -- (earliest subcase CreatedAt). NULL for cases never published.
+        -- Mirrors the identical OUTER APPLY in table_view_service.py.
+        SELECT TOP 1 CreatedAt
+        FROM dbo.APP_AdministrativeSubcase
+        WHERE IncidentRequestCaseID = ic.IncidentRequestCaseID
+        ORDER BY CreatedAt ASC
+    ) subcase_pub
     WHERE 1=1 {where_clause}
     ORDER BY ic.FeedbackRecievedDate DESC
     OFFSET {offset} ROWS FETCH NEXT {page_size} ROWS ONLY
@@ -375,7 +430,23 @@ def get_filtered_complaints(
                 complaint['received_date'] = complaint['received_date'].strftime('%Y-%m-%d')
             elif isinstance(complaint['received_date'], date):
                 complaint['received_date'] = complaint['received_date'].isoformat()
-        
+
+        # IncidentDate is display-only here — month/period classification uses
+        # received_date (FeedbackRecievedDate) exclusively; see the WHERE-clause
+        # date_filter above and the same convention already documented at
+        # operators/distribution_db.py:328 ("use FeedbackRecievedDate, not IncidentDate").
+        if complaint.get('incident_date'):
+            if isinstance(complaint['incident_date'], datetime):
+                complaint['incident_date'] = complaint['incident_date'].strftime('%Y-%m-%d')
+            elif isinstance(complaint['incident_date'], date):
+                complaint['incident_date'] = complaint['incident_date'].isoformat()
+
+        if complaint.get('publication_date'):
+            if isinstance(complaint['publication_date'], datetime):
+                complaint['publication_date'] = complaint['publication_date'].strftime('%Y-%m-%d')
+            elif isinstance(complaint['publication_date'], date):
+                complaint['publication_date'] = complaint['publication_date'].isoformat()
+
         if complaint.get('created_at'):
             if isinstance(complaint['created_at'], datetime):
                 complaint['created_at'] = complaint['created_at'].isoformat()

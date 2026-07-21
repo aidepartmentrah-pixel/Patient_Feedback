@@ -11,7 +11,7 @@ All profile endpoints share the same top-level structure for frontend consistenc
 """
 
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from datetime import date, datetime
 
 
@@ -30,7 +30,11 @@ class EntityMeta(BaseModel):
         period_to: Optional end date for metrics/data filtering
     """
     entity_type: str = Field(..., description="Entity type: doctor, patient, or worker")
-    entity_id: int = Field(..., description="Entity unique identifier")
+    entity_id: Union[int, str] = Field(
+        ...,
+        description="Entity unique identifier — int for doctors/workers/reserve patients, "
+                    "opaque string for Hospital Directory API (external) patients",
+    )
     period_from: Optional[date] = Field(None, description="Start date for metrics period")
     period_to: Optional[date] = Field(None, description="End date for metrics period")
 

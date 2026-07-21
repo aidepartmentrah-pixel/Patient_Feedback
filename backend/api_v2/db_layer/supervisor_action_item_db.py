@@ -96,6 +96,8 @@ _SELECT_COLUMNS = """
     ai.CancelledAt,
     ai.UpdatedAt,
     ai.UpdatedByUserID,
+    ai.AcknowledgedAt,
+    ai.AcknowledgedByUserID,
     ou.Name AS TargetOrgUnitName,
     tu.DisplayName AS TargetUserDisplayName,
     cu.DisplayName AS CreatedByDisplayName,
@@ -131,6 +133,8 @@ def _row_to_dict(row) -> Dict[str, Any]:
         "cancelled_at": row.CancelledAt,
         "updated_at": row.UpdatedAt,
         "updated_by_user_id": row.UpdatedByUserID,
+        "acknowledged_at": row.AcknowledgedAt,
+        "acknowledged_by_user_id": row.AcknowledgedByUserID,
         "target_org_unit_name": row.TargetOrgUnitName,
         "target_user_display_name": row.TargetUserDisplayName,
         "created_by_display_name": row.CreatedByDisplayName,
@@ -303,6 +307,82 @@ def set_supervisor_action_item_cancelled(action_item_id: int, updated_by_user_id
         ))
         conn.commit()
         return cursor.rowcount > 0
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ============================================================
+# NOTIFICATION / ACKNOWLEDGMENT
+# Pure side-channel flag -- orthogonal to Status. NO validation,
+# service layer confirms the caller is the actual recipient.
+# ============================================================
+
+def acknowledge_supervisor_action_item(action_item_id: int, acknowledged_by_user_id: int) -> bool:
+    """
+    Mark a supervisor action item as acknowledged by its recipient.
+
+    Returns:
+        True if this call set the acknowledgment, False if the item
+        was not found or was already acknowledged.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        query = """
+            UPDATE dbo.APP_SupervisorActionItem
+            SET AcknowledgedAt = ?,
+                AcknowledgedByUserID = ?
+            WHERE ActionItemID = ? AND AcknowledgedAt IS NULL
+        """
+        cursor.execute(query, (datetime.now(), acknowledged_by_user_id, action_item_id))
+        conn.commit()
+        return cursor.rowcount > 0
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_unacknowledged_supervisor_action_items_for_user(
+    user_id: int,
+    org_unit_ids: List[int]
+) -> List[Dict[str, Any]]:
+    """
+    Fetch unacknowledged supervisor action items visible to this user:
+    targeted directly at them, or targeted at an org unit they belong to
+    when no specific TargetUserID was set.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        if org_unit_ids:
+            placeholders = ','.join(['?'] * len(org_unit_ids))
+            query = f"""
+                SELECT {_SELECT_COLUMNS}
+                {_FROM_JOINS}
+                WHERE ai.AcknowledgedAt IS NULL
+                AND (
+                    ai.TargetUserID = ?
+                    OR (ai.TargetUserID IS NULL AND ai.TargetOrgUnitID IN ({placeholders}))
+                )
+                ORDER BY ai.CreatedAt DESC
+            """
+            cursor.execute(query, [user_id] + list(org_unit_ids))
+        else:
+            query = f"""
+                SELECT {_SELECT_COLUMNS}
+                {_FROM_JOINS}
+                WHERE ai.AcknowledgedAt IS NULL AND ai.TargetUserID = ?
+                ORDER BY ai.CreatedAt DESC
+            """
+            cursor.execute(query, (user_id,))
+
+        rows = cursor.fetchall()
+        return [_row_to_dict(row) for row in rows]
 
     finally:
         cursor.close()

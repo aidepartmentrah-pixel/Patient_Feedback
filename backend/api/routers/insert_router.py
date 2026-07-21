@@ -36,7 +36,8 @@ class CreateRecordRequest(BaseModel):
 
     # Required for Complaints (enforced at service layer); optional at router level to allow Notice submissions
     complaint_text: Optional[str] = Field(None, description="Full complaint/incident description")
-    feedback_received_date: date = Field(..., description="Date the feedback was received")
+    feedback_received_date: date = Field(..., description="Date the feedback was received (Received Date)")
+    incident_date: Optional[date] = Field(None, description="Date the incident actually occurred")
     issuing_department_id: int = Field(..., gt=0, description="Issuing department ID (required)")
     patient_name: str = Field(..., description="Patient name (required)")
     source_id: int = Field(..., gt=0, description="Feedback source ID (required)")
@@ -98,6 +99,7 @@ class IncidentCommonRequest(BaseModel):
 
     complaint_text: Optional[str] = None
     feedback_received_date: date
+    incident_date: Optional[date] = None
     issuing_department_id: int
     feedback_intent_type_id: Optional[int] = None
     patient_name: Optional[str] = ""
@@ -391,6 +393,7 @@ class UpdateRecordRequest(BaseModel):
     """Update request — same fields as create but all optional for draft mode."""
     complaint_text: Optional[str] = None
     feedback_received_date: Optional[date] = None
+    incident_date: Optional[date] = None
     issuing_department_id: Optional[int] = None
     domain_id: Optional[int] = None
     category_id: Optional[int] = None
@@ -696,7 +699,7 @@ async def search_employees_endpoint(
 
 @router.get("/patient/{patient_admission_id}")
 async def get_patient_endpoint(
-    patient_admission_id: int,
+    patient_admission_id: str,
     current_user: CurrentUser = Depends(get_current_user)
 ):
     """

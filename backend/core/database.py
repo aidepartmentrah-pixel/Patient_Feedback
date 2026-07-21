@@ -6,7 +6,14 @@ Core Database Connection Module
 This is the ONLY module that should create SQL Server database connections.
 All backend code must import get_connection from here.
 
-For offline deployment, modify connection parameters in db_config.py.
+Connection parameters (DB_SERVER, DB_DATABASE, etc.) are imported by value
+from core/deployment_port.py, which freezes them from config/db_settings.json
+(+ env var overrides) once at process import time. Editing db_settings.json
+or saving new values via /api/config/save does NOT change these values for
+an already-running process — restart the backend to pick up new settings.
+See core/deployment_port.get_active_snapshot() to inspect the values this
+process is actually using right now, and core/bootstrap.check_database_connection
+to test them.
 """
 
 import pyodbc
@@ -15,7 +22,7 @@ import logging
 # Configure logging for database connections
 logger = logging.getLogger(__name__)
 
-from .db_config import (
+from .deployment_port import (
     DB_SERVER,
     DB_DATABASE,
     DB_DRIVER,
@@ -37,16 +44,18 @@ def get_connection():
         pyodbc.Connection: Active database connection
         
     Connection Parameters:
-        Loaded from db_config.py:
+        Frozen at process startup from core/deployment_port.py:
         - SERVER: {DB_SERVER}
         - DATABASE: {DB_DATABASE}
         - DRIVER: {DB_DRIVER}
         - AUTH: Windows Trusted Connection (if USE_WINDOWS_AUTH=True)
                 SQL Server Auth with UID/PWD (if USE_WINDOWS_AUTH=False)
         - SECURITY: TrustServerCertificate (if TRUST_SERVER_CERTIFICATE=True)
-        
+
     Note:
-        For offline deployment, modify core/db_config.py only.
+        To change these for a running process, edit config/db_settings.json
+        (or the env vars in core/config_loader.py) and RESTART the backend.
+        Saving via /api/config/save alone is not sufficient.
     """
     # Build connection string from config
     conn_parts = [
@@ -82,13 +91,23 @@ def get_connection():
         logger.info(f"✓ Database connection successful to {DB_SERVER}/{DB_DATABASE}")
         return conn
     except pyodbc.InterfaceError as e:
-        # Driver not found or interface issue
+        # Driver not found or interface issue. NOTE: every ODBC error from a
+        # driver that DID load successfully is itself prefixed with that
+        # driver's own name, so a naive `"driver" in error_msg` check alone
+        # would misfire on unrelated interface errors too — verify against
+        # the actually-installed driver list instead of guessing from text.
         error_msg = str(e)
         logger.error(f"✗ DATABASE INTERFACE ERROR")
         logger.error(f"  Error: {error_msg}")
-        if "driver" in error_msg.lower():
-            logger.error(f"  DIAGNOSIS: ODBC Driver '{DB_DRIVER}' may not be installed")
-            logger.error(f"  FIX: Install 'ODBC Driver 17 for SQL Server' on this machine")
+        try:
+            installed_drivers = pyodbc.drivers()
+        except Exception:
+            installed_drivers = []
+        if DB_DRIVER not in installed_drivers:
+            logger.error(f"  DIAGNOSIS: ODBC Driver '{DB_DRIVER}' is not installed on this server")
+            logger.error(f"  FIX: Install '{DB_DRIVER}' on this server (installed here: {installed_drivers or 'none detected'})")
+        else:
+            logger.error(f"  DIAGNOSIS: Driver '{DB_DRIVER}' is installed, but the interface call still failed — see raw error above")
         raise ConnectionError(f"Database driver error: {error_msg}") from e
     except pyodbc.OperationalError as e:
         # Connection refused, network unreachable, timeout

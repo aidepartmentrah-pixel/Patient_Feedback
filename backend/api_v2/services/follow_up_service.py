@@ -280,7 +280,7 @@ def delay_action_item(action_item_id: int, delay_days: int, current_user) -> Dic
     This function:
     1. Loads the action item and its associated subcase
     2. Enforces permission using _assert_user_can_modify
-    3. Extends the DueDate by delay_days from today (or from current DueDate if in the future)
+    3. Extends the DueDate by delay_days from the item's current DueDate
     
     Args:
         action_item_id: ID of the action item to delay
@@ -325,14 +325,13 @@ def delay_action_item(action_item_id: int, delay_days: int, current_user) -> Dic
     # Enforce permission (scope + ownership/role)
     _assert_user_can_modify(action_item, subcase, current_user)
     
-    # Compute new due date: extend from current DueDate or from today, whichever is later
+    # Compute new due date: always extend from the item's own DueDate, even if
+    # it's overdue. Resetting the base to "today" for overdue items was the old
+    # behavior, but it silently discarded how overdue the item was and made the
+    # result depend on when you happened to click "delay" rather than on the
+    # item's actual due date.
     current_due_date = action_item.get("due_date")
-    today = date.today()
-    
-    if current_due_date and isinstance(current_due_date, date) and current_due_date > today:
-        base_date = current_due_date
-    else:
-        base_date = today
+    base_date = current_due_date if isinstance(current_due_date, date) else date.today()
     
     new_due_date = base_date + timedelta(days=delay_days)
     

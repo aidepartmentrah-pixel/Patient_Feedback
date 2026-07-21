@@ -246,8 +246,11 @@ def main():
         print("\n  [IMPORTED GROUPS]")
         for g in report["imported"]:
             print(f"    {g['group_key']} -> incident_id={g['incident_id']}, "
-                  f"rows={g['rows_imported']}, subcases={g['subcases_created']}, "
+                  f"rows_imported={g['rows_imported']}, rows_failed={g.get('rows_failed', 0)}, "
                   f"new_patient={g['new_patient']}")
+            for err in g.get("row_errors", []):
+                err_safe = str(err.get('error', '')).encode('cp1256', errors='replace').decode('cp1256')
+                print(f"      [ROW ERROR] row {err.get('row_index')}: {err_safe}")
 
     if report["rejected"]:
         print("\n  [REJECTED GROUPS]")
@@ -274,13 +277,55 @@ def main():
     assert s["rejected_groups"] == 1, f"Expected 1 rejected group, got {s['rejected_groups']}"
     assert s["imported_rows"] == 2, f"Expected 2 imported rows, got {s['imported_rows']}"
     assert s["rejected_rows"] == 1, f"Expected 1 rejected row, got {s['rejected_rows']}"
-    assert report["imported"][0]["subcases_created"] == 2, \
-        f"Expected 2 subcases (one per row), got {report['imported'][0]['subcases_created']}"
+    assert report["imported"][0]["rows_failed"] == 0, \
+        f"Expected 0 row failures, got {report['imported'][0]['rows_failed']}"
 
-    print("    All assertions passed.")
+    print("    Core import assertions passed.")
+
+    # -----------------------------------------------------------
+    # Stage 4 gate: every imported case must have registered an
+    # ml.EmbeddingProcessingJob row (the structural fix this stage exists
+    # for — bulk import no longer bypasses ML registration).
+    # -----------------------------------------------------------
+    print("\n[5] Checking ml.EmbeddingProcessingJob registration...")
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "SELECT j.IncidentRequestCaseID, j.JobType, j.Status "
+            "FROM ml.EmbeddingProcessingJob j "
+            "JOIN ml.ImportSourceRecordMap m ON m.IncidentRequestCaseID = j.IncidentRequestCaseID "
+            "WHERE m.ImportBatchID = ?",
+            (report["summary"]["import_batch_id"],),
+        )
+        jobs = cur.fetchall()
+        print(f"    Jobs found for this batch: {len(jobs)}")
+        for j in jobs:
+            print(f"      case={j[0]}, JobType={j[1]}, Status={j[2]}")
+        assert len(jobs) == 2, f"Expected 2 ml.EmbeddingProcessingJob rows (one per imported case), got {len(jobs)}"
+        assert all(j[1] == 'Create' for j in jobs)
+        assert all(j[2] == 'Pending' for j in jobs)
+        print("    ML job registration assertions passed.")
+    finally:
+        cur.close()
+        conn.close()
+
+    # -----------------------------------------------------------
+    # Stage 4 gate: re-uploading the identical file must be caught by
+    # batch-level (file checksum) duplicate detection.
+    # -----------------------------------------------------------
+    print("\n[6] Re-uploading the identical file (should be blocked as a duplicate)...")
+    dup_report = process_upload(excel_bytes, created_by_user_id=1)
+    dup_warnings = dup_report.get("warnings", [])
+    print(f"    Duplicate-upload warnings: {[w['message'] for w in dup_warnings]}")
+    assert dup_report["summary"]["imported_rows"] == 0, \
+        f"Expected 0 imported rows on duplicate re-upload, got {dup_report['summary']['imported_rows']}"
+    assert any("already imported" in w["message"] for w in dup_warnings), \
+        "Expected a duplicate-file warning message, got none"
+    print("    Duplicate-file detection assertions passed.")
 
     print("\n" + "="*65)
-    print("  SMOKE TEST COMPLETE")
+    print("  ALL SMOKE TESTS PASSED (including Stage 4 ML-job + dedup checks)")
     print("="*65 + "\n")
 
 

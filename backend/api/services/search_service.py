@@ -6,120 +6,20 @@ Used by the insert page to search and select entities from the database.
 
 from typing import List, Dict, Any
 from core.database import get_connection
-from core.table_config import PATIENT_ADMISSION_TABLE, DOCTORS_TABLE, HR_EMPLOYEES_TABLE
+from core.table_config import DOCTORS_TABLE, HR_EMPLOYEES_TABLE
+from api.services import patient_directory_service
 
 
 def search_patients(search_text: str, limit: int = 20) -> Dict[str, Any]:
     """
-    Search for patients by name or document number.
-    
-    DUAL-SOURCE PATTERN: Merges results from both hospital table 
-    (APP_VIEWTABLE_PATIENT_ADMISSION) and reserve table (APP_RESERVE_PATIENT).
-    
-    Args:
-        search_text: Text to search for in patient names or document numbers
-        limit: Maximum number of results to return (default: 20)
-    
-    Returns:
-        Dictionary containing list of matching patients with their details
-        Each patient includes a 'source' field ('hospital' or 'reserve')
+    Search for patients by name (free-text only — this is the endpoint
+    behind the incident-creation autocomplete, GET /api/records/search/patients).
+
+    SESSION C1: merges HCAT's reserve table (APP_RESERVE_PATIENT) with the
+    Hospital Directory API instead of the old hospital view — see
+    api.services.patient_directory_service for the merge/normalization logic.
     """
-    conn = None
-    cursor = None
-    
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        
-        # Search in FullName, FirstName, LastName, and DocumentNumber
-        search_pattern = f"%{search_text}%"
-        
-        # UNION query: Merge hospital + reserve patients
-        cursor.execute(f"""
-            SELECT TOP (?) * FROM (
-                -- Hospital patients
-                SELECT 
-                    PatientAdmissionID,
-                    FullName,
-                    FirstName,
-                    LastName,
-                    DocumentNumber,
-                    PhoneNumber1,
-                    BirthDate,
-                    SEX,
-                    MedicalFileNumber,
-                    AdmissionDate,
-                    'hospital' as Source
-                FROM {PATIENT_ADMISSION_TABLE}
-                WHERE 
-                    FullName LIKE ? 
-                    OR FirstName LIKE ? 
-                    OR LastName LIKE ? 
-                    OR DocumentNumber LIKE ?
-                    OR MedicalFileNumber LIKE ?
-                
-                UNION ALL
-                
-                -- Reserve patients
-                SELECT 
-                    PatientAdmissionID,
-                    FullName,
-                    FirstName,
-                    LastName,
-                    DocumentNumber,
-                    PhoneNumber1,
-                    BirthDate,
-                    SEX,
-                    MedicalFileNumber,
-                    SystemTime as AdmissionDate,
-                    'reserve' as Source
-                FROM APP_RESERVE_PATIENT
-                WHERE 
-                    FullName LIKE ? 
-                    OR FirstName LIKE ? 
-                    OR LastName LIKE ? 
-                    OR DocumentNumber LIKE ?
-                    OR MedicalFileNumber LIKE ?
-            ) AS CombinedPatients
-            ORDER BY AdmissionDate DESC
-        """, (limit, 
-              search_pattern, search_pattern, search_pattern, search_pattern, search_pattern,
-              search_pattern, search_pattern, search_pattern, search_pattern, search_pattern))
-        
-        patients = []
-        for row in cursor.fetchall():
-            patients.append({
-                "patient_admission_id": row.PatientAdmissionID,
-                "full_name": row.FullName,
-                "first_name": row.FirstName,
-                "last_name": row.LastName,
-                "document_number": row.DocumentNumber,
-                "phone_number": row.PhoneNumber1,
-                "birth_date": row.BirthDate.isoformat() if row.BirthDate else None,
-                "sex": row.SEX,
-                "medical_file_number": row.MedicalFileNumber,
-                "admission_date": row.AdmissionDate.isoformat() if row.AdmissionDate else None,
-                "source": row.Source  # NEW: Indicates if from hospital or reserve
-            })
-        
-        return {
-            "success": True,
-            "patients": patients,
-            "count": len(patients)
-        }
-        
-    except Exception as e:
-        return {
-            "success": False,
-            "patients": [],
-            "count": 0,
-            "error": f"Failed to search patients: {str(e)}"
-        }
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+    return patient_directory_service.search_patients_insert_flow(search_text, limit)
 
 
 def search_doctors(search_text: str, limit: int = 20) -> Dict[str, Any]:
@@ -290,106 +190,18 @@ def search_employees(search_text: str, limit: int = 20) -> Dict[str, Any]:
             conn.close()
 
 
-def get_patient_by_id(patient_admission_id: int) -> Dict[str, Any]:
+def get_patient_by_id(patient_admission_id) -> Dict[str, Any]:
     """
-    Get a specific patient by PatientAdmissionID.
-    Used to verify patient selection.
-    
-    DUAL-SOURCE PATTERN: Checks reserve table first, then hospital table.
-    This prioritizes user-created patients.
-    
-    Args:
-        patient_admission_id: The patient admission ID
-    
-    Returns:
-        Dictionary containing patient details or error
-        Includes 'source' field ('hospital' or 'reserve')
+    Get a specific patient by id — verifies patient selection. Confirmed
+    unreachable from the current frontend (no caller found in
+    Front_End_Feedback_Analysis), kept correct for API completeness.
+
+    SESSION C1: patient_admission_id is now either a reserve
+    PatientAdmissionID or an opaque external id (see
+    hospital_directory_client.encode_external_patient_id) — routes to
+    reserve SQL or the Hospital Directory API accordingly.
     """
-    conn = None
-    cursor = None
-    
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        
-        # Check reserve table first
-        cursor.execute("""
-            SELECT 
-                PatientAdmissionID,
-                FullName,
-                FirstName,
-                LastName,
-                DocumentNumber,
-                PhoneNumber1,
-                BirthDate,
-                SEX,
-                MedicalFileNumber,
-                SystemTime as AdmissionDate,
-                'reserve' as Source
-            FROM APP_RESERVE_PATIENT
-            WHERE PatientAdmissionID = ?
-        """, (patient_admission_id,))
-        
-        row = cursor.fetchone()
-        source = 'reserve'
-        
-        # If not found in reserve, check hospital table
-        if not row:
-            cursor.execute(f"""
-                SELECT 
-                    PatientAdmissionID,
-                    FullName,
-                    FirstName,
-                    LastName,
-                    DocumentNumber,
-                    PhoneNumber1,
-                    BirthDate,
-                    SEX,
-                    MedicalFileNumber,
-                    AdmissionDate,
-                    'hospital' as Source
-                FROM {PATIENT_ADMISSION_TABLE}
-                WHERE PatientAdmissionID = ?
-            """, (patient_admission_id,))
-            
-            row = cursor.fetchone()
-            source = 'hospital'
-        
-        if row:
-            return {
-                "success": True,
-                "patient": {
-                    "patient_admission_id": row.PatientAdmissionID,
-                    "full_name": row.FullName,
-                    "first_name": row.FirstName,
-                    "last_name": row.LastName,
-                    "document_number": row.DocumentNumber,
-                    "phone_number": row.PhoneNumber1,
-                    "birth_date": row.BirthDate.isoformat() if row.BirthDate else None,
-                    "sex": row.SEX,
-                    "medical_file_number": row.MedicalFileNumber,
-                    "admission_date": row.AdmissionDate.isoformat() if row.AdmissionDate else None,
-                    "source": row.Source  # NEW: Indicates if from hospital or reserve
-                }
-            }
-        else:
-            return {
-                "success": False,
-                "patient": None,
-                "error": "Patient not found"
-            }
-        
-    except Exception as e:
-        return {
-            "success": False,
-            "patient": None,
-            "error": f"Failed to get patient: {str(e)}"
-        }
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+    return patient_directory_service.get_patient_by_id_insert_shape(patient_admission_id)
 
 
 def get_doctor_by_id(doctor_id: int) -> Dict[str, Any]:

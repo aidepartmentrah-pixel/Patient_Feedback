@@ -227,3 +227,53 @@ def is_online_mode() -> bool:
 def get_cors_origins() -> list:
     """Get CORS origins for the current deployment mode."""
     return CORS_ORIGINS.copy()
+
+
+def get_active_snapshot() -> dict:
+    """
+    Return the configuration values currently ACTIVE in this running process.
+
+    These are the module-level constants above, frozen once at process import
+    time — the same values core.database.get_connection(), the CORS
+    middleware, core.table_config, and core.notification_config actually use
+    for live traffic right now. They will NOT reflect changes saved via
+    /api/config/save until the backend process is restarted (deployment_port
+    is only ever imported once per process).
+
+    This is deliberately distinct from core.config_loader.get_config(), which
+    returns the currently SAVED configuration on disk and can differ from
+    this snapshot as soon as someone saves new settings without restarting.
+
+    The database password is intentionally omitted — active credentials are
+    never returned by any API response.
+    """
+    return {
+        "database": {
+            "server": DB_SERVER,
+            "database": DB_DATABASE,
+            "driver": DB_DRIVER,
+            "use_windows_auth": USE_WINDOWS_AUTH,
+            "username": DB_USERNAME,
+            "trust_server_certificate": TRUST_SERVER_CERTIFICATE,
+        },
+        "views": {
+            "hr_employees": HR_EMPLOYEES_VIEW,
+            "patient_admission": PATIENT_ADMISSION_VIEW,
+            "doctors": DOCTORS_VIEW,
+        },
+        "network": {
+            "backend_port": BACKEND_PORT,
+            "backend_host": BACKEND_HOST,
+            "cors_origins": CORS_ORIGINS,
+        },
+        "email": {
+            "notification_mode": NOTIFICATION_MODE,
+            "smtp_host": SMTP_HOST,
+            "smtp_port": SMTP_PORT,
+            "smtp_use_tls": SMTP_USE_TLS,
+            "smtp_use_ssl": SMTP_USE_SSL,
+            "smtp_username": SMTP_USERNAME,
+            "sender_email": SENDER_EMAIL,
+            "sender_name": SENDER_NAME,
+        },
+    }

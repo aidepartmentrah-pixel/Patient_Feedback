@@ -6,18 +6,18 @@
 Classification Report:
               precision    recall  f1-score   support
 
-          12       1.00      1.00      1.00         1
-          19       0.70      0.88      0.78         8
-          21       0.75      0.50      0.60         6
+          19       0.89      0.73      0.80        11
+          20       0.00      0.00      0.00         1
+          21       0.33      1.00      0.50         1
 
-    accuracy                           0.73        15
-   macro avg       0.82      0.79      0.79        15
-weighted avg       0.74      0.73      0.72        15
+    accuracy                           0.69        13
+   macro avg       0.41      0.58      0.43        13
+weighted avg       0.78      0.69      0.72        13
 
 Confusion Matrix:
-[[1 0 0]
- [0 7 1]
- [0 3 3]]
+[[8 1 2]
+ [1 0 0]
+ [0 0 1]]
 
 
 ---- Random Forest ----
@@ -25,18 +25,18 @@ Confusion Matrix:
 Classification Report:
               precision    recall  f1-score   support
 
-          12       1.00      1.00      1.00         1
-          19       0.62      1.00      0.76         8
-          21       1.00      0.17      0.29         6
+          19       0.91      0.91      0.91        11
+          20       0.00      0.00      0.00         1
+          21       0.50      1.00      0.67         1
 
-    accuracy                           0.67        15
-   macro avg       0.87      0.72      0.68        15
-weighted avg       0.79      0.67      0.59        15
+    accuracy                           0.85        13
+   macro avg       0.47      0.64      0.53        13
+weighted avg       0.81      0.85      0.82        13
 
 Confusion Matrix:
-[[1 0 0]
- [0 8 0]
- [0 5 1]]
+[[10  0  1]
+ [ 1  0  0]
+ [ 0  0  1]]
 
 
 ---- XGBoost ----
@@ -44,16 +44,16 @@ Confusion Matrix:
 Classification Report:
               precision    recall  f1-score   support
 
-          12       1.00      1.00      1.00         1
-          19       0.58      0.88      0.70         8
-          21       0.50      0.17      0.25         6
+          19       0.89      0.73      0.80        11
+          20       0.00      0.00      0.00         1
+          21       0.25      1.00      0.40         1
 
-    accuracy                           0.60        15
-   macro avg       0.69      0.68      0.65        15
-weighted avg       0.58      0.60      0.54        15
+    accuracy                           0.69        13
+   macro avg       0.38      0.58      0.40        13
+weighted avg       0.77      0.69      0.71        13
 
 Confusion Matrix:
-[[1 0 0]
- [0 7 1]
- [0 5 1]]
+[[8 0 3]
+ [1 0 0]
+ [0 0 1]]
 

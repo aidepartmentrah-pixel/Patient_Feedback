@@ -1,0 +1,10 @@
+              precision    recall  f1-score   support
+
+ Improvement       1.00      1.00      1.00        91
+      Notice       0.00      0.00      0.00         0
+    Critique       0.00      0.00      0.00         0
+       Other       0.00      0.00      0.00         0
+
+    accuracy                           1.00        91
+   macro avg       0.25      0.25      0.25        91
+weighted avg       1.00      1.00      1.00        91

@@ -4,12 +4,19 @@ Handles SQL operations for APP_DrawerNote and APP_DrawerNoteLabelLink tables.
 
 This is part of Phase G Drawer Notes multi-label system.
 NO business logic. NO authorization. ONLY SQL operations.
+
+SESSION C1: a note's patient link is either a reserve PatientAdmissionID
+(unchanged — LEFT JOIN against APP_RESERVE_PATIENT) or an external
+(Hospital Directory API) patient, stored as ExternalPatientID +
+ExternalPatientName (name snapshotted at creation time by
+drawer_note_service — see phase_c1_drawer_note_external_patient.sql). There
+is no more JOIN against the old hospital view; PatientName is resolved via
+COALESCE(reserve name, external name snapshot).
 """
 
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from core.database import get_connection
-from core.table_config import PATIENT_ADMISSION_TABLE
 
 
 # ============================================================
@@ -20,44 +27,56 @@ def insert_note(
     note_text: str,
     created_by_user_id: int,
     created_by_name: str,
-    patient_admission_id: Optional[int] = None
+    patient_admission_id: Optional[int] = None,
+    external_patient_id: Optional[str] = None,
+    external_patient_name: Optional[str] = None,
 ) -> int:
     """
     Create a new drawer note.
-    
+
     Args:
         note_text: Note content
         created_by_user_id: User ID who created the note
         created_by_name: User name who created the note
-        patient_admission_id: Optional patient admission ID to link note to a patient
-    
+        patient_admission_id: Optional reserve PatientAdmissionID to link the note to
+        external_patient_id: Optional Hospital Directory API patient id (opaque,
+            see hospital_directory_client.encode_external_patient_id) — mutually
+            exclusive with patient_admission_id (enforced by the service layer)
+        external_patient_name: Required alongside external_patient_id — the
+            patient's name snapshotted at creation time (never re-fetched live)
+
     Returns:
         NoteID of newly created note
-    
+
     Raises:
         Exception: If insert fails
     """
     conn = get_connection()
     cursor = conn.cursor()
-    
+
     try:
         query = """
             INSERT INTO dbo.APP_DrawerNote (
                 NoteText,
                 CreatedByUserID,
                 CreatedByName,
-                PatientAdmissionID
+                PatientAdmissionID,
+                ExternalPatientID,
+                ExternalPatientName
             )
             OUTPUT INSERTED.NoteID
-            VALUES (?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?)
         """
-        
-        cursor.execute(query, (note_text, created_by_user_id, created_by_name, patient_admission_id))
+
+        cursor.execute(query, (
+            note_text, created_by_user_id, created_by_name,
+            patient_admission_id, external_patient_id, external_patient_name,
+        ))
         note_id = cursor.fetchone()[0]
         conn.commit()
-        
+
         return note_id
-        
+
     finally:
         cursor.close()
         conn.close()
@@ -134,8 +153,8 @@ def get_note_by_id(note_id: int) -> Optional[Dict[str, Any]]:
     cursor = conn.cursor()
     
     try:
-        query = f"""
-            SELECT 
+        query = """
+            SELECT
                 n.NoteID,
                 n.NoteText,
                 n.CreatedAt,
@@ -143,19 +162,19 @@ def get_note_by_id(note_id: int) -> Optional[Dict[str, Any]]:
                 n.CreatedByName,
                 n.IsDeleted,
                 n.PatientAdmissionID,
-                COALESCE(p.FullName, r.FullName) as PatientName
+                n.ExternalPatientID,
+                COALESCE(r.FullName, n.ExternalPatientName) as PatientName
             FROM dbo.APP_DrawerNote n
-            LEFT JOIN dbo.{PATIENT_ADMISSION_TABLE} p ON n.PatientAdmissionID = p.PatientAdmissionID
-            LEFT JOIN dbo.APP_RESERVE_PATIENT r ON n.PatientAdmissionID = r.PatientAdmissionID AND p.PatientAdmissionID IS NULL
+            LEFT JOIN dbo.APP_RESERVE_PATIENT r ON n.PatientAdmissionID = r.PatientAdmissionID
             WHERE n.NoteID = ?
         """
-        
+
         cursor.execute(query, (note_id,))
         row = cursor.fetchone()
-        
+
         if not row:
             return None
-        
+
         return {
             'note_id': row.NoteID,
             'note_text': row.NoteText,
@@ -164,9 +183,10 @@ def get_note_by_id(note_id: int) -> Optional[Dict[str, Any]]:
             'created_by_name': row.CreatedByName,
             'is_deleted': row.IsDeleted,
             'patient_admission_id': row.PatientAdmissionID,
+            'external_patient_id': row.ExternalPatientID,
             'patient_name': row.PatientName
         }
-        
+
     finally:
         cursor.close()
         conn.close()
@@ -188,20 +208,22 @@ def list_notes_paged(limit: int, offset: int, patient_admission_id: Optional[int
     cursor = conn.cursor()
     
     try:
+        base_select = """
+            SELECT
+                n.NoteID,
+                n.NoteText,
+                n.CreatedAt,
+                n.CreatedByUserID,
+                n.CreatedByName,
+                n.IsDeleted,
+                n.PatientAdmissionID,
+                n.ExternalPatientID,
+                COALESCE(r.FullName, n.ExternalPatientName) as PatientName
+            FROM dbo.APP_DrawerNote n
+            LEFT JOIN dbo.APP_RESERVE_PATIENT r ON n.PatientAdmissionID = r.PatientAdmissionID
+        """
         if patient_admission_id is not None:
-            query = f"""
-                SELECT 
-                    n.NoteID,
-                    n.NoteText,
-                    n.CreatedAt,
-                    n.CreatedByUserID,
-                    n.CreatedByName,
-                    n.IsDeleted,
-                    n.PatientAdmissionID,
-                    COALESCE(p.FullName, r.FullName) as PatientName
-                FROM dbo.APP_DrawerNote n
-                LEFT JOIN dbo.{PATIENT_ADMISSION_TABLE} p ON n.PatientAdmissionID = p.PatientAdmissionID
-                LEFT JOIN dbo.APP_RESERVE_PATIENT r ON n.PatientAdmissionID = r.PatientAdmissionID AND p.PatientAdmissionID IS NULL
+            query = base_select + """
                 WHERE n.IsDeleted = 0 AND n.PatientAdmissionID = ?
                 ORDER BY n.CreatedAt DESC
                 OFFSET ? ROWS
@@ -209,28 +231,16 @@ def list_notes_paged(limit: int, offset: int, patient_admission_id: Optional[int
             """
             cursor.execute(query, (patient_admission_id, offset, limit))
         else:
-            query = f"""
-                SELECT 
-                    n.NoteID,
-                    n.NoteText,
-                    n.CreatedAt,
-                    n.CreatedByUserID,
-                    n.CreatedByName,
-                    n.IsDeleted,
-                    n.PatientAdmissionID,
-                    COALESCE(p.FullName, r.FullName) as PatientName
-                FROM dbo.APP_DrawerNote n
-                LEFT JOIN dbo.{PATIENT_ADMISSION_TABLE} p ON n.PatientAdmissionID = p.PatientAdmissionID
-                LEFT JOIN dbo.APP_RESERVE_PATIENT r ON n.PatientAdmissionID = r.PatientAdmissionID AND p.PatientAdmissionID IS NULL
+            query = base_select + """
                 WHERE n.IsDeleted = 0
                 ORDER BY n.CreatedAt DESC
                 OFFSET ? ROWS
                 FETCH NEXT ? ROWS ONLY
             """
             cursor.execute(query, (offset, limit))
-        
+
         rows = cursor.fetchall()
-        
+
         notes = []
         for row in rows:
             notes.append({
@@ -241,11 +251,12 @@ def list_notes_paged(limit: int, offset: int, patient_admission_id: Optional[int
                 'created_by_name': row.CreatedByName,
                 'is_deleted': row.IsDeleted,
                 'patient_admission_id': row.PatientAdmissionID,
+                'external_patient_id': row.ExternalPatientID,
                 'patient_name': row.PatientName
             })
-        
+
         return notes
-        
+
     finally:
         cursor.close()
         conn.close()
@@ -399,7 +410,7 @@ def filter_notes_by_label_ids(
             params.append(patient_admission_id)
         
         query = f"""
-            SELECT 
+            SELECT
                 n.NoteID,
                 n.NoteText,
                 n.CreatedAt,
@@ -407,27 +418,27 @@ def filter_notes_by_label_ids(
                 n.CreatedByName,
                 n.IsDeleted,
                 n.PatientAdmissionID,
-                COALESCE(p.FullName, r.FullName) as PatientName
+                n.ExternalPatientID,
+                COALESCE(r.FullName, n.ExternalPatientName) as PatientName
             FROM dbo.APP_DrawerNote n
-            LEFT JOIN dbo.{PATIENT_ADMISSION_TABLE} p ON n.PatientAdmissionID = p.PatientAdmissionID
-            LEFT JOIN dbo.APP_RESERVE_PATIENT r ON n.PatientAdmissionID = r.PatientAdmissionID AND p.PatientAdmissionID IS NULL
+            LEFT JOIN dbo.APP_RESERVE_PATIENT r ON n.PatientAdmissionID = r.PatientAdmissionID
             INNER JOIN dbo.APP_DrawerNoteLabelLink lnk ON n.NoteID = lnk.NoteID
             WHERE n.IsDeleted = 0
             AND lnk.LabelID IN ({placeholders})
             {patient_filter}
-            GROUP BY n.NoteID, n.NoteText, n.CreatedAt, n.CreatedByUserID, n.CreatedByName, n.IsDeleted, n.PatientAdmissionID, COALESCE(p.FullName, r.FullName)
+            GROUP BY n.NoteID, n.NoteText, n.CreatedAt, n.CreatedByUserID, n.CreatedByName, n.IsDeleted, n.PatientAdmissionID, n.ExternalPatientID, COALESCE(r.FullName, n.ExternalPatientName)
             HAVING COUNT(DISTINCT lnk.LabelID) = ?
             ORDER BY n.CreatedAt DESC
             OFFSET ? ROWS
             FETCH NEXT ? ROWS ONLY
         """
-        
+
         # Parameters: label_ids + (patient_admission_id if provided) + label_count + offset + limit
         params.extend([label_count, offset, limit])
-        
+
         cursor.execute(query, tuple(params))
         rows = cursor.fetchall()
-        
+
         notes = []
         for row in rows:
             notes.append({
@@ -438,11 +449,12 @@ def filter_notes_by_label_ids(
                 'created_by_name': row.CreatedByName,
                 'is_deleted': row.IsDeleted,
                 'patient_admission_id': row.PatientAdmissionID,
+                'external_patient_id': row.ExternalPatientID,
                 'patient_name': row.PatientName
             })
-        
+
         return notes
-        
+
     finally:
         cursor.close()
         conn.close()

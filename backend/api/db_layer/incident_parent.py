@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from core.database import get_connection
 
 
@@ -130,6 +130,79 @@ def get_incident_parent(incident_id: int) -> Optional[dict]:
 
         incident["cases"] = cases
         return incident
+    finally:
+        conn.close()
+
+
+def add_case_to_incident(incident_id: int, created_by_user_id: int) -> int:
+    """
+    Creates a new blank Draft case (CaseStatusID=4) linked to an existing incident.
+    Copies patient_name, building, inpatient flag from the incident parent and
+    source/dates from the incident's first existing case so the new case is valid.
+    Returns the new IncidentRequestCaseID.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT
+                i.patient_name,
+                i.issuing_org_unit_id,
+                i.building_id,
+                i.is_inpatient,
+                c.SourceID          AS source_id,
+                c.FeedbackRecievedDate AS feedback_received_date,
+                c.IncidentDate      AS incident_date
+            FROM dbo.APP_Incident i
+            OUTER APPLY (
+                SELECT TOP 1 SourceID, FeedbackRecievedDate, IncidentDate
+                FROM dbo.APP_IncidentCase
+                WHERE incident_id = i.incident_id
+                ORDER BY IncidentRequestCaseID
+            ) c
+            WHERE i.incident_id = ?
+            """,
+            (incident_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise ValueError(f"Incident {incident_id} not found")
+
+        cursor.execute(
+            """
+            INSERT INTO dbo.APP_IncidentCase (
+                incident_id,
+                CaseStatusID,
+                RecordTypeID,
+                PatientName,
+                IssuingOrgUnitID,
+                BuildingID,
+                isINPatient,
+                SourceID,
+                FeedbackRecievedDate,
+                IncidentDate,
+                ClinicalRiskTypeID,
+                CreatedByUserID
+            )
+            OUTPUT INSERTED.IncidentRequestCaseID
+            VALUES (?, 4, 1, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+            """,
+            (
+                incident_id,
+                row.patient_name,
+                row.issuing_org_unit_id,
+                row.building_id,
+                row.is_inpatient,
+                row.source_id,
+                row.feedback_received_date,
+                row.incident_date,
+                created_by_user_id,
+            ),
+        )
+        new_case_id = int(cursor.fetchone()[0])
+        conn.commit()
+        return new_case_id
     finally:
         conn.close()
 

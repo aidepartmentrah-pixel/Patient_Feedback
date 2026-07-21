@@ -2082,22 +2082,20 @@ class ReportsService:
             else:
                 Administration = report_entity_name
             print(f"[DOCX EXPORT] Using entity name: {report_entity_name} ({report_entity_type})")
-        else:
-            # Fallback: extract from first row if no filter info provided (hospital-level report)
+        elif report_entity_type == "hospital":
+            # Hospital-level (all-hospital) report — no specific unit filter was applied,
+            # so do NOT fall back to row[0]'s issuing section (that would show whichever
+            # unit filed the first complaint as if it were the report's scope).
             Administration = "—"
             Department = "—"
             Section = "—"
-            if rows:
-                try:
-                    first_record = rows[0]
-                    Administration = first_record.get("administration_name", "—")
-                    Department = first_record.get("department_name", "—")
-                    Section = first_record.get("section_name", "—")
-                    print(f"[DOCX EXPORT] Extracted from data: admin={Administration}, dept={Department}, section={Section}")
-                    print(f"[DOCX EXPORT] First record keys: {list(first_record.keys())[:10]}...")
-                except Exception as e:
-                    print(f"[DOCX EXPORT] Error extracting from data: {e}")
-                    pass
+            print(f"[DOCX EXPORT] Hospital-level report — header left blank (all units)")
+        else:
+            # Fallback for unknown/unhandled entity types
+            Administration = "—"
+            Department = "—"
+            Section = "—"
+            print(f"[DOCX EXPORT] Unknown entity type '{report_entity_type}' — header left blank")
 
         # Extract date range from rows
         if rows:
@@ -2374,8 +2372,8 @@ class ReportsService:
             for row in table.rows:
                 row.cells[idx].width = col_width
         
-        # Data rows (limit to 50 for Word)
-        row_count = min(len(rows), 50)
+        # Data rows — all records (no cap)
+        row_count = len(rows)
         for row_dict in rows[:row_count]:
             new_row = table.add_row()
             row_cells = new_row.cells
@@ -2594,18 +2592,15 @@ class ReportsService:
                     tcPr.append(vAlign)
                     # Allow Word to wrap text naturally for proper row expansion
                 
-        # Note if data was truncated
-        if len(rows) > 50:
-            doc.add_paragraph()
-            note_para = doc.add_paragraph()
-            note_run = note_para.add_run(
-                f"Showing first 50 of {len(rows)} records. Download Excel for full data."
-            )
-            note_run.font.size = int(Pt(9))
-            note_run.font.name = 'Traditional Arabic'
-            note_run.italic = False
-            note_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
-            note_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        # Record count footer
+        doc.add_paragraph()
+        count_para = doc.add_paragraph()
+        count_run = count_para.add_run(f"إجمالي السجلات: {len(rows)}")
+        count_run.font.size = int(Pt(9))
+        count_run.font.name = 'Traditional Arabic'
+        count_run.italic = True
+        count_run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Traditional Arabic')
+        count_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
         # Add signature block
         doc.add_paragraph()  # Spacer

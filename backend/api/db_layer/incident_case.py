@@ -33,9 +33,19 @@ UPDATABLE_FIELDS = {
 # CREATE
 # -----------------------------
 
-def create_incident_case(data: dict) -> int:
-    conn = get_connection()
-    cursor = conn.cursor()
+def create_incident_case(data: dict, cursor=None) -> int:
+    """
+    If `cursor` is provided, the insert runs on it and the caller owns the
+    connection/commit (used by case_service.create_case() so the case insert
+    and its ml.EmbeddingProcessingJob registration share one transaction).
+    If omitted, behaves exactly as before: opens its own connection and
+    commits/closes internally.
+    """
+    own_connection = cursor is None
+    conn = None
+    if own_connection:
+        conn = get_connection()
+        cursor = conn.cursor()
 
     print(f"[DB_LAYER] RequiresExplanation received: {data.get('RequiresExplanation')} (type: {type(data.get('RequiresExplanation')).__name__})")
 
@@ -46,6 +56,7 @@ def create_incident_case(data: dict) -> int:
             ImmediateAction,
             TakenAction,
             FeedbackRecievedDate,
+            IncidentDate,
             PatientName,
             IssuingOrgUnitID,
             CreatedByUserID,
@@ -68,12 +79,15 @@ def create_incident_case(data: dict) -> int:
             RecordTypeID
         )
         OUTPUT INSERTED.IncidentRequestCaseID
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         data.get("ComplaintText"),
         data.get("ImmediateAction") or "",
         data.get("TakenAction") or "",
         data.get("FeedbackRecievedDate"),
+        # IncidentDate is NOT NULL; fall back to FeedbackRecievedDate for any
+        # caller (e.g. draft saves) that hasn't collected a real incident date yet.
+        data.get("IncidentDate") or data.get("FeedbackRecievedDate"),
         data.get("PatientName") or "",
         data.get("IssuingOrgUnitID"),
         data.get("CreatedByUserID"),
@@ -97,8 +111,9 @@ def create_incident_case(data: dict) -> int:
     )
 
     incident_id = cursor.fetchone()[0]
-    conn.commit()
-    conn.close()
+    if own_connection:
+        conn.commit()
+        conn.close()
     return incident_id
 
 

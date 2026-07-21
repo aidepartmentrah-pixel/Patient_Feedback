@@ -80,48 +80,54 @@ _training_progress = {
 
 
 def _generate_run_id() -> str:
-    """Generate unique run ID in format: YYYY_MM_DD_HHMM"""
-    now = datetime.now()
-    return now.strftime("%Y_%m_%d_%H%M")
+    """Thin call-through to the canonical generator (Stage 9 Slice A) —
+    YYYY_MM_DD_HHMMSS_<uuid8>, collision-safe even for standalone calls or
+    retries within the same minute, unlike the old YYYY_MM_DD_HHMM format."""
+    from models_directory.Classification_Models.Maintainance import run_versioning
+    return run_versioning.generate_run_id()
 
 
 def _run_split_data() -> Dict[str, Any]:
     """
-    Execute split_data() to split data into train/test tables
-    before training begins.
-    
+    Execute split_data_from_sql_server() to split data into train/test
+    tables before training begins. SQL Server's ml.CaseTrainingRecord +
+    ml.HistoricalTrainingExample (deduplicated, _Old-excluded — see
+    ML_ARCHITECTURE_DECISION_RECORD.md) is the authoritative source as of
+    Stage 13; the legacy pure-SQLite split_data() read the un-deduplicated
+    patient_feedback_encoded table directly and is retired.
+
     Returns:
         Dict with train_rows, test_rows, source_rows
     """
     try:
-        from models_directory.split_data import split_data
-        
-        print("[TRAINING] Running split_data() ...")
-        result = split_data()
-        print(f"[TRAINING] split_data() completed: {result}")
+        from models_directory.split_data import split_data_from_sql_server
+
+        print("[TRAINING] Running split_data_from_sql_server() ...")
+        result = split_data_from_sql_server()
+        print(f"[TRAINING] split_data_from_sql_server() completed: {result}")
         return result
     except ImportError:
-        print("[TRAINING WARNING] Could not import split_data - skipping data split")
+        print("[TRAINING WARNING] Could not import split_data_from_sql_server - skipping data split")
         return {}
     except Exception as e:
-        print(f"[TRAINING ERROR] split_data() failed: {str(e)}")
+        print(f"[TRAINING ERROR] split_data_from_sql_server() failed: {str(e)}")
         traceback.print_exc()
         raise
 
 
-def _run_train_all() -> Dict[str, Any]:
+def _run_train_all(run_id: str = None) -> Dict[str, Any]:
     """
     Execute train_all() from model training pipeline.
-    
+
     Returns:
         Dict with models list and summary
     """
     try:
         # Import the training function
         from models_directory.Classification_Models.Maintainance.train_all import train_all
-        
+
         print("[TRAINING] Starting train_all()...")
-        result = train_all()
+        result = train_all(run_id=run_id)
         print(f"[TRAINING] train_all() returned: {result}")
         
         return result
@@ -194,7 +200,7 @@ def run_training_pipeline() -> Dict[str, Any]:
                 raise
             
             # Run training pipeline
-            result = _run_train_all()
+            result = _run_train_all(run_id=run_id)
             models = result.get("models", [])
             
             # Enrich with metadata
@@ -282,6 +288,44 @@ def get_ml_database_size_history() -> Dict[str, List[Dict[str, Any]]]:
     return {
         "points": points
     }
+
+
+def reconcile_stuck_training_runs() -> Dict[str, Any]:
+    """
+    Call once at process startup (mirrors
+    embedding_worker.sweep_stuck_jobs_startup()'s pattern). training_progress.json's
+    is_running flag and a run's own run_summary.json status="running" are both
+    only ever cleared by _background_training()'s own finally block — if the
+    process was killed mid-run, neither is ever reset, and a stale
+    is_running=True permanently blocks all future training runs via the 409
+    guard in training_router.py (see is_training_running()). Since this only
+    runs at fresh process startup, no training thread in THIS process can
+    possibly be alive yet, so a True flag found here is always stale.
+    """
+    progress = _read_progress_file()
+    if not progress.get("is_running", False):
+        return {"reconciled": False}
+
+    stuck_run_id = progress.get("run_id")
+    print(f"[TRAINING] Found stale is_running=True from a prior run "
+          f"(run_id={stuck_run_id}) at startup — resetting.")
+    reset_training_progress()
+
+    if stuck_run_id:
+        try:
+            from models_directory.Classification_Models.Maintainance import run_versioning
+            run_dir = run_versioning.RUNS_ROOT / stuck_run_id
+            summary_path = run_dir / run_versioning.SUMMARY_FILENAME
+            if summary_path.is_file():
+                with open(summary_path, "r", encoding="utf-8") as f:
+                    summary = json.load(f)
+                if summary.get("status") == "running":
+                    run_versioning.finalize_run_summary(run_dir, datetime.now().isoformat(), "failed")
+                    print(f"[TRAINING] Marked stuck run {stuck_run_id}'s run_summary.json as 'failed'")
+        except Exception as e:
+            print(f"[TRAINING WARNING] Could not finalize stuck run {stuck_run_id}'s summary: {e}")
+
+    return {"reconciled": True, "run_id": stuck_run_id}
 
 
 def is_training_running() -> bool:

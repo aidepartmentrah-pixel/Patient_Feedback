@@ -6,7 +6,7 @@ Computes classification-level compliance for:
   - Hospital scope: all sections aggregated per classification (Option B),
     compared against the shared standardized section target
 
-Targets come from APP_OrgUnitPolicy (LowSeverityLimit = total target,
+Targets come from APP_OrgUnitPolicy (LowSeverityLimit = low-severity target,
 MediumSeverityLimit = medium target, HighSeverityLimit = high target).
 All sections share identical targets due to the bulk-save convention
 (confirmed in Session 0 discovery).
@@ -32,24 +32,24 @@ from ..db_layer.reports_db import build_org_filter_condition
 # ──────────────────────────────────────────────────────────────
 
 def _compliance_status(
-    total: int,
+    low: int,
     medium: int,
     high: int,
-    all_limit: Optional[int],
+    low_limit: Optional[int],
     medium_limit: Optional[int],
     high_limit: Optional[int],
 ) -> str:
     """
-    Binary status — any of the three metrics (Total/Medium/High) exceeding
+    Binary status — any of the three metrics (Low/Medium/High) exceeding
     its target is a Violation. Which specific metric(s) failed is derived
     by the frontend directly from the actual/target pairs already present
     in each row (no separate severity-tier vocabulary surfaced to users).
     """
     high_violated   = high_limit   is not None and high   > high_limit
     medium_violated = medium_limit is not None and medium > medium_limit
-    total_violated  = all_limit    is not None and total  > all_limit
+    low_violated    = low_limit    is not None and low    > low_limit
 
-    if high_violated or medium_violated or total_violated:
+    if high_violated or medium_violated or low_violated:
         return "Violation"
     return "Compliant"
 
@@ -71,6 +71,8 @@ def _query_single_section(
             cl.Classification_AR  AS classification_name,
             cl.Classification_EN  AS classification_name_en,
             COUNT(DISTINCT ic.IncidentRequestCaseID)                              AS total_cases,
+            COUNT(DISTINCT CASE WHEN ic.SeverityID = 1
+                                THEN ic.IncidentRequestCaseID END)                AS low_cases,
             COUNT(DISTINCT CASE WHEN ic.SeverityID = 2
                                 THEN ic.IncidentRequestCaseID END)                AS medium_cases,
             COUNT(DISTINCT CASE WHEN ic.SeverityID = 3
@@ -98,8 +100,9 @@ def _query_single_section(
                 "classification_name":    row[1] or "",
                 "classification_name_en": row[2] or "",
                 "total_cases":            row[3] or 0,
-                "medium_cases":           row[4] or 0,
-                "high_cases":             row[5] or 0,
+                "low_cases":              row[4] or 0,
+                "medium_cases":           row[5] or 0,
+                "high_cases":             row[6] or 0,
             }
             for row in rows
         ]
@@ -123,6 +126,8 @@ def _query_hospital_all_sections(
             cl.Classification_AR  AS classification_name,
             cl.Classification_EN  AS classification_name_en,
             COUNT(DISTINCT ic.IncidentRequestCaseID)                              AS total_cases,
+            COUNT(DISTINCT CASE WHEN ic.SeverityID = 1
+                                THEN ic.IncidentRequestCaseID END)                AS low_cases,
             COUNT(DISTINCT CASE WHEN ic.SeverityID = 2
                                 THEN ic.IncidentRequestCaseID END)                AS medium_cases,
             COUNT(DISTINCT CASE WHEN ic.SeverityID = 3
@@ -152,8 +157,9 @@ def _query_hospital_all_sections(
                 "classification_name":    row[1] or "",
                 "classification_name_en": row[2] or "",
                 "total_cases":            row[3] or 0,
-                "medium_cases":           row[4] or 0,
-                "high_cases":             row[5] or 0,
+                "low_cases":              row[4] or 0,
+                "medium_cases":           row[5] or 0,
+                "high_cases":             row[6] or 0,
             }
             for row in rows
         ]
@@ -184,7 +190,7 @@ def get_section_compliance(
             "scope": str,
             "date_from": str,
             "date_to": str,
-            "all_limit": int | None,
+            "low_limit": int | None,
             "medium_limit": int | None,
             "high_limit": int | None,
             "has_policy": bool,
@@ -198,7 +204,7 @@ def get_section_compliance(
         # Hospital scope: use the shared standardized section target
         policy = get_representative_policy_for_type(ORG_TYPE_SECTION)
 
-    all_limit    = policy.get("LowSeverityLimit")    if policy else None
+    low_limit    = policy.get("LowSeverityLimit")    if policy else None
     medium_limit = policy.get("MediumSeverityLimit") if policy else None
     high_limit   = policy.get("HighSeverityLimit")   if policy else None
     has_policy   = policy is not None
@@ -213,15 +219,16 @@ def get_section_compliance(
     rows = []
     for r in raw:
         status = _compliance_status(
-            r["total_cases"],  r["medium_cases"],  r["high_cases"],
-            all_limit,         medium_limit,        high_limit,
+            r["low_cases"],  r["medium_cases"],  r["high_cases"],
+            low_limit,       medium_limit,        high_limit,
         )
         rows.append({
             "classification_id":      r["classification_id"],
             "classification_name":    r["classification_name"],
             "classification_name_en": r["classification_name_en"],
             "total_actual":           r["total_cases"],
-            "total_target":           all_limit,
+            "low_actual":             r["low_cases"],
+            "low_target":             low_limit,
             "medium_actual":          r["medium_cases"],
             "medium_target":          medium_limit,
             "high_actual":            r["high_cases"],
@@ -233,7 +240,7 @@ def get_section_compliance(
         "scope":         scope,
         "date_from":     date_from.isoformat(),
         "date_to":       date_to.isoformat(),
-        "all_limit":     all_limit,
+        "low_limit":     low_limit,
         "medium_limit":  medium_limit,
         "high_limit":    high_limit,
         "has_policy":    has_policy,

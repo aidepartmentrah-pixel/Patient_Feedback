@@ -11,6 +11,7 @@ import uuid
 import traceback
 import logging
 import asyncio
+from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor
 
 # Dedicated thread pool for report generation — keeps the event loop responsive
@@ -1017,12 +1018,25 @@ async def download_export(export_id: str):
     export_data = EXPORT_STORAGE[export_id]
     
     print(f"[DOWNLOAD] Serving export: {export_data['filename']} ({len(export_data['content'])} bytes)")
-    
+
+    # HTTP header values must be latin-1 encodable; multi-export ZIP filenames
+    # embed the org unit's real (often Arabic) name and previously crashed
+    # this endpoint with a UnicodeEncodeError the moment such a file was
+    # downloaded. Provide an ASCII-safe fallback via the plain `filename=`
+    # parameter, plus the real name via RFC 5987 `filename*=UTF-8''...` for
+    # the browsers (all modern ones) that honor it.
+    raw_filename = export_data["filename"]
+    ascii_filename = raw_filename.encode("ascii", "ignore").decode("ascii").strip() or "export"
+    encoded_filename = quote(raw_filename)
+
     # Return file with correct content type
     return Response(
         content=export_data["content"],
         media_type=export_data["content_type"],
         headers={
-            "Content-Disposition": f'attachment; filename="{export_data["filename"]}"'
+            "Content-Disposition": (
+                f'attachment; filename="{ascii_filename}"; '
+                f"filename*=UTF-8''{encoded_filename}"
+            )
         }
     )

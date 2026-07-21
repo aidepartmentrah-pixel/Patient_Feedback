@@ -12,6 +12,7 @@ Design:
 - Deterministic, side-effect free, safe to call from any service
 """
 
+import time
 from typing import Optional
 from ..db_layer import admin_units
 
@@ -21,6 +22,13 @@ from ..db_layer import admin_units
 # =========================================================
 
 _tree_cache: Optional[dict] = None
+_tree_cache_loaded_at: Optional[float] = None
+
+# Org structure changes rarely, but a long-lived server process must not
+# serve a permanently stale tree if units are reparented/added at runtime.
+# Investigated 2026-07-16 as a suspected (but not reproduced) cause of a
+# department admin seeing an empty inbox — added as a safety net.
+_TREE_CACHE_TTL_SECONDS = 300
 
 
 def _row_to_dict(row) -> dict:
@@ -78,13 +86,19 @@ def _load_tree():
 
 def _get_tree():
     """
-    Get the cached tree or load it if not yet loaded.
+    Get the cached tree, loading it if not yet loaded or if the TTL expired.
     """
-    global _tree_cache
-    
-    if _tree_cache is None:
+    global _tree_cache, _tree_cache_loaded_at
+
+    is_stale = (
+        _tree_cache_loaded_at is not None
+        and (time.monotonic() - _tree_cache_loaded_at) > _TREE_CACHE_TTL_SECONDS
+    )
+
+    if _tree_cache is None or is_stale:
         _tree_cache = _load_tree()
-    
+        _tree_cache_loaded_at = time.monotonic()
+
     return _tree_cache
 
 
@@ -209,8 +223,9 @@ def clear_cache():
     Clear the cached tree data.
     Useful for testing or if the tree structure changes at runtime.
     """
-    global _tree_cache
+    global _tree_cache, _tree_cache_loaded_at
     _tree_cache = None
+    _tree_cache_loaded_at = None
 
 
 # =========================================================

@@ -1,16 +1,15 @@
 {
     "deployment_mode": "offline",
-    "password_mode": "test",
     "database": {
-        "host": "127.0.0.1",
-        "port": 1433,
         "server": "127.0.0.1",
         "database": "IncidentManager",
         "driver": "ODBC Driver 18 for SQL Server",
         "use_windows_auth": false,
         "username": "HCAT_Insight",
         "password": "NewPassword2004",
-        "trust_server_certificate": true
+        "trust_server_certificate": true,
+        "host": "127.0.0.1",
+        "port": 1433
     },
     "views": {
         "hr_employees": "VW_HrEmployeeProfileView",
@@ -49,5 +48,6 @@
         "sender_email": "complaint-system@hospital.local",
         "sender_name": "Hospital Complaint System"
     },
-    "config_password": "NewPassword2004"
+    "config_password": "NewPassword2004",
+    "password_mode": "test"
 }

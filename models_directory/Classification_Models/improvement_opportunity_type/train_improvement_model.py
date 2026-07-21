@@ -12,11 +12,8 @@ import sqlite3
 from pathlib import Path
 import numpy as np
 import pandas as pd
-import joblib
 import traceback
 import mord
-from sklearn.metrics import classification_report, confusion_matrix
-import matplotlib.pyplot as plt
 import sys
 
 # --------------------------------------------------
@@ -26,22 +23,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 from models_directory.Classification_Models.Hierarchical_Classification_Model.Helper_Functions import (
     compute_standardized_metrics,
 )
+from models_directory.Classification_Models.Maintainance import run_versioning
 
 # --------------------------------------------------
 # Paths & Config
 # --------------------------------------------------
 SCRIPT_DIR = Path(__file__).resolve().parent
-DB_PATH = SCRIPT_DIR.parent.parent / "patient_feedback_ml.db"
+_DEFAULT_DB_PATH = SCRIPT_DIR.parent.parent / "patient_feedback_ml.db"
 
 TRAIN_TABLE = "table_feedback_train"
 TEST_TABLE = "table_feedback_test"
 
 EMBED_COL = "embedding_text123"
 TARGET_COL = "improvement_opportunity_type"
-
-MODEL_PATH = SCRIPT_DIR / "Improvement_OrdinalModel.pkl"
-REPORT_PATH = SCRIPT_DIR / "improvement_metrics.txt"
-CM_PATH = SCRIPT_DIR / "improvement_confusion_matrix.png"
 
 
 # --------------------------------------------------
@@ -109,34 +103,19 @@ def oversample_class(df, target_col, target_value, desired_ratio=0.35, random_st
     )
 
 
-def save_confusion_matrix(cm, labels, out_path, title):
-    fig, ax = plt.subplots(figsize=(6, 5))
-    im = ax.imshow(cm)
-    ax.set_title(title)
-    ax.set_xlabel("Predicted")
-    ax.set_ylabel("True")
-
-    ax.set_xticks(range(len(labels)))
-    ax.set_yticks(range(len(labels)))
-    ax.set_xticklabels(labels)
-    ax.set_yticklabels(labels)
-
-    for i in range(cm.shape[0]):
-        for j in range(cm.shape[1]):
-            ax.text(j, i, cm[i, j], ha="center", va="center")
-
-    fig.tight_layout()
-    fig.savefig(out_path)
-    plt.close(fig)
-
-
 # --------------------------------------------------
 # TRAINING FUNCTION
 # --------------------------------------------------
-def train_improvement_model():
+def train_improvement_model(base_path=None, run_dir=None):
     """
-    Trains ordinal improvement model using standardized metrics.
+    Trains ordinal improvement model using standardized metrics. Returns
+    model, standardized_metrics (merged with roc_pr/warnings/artifacts when
+    run_dir is supplied).
     """
+    if run_dir is None:
+        run_dir = run_versioning.get_run_dir(run_versioning.generate_run_id())
+
+    DB_PATH = base_path or _DEFAULT_DB_PATH
 
     try:
         df_train = load_table(DB_PATH, TRAIN_TABLE)
@@ -173,32 +152,34 @@ def train_improvement_model():
         y_pred_orig = y_pred + 1
 
         # Standardized metrics (same style as Severity)
+        model_name = "Improvement_Ordinal_Model"
         standardized_metrics = compute_standardized_metrics(
-            model_name="Improvement_Ordinal_Model",
+            model_name=model_name,
             y_train=df_train[TARGET_COL].to_numpy(),
             y_test=y_test_orig,
             y_pred=y_pred_orig,
             label_names=[1, 2, 3],
         )
 
-        # Save model
-        joblib.dump(model, MODEL_PATH)
+        # ---------- Versioned evaluation artifacts ----------
+        y_proba = model.predict_proba(X_test)
+        proba_class_order = model.classes_.tolist() if hasattr(model, "classes_") else sorted(np.unique(y_train).tolist())
 
-        # Save report
-        with open(REPORT_PATH, "w", encoding="utf-8") as f:
-            f.write("Improvement Ordinal Model Metrics\n\n")
-            f.write(f"Accuracy: {standardized_metrics['accuracy']}\n")
-            f.write(f"F1: {standardized_metrics['f1']}\n\n")
-            f.write(classification_report(y_test, y_pred, zero_division=0))
-
-        # Confusion matrix
-        cm = confusion_matrix(y_test, y_pred)
-        save_confusion_matrix(
-            cm,
-            labels=["Ordinary", "Red Flag", "Never Event"],
-            out_path=CM_PATH,
-            title="Improvement Ordinal Confusion Matrix"
+        eval_result = run_versioning.save_evaluation_artifacts(
+            run_dir=run_dir,
+            model_name=model_name,
+            y_true_display=y_test_orig.tolist(),
+            y_pred_display=y_pred_orig.tolist(),
+            display_labels=[1, 2, 3],
+            y_proba=y_proba,
+            proba_class_order=proba_class_order,
+            y_true_for_curves=y_test,
         )
+        model_entry = run_versioning.register_model_artifact(run_dir, model_name, model, serializer="joblib")
+        eval_result["artifacts"].append(model_entry)
+        standardized_metrics.update(eval_result)
+
+        print(f"Artifacts written to: {run_dir}")
 
         return model, standardized_metrics
 

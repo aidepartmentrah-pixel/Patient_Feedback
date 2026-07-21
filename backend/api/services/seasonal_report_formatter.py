@@ -514,15 +514,15 @@ def _render_section_policy_table(
     """
     Section policy: per-classification evaluation table.
 
-    NEW SEMANTICS (Session 1):
-      LowSeverityLimit  = ALL incidents threshold per classification
+    SEMANTICS:
+      LowSeverityLimit  = Low-severity incidents threshold per classification
       MediumSeverityLimit = Medium incidents threshold per classification
       HighSeverityLimit   = High incidents threshold per classification
 
     A classification is violating if ANY enabled rule has actual > limit
     (STRICTLY greater than).  Only violating rows become red.
 
-    Columns (RTL): التصنيف | الإجمالي | متوسط | عالي | الحدود (ك/م/ع) | الحالة
+    Columns (RTL): التصنيف | منخفضة | متوسط | عالي | الحدود (ك/م/ع) | الحالة
     """
     enable_all  = bool(policy_snapshot.get('enable_low_severity_repetition_rule',       False))
     enable_med  = bool(policy_snapshot.get('enable_medium_severity_repetition_rule',    False))
@@ -561,7 +561,7 @@ def _render_section_policy_table(
     # Evaluate each classification
     rows_data = []
     for stat in classification_stats:
-        total = stat.get('total_count', 0)
+        total = stat.get('low_count', 0)
         med   = stat.get('medium_count', 0)
         high  = stat.get('high_count', 0)
         violating = (
@@ -585,7 +585,7 @@ def _render_section_policy_table(
     table.style = 'Table Grid'
     _tbl_rtl(table)
 
-    for ci, txt in enumerate(['التصنيف', 'الإجمالي', 'متوسط', 'عالي', 'الحدود (ك/م/ع)', 'الحالة']):
+    for ci, txt in enumerate(['التصنيف', 'منخفضة', 'متوسط', 'عالي', 'الحدود (ك/م/ع)', 'الحالة']):
         _hdr_run(table.rows[0].cells[ci], txt, size=9)
 
     for ri, rd in enumerate(rows_data, start=1):

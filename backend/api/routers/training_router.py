@@ -3,7 +3,7 @@ Training Router
 API endpoints for the Settings > Training Tab
 """
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Response
 from typing import Dict, Any, List
 
 from ..dependencies.user_context import get_current_user
@@ -22,6 +22,12 @@ from ..services.training_service import (
     get_performance_trends_chart_data,
     get_training_timeline_chart_data,
     get_family_comparison_chart_data
+)
+from ..services.training_run_artifacts_service import (
+    list_versioned_runs,
+    get_versioned_run_detail,
+    build_run_zip,
+    RunNotFoundError,
 )
 
 
@@ -276,6 +282,77 @@ async def get_training_history_endpoint(
     except Exception as e:
         print(f"[TRAINING ERROR] get_training_history_endpoint failed: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to retrieve training history")
+
+
+@router.get("/versioned-runs")
+async def list_versioned_runs_endpoint(
+    limit: int = 50,
+    current_user: CurrentUser = Depends(get_current_user)
+) -> List[Dict[str, Any]]:
+    """
+    List Stage 9 versioned training runs (per-run folders with ROC/AUC
+    artifacts) — separate from GET /history, which is the older SQLite-
+    backed run log.
+
+    **Returns:** list of {run_id, status, started_at, finished_at,
+    model_count, families_with_warnings}, newest first.
+    """
+    require_logged_in(current_user)
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR])
+
+    try:
+        return list_versioned_runs(limit=limit)
+    except Exception as e:
+        print(f"[TRAINING ERROR] list_versioned_runs_endpoint failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to list versioned training runs")
+
+
+@router.get("/versioned-runs/{run_id}")
+async def get_versioned_run_detail_endpoint(
+    run_id: str,
+    current_user: CurrentUser = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """Full run_summary.json for one versioned run, including the
+    per-model artifact manifest."""
+    require_logged_in(current_user)
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR])
+
+    try:
+        return get_versioned_run_detail(run_id)
+    except RunNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Training run not found: {run_id}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print(f"[TRAINING ERROR] get_versioned_run_detail_endpoint failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve training run detail")
+
+
+@router.get("/versioned-runs/{run_id}/download")
+async def download_versioned_run_endpoint(
+    run_id: str,
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """Download a ZIP of every artifact in a versioned run's manifest
+    (confusion matrices, ROC/PR curves, model files, run_summary.json)."""
+    require_logged_in(current_user)
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR])
+
+    try:
+        result = build_run_zip(run_id)
+    except RunNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Training run not found: {run_id}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print(f"[TRAINING ERROR] download_versioned_run_endpoint failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to build training run ZIP")
+
+    return Response(
+        content=result["content"],
+        media_type=result["content_type"],
+        headers={"Content-Disposition": f'attachment; filename="{result["filename"]}"'},
+    )
 
 
 @router.get("/db-size")
