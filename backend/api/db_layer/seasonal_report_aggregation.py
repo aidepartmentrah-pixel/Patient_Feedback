@@ -60,10 +60,14 @@ def get_seasonal_classification_stats(
         start_date = season_row.StartDate
         end_date = season_row.EndDate
         
-        # Hospital-level (orgunit_id=1, orgunit_type=0): Aggregate ALL incidents
+        # Hospital-level (orgunit_type=0): Aggregate ALL incidents. Checked on
+        # orgunit_type alone, not a specific orgunit_id value — there is no
+        # real "hospital" row in AdminsrationUnit, and pinning this to a
+        # specific ID (previously 1) collided with a real Administration
+        # that happens to have that ID.
         # Specific unit: Filter by TARGET DEPARTMENTS with tree expansion (same as monthly reporting)
         # This ensures Administration reports include ALL complaints where target dept belongs to that Administration
-        if orgunit_id == 1 and orgunit_type == 0:
+        if orgunit_type == 0:
             # Hospital-level: No orgunit filter
             where_clause = f"""
             WHERE ic.FeedbackRecievedDate >= ?
@@ -242,9 +246,12 @@ def get_seasonal_domain_totals(
         start_date = season_row.StartDate
         end_date = season_row.EndDate
         
-        # Hospital-level (orgunit_id=1, orgunit_type=0): Aggregate ALL incidents
+        # Hospital-level (orgunit_type=0): Aggregate ALL incidents. Checked on
+        # orgunit_type alone — see the identical comment earlier in this file
+        # for why (no real "hospital" row, and orgunit_id=1 collided with a
+        # real Administration).
         # Specific unit: Filter by TARGET DEPARTMENTS with tree expansion (same as monthly reporting)
-        if orgunit_id == 1 and orgunit_type == 0:
+        if orgunit_type == 0:
             # Hospital-level: No orgunit filter
             where_clause = f"""
             WHERE ic.FeedbackRecievedDate >= ?

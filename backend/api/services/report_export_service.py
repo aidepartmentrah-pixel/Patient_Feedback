@@ -531,10 +531,20 @@ class ReportExportService:
     ) -> Dict[str, Any]:
         """Fetch seasonal report data based on display mode."""
         if display_mode == "hcat":
+            # Org-scope filters forwarded explicitly — previously dropped
+            # here, so any caller of this path would silently get
+            # hospital-wide HCAT data regardless of requested scope. Not
+            # currently reachable from the Reporting page (only the generic
+            # POST /api/reports/export endpoint with report_type="seasonal"
+            # and display_mode="hcat" can trigger it), but fixed
+            # defensively rather than left as a latent trap.
             return reports_service.get_seasonal_hcat_report(
                 year=year,
                 trimester=trimester,
-                quarter=quarter
+                quarter=quarter,
+                building_id=filters.get("building_id"),
+                idara_id=filters.get("idara_id"),
+                dayra_id=filters.get("dayra_id"),
             )
         else:
             raise ValueError(f"Invalid display_mode for seasonal report: {display_mode}")

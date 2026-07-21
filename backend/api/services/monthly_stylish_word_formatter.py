@@ -177,9 +177,27 @@ def _labeled_cell(cell, label: str, value: str,
     _ar_run(vp, value or '—', size=value_size, bold=value_bold, color=value_color)
 
 
+def _cell_para0(cell, align: str = 'center'):
+    """
+    Local wrapper around the shared _cell_para that also zeroes paragraph
+    spacing. The document's default template (w:docDefaults/w:pPrDefault)
+    sets 10pt space-after + 1.15 line spacing on every paragraph that
+    doesn't explicitly override it — for compact single-line table cells
+    that silently added ~3.5mm of trailing space per cell, on top of
+    whatever AT_LEAST row-height floor was set. This is why repeatedly
+    shrinking that floor had no visible effect: the paragraph's own default
+    spacing was the actual floor, never touched. Not modifying the shared
+    _cell_para helper itself since other reports use it.
+    """
+    p = _cell_para(cell, align)
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after = Pt(0)
+    return p
+
+
 def _bold_underline_value_cell(cell, text: str):
     """Classification table's data-row cells: bold + underlined value, centered."""
-    p = _cell_para(cell, 'center')
+    p = _cell_para0(cell, 'center')
     run = _ar_run(p, text or '—', size=9, bold=True, color=DARK_TEXT)
     run.font.underline = True
 
@@ -196,7 +214,7 @@ def _vertical_label_cell(cell, text_ar: str):
     """Rotated (bottom-to-top) side label, e.g. 'بيانات الشكوى' / 'المتابعة'."""
     _set_cell_shading(cell, NAVY)
     _rotate_cell(cell)
-    p = _cell_para(cell, 'center')
+    p = _cell_para0(cell, 'center')
     _ar_run(p, text_ar, size=9, bold=True, color=WHITE)
 
 
@@ -204,14 +222,14 @@ def _vertical_header_cell(cell, label: str):
     """Rotated classification-table header cell (short label, cyan bg)."""
     _set_cell_shading(cell, HEADER_CYAN)
     _rotate_cell(cell)
-    p = _cell_para(cell, 'center')
+    p = _cell_para0(cell, 'center')
     _ar_run(p, label, size=7, bold=True, color=NAVY)
 
 
 def _vertical_bold_underline_value_cell(cell, text: str):
     """Rotated classification-table data cell: bold + underlined value."""
     _rotate_cell(cell)
-    p = _cell_para(cell, 'center')
+    p = _cell_para0(cell, 'center')
     run = _ar_run(p, text or '—', size=8, bold=True, color=DARK_TEXT)
     run.font.underline = True
 
@@ -368,21 +386,26 @@ def _case_number(complaint: Dict) -> str:
 # Rotating the value (not just the header) needs real vertical room for a
 # ~10-char string, so the data row is taller here (22mm vs the previous
 # 11mm) than a purely horizontal table would need.
+# Problem Domain widened 30% (20mm -> 26mm, prior round). Sub-Category +15%
+# (20mm -> 23mm), Complaint Field Type +15% (16mm -> 18mm), offset by
+# trimming Category/Stage/Status (prior round). This round: Severity and
+# Harm each cut 15% (19->16.15mm, 21->17.85mm — 6mm saved combined) and that
+# 6mm moved entirely onto Stage (16mm -> 22mm).
 # Sum of widths = 269mm (<= 270mm target ceiling).
 _CLASS_COLS = [
     ('الاستلام', 8, lambda c: _fmt_date(c.get('received_date'))),
     ('الحادثة', 8, lambda c: _fmt_date(c.get('incident_date'))),
     ('النشر', 8, lambda c: _fmt_date(c.get('publication_date'))),
     ('الرقم', 8, _case_number),
-    ('Problem Domain\nالمجال', 20, lambda c: c.get('domain_name') or '—'),
-    ('Problem Category\nفئة المشكلة', 22, lambda c: c.get('category_name') or '—'),
-    ('Sub-Category\nالفئة الفرعية', 22, lambda c: c.get('subcategory_name') or '—'),
+    ('Problem Domain\nالمجال', 26, lambda c: c.get('domain_name') or '—'),
+    ('Problem Category\nفئة المشكلة', 20, lambda c: c.get('category_name') or '—'),
+    ('Sub-Category\nالفئة الفرعية', 23, lambda c: c.get('subcategory_name') or '—'),
     ('Classification (Arb.)', 40, lambda c: c.get('classification_name') or '—'),
     ('Classification (Eng.)', 40, lambda c: c.get('classification_name_en') or '—'),
-    ('Severity\nالخطورة', 19, lambda c: c.get('severity_name') or '—'),
-    ('Stage\nالمرحلة', 20, lambda c: c.get('stage_name') or '—'),
-    ('Harm\nالضرر', 21, lambda c: c.get('harm_level') or '—'),
-    ('Status\nالحالة', 15, lambda c: c.get('status_name') or '—'),
+    ('Severity\nالخطورة', 16.15, lambda c: c.get('severity_name') or '—'),
+    ('Stage\nالمرحلة', 22, lambda c: c.get('stage_name') or '—'),
+    ('Harm\nالضرر', 17.85, lambda c: c.get('harm_level') or '—'),
+    ('Status\nالحالة', 14, lambda c: c.get('status_name') or '—'),
     ('Complaint Field Type\nنوع السجل', 18, lambda c: c.get('clinical_risk_type_name') or 'Ordinary'),
 ]
 
@@ -405,7 +428,7 @@ def _classification_table(doc: Document, complaint: Dict):
             _vertical_header_cell(c, label)
         else:
             _set_cell_shading(c, HEADER_CYAN)
-            cp = _cell_para(c, 'center')
+            cp = _cell_para0(c, 'center')
             _ar_run(cp, label, size=6.5, bold=True, color=NAVY)
         _set_row_col_width(hdr, ci, w)
     hdr.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
@@ -419,8 +442,15 @@ def _classification_table(doc: Document, complaint: Dict):
         else:
             _bold_underline_value_cell(data.cells[ci], getter(complaint))
         _set_row_col_width(data, ci, w)
+    # Floor bumped 22mm -> 27mm: the rotated case-number text (~11 unbroken
+    # characters, e.g. "INC-000187") only looked clean when something else in
+    # the row (typically a long Classification (Eng.) wrap) happened to push
+    # the row taller than 22mm — at the bare 22mm floor it looked cramped.
+    # Raising the floor itself makes that a fixed, guaranteed minimum instead
+    # of something the number's readability accidentally depended on. This
+    # does cost ~5mm of the vertical space reclaimed earlier this session.
     data.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-    data.height = _mm_to_dxa(22)
+    data.height = _mm_to_dxa(27)
     _set_row_cant_split(data)
     return tbl
 
@@ -547,13 +577,53 @@ def _action_block(doc: Document, complaint: Dict):
 # APPROVAL / SIGNATURE GRID
 # ---------------------------------------------------------------------------
 
-_APPROVAL_ROLES = [
-    'مسؤول العملية\nProcess Owner',
-    'رئيس الدائرة\nDept. Head',
-    'مدير الإدارة\nAdmin. Manager',
-    'خاص خدمات المرضى\nPatient Services',
-]
+# English removed — this was the actual cause of the table staying tall
+# despite repeatedly shrinking the AT_LEAST floor: AT_LEAST is a minimum,
+# it can never compress a row below what its content physically needs, and
+# a 2-line "Arabic\nEnglish" cell needs roughly double a 1-line cell's
+# height no matter how small the floor is set. Single-line Arabic-only
+# labels are what actually let the row get shorter.
+_APPROVAL_ROLES = ['مسؤول العملية', 'رئيس الدائرة', 'مدير الإدارة', 'خاص خدمات المرضى']
 _APPROVAL_COL_WIDTHS = [30, 60, 60, 60, 60]  # sum = 270mm
+
+
+def _tighten_cell_margins(cell, top_mm=0.3, bottom_mm=0.3, left_mm=1.0, right_mm=1.0):
+    """
+    Cuts a cell's internal top/bottom padding to near-zero. The second,
+    quieter contributor to this table's height: python-docx's default table
+    style carries its own cell margins that add to whatever the row's
+    AT_LEAST floor specifies, regardless of that floor's value.
+    """
+    tcPr = cell._tc.get_or_add_tcPr()
+    mar = OxmlElement('w:tcMar')
+    for side, mm in (('top', top_mm), ('bottom', bottom_mm), ('left', left_mm), ('right', right_mm)):
+        el = OxmlElement(f'w:{side}')
+        el.set(qn('w:w'), str(_mm_to_dxa(mm)))
+        el.set(qn('w:type'), 'dxa')
+        mar.append(el)
+    tcPr.append(mar)
+
+
+def _set_para_mark_size(p, pt: float):
+    """
+    Sets the font size an EMPTY paragraph uses for its own line-height
+    calculation (the paragraph-mark run properties, w:pPr/w:rPr). A cell
+    with no text/run in it — the blank signature cells here — silently
+    falls back to the Normal style's font size (10pt in this document) for
+    that calculation, which is LARGER than every other font size used in
+    this table (7-8pt). That makes an invisible, empty cell the tallest
+    thing in its row and the actual row-height driver, with nothing in the
+    visible content explaining why the row wouldn't shrink further.
+    """
+    pPr = p._p.get_or_add_pPr()
+    rPr = OxmlElement('w:rPr')
+    sz = OxmlElement('w:sz')
+    sz.set(qn('w:val'), str(int(pt * 2)))
+    szCs = OxmlElement('w:szCs')
+    szCs.set(qn('w:val'), str(int(pt * 2)))
+    rPr.append(sz)
+    rPr.append(szCs)
+    pPr.append(rPr)
 
 
 def _approval_grid(doc: Document):
@@ -563,32 +633,46 @@ def _approval_grid(doc: Document):
     _apply_minimal_table_borders(tbl, outer=BORDER_OUTER, outer_sz=6, inner=BORDER_INNER, inner_sz=3)
     _set_rtl_table(tbl)
 
-    # Header row height cut 40% (7mm -> 4.2mm); Name/Date/Signature rows cut
-    # 30% (10/10/14mm -> 7/7/9.8mm) — this table only needs to hold a single
-    # signature line each, not the generous defaults from the original design.
     hdr = tbl.rows[0]
     hdr.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-    hdr.height = _mm_to_dxa(4.2)
+    hdr.height = _mm_to_dxa(1.0)
     for ci, label in enumerate([''] + _APPROVAL_ROLES):
         c = hdr.cells[ci]
         _set_cell_shading(c, 'F2F2F2')
-        cp = _cell_para(c, 'center')
-        _ar_run(cp, label, size=7.5, bold=True, color=DARK_TEXT)
+        _tighten_cell_margins(c)
+        cp = _cell_para0(c, 'center')
+        _ar_run(cp, label, size=6.5, bold=True, color=DARK_TEXT)
         _set_row_col_width(hdr, ci, _APPROVAL_COL_WIDTHS[ci])
     _set_row_cant_split(hdr)
 
-    field_rows = [('الاسم / Name', 7), ('التاريخ / Date', 7), ('التوقيع / Signature', 9.8)]
+    # Field labels: Arabic only (English dropped), centered instead of
+    # right-aligned now that there's no bilingual "/" split to anchor.
+    # Row-height floors trimmed further now that the two real height
+    # drivers (hidden 10pt space-after, and the blank signature cells'
+    # font-size fallback below) are actually fixed — these numbers matter
+    # again instead of being floors nothing ever reached.
+    field_rows = [('الاسم', 3.5), ('التاريخ', 3.5), ('التوقيع', 5.0)]
     for ri, (field_lbl, h) in enumerate(field_rows):
         row = tbl.rows[ri + 1]
         row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
         row.height = _mm_to_dxa(h)
         c0 = row.cells[0]
         _set_cell_shading(c0, 'F8F8F8')
-        p0 = _cell_para(c0, 'right')
-        _ar_run(p0, field_lbl, size=8, bold=True, color=NAVY)
+        _tighten_cell_margins(c0)
+        p0 = _cell_para0(c0, 'center')
+        _ar_run(p0, field_lbl, size=7, bold=True, color=NAVY)
         _set_row_col_width(row, 0, _APPROVAL_COL_WIDTHS[0])
         for ci in range(1, 5):
             _set_cell_shading(row.cells[ci], WHITE)
+            _tighten_cell_margins(row.cells[ci])
+            # Blank signature cell: no visible text, but its empty
+            # paragraph mark still needs an explicit small font size or it
+            # silently falls back to Normal's 10pt for line-height purposes
+            # — larger than every labeled cell — and becomes the real
+            # (invisible) reason the row wouldn't shrink. See
+            # _set_para_mark_size's docstring.
+            bp = _cell_para0(row.cells[ci], 'center')
+            _set_para_mark_size(bp, 7)
             _set_row_col_width(row, ci, _APPROVAL_COL_WIDTHS[ci])
         _set_row_cant_split(row)
     return tbl
@@ -620,7 +704,7 @@ def _instruction_note(doc: Document):
 
     p1 = cell.paragraphs[0]
     p1.clear()
-    p1.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p1.paragraph_format.space_before = Pt(3)
     p1.paragraph_format.space_after  = Pt(2)
     p1.paragraph_format.right_indent = Mm(2)
@@ -629,7 +713,7 @@ def _instruction_note(doc: Document):
     _ar_run(p1, _RCA_NOTE_LINE1, size=7.5, color='5D4037')
 
     p2 = cell.add_paragraph()
-    p2.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p2.paragraph_format.space_before = Pt(0)
     p2.paragraph_format.space_after  = Pt(3)
     p2.paragraph_format.right_indent = Mm(2)
@@ -648,25 +732,24 @@ def _instruction_note(doc: Document):
 # ---------------------------------------------------------------------------
 
 def _render_complaint_page(doc: Document, complaint: Dict, index: int, total: int, period: Dict):
-    # Inter-block gaps cut 50% (2/2/2/2/1.5mm -> 1/1/1/1/0.75mm) to reclaim
-    # vertical space — the page was running short on height for a single
-    # complaint to fit on one page.
+    # Inter-block gaps: 2mm -> 1mm -> 0.6mm -> 0.3mm -> 0.15mm (this round).
+    # Change log only, not a reason to stop reducing further.
     sec_name, dept_name, admin_name = _target_names(complaint)
     period_label = period.get('label_ar') or period.get('label') or '—'
     _four_cell_strip(doc, admin_name, dept_name, sec_name, period_label)
-    _gap(doc, 1)
+    _gap(doc, 0.15)
 
     _classification_table(doc, complaint)
-    _gap(doc, 1)
+    _gap(doc, 0.15)
 
     _complaint_data_block(doc, complaint)
-    _gap(doc, 1)
+    _gap(doc, 0.15)
 
     _action_block(doc, complaint)
-    _gap(doc, 1)
+    _gap(doc, 0.15)
 
     _approval_grid(doc)
-    _gap(doc, 0.75)
+    _gap(doc, 0.1)
 
     _instruction_note(doc)
 
@@ -674,7 +757,12 @@ def _render_complaint_page(doc: Document, complaint: Dict, index: int, total: in
     _ar_run(pg_para, f'شكوى {index} من {total}  •  {_fmt_date(complaint.get("received_date"))}',
             size=7, color=GREY_TEXT)
 
-    _page_break(doc)
+    # No page break here — the caller inserts one only BETWEEN complaints.
+    # Adding one unconditionally after every complaint (including the last)
+    # produced a trailing blank page: either a dangling empty page at the
+    # very end of the document, or a blank page sandwiched between the last
+    # complaint and the next section (notices/appendix), since add_section
+    # (WD_SECTION.NEW_PAGE) already forces its own page break.
 
 
 # ---------------------------------------------------------------------------
@@ -723,7 +811,7 @@ def _render_notices_section(doc: Document, notices: List[Dict],
     for ci, (label, w) in enumerate(_NOTICE_COLS):
         c = hdr.cells[ci]
         _set_cell_shading(c, HEADER_CYAN)
-        cp = _cell_para(c, 'center')
+        cp = _cell_para0(c, 'center')
         _ar_run(cp, label, size=8, bold=True, color=NAVY)
         _set_row_col_width(hdr, ci, w)
     hdr.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
@@ -749,6 +837,8 @@ def _render_notices_section(doc: Document, notices: List[Dict],
             p = c.paragraphs[0]
             p.clear()
             p.alignment = WD_ALIGN_PARAGRAPH.RIGHT if ci == 5 else WD_ALIGN_PARAGRAPH.CENTER
+            p.paragraph_format.space_before = Pt(0)
+            p.paragraph_format.space_after = Pt(0)
             p._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
             _ar_run(p, val, size=8.5, color=DARK_TEXT)
             _set_row_col_width(row, ci, w)
@@ -759,7 +849,7 @@ def _render_notices_section(doc: Document, notices: List[Dict],
     if not notices:
         row = tbl.add_row()
         merged = row.cells[0].merge(row.cells[n - 1])
-        cp = _cell_para(merged, 'center')
+        cp = _cell_para0(merged, 'center')
         _ar_run(cp, 'لا توجد تنويهات لهذه الفترة', size=9, italic=True, color=GREY_TEXT)
         row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
         row.height = _mm_to_dxa(9)
@@ -808,7 +898,7 @@ def _render_appendix_page(doc: Document, intent_counts: Dict):
     for ci, (label, w) in enumerate(headers):
         c = hdr.cells[ci]
         _set_cell_shading(c, 'F2F2F2')
-        cp = _cell_para(c, 'center')
+        cp = _cell_para0(c, 'center')
         _ar_run(cp, label, size=8.5, bold=True, color=DARK_TEXT)
         _set_row_col_width(hdr, ci, w)
     hdr.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
@@ -828,7 +918,7 @@ def _render_appendix_page(doc: Document, intent_counts: Dict):
         for ci, (val, (_label, w)) in enumerate(zip(vals, headers)):
             c = row.cells[ci]
             _set_cell_shading(c, bg)
-            cp = _cell_para(c, 'center' if ci > 0 else 'right')
+            cp = _cell_para0(c, 'center' if ci > 0 else 'right')
             _ar_run(cp, val, size=9, color=DARK_TEXT)
             _set_row_col_width(row, ci, w)
         row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
@@ -1054,6 +1144,10 @@ def generate_monthly_stylish_docx(
                     _render_complaint_page(doc, complaint, idx, total_c, period)
                 except Exception as e:
                     print(f'[STYLISH] Warning: failed to render complaint #{idx}: {e}')
+                # Break BETWEEN complaints only — not after the last one,
+                # which would leave a blank trailing page (see the note in
+                # _render_complaint_page).
+                if idx < total_c:
                     _page_break(doc)
         elif kind == 'notices':
             try:

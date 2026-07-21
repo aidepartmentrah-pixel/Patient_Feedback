@@ -6,7 +6,7 @@ Handles seasonal reports and report exports.
 
 # Standard library imports
 from datetime import date, datetime, timedelta
-from typing import Optional, Dict, Any, Literal
+from typing import Optional, Dict, Any, Literal, List
 import uuid
 import traceback
 import logging
@@ -253,6 +253,11 @@ class SeasonalExportRequest(BaseModel):
     orgunit_type: int  # 0=Hospital, 1=Administration, 2=Department, 3=Section
     format: Literal["pdf", "csv", "xlsx", "docx"] = "docx"
     language: Literal["en", "ar"] = "en"
+    # Explicit multi-select support: when the frontend's Administration/
+    # Department/Section picker has 2+ units selected, it sends them all
+    # here instead of silently truncating to the first one. None/empty
+    # falls back to the legacy single orgunit_id/orgunit_type behavior.
+    orgunit_ids: Optional[List[int]] = None
 
 
 class SubmitExplanationRequest(BaseModel):
@@ -509,37 +514,48 @@ async def export_seasonal_report(
 ):
     """
     Export a seasonal report.
-    
+
     SMART DETECTION (matches monthly pattern):
-    - If orgunit_id=1 and orgunit_type=1/2/3 → Generate ZIP with one file per unit
+    - If orgunit_ids has 2+ entries → Generate ZIP with one file per selected unit
+    - If orgunit_id=0 (no specific unit chosen) and orgunit_type=1/2/3 → Generate ZIP for ALL units of that type
     - Otherwise → Generate single file
-    
+
+    Note: orgunit_id=0 (not 1) is the "no specific unit" sentinel. 1 was
+    changed to 0 because 1 collides with a real Administration's actual ID
+    in this database — a user selecting that specific administration was
+    getting a ZIP of every administration instead of just the one they
+    picked. 0 is guaranteed to never be a real AdminsrationUnit.UniqueID
+    (identity column starts at 1).
+
     Supports: pdf, csv, xlsx (Excel), docx (Word).
     """
     require_logged_in(current_user)
-    
+
     year = request.year
     period = request.period
     orgunit_id = request.orgunit_id
     orgunit_type = request.orgunit_type
+    orgunit_ids = request.orgunit_ids or []
     format = request.format
     language = request.language
-    
-    # Phase 2.5.7: Validate org unit is in scope
-    # For multi-export (orgunit_id=1), validation happens per-unit in service
-    if orgunit_id != 1:
+
+    # Phase 2.5.7: Validate org unit is in scope. For multi-export (either
+    # explicit orgunit_ids list, or the legacy orgunit_id=0 "all units"
+    # sentinel), per-unit validation happens inside
+    # multi_seasonal_export_service.generate_multi_seasonal_export instead.
+    if not orgunit_ids and orgunit_id != 0:
         require_unit_in_scope(current_user, orgunit_id)
-    
+
     print("\n" + "="*100)
     print(f"[ROUTER] SEASONAL EXPORT ENDPOINT CALLED")
     print(f"[ROUTER] Params: year={year}, period={period}, format={format}")
-    print(f"[ROUTER] orgunit_id={orgunit_id}, orgunit_type={orgunit_type}")
+    print(f"[ROUTER] orgunit_id={orgunit_id}, orgunit_type={orgunit_type}, orgunit_ids={orgunit_ids}")
     print("="*100 + "\n")
-    
+
     try:
         from backend.api.db_layer.seasonal_report import resolve_season_id_from_year_trimester
         from ..services.multi_seasonal_export_service import multi_seasonal_export_service
-        
+
         # Resolve season_id from year + period
         try:
             season_id = resolve_season_id_from_year_trimester(
@@ -548,24 +564,33 @@ async def export_seasonal_report(
             )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        
+
         if season_id is None:
             raise HTTPException(
                 status_code=404,
                 detail=f"Season not found for year={year}, period={period}"
             )
-        
+
         # DETECTION LOGIC (same as monthly)
         is_multi_export = False
         report_level = None
-        
-        if orgunit_id == 1 and orgunit_type > 0:
-            # Multi-export mode
+        selected_unit_ids = None
+        level_mapping = {1: "administration", 2: "department", 3: "section"}
+
+        if len(orgunit_ids) >= 2:
+            # Explicit multi-select: one file per unit the user actually
+            # picked, not silently truncated to the first one.
             is_multi_export = True
-            level_mapping = {1: "administration", 2: "department", 3: "section"}
             report_level = level_mapping.get(orgunit_type)
-            print(f"[ROUTER] Multi-export detected: {report_level} level")
-        
+            selected_unit_ids = orgunit_ids
+            print(f"[ROUTER] Multi-export detected: {report_level} level, explicit units={orgunit_ids}")
+        elif orgunit_id == 0 and orgunit_type > 0:
+            # "All units of this type" (no specific unit chosen)
+            is_multi_export = True
+            report_level = level_mapping.get(orgunit_type)
+            selected_unit_ids = None
+            print(f"[ROUTER] Multi-export detected: {report_level} level, all units")
+
         # MULTI-FILE EXPORT PATH (ZIP)
         if is_multi_export:
             result = multi_seasonal_export_service.generate_multi_seasonal_export(
@@ -575,7 +600,7 @@ async def export_seasonal_report(
                 period=period,
                 file_format=format,
                 report_level=report_level,
-                selected_unit_ids=None,  # All units
+                selected_unit_ids=selected_unit_ids,
                 language=language
             )
             
@@ -594,8 +619,14 @@ async def export_seasonal_report(
             )
         
         # SINGLE FILE EXPORT PATH (existing logic)
+        # If the frontend sent exactly one unit via orgunit_ids (the new
+        # multi-select-capable field), use that as the effective single
+        # unit rather than requiring the legacy orgunit_id to also be set.
+        if len(orgunit_ids) == 1:
+            orgunit_id = orgunit_ids[0]
+            require_unit_in_scope(current_user, orgunit_id)
         print(f"[ROUTER] Single file seasonal export")
-        
+
         # Build filters for seasonal report
         filters = {
             "season_id": season_id,
