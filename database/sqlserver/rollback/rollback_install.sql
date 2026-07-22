@@ -96,23 +96,23 @@ IF EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_UserRoleScope_Role')
 IF EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_UserRoleScope_User')
     ALTER TABLE [dbo].[APP_UserRoleScope] DROP CONSTRAINT [FK_UserRoleScope_User];
 IF EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_ml_CaseTrainingRecord_Case')
-    ALTER TABLE [dbo].[CaseTrainingRecord] DROP CONSTRAINT [FK_ml_CaseTrainingRecord_Case];
+    ALTER TABLE [ml].[CaseTrainingRecord] DROP CONSTRAINT [FK_ml_CaseTrainingRecord_Case];
 IF EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_ml_CaseTrainingRecord_ModelVersion')
-    ALTER TABLE [dbo].[CaseTrainingRecord] DROP CONSTRAINT [FK_ml_CaseTrainingRecord_ModelVersion];
+    ALTER TABLE [ml].[CaseTrainingRecord] DROP CONSTRAINT [FK_ml_CaseTrainingRecord_ModelVersion];
 IF EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_ml_EmbeddingProcessingJob_Case')
-    ALTER TABLE [dbo].[EmbeddingProcessingJob] DROP CONSTRAINT [FK_ml_EmbeddingProcessingJob_Case];
+    ALTER TABLE [ml].[EmbeddingProcessingJob] DROP CONSTRAINT [FK_ml_EmbeddingProcessingJob_Case];
 IF EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_ml_EmbeddingProcessingJob_ImportBatch')
-    ALTER TABLE [dbo].[EmbeddingProcessingJob] DROP CONSTRAINT [FK_ml_EmbeddingProcessingJob_ImportBatch];
+    ALTER TABLE [ml].[EmbeddingProcessingJob] DROP CONSTRAINT [FK_ml_EmbeddingProcessingJob_ImportBatch];
 IF EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_ml_EmbeddingProcessingJob_ModelVersion')
-    ALTER TABLE [dbo].[EmbeddingProcessingJob] DROP CONSTRAINT [FK_ml_EmbeddingProcessingJob_ModelVersion];
+    ALTER TABLE [ml].[EmbeddingProcessingJob] DROP CONSTRAINT [FK_ml_EmbeddingProcessingJob_ModelVersion];
 IF EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_ml_HistoricalTrainingExample_PossibleCase')
-    ALTER TABLE [dbo].[HistoricalTrainingExample] DROP CONSTRAINT [FK_ml_HistoricalTrainingExample_PossibleCase];
+    ALTER TABLE [ml].[HistoricalTrainingExample] DROP CONSTRAINT [FK_ml_HistoricalTrainingExample_PossibleCase];
 IF EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_ml_ImportBatch_User')
-    ALTER TABLE [dbo].[ImportBatch] DROP CONSTRAINT [FK_ml_ImportBatch_User];
+    ALTER TABLE [ml].[ImportBatch] DROP CONSTRAINT [FK_ml_ImportBatch_User];
 IF EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_ml_ImportSourceRecordMap_Batch')
-    ALTER TABLE [dbo].[ImportSourceRecordMap] DROP CONSTRAINT [FK_ml_ImportSourceRecordMap_Batch];
+    ALTER TABLE [ml].[ImportSourceRecordMap] DROP CONSTRAINT [FK_ml_ImportSourceRecordMap_Batch];
 IF EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_ml_ImportSourceRecordMap_Case')
-    ALTER TABLE [dbo].[ImportSourceRecordMap] DROP CONSTRAINT [FK_ml_ImportSourceRecordMap_Case];
+    ALTER TABLE [ml].[ImportSourceRecordMap] DROP CONSTRAINT [FK_ml_ImportSourceRecordMap_Case];
 
 -- Step 2: drop tables
 IF OBJECT_ID('dbo.AdminsrationUnit', 'U') IS NOT NULL

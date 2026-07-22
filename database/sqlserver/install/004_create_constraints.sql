@@ -505,37 +505,37 @@ ALTER TABLE [dbo].[APP_UserRoleScope] ADD CONSTRAINT [FK_UserRoleScope_Role] FOR
 GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_ml_CaseTrainingRecord_Case')
-ALTER TABLE [dbo].[CaseTrainingRecord] ADD CONSTRAINT [FK_ml_CaseTrainingRecord_Case] FOREIGN KEY ([IncidentRequestCaseID]) REFERENCES [dbo].[APP_IncidentCase] ([IncidentRequestCaseID]);
+ALTER TABLE [ml].[CaseTrainingRecord] ADD CONSTRAINT [FK_ml_CaseTrainingRecord_Case] FOREIGN KEY ([IncidentRequestCaseID]) REFERENCES [dbo].[APP_IncidentCase] ([IncidentRequestCaseID]);
 GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_ml_CaseTrainingRecord_ModelVersion')
-ALTER TABLE [dbo].[CaseTrainingRecord] ADD CONSTRAINT [FK_ml_CaseTrainingRecord_ModelVersion] FOREIGN KEY ([EmbeddingModelVersionID]) REFERENCES [dbo].[EmbeddingModelVersion] ([EmbeddingModelVersionID]);
+ALTER TABLE [ml].[CaseTrainingRecord] ADD CONSTRAINT [FK_ml_CaseTrainingRecord_ModelVersion] FOREIGN KEY ([EmbeddingModelVersionID]) REFERENCES [ml].[EmbeddingModelVersion] ([EmbeddingModelVersionID]);
 GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_ml_EmbeddingProcessingJob_ModelVersion')
-ALTER TABLE [dbo].[EmbeddingProcessingJob] ADD CONSTRAINT [FK_ml_EmbeddingProcessingJob_ModelVersion] FOREIGN KEY ([EmbeddingModelVersionID]) REFERENCES [dbo].[EmbeddingModelVersion] ([EmbeddingModelVersionID]);
+ALTER TABLE [ml].[EmbeddingProcessingJob] ADD CONSTRAINT [FK_ml_EmbeddingProcessingJob_ModelVersion] FOREIGN KEY ([EmbeddingModelVersionID]) REFERENCES [ml].[EmbeddingModelVersion] ([EmbeddingModelVersionID]);
 GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_ml_EmbeddingProcessingJob_ImportBatch')
-ALTER TABLE [dbo].[EmbeddingProcessingJob] ADD CONSTRAINT [FK_ml_EmbeddingProcessingJob_ImportBatch] FOREIGN KEY ([ImportBatchID]) REFERENCES [dbo].[ImportBatch] ([ImportBatchID]);
+ALTER TABLE [ml].[EmbeddingProcessingJob] ADD CONSTRAINT [FK_ml_EmbeddingProcessingJob_ImportBatch] FOREIGN KEY ([ImportBatchID]) REFERENCES [ml].[ImportBatch] ([ImportBatchID]);
 GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_ml_EmbeddingProcessingJob_Case')
-ALTER TABLE [dbo].[EmbeddingProcessingJob] ADD CONSTRAINT [FK_ml_EmbeddingProcessingJob_Case] FOREIGN KEY ([IncidentRequestCaseID]) REFERENCES [dbo].[APP_IncidentCase] ([IncidentRequestCaseID]);
+ALTER TABLE [ml].[EmbeddingProcessingJob] ADD CONSTRAINT [FK_ml_EmbeddingProcessingJob_Case] FOREIGN KEY ([IncidentRequestCaseID]) REFERENCES [dbo].[APP_IncidentCase] ([IncidentRequestCaseID]);
 GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_ml_HistoricalTrainingExample_PossibleCase')
-ALTER TABLE [dbo].[HistoricalTrainingExample] ADD CONSTRAINT [FK_ml_HistoricalTrainingExample_PossibleCase] FOREIGN KEY ([PossibleIncidentRequestCaseID]) REFERENCES [dbo].[APP_IncidentCase] ([IncidentRequestCaseID]);
+ALTER TABLE [ml].[HistoricalTrainingExample] ADD CONSTRAINT [FK_ml_HistoricalTrainingExample_PossibleCase] FOREIGN KEY ([PossibleIncidentRequestCaseID]) REFERENCES [dbo].[APP_IncidentCase] ([IncidentRequestCaseID]);
 GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_ml_ImportBatch_User')
-ALTER TABLE [dbo].[ImportBatch] ADD CONSTRAINT [FK_ml_ImportBatch_User] FOREIGN KEY ([UploadedByUserID]) REFERENCES [dbo].[APP_Users] ([UserID]);
+ALTER TABLE [ml].[ImportBatch] ADD CONSTRAINT [FK_ml_ImportBatch_User] FOREIGN KEY ([UploadedByUserID]) REFERENCES [dbo].[APP_Users] ([UserID]);
 GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_ml_ImportSourceRecordMap_Batch')
-ALTER TABLE [dbo].[ImportSourceRecordMap] ADD CONSTRAINT [FK_ml_ImportSourceRecordMap_Batch] FOREIGN KEY ([ImportBatchID]) REFERENCES [dbo].[ImportBatch] ([ImportBatchID]);
+ALTER TABLE [ml].[ImportSourceRecordMap] ADD CONSTRAINT [FK_ml_ImportSourceRecordMap_Batch] FOREIGN KEY ([ImportBatchID]) REFERENCES [ml].[ImportBatch] ([ImportBatchID]);
 GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_ml_ImportSourceRecordMap_Case')
-ALTER TABLE [dbo].[ImportSourceRecordMap] ADD CONSTRAINT [FK_ml_ImportSourceRecordMap_Case] FOREIGN KEY ([IncidentRequestCaseID]) REFERENCES [dbo].[APP_IncidentCase] ([IncidentRequestCaseID]);
+ALTER TABLE [ml].[ImportSourceRecordMap] ADD CONSTRAINT [FK_ml_ImportSourceRecordMap_Case] FOREIGN KEY ([IncidentRequestCaseID]) REFERENCES [dbo].[APP_IncidentCase] ([IncidentRequestCaseID]);
 GO

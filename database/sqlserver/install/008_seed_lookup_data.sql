@@ -7,6 +7,7 @@ IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_BUILDING] WHERE [BuildingID] = 1)
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_BUILDING] WHERE [BuildingID] = 2)
     INSERT INTO [dbo].[APP_LOOKUP_BUILDING] ([BuildingID], [BuildingCode], [BuildingName]) VALUES (2, N'BCI', N'BCI');
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_BUILDING] OFF;
+GO
 
 -- dbo.APP_LOOKUP_CASE_STAGE (6 rows)
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_CASE_STAGE] ON;
@@ -23,20 +24,22 @@ IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CASE_STAGE] WHERE [StageID] = 5)
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CASE_STAGE] WHERE [StageID] = 6)
     INSERT INTO [dbo].[APP_LOOKUP_CASE_STAGE] ([StageID], [StageName], [StageOrder]) VALUES (6, N'Unspecified', 99);
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_CASE_STAGE] OFF;
+GO
 
 -- dbo.APP_LOOKUP_CASE_STATUS (5 rows)
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_CASE_STATUS] ON;
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CASE_STATUS] WHERE [CaseStatusID] = 1)
-    INSERT INTO [dbo].[APP_LOOKUP_CASE_STATUS] ([CaseStatusID], [Code], [Name], [IsFinal], [IsActive], [DisplayOrder], [CreatedAt]) VALUES (1, N'OPEN', N'Open', 0, 1, 1, N'2025-12-23 13:00:20.113000');
+    INSERT INTO [dbo].[APP_LOOKUP_CASE_STATUS] ([CaseStatusID], [Code], [Name], [IsFinal], [IsActive], [DisplayOrder], [CreatedAt]) VALUES (1, N'OPEN', N'Open', 0, 1, 1, CONVERT(datetime2, '2025-12-23 13:00:20.113000', 121));
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CASE_STATUS] WHERE [CaseStatusID] = 2)
-    INSERT INTO [dbo].[APP_LOOKUP_CASE_STATUS] ([CaseStatusID], [Code], [Name], [IsFinal], [IsActive], [DisplayOrder], [CreatedAt]) VALUES (2, N'IN_PROGRESS', N'In Progress', 0, 1, 2, N'2025-12-23 13:00:20.113000');
+    INSERT INTO [dbo].[APP_LOOKUP_CASE_STATUS] ([CaseStatusID], [Code], [Name], [IsFinal], [IsActive], [DisplayOrder], [CreatedAt]) VALUES (2, N'IN_PROGRESS', N'In Progress', 0, 1, 2, CONVERT(datetime2, '2025-12-23 13:00:20.113000', 121));
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CASE_STATUS] WHERE [CaseStatusID] = 3)
-    INSERT INTO [dbo].[APP_LOOKUP_CASE_STATUS] ([CaseStatusID], [Code], [Name], [IsFinal], [IsActive], [DisplayOrder], [CreatedAt]) VALUES (3, N'CLOSED', N'Closed', 1, 1, 3, N'2025-12-23 13:00:20.113000');
+    INSERT INTO [dbo].[APP_LOOKUP_CASE_STATUS] ([CaseStatusID], [Code], [Name], [IsFinal], [IsActive], [DisplayOrder], [CreatedAt]) VALUES (3, N'CLOSED', N'Closed', 1, 1, 3, CONVERT(datetime2, '2025-12-23 13:00:20.113000', 121));
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CASE_STATUS] WHERE [CaseStatusID] = 4)
-    INSERT INTO [dbo].[APP_LOOKUP_CASE_STATUS] ([CaseStatusID], [Code], [Name], [IsFinal], [IsActive], [DisplayOrder], [CreatedAt]) VALUES (4, N'DRAFT', N'Draft', 0, 1, 0, N'2026-05-08 10:30:17.480000');
+    INSERT INTO [dbo].[APP_LOOKUP_CASE_STATUS] ([CaseStatusID], [Code], [Name], [IsFinal], [IsActive], [DisplayOrder], [CreatedAt]) VALUES (4, N'DRAFT', N'Draft', 0, 1, 0, CONVERT(datetime2, '2026-05-08 10:30:17.480000', 121));
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CASE_STATUS] WHERE [CaseStatusID] = 5)
-    INSERT INTO [dbo].[APP_LOOKUP_CASE_STATUS] ([CaseStatusID], [Code], [Name], [IsFinal], [IsActive], [DisplayOrder], [CreatedAt]) VALUES (5, N'READY_TO_SEND', N'Ready to Send', 0, 1, 0, N'2026-05-08 10:30:17.480000');
+    INSERT INTO [dbo].[APP_LOOKUP_CASE_STATUS] ([CaseStatusID], [Code], [Name], [IsFinal], [IsActive], [DisplayOrder], [CreatedAt]) VALUES (5, N'READY_TO_SEND', N'Ready to Send', 0, 1, 0, CONVERT(datetime2, '2026-05-08 10:30:17.480000', 121));
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_CASE_STATUS] OFF;
+GO
 
 -- dbo.APP_LOOKUP_CATEGORY (7 rows)
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_CATEGORY] ON;
@@ -55,6 +58,7 @@ IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CATEGORY] WHERE [CategoryID] = 6)
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CATEGORY] WHERE [CategoryID] = 7)
     INSERT INTO [dbo].[APP_LOOKUP_CATEGORY] ([CategoryID], [DomainID], [CategoryName], [CategoryOrder]) VALUES (7, 1, N'Safety', 7);
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_CATEGORY] OFF;
+GO
 
 -- dbo.APP_LOOKUP_CLASSIFICATION (78 rows)
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_CLASSIFICATION] ON;
@@ -215,16 +219,18 @@ IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [Classifica
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 155)
     INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (155, 19, N'تجربة_دخان_معدل', N'Smoke Test EN Updated', 1);
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_CLASSIFICATION] OFF;
+GO
 
 -- dbo.APP_LOOKUP_CLINICAL_RISK_TYPE (3 rows)
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_CLINICAL_RISK_TYPE] ON;
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLINICAL_RISK_TYPE] WHERE [ClinicalRiskTypeID] = 1)
-    INSERT INTO [dbo].[APP_LOOKUP_CLINICAL_RISK_TYPE] ([ClinicalRiskTypeID], [Code], [Name], [IsActive], [DisplayOrder], [CreatedAt]) VALUES (1, N'ORDINARY', N'Ordinary', 1, 1, N'2025-12-23 13:00:04.893000');
+    INSERT INTO [dbo].[APP_LOOKUP_CLINICAL_RISK_TYPE] ([ClinicalRiskTypeID], [Code], [Name], [IsActive], [DisplayOrder], [CreatedAt]) VALUES (1, N'ORDINARY', N'Ordinary', 1, 1, CONVERT(datetime2, '2025-12-23 13:00:04.893000', 121));
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLINICAL_RISK_TYPE] WHERE [ClinicalRiskTypeID] = 2)
-    INSERT INTO [dbo].[APP_LOOKUP_CLINICAL_RISK_TYPE] ([ClinicalRiskTypeID], [Code], [Name], [IsActive], [DisplayOrder], [CreatedAt]) VALUES (2, N'RED_FLAG', N'Red Flag', 1, 2, N'2025-12-23 13:00:04.893000');
+    INSERT INTO [dbo].[APP_LOOKUP_CLINICAL_RISK_TYPE] ([ClinicalRiskTypeID], [Code], [Name], [IsActive], [DisplayOrder], [CreatedAt]) VALUES (2, N'RED_FLAG', N'Red Flag', 1, 2, CONVERT(datetime2, '2025-12-23 13:00:04.893000', 121));
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLINICAL_RISK_TYPE] WHERE [ClinicalRiskTypeID] = 3)
-    INSERT INTO [dbo].[APP_LOOKUP_CLINICAL_RISK_TYPE] ([ClinicalRiskTypeID], [Code], [Name], [IsActive], [DisplayOrder], [CreatedAt]) VALUES (3, N'NEVER_EVENT', N'Never Event', 1, 3, N'2025-12-23 13:00:04.893000');
+    INSERT INTO [dbo].[APP_LOOKUP_CLINICAL_RISK_TYPE] ([ClinicalRiskTypeID], [Code], [Name], [IsActive], [DisplayOrder], [CreatedAt]) VALUES (3, N'NEVER_EVENT', N'Never Event', 1, 3, CONVERT(datetime2, '2025-12-23 13:00:04.893000', 121));
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_CLINICAL_RISK_TYPE] OFF;
+GO
 
 -- dbo.APP_LOOKUP_DOMAIN (3 rows)
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_DOMAIN] ON;
@@ -235,6 +241,7 @@ IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_DOMAIN] WHERE [DomainID] = 2)
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_DOMAIN] WHERE [DomainID] = 3)
     INSERT INTO [dbo].[APP_LOOKUP_DOMAIN] ([DomainID], [DomainCode], [DomainName], [DomainOrder]) VALUES (3, N'RELATIONAL', N'Relational', 3);
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_DOMAIN] OFF;
+GO
 
 -- dbo.APP_LOOKUP_EXPLANATION_STATUS (4 rows)
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_EXPLANATION_STATUS] ON;
@@ -247,14 +254,16 @@ IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_EXPLANATION_STATUS] WHERE [Status
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_EXPLANATION_STATUS] WHERE [StatusID] = 1)
     INSERT INTO [dbo].[APP_LOOKUP_EXPLANATION_STATUS] ([StatusID], [StatusName]) VALUES (1, N'Waiting');
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_EXPLANATION_STATUS] OFF;
+GO
 
 -- dbo.APP_LOOKUP_FEEDBACK_INTENT_TYPE (2 rows)
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_FEEDBACK_INTENT_TYPE] ON;
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_FEEDBACK_INTENT_TYPE] WHERE [FeedbackIntentTypeID] = 1)
-    INSERT INTO [dbo].[APP_LOOKUP_FEEDBACK_INTENT_TYPE] ([FeedbackIntentTypeID], [Code], [NameAr], [NameEn], [IsActive], [DisplayOrder], [CreatedAt]) VALUES (1, N'IMPROVEMENT_OPPORTUNITY', N'فرصة تحسين', N'Improvement Opportunity', 1, 1, N'2025-12-23 12:59:39.250000');
+    INSERT INTO [dbo].[APP_LOOKUP_FEEDBACK_INTENT_TYPE] ([FeedbackIntentTypeID], [Code], [NameAr], [NameEn], [IsActive], [DisplayOrder], [CreatedAt]) VALUES (1, N'IMPROVEMENT_OPPORTUNITY', N'فرصة تحسين', N'Improvement Opportunity', 1, 1, CONVERT(datetime2, '2025-12-23 12:59:39.250000', 121));
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_FEEDBACK_INTENT_TYPE] WHERE [FeedbackIntentTypeID] = 2)
-    INSERT INTO [dbo].[APP_LOOKUP_FEEDBACK_INTENT_TYPE] ([FeedbackIntentTypeID], [Code], [NameAr], [NameEn], [IsActive], [DisplayOrder], [CreatedAt]) VALUES (2, N'NOTICE', N'تنويه', N'Notice', 1, 2, N'2025-12-23 12:59:39.250000');
+    INSERT INTO [dbo].[APP_LOOKUP_FEEDBACK_INTENT_TYPE] ([FeedbackIntentTypeID], [Code], [NameAr], [NameEn], [IsActive], [DisplayOrder], [CreatedAt]) VALUES (2, N'NOTICE', N'تنويه', N'Notice', 1, 2, CONVERT(datetime2, '2025-12-23 12:59:39.250000', 121));
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_FEEDBACK_INTENT_TYPE] OFF;
+GO
 
 -- dbo.APP_LOOKUP_HARM_LEVEL (5 rows)
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_HARM_LEVEL] ON;
@@ -269,50 +278,55 @@ IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_HARM_LEVEL] WHERE [HarmID] = 4)
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_HARM_LEVEL] WHERE [HarmID] = 5)
     INSERT INTO [dbo].[APP_LOOKUP_HARM_LEVEL] ([HarmID], [HarmLevel], [SeverityOrder]) VALUES (5, N'Death', 5);
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_HARM_LEVEL] OFF;
+GO
 
 -- dbo.APP_LOOKUP_RECORD_TYPE (2 rows)
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_RECORD_TYPE] WHERE [RecordTypeID] = 1)
     INSERT INTO [dbo].[APP_LOOKUP_RECORD_TYPE] ([RecordTypeID], [TypeName]) VALUES (1, N'Complaint');
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_RECORD_TYPE] WHERE [RecordTypeID] = 2)
     INSERT INTO [dbo].[APP_LOOKUP_RECORD_TYPE] ([RecordTypeID], [TypeName]) VALUES (2, N'Notice');
+GO
 
 -- dbo.APP_Lookup_SatisfactionStatus (3 rows)
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_Lookup_SatisfactionStatus] WHERE [SatisfactionStatusID] = 1)
-    INSERT INTO [dbo].[APP_Lookup_SatisfactionStatus] ([SatisfactionStatusID], [StatusNameEn], [StatusNameAr], [IsActive], [CreatedAt]) VALUES (1, N'Not Present', N'غير موجود', 1, N'2026-02-19 14:11:06.290000');
+    INSERT INTO [dbo].[APP_Lookup_SatisfactionStatus] ([SatisfactionStatusID], [StatusNameEn], [StatusNameAr], [IsActive], [CreatedAt]) VALUES (1, N'Not Present', N'غير موجود', 1, CONVERT(datetime2, '2026-02-19 14:11:06.290000', 121));
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_Lookup_SatisfactionStatus] WHERE [SatisfactionStatusID] = 2)
-    INSERT INTO [dbo].[APP_Lookup_SatisfactionStatus] ([SatisfactionStatusID], [StatusNameEn], [StatusNameAr], [IsActive], [CreatedAt]) VALUES (2, N'Satisfied', N'راض', 1, N'2026-02-19 14:11:06.290000');
+    INSERT INTO [dbo].[APP_Lookup_SatisfactionStatus] ([SatisfactionStatusID], [StatusNameEn], [StatusNameAr], [IsActive], [CreatedAt]) VALUES (2, N'Satisfied', N'راض', 1, CONVERT(datetime2, '2026-02-19 14:11:06.290000', 121));
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_Lookup_SatisfactionStatus] WHERE [SatisfactionStatusID] = 3)
-    INSERT INTO [dbo].[APP_Lookup_SatisfactionStatus] ([SatisfactionStatusID], [StatusNameEn], [StatusNameAr], [IsActive], [CreatedAt]) VALUES (3, N'Not Satisfied', N'غير راض', 1, N'2026-02-19 14:11:06.290000');
+    INSERT INTO [dbo].[APP_Lookup_SatisfactionStatus] ([SatisfactionStatusID], [StatusNameEn], [StatusNameAr], [IsActive], [CreatedAt]) VALUES (3, N'Not Satisfied', N'غير راض', 1, CONVERT(datetime2, '2026-02-19 14:11:06.290000', 121));
+GO
 
 -- dbo.APP_LOOKUP_SEVERITY (3 rows)
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_SEVERITY] ON;
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_SEVERITY] WHERE [SeverityID] = 1)
-    INSERT INTO [dbo].[APP_LOOKUP_SEVERITY] ([SeverityID], [SeverityCode], [SeverityName], [SeverityOrder], [IsActive], [CreatedAt], [CreatedBy], [UpdatedAt], [UpdatedBy]) VALUES (1, N'LOW', N'Low', 1, 1, N'2025-12-26 11:47:02.770000', NULL, NULL, NULL);
+    INSERT INTO [dbo].[APP_LOOKUP_SEVERITY] ([SeverityID], [SeverityCode], [SeverityName], [SeverityOrder], [IsActive], [CreatedAt], [CreatedBy], [UpdatedAt], [UpdatedBy]) VALUES (1, N'LOW', N'Low', 1, 1, CONVERT(datetime2, '2025-12-26 11:47:02.770000', 121), NULL, NULL, NULL);
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_SEVERITY] WHERE [SeverityID] = 2)
-    INSERT INTO [dbo].[APP_LOOKUP_SEVERITY] ([SeverityID], [SeverityCode], [SeverityName], [SeverityOrder], [IsActive], [CreatedAt], [CreatedBy], [UpdatedAt], [UpdatedBy]) VALUES (2, N'MEDIUM', N'Medium', 2, 1, N'2025-12-26 11:47:02.770000', NULL, NULL, NULL);
+    INSERT INTO [dbo].[APP_LOOKUP_SEVERITY] ([SeverityID], [SeverityCode], [SeverityName], [SeverityOrder], [IsActive], [CreatedAt], [CreatedBy], [UpdatedAt], [UpdatedBy]) VALUES (2, N'MEDIUM', N'Medium', 2, 1, CONVERT(datetime2, '2025-12-26 11:47:02.770000', 121), NULL, NULL, NULL);
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_SEVERITY] WHERE [SeverityID] = 3)
-    INSERT INTO [dbo].[APP_LOOKUP_SEVERITY] ([SeverityID], [SeverityCode], [SeverityName], [SeverityOrder], [IsActive], [CreatedAt], [CreatedBy], [UpdatedAt], [UpdatedBy]) VALUES (3, N'HIGH', N'High', 3, 1, N'2025-12-26 11:47:02.770000', NULL, NULL, NULL);
+    INSERT INTO [dbo].[APP_LOOKUP_SEVERITY] ([SeverityID], [SeverityCode], [SeverityName], [SeverityOrder], [IsActive], [CreatedAt], [CreatedBy], [UpdatedAt], [UpdatedBy]) VALUES (3, N'HIGH', N'High', 3, 1, CONVERT(datetime2, '2025-12-26 11:47:02.770000', 121), NULL, NULL, NULL);
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_SEVERITY] OFF;
+GO
 
 -- dbo.APP_LOOKUP_SOURCE (8 rows)
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_SOURCE] ON;
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_SOURCE] WHERE [SourceID] = 1)
-    INSERT INTO [dbo].[APP_LOOKUP_SOURCE] ([SourceID], [SourceName], [SourceNameAr], [DisplayOrder], [IsActive], [CreatedAt], [UpdatedAt]) VALUES (1, N'Tours', N'جولات', 1, 1, N'2025-12-26 14:02:55.977000', N'2025-12-26 14:02:55.977000');
+    INSERT INTO [dbo].[APP_LOOKUP_SOURCE] ([SourceID], [SourceName], [SourceNameAr], [DisplayOrder], [IsActive], [CreatedAt], [UpdatedAt]) VALUES (1, N'Tours', N'جولات', 1, 1, CONVERT(datetime2, '2025-12-26 14:02:55.977000', 121), CONVERT(datetime2, '2025-12-26 14:02:55.977000', 121));
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_SOURCE] WHERE [SourceID] = 2)
-    INSERT INTO [dbo].[APP_LOOKUP_SOURCE] ([SourceID], [SourceName], [SourceNameAr], [DisplayOrder], [IsActive], [CreatedAt], [UpdatedAt]) VALUES (2, N'Attendance', N'حضور', 2, 1, N'2025-12-26 14:02:55.977000', N'2025-12-26 14:02:55.977000');
+    INSERT INTO [dbo].[APP_LOOKUP_SOURCE] ([SourceID], [SourceName], [SourceNameAr], [DisplayOrder], [IsActive], [CreatedAt], [UpdatedAt]) VALUES (2, N'Attendance', N'حضور', 2, 1, CONVERT(datetime2, '2025-12-26 14:02:55.977000', 121), CONVERT(datetime2, '2025-12-26 14:02:55.977000', 121));
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_SOURCE] WHERE [SourceID] = 3)
-    INSERT INTO [dbo].[APP_LOOKUP_SOURCE] ([SourceID], [SourceName], [SourceNameAr], [DisplayOrder], [IsActive], [CreatedAt], [UpdatedAt]) VALUES (3, N'Hotline', N'خط ساخن', 3, 1, N'2025-12-26 14:02:55.977000', N'2025-12-26 14:02:55.977000');
+    INSERT INTO [dbo].[APP_LOOKUP_SOURCE] ([SourceID], [SourceName], [SourceNameAr], [DisplayOrder], [IsActive], [CreatedAt], [UpdatedAt]) VALUES (3, N'Hotline', N'خط ساخن', 3, 1, CONVERT(datetime2, '2025-12-26 14:02:55.977000', 121), CONVERT(datetime2, '2025-12-26 14:02:55.977000', 121));
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_SOURCE] WHERE [SourceID] = 4)
-    INSERT INTO [dbo].[APP_LOOKUP_SOURCE] ([SourceID], [SourceName], [SourceNameAr], [DisplayOrder], [IsActive], [CreatedAt], [UpdatedAt]) VALUES (4, N'Box', N'صندوق', 4, 1, N'2025-12-26 14:02:55.977000', N'2025-12-26 14:02:55.977000');
+    INSERT INTO [dbo].[APP_LOOKUP_SOURCE] ([SourceID], [SourceName], [SourceNameAr], [DisplayOrder], [IsActive], [CreatedAt], [UpdatedAt]) VALUES (4, N'Box', N'صندوق', 4, 1, CONVERT(datetime2, '2025-12-26 14:02:55.977000', 121), CONVERT(datetime2, '2025-12-26 14:02:55.977000', 121));
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_SOURCE] WHERE [SourceID] = 5)
-    INSERT INTO [dbo].[APP_LOOKUP_SOURCE] ([SourceID], [SourceName], [SourceNameAr], [DisplayOrder], [IsActive], [CreatedAt], [UpdatedAt]) VALUES (5, N'Supervisor', N'مشرف', 5, 1, N'2025-12-26 14:02:55.977000', N'2025-12-26 14:02:55.977000');
+    INSERT INTO [dbo].[APP_LOOKUP_SOURCE] ([SourceID], [SourceName], [SourceNameAr], [DisplayOrder], [IsActive], [CreatedAt], [UpdatedAt]) VALUES (5, N'Supervisor', N'مشرف', 5, 1, CONVERT(datetime2, '2025-12-26 14:02:55.977000', 121), CONVERT(datetime2, '2025-12-26 14:02:55.977000', 121));
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_SOURCE] WHERE [SourceID] = 6)
-    INSERT INTO [dbo].[APP_LOOKUP_SOURCE] ([SourceID], [SourceName], [SourceNameAr], [DisplayOrder], [IsActive], [CreatedAt], [UpdatedAt]) VALUES (6, N'Employee', N'موظف', 6, 1, N'2025-12-26 14:02:55.977000', N'2025-12-26 14:02:55.977000');
+    INSERT INTO [dbo].[APP_LOOKUP_SOURCE] ([SourceID], [SourceName], [SourceNameAr], [DisplayOrder], [IsActive], [CreatedAt], [UpdatedAt]) VALUES (6, N'Employee', N'موظف', 6, 1, CONVERT(datetime2, '2025-12-26 14:02:55.977000', 121), CONVERT(datetime2, '2025-12-26 14:02:55.977000', 121));
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_SOURCE] WHERE [SourceID] = 7)
-    INSERT INTO [dbo].[APP_LOOKUP_SOURCE] ([SourceID], [SourceName], [SourceNameAr], [DisplayOrder], [IsActive], [CreatedAt], [UpdatedAt]) VALUES (7, N'Office WhatsApp', N'واتساب مكتب', 7, 1, N'2025-12-26 14:02:55.977000', N'2025-12-26 14:02:55.977000');
+    INSERT INTO [dbo].[APP_LOOKUP_SOURCE] ([SourceID], [SourceName], [SourceNameAr], [DisplayOrder], [IsActive], [CreatedAt], [UpdatedAt]) VALUES (7, N'Office WhatsApp', N'واتساب مكتب', 7, 1, CONVERT(datetime2, '2025-12-26 14:02:55.977000', 121), CONVERT(datetime2, '2025-12-26 14:02:55.977000', 121));
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_SOURCE] WHERE [SourceID] = 8)
-    INSERT INTO [dbo].[APP_LOOKUP_SOURCE] ([SourceID], [SourceName], [SourceNameAr], [DisplayOrder], [IsActive], [CreatedAt], [UpdatedAt]) VALUES (8, N'Social Media', N'وسائل التواصل', 8, 1, N'2025-12-26 14:02:55.977000', N'2025-12-26 14:02:55.977000');
+    INSERT INTO [dbo].[APP_LOOKUP_SOURCE] ([SourceID], [SourceName], [SourceNameAr], [DisplayOrder], [IsActive], [CreatedAt], [UpdatedAt]) VALUES (8, N'Social Media', N'وسائل التواصل', 8, 1, CONVERT(datetime2, '2025-12-26 14:02:55.977000', 121), CONVERT(datetime2, '2025-12-26 14:02:55.977000', 121));
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_SOURCE] OFF;
+GO
 
 -- dbo.APP_Lookup_SubcaseActionItemStatus (10 rows)
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_Lookup_SubcaseActionItemStatus] WHERE [StatusCode] = N'ADMIN_APPROVED')
@@ -335,6 +349,7 @@ IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_Lookup_SubcaseActionItemStatus] WHERE [S
     INSERT INTO [dbo].[APP_Lookup_SubcaseActionItemStatus] ([StatusCode], [StatusNameEn], [StatusNameAr], [DisplayOrder], [IsActive], [IsFinal]) VALUES (N'SUBMITTED_TO_DEPT', N'Submitted to Department', N'Ù…ÙØ±Ø³Ù„ Ø¥Ù„Ù‰ Ø§Ù„Ø¥Ø¯Ø§Ø±Ø©', 2, 1, 0);
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_Lookup_SubcaseActionItemStatus] WHERE [StatusCode] = N'VERIFIED')
     INSERT INTO [dbo].[APP_Lookup_SubcaseActionItemStatus] ([StatusCode], [StatusNameEn], [StatusNameAr], [DisplayOrder], [IsActive], [IsFinal]) VALUES (N'VERIFIED', N'Verified', N'Ù…ÙˆØ«Ù‚', 9, 1, 1);
+GO
 
 -- dbo.APP_Lookup_SubcaseStatus (16 rows)
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_Lookup_SubcaseStatus] WHERE [StatusCode] = N'ADMIN_APPROVED')
@@ -369,12 +384,14 @@ IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_Lookup_SubcaseStatus] WHERE [StatusCode]
     INSERT INTO [dbo].[APP_Lookup_SubcaseStatus] ([StatusCode], [StatusNameEn], [StatusNameAr], [DisplayOrder], [IsFinal], [IsActive]) VALUES (N'SUBMITTED_TO_SECTION', N'Submitted to Section', N'Ù…ÙØ±Ø³Ù„ Ø¥Ù„Ù‰ Ø§Ù„Ù‚Ø³Ù…', 1, 0, 1);
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_Lookup_SubcaseStatus] WHERE [StatusCode] = N'WAITING_PATIENT_SERVICES_DECISION')
     INSERT INTO [dbo].[APP_Lookup_SubcaseStatus] ([StatusCode], [StatusNameEn], [StatusNameAr], [DisplayOrder], [IsFinal], [IsActive]) VALUES (N'WAITING_PATIENT_SERVICES_DECISION', N'Waiting Patient Services Decision', N'ط¨ط§ظ†طھط¸ط§ط± ظ‚ط±ط§ط± ط®ط¯ظ…ط§طھ ط§ظ„ظ…ط±ط¶ظ‰ ط¨ط­ط³ط¨ ط§ظ„ظ…ط±ط§ط¬ط¹ ط§ظ„ط¹ظ„ظ…ظٹظ‘ط©', 12, 0, 1);
+GO
 
 -- dbo.APP_Lookup_SubcaseType (2 rows)
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_Lookup_SubcaseType] WHERE [CaseTypeCode] = N'INCIDENT_RESPONSE')
     INSERT INTO [dbo].[APP_Lookup_SubcaseType] ([CaseTypeCode], [CaseTypeNameEn], [CaseTypeNameAr], [IsActive]) VALUES (N'INCIDENT_RESPONSE', N'Incident Response', N'Ù…Ø¹Ø§Ù„Ø¬Ø© Ø´ÙƒÙˆÙ‰ Ø­Ø§Ø¯Ø«Ø©', 1);
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_Lookup_SubcaseType] WHERE [CaseTypeCode] = N'SEASONAL_REPORT_RESPONSE')
     INSERT INTO [dbo].[APP_Lookup_SubcaseType] ([CaseTypeCode], [CaseTypeNameEn], [CaseTypeNameAr], [IsActive]) VALUES (N'SEASONAL_REPORT_RESPONSE', N'Seasonal Report Response', N'Ù…Ø¹Ø§Ù„Ø¬Ø© ØªÙ‚Ø±ÙŠØ± Ù…ÙˆØ³Ù…ÙŠ', 1);
+GO
 
 -- dbo.APP_LOOKUP_SUBCATEGORY (27 rows)
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_SUBCATEGORY] ON;
@@ -433,9 +450,11 @@ IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_SUBCATEGORY] WHERE [SubCategoryID
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_SUBCATEGORY] WHERE [SubCategoryID] = 26)
     INSERT INTO [dbo].[APP_LOOKUP_SUBCATEGORY] ([SubCategoryID], [CategoryID], [SubCategoryName]) VALUES (26, 7, N'Teamwork');
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_SUBCATEGORY] OFF;
+GO
 
 -- ml.EmbeddingModelVersion (1 rows)
 SET IDENTITY_INSERT [ml].[EmbeddingModelVersion] ON;
 IF NOT EXISTS (SELECT 1 FROM [ml].[EmbeddingModelVersion] WHERE [EmbeddingModelVersionID] = 2)
-    INSERT INTO [ml].[EmbeddingModelVersion] ([EmbeddingModelVersionID], [ModelName], [ModelPathOrIdentifier], [ModelArchitecture], [ModelChecksum], [EmbeddingDimension], [PoolingMethod], [NormalizationMethod], [TokenizerIdentifier], [ActivatedAt], [RetiredAt], [IsActive], [ConfigurationJson]) VALUES (2, N'mpnet_embeddings (local)', N'models_directory/Classification_Models/model_storage/mpnet_embeddings', N'XLMRobertaModel', NULL, 768, N'mean', NULL, N'models_directory/Classification_Models/model_storage/mpnet_embeddings', N'2026-07-16 15:10:34.266666', NULL, 1, NULL);
+    INSERT INTO [ml].[EmbeddingModelVersion] ([EmbeddingModelVersionID], [ModelName], [ModelPathOrIdentifier], [ModelArchitecture], [ModelChecksum], [EmbeddingDimension], [PoolingMethod], [NormalizationMethod], [TokenizerIdentifier], [ActivatedAt], [RetiredAt], [IsActive], [ConfigurationJson]) VALUES (2, N'mpnet_embeddings (local)', N'models_directory/Classification_Models/model_storage/mpnet_embeddings', N'XLMRobertaModel', NULL, 768, N'mean', NULL, N'models_directory/Classification_Models/model_storage/mpnet_embeddings', CONVERT(datetime2, '2026-07-16 15:10:34.266666', 121), NULL, 1, NULL);
 SET IDENTITY_INSERT [ml].[EmbeddingModelVersion] OFF;
+GO
