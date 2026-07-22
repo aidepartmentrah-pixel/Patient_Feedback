@@ -141,6 +141,9 @@ celerybeat.pid
 env/
 venv/
 
+# Hugging Face access tokens -- never commit
+.hf_token
+
 ENV/
 env.bak/
 venv.bak/

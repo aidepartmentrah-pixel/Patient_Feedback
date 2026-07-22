@@ -308,8 +308,17 @@ def view_seasonal_report(
             detail="User does not have permission to generate seasonal reports"
         )
     
-    # Phase 2.5.7: Validate org unit is in scope
-    require_unit_in_scope(current_user, request.orgunit_id)
+    # Phase 2.5.7: Validate org unit is in scope. orgunit_id=0 is the "no
+    # specific unit" sentinel (hospital-level, or "all units of this type"
+    # with none specifically picked) — it isn't a real AdminsrationUnit ID,
+    # so it can never appear in any user's allowed_unit_ids and would
+    # unconditionally 403 here otherwise. This was a real regression: the
+    # sentinel used to be 1, which happened to pass for some users only by
+    # coincidence (1 is a real Administration that was in their scope) —
+    # broken for anyone whose scope didn't happen to include unit 1, and
+    # now guaranteed to break for everyone once the sentinel became 0.
+    if request.orgunit_id != 0:
+        require_unit_in_scope(current_user, request.orgunit_id)
     from backend.api.db_layer.seasonal_report import resolve_season_id_from_year_trimester
     
     # DEBUG: Log incoming request
