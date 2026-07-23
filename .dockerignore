@@ -1,0 +1,42 @@
+.git
+.gitignore
+.idea
+.claude
+venv_dbinstall
+venv
+archive
+model_training
+tools
+api
+DEPLOYMENT_CHECKLIST.txt
+ML_ARCHITECTURE_DECISION_RECORD.md
+LEGION_HANDOFF.md
+Setup-NewServer.ps1
+Start-Backend.ps1
+models.lock.yaml
+.hf_token
+.env
+.envrc
+
+backend/tests
+backend/test_*.py
+backend/database_migrations
+backend/scripts
+backend/sql_scripts
+
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+
+Front_End_Feedback_Analysis
+
+# Provisioning data must NEVER be baked into an image -- always supplied at
+# runtime via a read-only volume mount from the release bundle (same handling
+# as the Whisper model asset). The .py scripts in seed/ ARE still copied in
+# (not excluded here) since they're code, not data.
+database/sqlserver/seed/raw_extract/
+database/sqlserver/seed/provisioning.v1.json
+database/sqlserver/seed/provisioning.v1.manifest.json
+database/sqlserver/seed/provisioning.v1.json.sha256
+database/sqlserver/seed/*.local.json

@@ -10,6 +10,10 @@ from models_directory.Classification_Models.Stage.modular_functions import get_e
 from collections import Counter
 import numpy as np
 import json
+import importlib
+import logging
+
+logger = logging.getLogger(__name__)
 
 # ==========================================
 # IMPORT ALL MODEL PREDICTORS
@@ -19,31 +23,55 @@ import json
 from models_directory.Classification_Models.Hierarchical_Classification_Model.domain.predict_domain import predict_from_text as predict_domain_text
 from models_directory.Classification_Models.Hierarchical_Classification_Model.domain.predict_domain import predict_domain_from_embedding as predict_domain_embedding
 
-# ---- CATEGORY ----
-from models_directory.Classification_Models.Hierarchical_Classification_Model.category.domain_1.predict_category_domain1 import predict_from_text as predict_category_text_domain1
-from models_directory.Classification_Models.Hierarchical_Classification_Model.category.domain_2.predict_category_domain2 import predict_from_text as predict_category_text_domain2
-from models_directory.Classification_Models.Hierarchical_Classification_Model.category.domain_3.predict_category_domain3 import predict_from_text as predict_category_text_domain3
 
-from models_directory.Classification_Models.Hierarchical_Classification_Model.category.domain_1.predict_category_domain1 import predict_from_embedding as predict_category_embedding_domain1
-from models_directory.Classification_Models.Hierarchical_Classification_Model.category.domain_2.predict_category_domain2 import predict_from_embedding as predict_category_embedding_domain2
-from models_directory.Classification_Models.Hierarchical_Classification_Model.category.domain_3.predict_category_domain3 import predict_from_embedding as predict_category_embedding_domain3
+def _safe_import(module_name: str, attr_name: str):
+    """
+    Import attr_name from module_name; return None (with a warning) instead of
+    raising if it fails.
+
+    Category/subcategory predictors derive their label decoding at import time
+    from table_feedback_train (see label_mapping_helper.py) -- a training-set
+    snapshot that may be missing entirely, or may no longer match the trained
+    model's class count if the underlying data has drifted since training
+    (confirmed: this happens on the live production system too, not just here
+    -- a stale-model problem, not a missing-file problem). When that happens,
+    this one predictor family is unavailable rather than fatal to every other
+    classification output (domain/severity/harm/stage/feedback_type/
+    improvement/classification_en all load independently of this table).
+    """
+    try:
+        module = importlib.import_module(module_name)
+        return getattr(module, attr_name)
+    except Exception as e:
+        logger.warning(f"[HIER_PRED] {module_name}.{attr_name} unavailable: {e}")
+        return None
+
+
+# ---- CATEGORY ----
+predict_category_text_domain1 = _safe_import("models_directory.Classification_Models.Hierarchical_Classification_Model.category.domain_1.predict_category_domain1", "predict_from_text")
+predict_category_text_domain2 = _safe_import("models_directory.Classification_Models.Hierarchical_Classification_Model.category.domain_2.predict_category_domain2", "predict_from_text")
+predict_category_text_domain3 = _safe_import("models_directory.Classification_Models.Hierarchical_Classification_Model.category.domain_3.predict_category_domain3", "predict_from_text")
+
+predict_category_embedding_domain1 = _safe_import("models_directory.Classification_Models.Hierarchical_Classification_Model.category.domain_1.predict_category_domain1", "predict_from_embedding")
+predict_category_embedding_domain2 = _safe_import("models_directory.Classification_Models.Hierarchical_Classification_Model.category.domain_2.predict_category_domain2", "predict_from_embedding")
+predict_category_embedding_domain3 = _safe_import("models_directory.Classification_Models.Hierarchical_Classification_Model.category.domain_3.predict_category_domain3", "predict_from_embedding")
 
 # ---- SUBCATEGORY ----
-from models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_1.predict_subcategory_category1 import predict_from_text as predict_subcategory_text_category1
-from models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_2.predict_subcategory_category2 import predict_from_text as predict_subcategory_text_category2
-from models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_3.predict_subcategory_category3 import predict_from_text as predict_subcategory_text_category3
-from models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_4.predict_subcategory_category4 import predict_from_text as predict_subcategory_text_category4
-from models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_5.predict_subcategory_category5 import predict_from_text as predict_subcategory_text_category5
-from models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_6.predict_subcategory_category6 import predict_from_text as predict_subcategory_text_category6
-from models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_7.predict_subcategory_category7 import predict_from_text as predict_subcategory_text_category7
+predict_subcategory_text_category1 = _safe_import("models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_1.predict_subcategory_category1", "predict_from_text")
+predict_subcategory_text_category2 = _safe_import("models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_2.predict_subcategory_category2", "predict_from_text")
+predict_subcategory_text_category3 = _safe_import("models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_3.predict_subcategory_category3", "predict_from_text")
+predict_subcategory_text_category4 = _safe_import("models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_4.predict_subcategory_category4", "predict_from_text")
+predict_subcategory_text_category5 = _safe_import("models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_5.predict_subcategory_category5", "predict_from_text")
+predict_subcategory_text_category6 = _safe_import("models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_6.predict_subcategory_category6", "predict_from_text")
+predict_subcategory_text_category7 = _safe_import("models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_7.predict_subcategory_category7", "predict_from_text")
 
-from models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_1.predict_subcategory_category1 import predict_from_embedding as predict_subcategory_embedding_category1
-from models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_2.predict_subcategory_category2 import predict_from_embedding as predict_subcategory_embedding_category2
-from models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_3.predict_subcategory_category3 import predict_from_embedding as predict_subcategory_embedding_category3
-from models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_4.predict_subcategory_category4 import predict_from_embedding as predict_subcategory_embedding_category4
-from models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_5.predict_subcategory_category5 import predict_from_embedding as predict_subcategory_embedding_category5
-from models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_6.predict_subcategory_category6 import predict_from_embedding as predict_subcategory_embedding_category6
-from models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_7.predict_subcategory_category7 import predict_from_embedding as predict_subcategory_embedding_category7
+predict_subcategory_embedding_category1 = _safe_import("models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_1.predict_subcategory_category1", "predict_from_embedding")
+predict_subcategory_embedding_category2 = _safe_import("models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_2.predict_subcategory_category2", "predict_from_embedding")
+predict_subcategory_embedding_category3 = _safe_import("models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_3.predict_subcategory_category3", "predict_from_embedding")
+predict_subcategory_embedding_category4 = _safe_import("models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_4.predict_subcategory_category4", "predict_from_embedding")
+predict_subcategory_embedding_category5 = _safe_import("models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_5.predict_subcategory_category5", "predict_from_embedding")
+predict_subcategory_embedding_category6 = _safe_import("models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_6.predict_subcategory_category6", "predict_from_embedding")
+predict_subcategory_embedding_category7 = _safe_import("models_directory.Classification_Models.Hierarchical_Classification_Model.sub_category.category_7.predict_subcategory_category7", "predict_from_embedding")
 
 
 # ==========================================
@@ -122,7 +150,12 @@ def hierarchical_predict_text(text: str):
     # -------------------------
     category_predictor = CATEGORY_PREDICTORS_TEXT.get(domain_final)
     if not category_predictor:
-        raise ValueError(f"No category predictor for domain={domain_final}")
+        # Predictor failed to load (missing/stale label mapping -- see
+        # _safe_import above) -- category (and therefore subcategory, which
+        # depends on it) is unavailable, but that must not take down domain.
+        output["category"] = None
+        output["subcategory"] = None
+        return output
 
     category_preds = category_predictor(text)
 
@@ -145,8 +178,10 @@ def hierarchical_predict_text(text: str):
     # -------------------------
     subcategory_predictor = SUBCATEGORY_PREDICTORS_TEXT.get(category_final)
     if not subcategory_predictor:
-        # fallback to first allowed subcategory
-        subcategory_final = CATEGORY_TO_SUBCATEGORIES[category_final][0]
+        # Either no predictor is modeled for this category, or it failed to
+        # load (missing/stale label mapping -- see _safe_import above).
+        # Never silently guess a subcategory in the latter case.
+        subcategory_final = None
     else:
         subcategory_preds = subcategory_predictor(text)
 
@@ -187,7 +222,14 @@ def hierarchical_predict_embeddings(embedding: np.ndarray):
     print(f"[HIER_PRED] Step 2: Predicting CATEGORY for domain={domain_final}...")
     category_predictor = CATEGORY_PREDICTORS_EMBEDDING.get(domain_final)
     if not category_predictor:
-        raise ValueError(f"No category embedding predictor for domain={domain_final}")
+        # Predictor failed to load (missing/stale label mapping -- see
+        # _safe_import above) -- category (and therefore subcategory, which
+        # depends on it) is unavailable, but that must not take down domain
+        # or any of the other classification outputs.
+        print(f"[HIER_PRED] WARNING: category predictor for domain={domain_final} unavailable -- category/subcategory will be None")
+        output["category"] = None
+        output["subcategory"] = None
+        return output
 
     print(f"[HIER_PRED] Calling category predictor for domain {domain_final}...")
     category_preds = category_predictor(embedding)
@@ -220,9 +262,11 @@ def hierarchical_predict_embeddings(embedding: np.ndarray):
     subcategory_predictor = SUBCATEGORY_PREDICTORS_EMBEDDING.get(category_final)
 
     if not subcategory_predictor:
-        # fallback to first valid subcategory
-        print(f"[HIER_PRED] WARNING: No subcategory predictor for category={category_final}, using fallback")
-        subcategory_final = CATEGORY_TO_SUBCATEGORIES[category_final][0]
+        # Either no predictor is modeled for this category, or it failed to
+        # load (missing/stale label mapping -- see _safe_import above).
+        # Never silently guess a subcategory in the latter case.
+        print(f"[HIER_PRED] WARNING: No subcategory predictor for category={category_final} -- subcategory will be None")
+        subcategory_final = None
     else:
         print(f"[HIER_PRED] Calling subcategory predictor for category {category_final}...")
         subcategory_preds = subcategory_predictor(embedding)

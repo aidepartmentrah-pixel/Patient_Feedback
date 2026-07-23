@@ -1,8 +1,18 @@
+import os
 import time
 from faster_whisper import WhisperModel
 
 MODEL_SIZE = "medium"
 DEVICE = "cpu"
+
+# WHISPER_MODEL_PATH (preferred, offline-safe): a local directory containing
+# pre-downloaded CTranslate2 model files (see scripts/export_whisper_model.sh).
+# When set, faster_whisper loads directly from disk and never contacts
+# huggingface.co -- this is what ships in the offline release. If unset,
+# MODEL_SIZE is passed as a name and faster_whisper downloads it from the
+# Hugging Face Hub on first use -- only safe with internet access, e.g. local
+# iteration on an online engineering machine. Not what ships offline.
+WHISPER_MODEL_PATH = os.environ.get("WHISPER_MODEL_PATH", "").strip()
 
 # Toggle Arabic correction pass after transcription
 USE_ARABIC_CORRECTION = False
@@ -350,9 +360,20 @@ def get_whisper_model():
     """Lazy load Whisper model on first use."""
     global _model
     if _model is None:
-        print(f"[STT] Loading Faster-Whisper model: {MODEL_SIZE}")
+        if WHISPER_MODEL_PATH:
+            if not os.path.isdir(WHISPER_MODEL_PATH):
+                raise RuntimeError(
+                    f"WHISPER_MODEL_PATH={WHISPER_MODEL_PATH!r} does not exist or is "
+                    "not a directory. Run scripts/export_whisper_model.sh and mount "
+                    "the resulting asset, or unset WHISPER_MODEL_PATH to fall back to "
+                    "name-based download (requires internet)."
+                )
+            model_source = WHISPER_MODEL_PATH
+        else:
+            model_source = MODEL_SIZE
+        print(f"[STT] Loading Faster-Whisper model: {model_source}")
         _model = WhisperModel(
-            MODEL_SIZE,
+            model_source,
             device=DEVICE,
             compute_type="int8",
             cpu_threads=8,

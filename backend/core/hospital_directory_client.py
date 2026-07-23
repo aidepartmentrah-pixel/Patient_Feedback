@@ -8,7 +8,7 @@ elsewhere in the codebase.
 
 Scope: loading the runtime integration config, a /health check (used by the
 /config "Hospital Directory API" tab), and PATIENT resource calls
-(search_patients / get_patient_visit — Session C1). Doctor/worker resource
+(search_patients / get_patient — Session C1). Doctor/worker resource
 calls are NOT implemented here yet — those are separate, later sessions
 (C2/C3).
 
@@ -41,11 +41,17 @@ logger = logging.getLogger(__name__)
 DEFAULT_TIMEOUT_SECONDS = 10
 
 # Prefix used to encode an external (Hospital Directory API) patient identity
-# — patient_id + visit_id — into a single opaque string so it can flow
-# through the same "patient_id" path/param slots that used to hold a plain
-# APP_RESERVE_PATIENT.PatientAdmissionID int. Never stored in the
-# PatientAdmissionID SQL column (see patients_db.py) — only used at the
-# service layer to route a lookup to the API instead of SQL Server.
+# into a single opaque string so it can flow through the same "patient_id"
+# path/param slots that used to hold a plain APP_RESERVE_PATIENT.PatientAdmissionID
+# int. Never stored in the PatientAdmissionID SQL column (see patients_db.py) —
+# only used at the service layer to route a lookup to the API instead of SQL
+# Server.
+#
+# NOTE: the Hospital Directory API used to model identity as patient+visit
+# (PatientVisit, requiring a visit_id alongside patient_id). That concept was
+# dropped from the API — patients are identified by patient_id alone now
+# (see the current vendor OpenAPI spec's Patient schema and GET
+# /patients/{patient_id}). encode/decode below reflect that current contract.
 EXTERNAL_ID_PREFIX = "ext"
 EXTERNAL_ID_SEP = "__"
 
@@ -54,14 +60,14 @@ class IntegrationNotConfiguredError(Exception):
     """Raised when the APP_ExternalApiSettings row hasn't been seeded (migration not run)."""
 
 
-def encode_external_patient_id(patient_id: str, visit_id: str) -> str:
-    """Pack (patient_id, visit_id) into the opaque id HCAT passes around internally."""
-    return f"{EXTERNAL_ID_PREFIX}{EXTERNAL_ID_SEP}{patient_id}{EXTERNAL_ID_SEP}{visit_id}"
+def encode_external_patient_id(patient_id: str) -> str:
+    """Pack patient_id into the opaque id HCAT passes around internally."""
+    return f"{EXTERNAL_ID_PREFIX}{EXTERNAL_ID_SEP}{patient_id}"
 
 
-def decode_external_patient_id(value: str) -> Optional[tuple]:
+def decode_external_patient_id(value: str) -> Optional[str]:
     """
-    Return (patient_id, visit_id) if `value` is an encoded external id,
+    Return the external patient_id if `value` is an encoded external id,
     else None (meaning: treat it as a plain reserve PatientAdmissionID).
     """
     if not value or not isinstance(value, str):
@@ -70,10 +76,9 @@ def decode_external_patient_id(value: str) -> Optional[tuple]:
     if not value.startswith(prefix):
         return None
     rest = value[len(prefix):]
-    parts = rest.split(EXTERNAL_ID_SEP, 1)
-    if len(parts) != 2 or not parts[0] or not parts[1]:
+    if not rest:
         return None
-    return parts[0], parts[1]
+    return rest
 
 
 def normalize_base_url(raw: str):
@@ -370,7 +375,7 @@ def verify_integration(
 #   "ok"                — call succeeded, data attached
 #   "disabled"           — integration not configured or Enabled=0 (not an error)
 #   "unauthorized"        — 401 from the API (bad/expired key)
-#   "not_found"           — 404 (get_patient_visit only)
+#   "not_found"           — 404 (get_patient only)
 #   "bad_request"          — 400 (e.g. no search criteria given)
 #   "timeout" / "connection_error" / "ssl_error" — network-level failure
 #   "http_error"           — any other non-2xx status
@@ -454,24 +459,21 @@ def _get(path: str, params: dict) -> dict:
 def search_patients(
     q: Optional[str] = None,
     patient_id: Optional[str] = None,
-    visit_id: Optional[str] = None,
-    medical_file_number: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
 ) -> dict:
     """
-    GET {base_url}/patients?q=&patient_id=&visit_id=&medical_file_number=&limit=&offset=
+    GET {base_url}/patients?q=&patient_id=&limit=&offset=
 
-    At least one of q/patient_id/visit_id/medical_file_number must be given
-    (matches the API's own MISSING_SEARCH_CRITERIA validation) — callers
-    should check before calling to avoid an avoidable "bad_request" result.
+    At least one of q/patient_id must be given (matches the API's own
+    MISSING_SEARCH_CRITERIA validation) — callers should check before
+    calling to avoid an avoidable "bad_request" result.
 
     Returns {"status", "message", "items": [...], "total": int} on "ok";
     "items"/"total" are omitted for non-"ok" statuses.
     """
     params = {k: v for k, v in {
-        "q": q, "patient_id": patient_id, "visit_id": visit_id,
-        "medical_file_number": medical_file_number,
+        "q": q, "patient_id": patient_id,
         "limit": max(1, min(limit, 500)), "offset": max(0, offset),
     }.items() if v is not None}
 
@@ -490,15 +492,15 @@ def search_patients(
     }
 
 
-def get_patient_visit(patient_id: str, visit_id: str) -> dict:
+def get_patient(patient_id: str) -> dict:
     """
-    GET {base_url}/patients/{patient_id}/visits/{visit_id}
+    GET {base_url}/patients/{patient_id}
 
     Returns {"status", "message", "patient": {...}} on "ok".
     """
     from urllib.parse import quote
 
-    path = f"/patients/{quote(str(patient_id), safe='')}/visits/{quote(str(visit_id), safe='')}"
+    path = f"/patients/{quote(str(patient_id), safe='')}"
     result = _get(path, params={})
     if result["status"] != "ok":
         return result

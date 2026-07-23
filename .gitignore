@@ -144,6 +144,33 @@ venv/
 # Hugging Face access tokens -- never commit
 .hf_token
 
+# Local dev-only venv used for the DB install/model scripts (not the app itself)
+venv_dbinstall/
+
+# Database backups (.bak files) -- never commit, stored outside the container
+backups/
+*.bak
+
+# Offline release artifacts (built locally, not source) -- see release/README.md
+release/docker-images/*.tar
+release/checksums/*
+release/assets/*.zip
+
+# Source-system extraction / provisioning data -- see the migration plan.
+# Raw extracts contain real plaintext credentials; provisioning artifacts and
+# test-credential files are deployment artifacts, not source, and are never
+# committed even though they ship physically in the release bundle.
+database/sqlserver/seed/raw_extract/
+database/sqlserver/seed/provisioning.v1.json
+database/sqlserver/seed/provisioning.v1.manifest.json
+database/sqlserver/seed/provisioning.v1.json.sha256
+database/sqlserver/seed/installation_test_credentials.local.json
+database/sqlserver/seed/*.local.json
+
+# Local scratch dir used by scripts/export_whisper_model.sh -- only the zip
+# it produces (release/assets/*.zip) ships in the release, not this raw copy.
+/assets/
+
 ENV/
 env.bak/
 venv.bak/

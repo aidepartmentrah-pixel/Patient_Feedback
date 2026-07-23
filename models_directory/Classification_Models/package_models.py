@@ -308,10 +308,10 @@ def classify_feedback(patient_text, text_2, text_3, Print = False):
         "domain": DOMAIN_MAP.get(domain_id, f"UNKNOWN ({domain_id})"),
 
         "category_id": category_id,
-        "category": CATEGORY_MAP.get(category_id, f"UNKNOWN ({category_id})"),
+        "category": "Not Available" if category_id is None else CATEGORY_MAP.get(category_id, f"UNKNOWN ({category_id})"),
 
         "sub_category_id": sub_category_id,
-        "sub_category": SUBCATEGORY_MAP.get(sub_category_id, f"UNKNOWN ({sub_category_id})"),
+        "sub_category": "Not Available" if sub_category_id is None else SUBCATEGORY_MAP.get(sub_category_id, f"UNKNOWN ({sub_category_id})"),
 
         "severity_id": severity_level_id,
         "severity_level": SEVERITY_MAP.get(severity_level_id, f"UNKNOWN ({severity_level_id})"),
@@ -432,10 +432,10 @@ def classify_feedback_timed(text_1, text_2, text_3, Print=False):
         "domain": DOMAIN_MAP.get(domain_id, f"UNKNOWN ({domain_id})"),
 
         "category_id": category_id,
-        "category": CATEGORY_MAP.get(category_id, f"UNKNOWN ({category_id})"),
+        "category": "Not Available" if category_id is None else CATEGORY_MAP.get(category_id, f"UNKNOWN ({category_id})"),
 
         "sub_category_id": sub_category_id,
-        "sub_category": SUBCATEGORY_MAP.get(sub_category_id, f"UNKNOWN ({sub_category_id})"),
+        "sub_category": "Not Available" if sub_category_id is None else SUBCATEGORY_MAP.get(sub_category_id, f"UNKNOWN ({sub_category_id})"),
 
         "severity_id": severity_level_id,
         "severity_level": SEVERITY_MAP.get(severity_level_id, f"UNKNOWN ({severity_level_id})"),

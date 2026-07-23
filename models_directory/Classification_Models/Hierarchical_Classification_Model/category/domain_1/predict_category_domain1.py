@@ -7,7 +7,7 @@ import joblib
 from xgboost import XGBClassifier
 from models_directory.Classification_Models.Stage.modular_functions import get_embedding
 from models_directory.Classification_Models.label_mapping_helper import (
-    build_temp_to_label_for_domain,
+    load_temp_to_label,
     validate_model_mapping,
     log_predictor_init,
 )
@@ -37,7 +37,7 @@ xgb.load_model(_xgb_model_path)
 # LABEL MAP (DYNAMIC FROM TRAINING DB)
 # ============================================================
 
-temp_to_label = build_temp_to_label_for_domain(DOMAIN_ID)
+temp_to_label = load_temp_to_label(os.path.join(MODEL_DIR, "category_domain1_label_map.json"))
 label_to_temp = {v: k for k, v in temp_to_label.items()}
 
 # Validate & log at load time

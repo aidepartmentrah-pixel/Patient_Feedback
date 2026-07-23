@@ -1,0 +1,2 @@
+-- No triggers exist in the live IncidentManager database as of this inspection (2026-07-21).
+-- All business logic lives in the Python backend. This file is intentionally empty.

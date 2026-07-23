@@ -3,6 +3,7 @@ from collections import Counter, defaultdict
 from ..db_layer import incident_case, admin_units, lookups
 from ..schemas.auth_models import CurrentUser
 from ..constants.case_statuses import OPEN_STATUS_ID, IN_PROGRESS_STATUS_ID, CLOSED_STATUS_ID
+from ..constants.org_unit_types import ORG_TYPE_ADMINISTRATION
 from . import org_tree_service
 
 # =========================================================
@@ -369,10 +370,16 @@ def get_dashboard_hierarchy(current_user: CurrentUser) -> dict:
 
     # -----------------------------
     # Step 1: Administrations
-    # Rule: ParentID == UniqueID
+    # Rule: Type == ORG_TYPE_ADMINISTRATION (323).
+    # NOTE: this used to detect roots structurally via ParentID == UniqueID
+    # (self-parented), which matched old seed/fixture data. Real migrated
+    # data from the old HCAT system has ParentID = NULL on Administration
+    # rows instead of self-parenting, which left this step (and everything
+    # cascading from it) empty. Type is reliably set on real data, so detect
+    # roots by type rather than inferring root-ness from ParentID shape.
     # -----------------------------
     for u in units:
-        if u["ParentID"] == u["UniqueID"]:
+        if u["Type"] == ORG_TYPE_ADMINISTRATION:
             # optional name hygiene
             if u["Name"] and u["Name"].strip().upper() != "NULL":
                 Administration.append(_unit_payload(u))

@@ -4,13 +4,12 @@
 -- Purpose: Let a drawer note link to a patient that came from the Hospital
 -- Directory API (external), not just APP_RESERVE_PATIENT (reserve).
 --
--- The external API's patient identity is a (patient_id, visit_id) string
--- pair, not an int, so it CANNOT be stored in the existing
--- PatientAdmissionID int column (see backend/core/hospital_directory_client.py
--- encode_external_patient_id — that encoding is only used at the service
--- layer to route lookups, never persisted to SQL). Instead, two new nullable
--- columns are added:
---   - ExternalPatientID   — the opaque "ext__{patient_id}__{visit_id}" id
+-- The external API's patient identity is a string patient_id, not an int,
+-- so it CANNOT be stored in the existing PatientAdmissionID int column (see
+-- backend/core/hospital_directory_client.py encode_external_patient_id —
+-- that encoding is only used at the service layer to route lookups, never
+-- persisted to SQL). Instead, two new nullable columns are added:
+--   - ExternalPatientID   — the opaque "ext__{patient_id}" id
 --   - ExternalPatientName — the patient's full_name, SNAPSHOTTED at note
 --     creation time (same pattern APP_IncidentCaseEmployee already uses for
 --     HR employee names — see Investigation 2 §3) so listing/reading notes

@@ -6,7 +6,6 @@ from api.routers.investigation_router import router as investigation_router
 from api.routers.table_view_router import router as table_view_router
 from api.routers.classification_router import router as classification_router
 from api.routers.custom_views_router import router as custom_views_router
-from api.routers.ner_router import router as ner_router
 from api.routers.stt_router import router as stt_router
 from api.routers.red_flags_router import router as red_flags_router
 from api.routers.never_events_router import router as never_events_router
@@ -149,7 +148,6 @@ app.include_router(investigation_router)
 app.include_router(table_view_router)
 app.include_router(classification_router)
 app.include_router(custom_views_router)
-app.include_router(ner_router)
 app.include_router(stt_router)
 app.include_router(red_flags_router)
 app.include_router(never_events_router)

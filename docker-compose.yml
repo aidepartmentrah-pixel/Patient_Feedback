@@ -1,0 +1,109 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: ${PROJECT_NAME:-pfms}-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+      MSSQL_PID: ${MSSQL_PID:-Developer}
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+      # Bind mount (not a named volume) so .bak files land in a plain host
+      # directory operators can browse/copy off-box, per the org's backup
+      # standard ("stored outside the container").
+      - ./backups:/var/opt/mssql/backup
+    ports:
+      - "${SQLSERVER_HOST_PORT:-1433}:1433"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1' -b -o /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  db-init:
+    build:
+      context: .
+      dockerfile: database/sqlserver/Dockerfile
+    image: rah-pfms-db-init:${APP_VERSION:-1.0.0}
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    environment:
+      DB_SERVER: sqlserver
+      DB_DATABASE: ${DB_DATABASE:-IncidentManager}
+      DB_USERNAME: sa
+      DB_PASSWORD: ${MSSQL_SA_PASSWORD}
+      USE_WINDOWS_AUTH: "false"
+      TRUST_SERVER_CERTIFICATE: "true"
+    volumes:
+      # provisioning.v1.json + checksum + manifest live here at runtime, never
+      # baked into the image (see .dockerignore). Missing/invalid -> provision.py
+      # fails loudly and this container exits non-zero, so backend (which
+      # depends on db-init completing successfully) never starts either.
+      - ./database/sqlserver/seed:/app/database/sqlserver/seed:ro
+    restart: "no"
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: rah-pfms-backend:${APP_VERSION:-1.0.0}
+    container_name: ${PROJECT_NAME:-pfms}-backend
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
+    ports:
+      - "${BACKEND_HOST_PORT:-8100}:8100"
+    environment:
+      DB_SERVER: sqlserver
+      DB_DATABASE: ${DB_DATABASE:-IncidentManager}
+      DB_USERNAME: sa
+      DB_PASSWORD: ${MSSQL_SA_PASSWORD}
+      USE_WINDOWS_AUTH: "false"
+      TRUST_SERVER_CERTIFICATE: "true"
+      # Pre-exported via scripts/export_whisper_model.sh -- Faster_Wisper.py's
+      # get_whisper_model() loads directly from this path when set, so no
+      # huggingface.co access is needed at runtime. HF_HUB_OFFLINE is
+      # defense-in-depth: if anything ever falls back to name-based lookup,
+      # it fails fast locally instead of hanging trying to reach the internet.
+      WHISPER_MODEL_PATH: /models/whisper-medium
+      HF_HUB_OFFLINE: "1"
+      # Fernet key for encrypting stored integration secrets (currently: the
+      # Hospital Directory API key), see core/settings_encryption.py. Never
+      # stored in the database itself -- only here, in the environment.
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY}
+    volumes:
+      - backend_config:/app/backend/config
+      - ./assets/whisper-model-medium:/models/whisper-medium:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8100/api/status"]
+      interval: 30s
+      timeout: 10s
+      start_period: 90s
+      retries: 5
+
+  frontend:
+    build:
+      context: ../Front_End_Feedback_Analysis
+      dockerfile: Dockerfile
+    image: rah-pfms-frontend:${APP_VERSION:-1.0.0}
+    container_name: ${PROJECT_NAME:-pfms}-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_HOST_PORT:-8101}:80"
+    restart: unless-stopped
+
+volumes:
+  sqlserver_data:
+  backend_config:
+
+networks:
+  default:
+    name: ${PROJECT_NAME:-pfms}-net

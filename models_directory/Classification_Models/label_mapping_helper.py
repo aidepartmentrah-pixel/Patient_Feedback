@@ -1,115 +1,74 @@
 """
 label_mapping_helper.py
-Dynamically builds temp_to_label mappings from the SQLite training database.
-This ensures predictor mappings match exactly what was used during training.
+Loads temp_to_label mappings (XGBoost internal class index -> real database
+label) from small JSON sidecar files shipped alongside each model file.
+
+Each of the 10 category/subcategory models needs to translate the model's
+raw output (0, 1, 2, ...) back into a real domain/category/subcategory ID.
+That mapping is a handful of integers, fully determined at training time
+(unique_sorted = sorted(np.unique(y_train)); temp_to_label = {i: v for i, v
+in enumerate(unique_sorted)}) -- it never changes after training and never
+needs the original training data present at inference time.
+
+This module previously reconstructed that mapping by querying
+table_feedback_train live, out of a 116MB SQLite file containing real
+patient complaint text, on every server startup. That meant the deployable
+artifact for these 10 tiny integer maps was "the entire historical training
+dataset" -- real patient data with no reason to travel with a production
+deployment. Each model's label map is now generated once at training time
+(see scripts/generate_label_maps.py) and saved as a JSON sidecar next to the
+model file; this module just reads that file. Zero patient data involved.
 """
 
-import sqlite3
-from project_paths import get_db_path
+import json
+import os
 
 
-def build_temp_to_label_for_domain(domain_id: int) -> dict:
+def load_temp_to_label(label_map_path: str) -> dict:
     """
-    Build temp_to_label mapping for category prediction within a domain.
-    
-    Queries DISTINCT category values from table_feedback_train WHERE domain = domain_id,
-    sorts them, and returns {0: first_label, 1: second_label, ...}.
-    
-    This replicates the training encoding:
-        unique_sorted = sorted(np.unique(y_train))
-        temp_to_label = {i: v for i, v in enumerate(unique_sorted)}
-    
+    Load a temp_to_label mapping from its JSON sidecar file.
+
     Args:
-        domain_id: The domain ID (1, 2, or 3)
-    
-    Returns:
-        dict mapping XGB internal index -> real category label
-    
-    Raises:
-        RuntimeError: If no categories found for the domain
-    """
-    db_path = get_db_path()
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    cursor.execute(
-        "SELECT DISTINCT category FROM table_feedback_train WHERE domain = ? AND category IS NOT NULL ORDER BY category",
-        (domain_id,)
-    )
-    rows = cursor.fetchall()
-    conn.close()
-    
-    if not rows:
-        raise RuntimeError(
-            f"No categories found in table_feedback_train for domain={domain_id}. "
-            f"DB path: {db_path}"
-        )
-    
-    unique_sorted = sorted([row[0] for row in rows])
-    temp_to_label = {i: label for i, label in enumerate(unique_sorted)}
-    
-    return temp_to_label
+        label_map_path: path to the '<model_name>_label_map.json' file,
+            written once at training time next to the model's .pkl/.json
+            files (same vocab_models/ directory).
 
-
-def build_temp_to_label_for_category(category_id: int) -> dict:
-    """
-    Build temp_to_label mapping for subcategory prediction within a category.
-    
-    Queries DISTINCT sub_category values from table_feedback_train WHERE category = category_id,
-    sorts them, and returns {0: first_label, 1: second_label, ...}.
-    
-    This replicates the training encoding:
-        unique_sorted = sorted(np.unique(y_train))
-        temp_to_label = {i: v for i, v in enumerate(unique_sorted)}
-    
-    Args:
-        category_id: The category ID (1-7)
-    
     Returns:
-        dict mapping XGB internal index -> real subcategory label
-    
+        dict mapping XGB internal index (int) -> real label (int)
+
     Raises:
-        RuntimeError: If no subcategories found for the category
+        RuntimeError: if the sidecar file doesn't exist -- this model's
+            label mapping was never generated (or the model itself needs
+            retraining -- see ML_CLASSIFICATION_ISSUE_FOR_DEV_TEAM.md for
+            Category 1 / Category 2 subcategory specifically).
     """
-    db_path = get_db_path()
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    cursor.execute(
-        "SELECT DISTINCT sub_category FROM table_feedback_train WHERE category = ? AND sub_category IS NOT NULL ORDER BY sub_category",
-        (category_id,)
-    )
-    rows = cursor.fetchall()
-    conn.close()
-    
-    if not rows:
+    if not os.path.isfile(label_map_path):
         raise RuntimeError(
-            f"No subcategories found in table_feedback_train for category={category_id}. "
-            f"DB path: {db_path}"
+            f"Label map not found: {label_map_path}. Run "
+            f"scripts/generate_label_maps.py after training this model to "
+            f"produce it, or this model genuinely isn't trained/available yet."
         )
-    
-    unique_sorted = sorted([row[0] for row in rows])
-    temp_to_label = {i: label for i, label in enumerate(unique_sorted)}
-    
-    return temp_to_label
+    with open(label_map_path, "r", encoding="utf-8") as f:
+        raw = json.load(f)
+    return {int(k): v for k, v in raw.items()}
 
 
 def validate_model_mapping(model, temp_to_label: dict, file_name: str, model_path: str) -> None:
     """
     Validate that the XGB model's class count matches the mapping size.
-    
+
     Args:
         model: The loaded XGBClassifier
         temp_to_label: The derived mapping dict
         file_name: Name of the predictor file (for error messages)
         model_path: Path to the model file (for error messages)
-    
+
     Raises:
         RuntimeError: If there's a mismatch between model classes and mapping size
     """
     expected = model.n_classes_
     actual = len(temp_to_label)
-    
+
     if expected != actual:
         raise RuntimeError(
             f"Label mapping mismatch in {file_name}: "

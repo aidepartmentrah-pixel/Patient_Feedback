@@ -12,18 +12,16 @@ Identity model
 Every patient-like record HCAT hands out as "patient_id" is one of:
   - a plain reserve PatientAdmissionID (int, or its string form) — resolves
     against APP_RESERVE_PATIENT.
-  - an opaque "ext__{patient_id}__{visit_id}" string (see
+  - an opaque "ext__{patient_id}" string (see
     hospital_directory_client.encode_external_patient_id) — resolves
-    against the Hospital Directory API's GET /patients/{id}/visits/{id}.
+    against the Hospital Directory API's GET /patients/{id}.
 
-The Hospital Directory API models identity as patient+visit (see the
-attached OpenAPI spec's PatientVisit schema); the product owner confirmed
-HCAT does not need to track visits as their own concept (a different
-consuming app owns that). Since /patients search already returns one row
-per visit, the simplest correct mapping is to treat each visit exactly like
-the old dbo.VW_PatientAdmission gave HCAT one row per admission — i.e. no
-extra "pick the latest visit" logic is needed; whichever visit-row the user
-selects from search results IS "the" patient identity for this session.
+NOTE: the Hospital Directory API used to model identity as patient+visit
+(a PatientVisit schema requiring a visit_id). That concept was dropped from
+the API — patients are identified by patient_id alone now (see the current
+vendor OpenAPI spec's Patient schema). The shape functions below and the
+encode/decode helpers in hospital_directory_client reflect that current
+contract.
 
 Both merge functions below always return reserve results even if the
 external call fails — external unavailability must never make local data
@@ -56,59 +54,59 @@ class ExternalPatientUnavailableError(Exception):
 _SEX_TO_GENDER = {"M": "Male", "F": "Female"}
 
 
-def _visit_to_history_shape(visit: Dict[str, Any]) -> Dict[str, Any]:
-    """Normalize one PatientVisit into the shape patients_db.search_patients rows use."""
-    encoded_id = directory_client.encode_external_patient_id(visit["patient_id"], visit["visit_id"])
-    sex = visit.get("sex")
+def _patient_to_history_shape(patient: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize one external Patient into the shape patients_db.search_patients rows use."""
+    encoded_id = directory_client.encode_external_patient_id(patient["patient_id"])
+    sex = patient.get("sex")
     return {
         "patient_id": encoded_id,
-        "mrn": visit.get("medical_file_number"),
-        "full_name": visit.get("full_name"),
-        "first_name": visit.get("first_name"),
-        "last_name": visit.get("last_name"),
-        "date_of_birth": visit.get("birth_date"),
-        "age": visit.get("age"),
+        "mrn": None,  # not part of the Hospital Directory API's Patient schema
+        "full_name": patient.get("full_name"),
+        "first_name": patient.get("first_name"),
+        "last_name": patient.get("last_name"),
+        "date_of_birth": patient.get("birth_date"),
+        "age": patient.get("age"),
         "gender": _SEX_TO_GENDER.get(sex, sex),
-        "phone": visit.get("phone_number"),
+        "phone": None,  # not part of the Hospital Directory API's Patient schema
         "source": "external",
     }
 
 
-def _visit_to_insert_shape(visit: Dict[str, Any]) -> Dict[str, Any]:
-    """Normalize one PatientVisit into the shape search_service.search_patients rows use."""
-    encoded_id = directory_client.encode_external_patient_id(visit["patient_id"], visit["visit_id"])
+def _patient_to_insert_shape(patient: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize one external Patient into the shape search_service.search_patients rows use."""
+    encoded_id = directory_client.encode_external_patient_id(patient["patient_id"])
     return {
         "patient_admission_id": encoded_id,
-        "full_name": visit.get("full_name"),
-        "first_name": visit.get("first_name"),
-        "last_name": visit.get("last_name"),
-        "document_number": visit.get("document_number"),
-        "phone_number": visit.get("phone_number"),
-        "birth_date": visit.get("birth_date"),
-        "sex": visit.get("sex"),
-        "medical_file_number": visit.get("medical_file_number"),
-        "admission_date": visit.get("arrival_time"),
+        "full_name": patient.get("full_name"),
+        "first_name": patient.get("first_name"),
+        "last_name": patient.get("last_name"),
+        "document_number": None,  # not part of the Hospital Directory API's Patient schema
+        "phone_number": None,  # not part of the Hospital Directory API's Patient schema
+        "birth_date": patient.get("birth_date"),
+        "sex": patient.get("sex"),
+        "medical_file_number": None,  # not part of the Hospital Directory API's Patient schema
+        "admission_date": None,  # not part of the Hospital Directory API's Patient schema
         "source": "external",
     }
 
 
-def _visit_to_profile_shape(visit: Dict[str, Any], encoded_id: str) -> Dict[str, Any]:
-    sex = visit.get("sex")
+def _patient_to_profile_shape(patient: Dict[str, Any], encoded_id: str) -> Dict[str, Any]:
+    sex = patient.get("sex")
     return {
         "PatientID": encoded_id,
-        "MRN": visit.get("medical_file_number"),
-        "PatientName": visit.get("full_name"),
-        "PatientNameEnglish": visit.get("first_name"),
-        "DateOfBirth": visit.get("birth_date"),
-        "Age": visit.get("age"),
+        "MRN": None,  # not part of the Hospital Directory API's Patient schema
+        "PatientName": patient.get("full_name"),
+        "PatientNameEnglish": patient.get("first_name"),
+        "DateOfBirth": patient.get("birth_date"),
+        "Age": patient.get("age"),
         "Gender": _SEX_TO_GENDER.get(sex, sex),
         "Nationality": "",
-        "Phone": visit.get("phone_number"),
+        "Phone": None,  # not part of the Hospital Directory API's Patient schema
         "Email": "",
         "Address": "",
         "EmergencyContact": "",
         "EmergencyPhone": "",
-        "RegistrationDate": visit.get("arrival_time"),
+        "RegistrationDate": None,  # not part of the Hospital Directory API's Patient schema
         "source": "external",
     }
 
@@ -139,17 +137,17 @@ def search_patients_history(
 
     external_status = "not_searched"
     external_message = (
-        "Hospital Directory API does not support searching by phone or date of birth "
-        "— showing local (reserve) results only."
+        "Hospital Directory API only supports searching by name/patient id "
+        "— showing local (reserve) results only for phone, date of birth, or MRN searches."
     )
     external_items: List[Dict[str, Any]] = []
 
-    if query or mrn:
-        result = directory_client.search_patients(q=query, medical_file_number=mrn, limit=limit)
+    if query:
+        result = directory_client.search_patients(q=query, limit=limit)
         external_status = result["status"]
         external_message = result.get("message")
         if result["status"] == "ok":
-            external_items = [_visit_to_history_shape(v) for v in result["items"]]
+            external_items = [_patient_to_history_shape(v) for v in result["items"]]
 
     return {
         "patients": reserve_items + external_items,
@@ -191,7 +189,7 @@ def search_patients_insert_flow(search_text: str, limit: int = 20) -> Dict[str, 
 
     result = directory_client.search_patients(q=search_text, limit=limit)
     external_status = result["status"]
-    external_items = [_visit_to_insert_shape(v) for v in result["items"]] if result["status"] == "ok" else []
+    external_items = [_patient_to_insert_shape(v) for v in result["items"]] if result["status"] == "ok" else []
 
     combined = reserve_items + external_items
     return {
@@ -217,13 +215,12 @@ def resolve_patient_profile(patient_id: Any) -> Optional[Dict[str, Any]]:
     decoded = directory_client.decode_external_patient_id(str(patient_id))
 
     if decoded:
-        ext_patient_id, visit_id = decoded
-        result = directory_client.get_patient_visit(ext_patient_id, visit_id)
+        result = directory_client.get_patient(decoded)
         if result["status"] == "not_found":
             return None
         if result["status"] != "ok":
             raise ExternalPatientUnavailableError(result["status"], result["message"])
-        profile = _visit_to_profile_shape(result["patient"], str(patient_id))
+        profile = _patient_to_profile_shape(result["patient"], str(patient_id))
     else:
         profile = patients_db.get_reserve_patient_profile(int(patient_id))
         if not profile:

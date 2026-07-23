@@ -55,7 +55,7 @@ def create_note_with_labels(
         ValueError: If validation fails
         ExternalPatientUnavailableError: external_patient_id given but the
             Hospital Directory API could not be reached/authenticated/etc,
-            or the visit no longer exists (404)
+            or the patient no longer exists (404)
     """
     # Trim and validate text
     trimmed_text = note_text.strip() if note_text else ""
@@ -80,8 +80,7 @@ def create_note_with_labels(
         decoded = directory_client.decode_external_patient_id(external_patient_id)
         if not decoded:
             raise ValueError(f"Invalid external_patient_id: {external_patient_id}")
-        ext_id, visit_id = decoded
-        result = directory_client.get_patient_visit(ext_id, visit_id)
+        result = directory_client.get_patient(decoded)
         if result["status"] == "not_found":
             raise ValueError(f"External patient {external_patient_id} was not found")
         if result["status"] != "ok":
