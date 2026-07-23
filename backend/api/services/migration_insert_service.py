@@ -17,6 +17,7 @@ from core.database import get_connection
 from api.db_layer.incident_case import create_incident_case
 from api.db_layer.incident_case_target_department import add_target_department
 from api.db_layer.incident_case_doctor import add_doctor_to_case
+from api.services.staff_directory_service import materialize_doctor_id
 from api.db_layer.incident_parent import create_incident_parent, assign_case_to_incident
 from api.db_layer import ml_case_training_db
 from api.db_layer import ml_embedding_job_db
@@ -232,21 +233,18 @@ def create_record_migrated(
             pass
 
         # -----------------------------
-        # Validate doctors exist
+        # Validate doctors exist, resolving each to a real reserve int id.
+        # SESSION C2: doc_id may be a reserve int or an opaque Hospital
+        # Directory API id — see case_service.py's identical block for the
+        # full rationale.
         # -----------------------------
         if data.get('doctors'):
             for doc in data['doctors']:
                 doc_id = doc.get('doctor_id')
                 if not doc_id:
                     continue
-                cursor.execute("""
-                    SELECT COUNT(*) FROM (
-                        SELECT DoctorID FROM dbo.APP_LOOKUP_DOCTOR WHERE DoctorID = ?
-                        UNION ALL
-                        SELECT DoctorID FROM dbo.APP_RESERVE_DOCTOR WHERE DoctorID = ?
-                    ) AS combined
-                """, (doc_id, doc_id))
-                if cursor.fetchone()[0] == 0:
+                resolved = materialize_doctor_id(doc_id, doc.get('doctor_name', ''))
+                if not resolved:
                     return {
                         "success": False,
                         "error": "INVALID_REFERENCE",
@@ -254,6 +252,7 @@ def create_record_migrated(
                         "message_ar": f"رقم الطبيب {doc_id} غير موجود",
                         "field": "doctors"
                     }
+                doc['doctor_id'] = resolved
 
         # -----------------------------
         # Building resolution
@@ -383,6 +382,8 @@ def create_record_migrated(
         if data.get('doctors'):
             primary_assigned = False
             for doc in data['doctors']:
+                # doctor_id was already resolved to a real reserve int by
+                # the "Validate doctors exist" block above.
                 doc_id = doc.get('doctor_id')
                 if not doc_id:
                     continue

@@ -705,7 +705,34 @@ CREATE TABLE [dbo].[APP_RESERVE_DOCTOR] (
     [Specialty] nvarchar(200) NULL,
     [IsActive] bit NOT NULL DEFAULT ((1)),
     [SourceSystem] nvarchar(100) NULL DEFAULT ('MANUAL'),
-    [LastSyncedAt] datetime NULL DEFAULT (getdate())
+    [LastSyncedAt] datetime NULL DEFAULT (getdate()),
+    [ExternalDoctorID] nvarchar(128) NULL
+);
+GO
+
+-- SESSION C2/C3: no reserve table existed for workers before this (confirmed
+-- absent — see Investigation 2 in the C2/C3 session notes). Mirrors
+-- APP_RESERVE_DOCTOR's shape, sized for the Hospital Directory API's Worker
+-- schema. Doctor/worker incidents link via a real int FK
+-- (APP_IncidentCaseDoctor.DoctorID / APP_IncidentCaseEmployee.EmployeeID),
+-- so an API-sourced string id is "materialized" into a row here (find-or-
+-- create by ExternalDoctorID/ExternalEmployeeID) before it's ever used as
+-- that FK — see backend/api/services/staff_directory_service.py.
+IF OBJECT_ID('dbo.APP_RESERVE_WORKER', 'U') IS NULL
+CREATE TABLE [dbo].[APP_RESERVE_WORKER] (
+    [EmployeeID] int IDENTITY(1,1) NOT NULL,
+    [FullName] nvarchar(300) NOT NULL,
+    [JobTitle] nvarchar(200) NULL,
+    [JobID] nvarchar(50) NULL,
+    [DepartmentID] nvarchar(50) NULL,
+    [SectionID] nvarchar(50) NULL,
+    [AdministrationID] nvarchar(50) NULL,
+    [IsManager] bit NULL,
+    [IsActive] bit NOT NULL DEFAULT ((1)),
+    [ExternalEmployeeID] nvarchar(128) NULL,
+    [SourceSystem] nvarchar(50) NULL,
+    [LastSyncedAt] datetime NULL,
+    [CreatedAt] datetime NOT NULL DEFAULT (getdate())
 );
 GO
 

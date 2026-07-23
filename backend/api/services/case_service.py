@@ -30,6 +30,7 @@ from backend.api.db_layer.incident_case import create_incident_case
 from backend.api.db_layer.incident_case_target_department import add_target_department
 from backend.api.db_layer.incident_case_doctor import add_doctor_to_case
 from backend.api.db_layer.incident_case_employee import add_employee_to_case
+from backend.api.services.staff_directory_service import materialize_doctor_id, materialize_employee_id
 from backend.api.db_layer.incident_parent import create_incident_parent, assign_case_to_incident
 from backend.api.db_layer import ml_embedding_job_db
 from backend.api.db_layer import ml_case_training_db
@@ -325,21 +326,26 @@ def create_case(data: Dict[str, Any], context: str = 'ManualInsert', save_mode: 
         clinical_risk_type_id = data.get('clinical_risk_type_id')
         feedback_intent_type_id = data.get('feedback_intent_type_id')
 
-        # Validate doctors exist (check both hospital and reserve tables)
+        # Validate doctors exist, resolving each to a real reserve int id.
+        #
+        # SESSION C2: doc_id may now be a reserve int OR an opaque Hospital
+        # Directory API id (see staff_directory_service) — the old raw
+        # `SELECT ... WHERE DoctorID = ?` existence check against
+        # APP_LOOKUP_DOCTOR/APP_RESERVE_DOCTOR fails outright on a string id
+        # (SQL int conversion error). materialize_doctor_id() replaces it:
+        # it finds-or-creates a real reserve row for an external id (which
+        # IS the existence check — the id came from a real API search
+        # result), or passes a reserve int through unchanged. The resolved
+        # int is written back into the doc dict so every later use in this
+        # function (the actual APP_IncidentCaseDoctor insert further below)
+        # sees an already-resolved id instead of re-decoding it.
         if data.get('doctors'):
             for doc in data['doctors']:
                 doc_id = doc.get('doctor_id')
                 if not doc_id:
                     continue
-                # Use UNION to check both hospital (APP_LOOKUP_DOCTOR) and reserve (APP_RESERVE_DOCTOR) tables
-                cursor.execute("""
-                    SELECT COUNT(*) FROM (
-                        SELECT DoctorID FROM dbo.APP_LOOKUP_DOCTOR WHERE DoctorID = ?
-                        UNION ALL
-                        SELECT DoctorID FROM dbo.APP_RESERVE_DOCTOR WHERE DoctorID = ?
-                    ) AS combined
-                """, (doc_id, doc_id))
-                if cursor.fetchone()[0] == 0:
+                resolved = materialize_doctor_id(doc_id, doc.get('doctor_name', ''))
+                if not resolved:
                     return {
                         "success": False,
                         "error": "INVALID_REFERENCE",
@@ -347,6 +353,7 @@ def create_case(data: Dict[str, Any], context: str = 'ManualInsert', save_mode: 
                         "message_ar": f"رقم الطبيب {doc_id} غير موجود",
                         "field": "doctors"
                     }
+                doc['doctor_id'] = resolved
 
         # Resolve building: prefer provided BuildingID, else map BuildingCode via DB
         building_id = data.get('building_id')
@@ -462,6 +469,9 @@ def create_case(data: Dict[str, Any], context: str = 'ManualInsert', save_mode: 
         if data.get('doctors'):
             primary_assigned = False
             for doc in data['doctors']:
+                # doctor_id was already resolved to a real reserve int by
+                # the "Validate doctors exist" block above (materialize_doctor_id
+                # mutates the dict in place) — no need to resolve it again here.
                 doc_id = doc.get('doctor_id')
                 if not doc_id:
                     continue
@@ -485,9 +495,17 @@ def create_case(data: Dict[str, Any], context: str = 'ManualInsert', save_mode: 
                 if not emp_id:
                     continue
                 try:
+                    # SESSION C3: emp_id may be a reserve int or an opaque
+                    # Hospital Directory API id — APP_IncidentCaseEmployee.
+                    # EmployeeID is a real int FK, so resolve/materialize
+                    # first (no earlier validation block exists for
+                    # employees, unlike doctors above).
+                    resolved_employee_id = materialize_employee_id(emp_id, emp.get('full_name', ''))
+                    if not resolved_employee_id:
+                        continue
                     add_employee_to_case(
                         incident_id=new_id,
-                        employee_id=emp_id,
+                        employee_id=resolved_employee_id,
                         assigned_by_user_id=1,
                         full_name=emp.get('full_name', ''),
                         is_primary=(not primary_assigned)
@@ -929,6 +947,12 @@ def update_case(record_id: int, data: Dict[str, Any], context: str = 'ManualInse
                     emp_id = emp.get('employee_id')
                     if not emp_id:
                         continue
+                    # SESSION C3: resolve an opaque external id to a real
+                    # reserve int before it goes into this int FK column —
+                    # see materialize_employee_id's docstring.
+                    resolved_employee_id = materialize_employee_id(emp_id, emp.get('full_name', ''))
+                    if not resolved_employee_id:
+                        continue
                     is_primary = 1 if not primary_assigned else 0
                     cursor.execute(
                         """
@@ -937,7 +961,7 @@ def update_case(record_id: int, data: Dict[str, Any], context: str = 'ManualInse
                         )
                         VALUES (?, ?, ?, ?, ?, GETDATE())
                         """,
-                        (emp_id, record_id, is_primary, emp.get('full_name', ''), 1)
+                        (resolved_employee_id, record_id, is_primary, emp.get('full_name', ''), 1)
                     )
                     primary_assigned = True
 
@@ -956,6 +980,12 @@ def update_case(record_id: int, data: Dict[str, Any], context: str = 'ManualInse
                     doc_id = doc.get('doctor_id')
                     if not doc_id:
                         continue
+                    # SESSION C2: resolve an opaque external id to a real
+                    # reserve int before it goes into this int FK column —
+                    # see materialize_doctor_id's docstring.
+                    resolved_doctor_id = materialize_doctor_id(doc_id, doc.get('doctor_name', ''))
+                    if not resolved_doctor_id:
+                        continue
                     is_primary = 1 if not primary_assigned else 0
                     cursor.execute(
                         """
@@ -964,7 +994,7 @@ def update_case(record_id: int, data: Dict[str, Any], context: str = 'ManualInse
                         )
                         VALUES (?, ?, ?, ?, ?, GETDATE())
                         """,
-                        (doc_id, record_id, is_primary, doc.get('doctor_name', ''), 1)
+                        (resolved_doctor_id, record_id, is_primary, doc.get('doctor_name', ''), 1)
                     )
                     primary_assigned = True
 

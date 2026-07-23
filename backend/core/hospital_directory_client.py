@@ -7,10 +7,12 @@ through this module. Do not scatter ad-hoc requests/httpx calls to it
 elsewhere in the codebase.
 
 Scope: loading the runtime integration config, a /health check (used by the
-/config "Hospital Directory API" tab), and PATIENT resource calls
-(search_patients / get_patient — Session C1). Doctor/worker resource
-calls are NOT implemented here yet — those are separate, later sessions
-(C2/C3).
+/config "Hospital Directory API" tab), PATIENT resource calls
+(search_patients / get_patient — Session C1), and DOCTOR/WORKER search +
+exact-lookup calls (Session C2/C3 — search only; the doctor/worker
+History/Reporting pages, table_view_service.py, and
+aggregate_seasonal_report_service.py are still view-based and out of scope
+here).
 
 Configuration is stored in SQL Server (APP_ExternalApiSettings, read fresh
 on every call — no restart required to apply changes), with the API key
@@ -506,3 +508,111 @@ def get_patient(patient_id: str) -> dict:
         return result
 
     return {"status": "ok", "message": None, "patient": result["data"]}
+
+
+# =============================================================================
+# GENERIC EXTERNAL ID ENCODING (doctors/workers — Session C2/C3)
+# =============================================================================
+# encode_external_patient_id/decode_external_patient_id above are patient-
+# specific by name (historical — Session C1). These are the same encoding,
+# generalized for resources with no compound identity (doctors, workers).
+# Safe to reuse the same "ext__" prefix across resource types since
+# doctor/worker/patient resolution always happens in a resource-specific
+# code path that already knows what kind of id it's looking at.
+
+def encode_external_id(resource_id: str) -> str:
+    """Pack a bare resource id into the opaque id HCAT passes around internally."""
+    return f"{EXTERNAL_ID_PREFIX}{EXTERNAL_ID_SEP}{resource_id}"
+
+
+def decode_external_id(value: str) -> Optional[str]:
+    """Return the bare external id if `value` is encoded, else None (plain reserve int id)."""
+    if not value or not isinstance(value, str):
+        return None
+    prefix = f"{EXTERNAL_ID_PREFIX}{EXTERNAL_ID_SEP}"
+    if not value.startswith(prefix):
+        return None
+    rest = value[len(prefix):]
+    return rest or None
+
+
+# =============================================================================
+# DOCTOR / WORKER RESOURCE CALLS (Session C2/C3 — search only)
+# =============================================================================
+# Same status vocabulary as the patient calls above. Unlike patients, doctors
+# and workers may be searched with NO criteria at all (the API returns a
+# paginated "active doctors/workers" list by default) — see the OpenAPI spec,
+# sections 3.3/3.5.
+
+def search_doctors(
+    q: Optional[str] = None,
+    active_only: bool = True,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict:
+    """GET {base_url}/doctors?q=&active_only=&limit=&offset="""
+    params = {k: v for k, v in {
+        "q": q, "active_only": active_only,
+        "limit": max(1, min(limit, 500)), "offset": max(0, offset),
+    }.items() if v is not None}
+
+    result = _get("/doctors", params)
+    if result["status"] != "ok":
+        return result
+
+    data = result["data"]
+    if not isinstance(data, dict) or "items" not in data:
+        return {"status": "invalid_response", "message": "Hospital Directory API /doctors response was missing 'items'."}
+
+    return {
+        "status": "ok", "message": None,
+        "items": data.get("items", []),
+        "total": data.get("total", len(data.get("items", []))),
+    }
+
+
+def get_doctor(doctor_id: str) -> dict:
+    """GET {base_url}/doctors/{doctor_id}"""
+    from urllib.parse import quote
+
+    result = _get(f"/doctors/{quote(str(doctor_id), safe='')}", params={})
+    if result["status"] != "ok":
+        return result
+    return {"status": "ok", "message": None, "doctor": result["data"]}
+
+
+def search_workers(
+    q: Optional[str] = None,
+    active_only: bool = True,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict:
+    """GET {base_url}/workers?q=&active_only=&limit=&offset="""
+    params = {k: v for k, v in {
+        "q": q, "active_only": active_only,
+        "limit": max(1, min(limit, 500)), "offset": max(0, offset),
+    }.items() if v is not None}
+
+    result = _get("/workers", params)
+    if result["status"] != "ok":
+        return result
+
+    data = result["data"]
+    if not isinstance(data, dict) or "items" not in data:
+        return {"status": "invalid_response", "message": "Hospital Directory API /workers response was missing 'items'."}
+
+    return {
+        "status": "ok", "message": None,
+        "items": data.get("items", []),
+        "total": data.get("total", len(data.get("items", []))),
+    }
+
+
+def get_worker(employee_id: str) -> dict:
+    """GET {base_url}/workers/{employee_id}"""
+    from urllib.parse import quote
+
+    result = _get(f"/workers/{quote(str(employee_id), safe='')}", params={})
+    if result["status"] != "ok":
+        return result
+    return {"status": "ok", "message": None, "worker": result["data"]}

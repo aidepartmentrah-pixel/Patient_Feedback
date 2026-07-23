@@ -99,7 +99,13 @@ def create_incident_with_cases(payload: Dict[str, Any], save_mode: str = 'workfl
 
     created_cases: list[dict] = []
     for idx, case_data in enumerate(cases):
-        target_ids = case_data.get("target_department_ids", [])
+        # `.get(..., [])` alone isn't enough: Pydantic's model_dump() always
+        # includes this key with an explicit None when unset (Optional
+        # field, default None) rather than omitting it — so the [] default
+        # never fires and `for dept_id in target_ids` below would crash
+        # with "'NoneType' object is not iterable". Pre-existing bug, found
+        # while testing /add-incident directly — unrelated to doctors/workers.
+        target_ids = case_data.get("target_department_ids") or []
 
         # Validate each target org unit exists and has an allowed type
         for dept_id in target_ids:

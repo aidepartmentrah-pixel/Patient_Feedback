@@ -740,7 +740,7 @@ async def get_patient_endpoint(
 
 @router.get("/doctor/{doctor_id}")
 async def get_doctor_endpoint(
-    doctor_id: int,
+    doctor_id: str,
     current_user: CurrentUser = Depends(get_current_user)
 ):
     """
@@ -781,7 +781,7 @@ async def get_doctor_endpoint(
 
 @router.get("/employee/{employee_id}")
 async def get_employee_endpoint(
-    employee_id: int,
+    employee_id: str,
     current_user: CurrentUser = Depends(get_current_user)
 ):
     """
