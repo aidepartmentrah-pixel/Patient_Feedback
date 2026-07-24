@@ -234,6 +234,33 @@ SEARCH_HTTP="$(curl -s -o /dev/null -w '%{http_code}' -b "$FUNC_COOKIES" "$BACKE
 check "Patient search: endpoint responds 200, does not crash (got $SEARCH_HTTP)" \
     "$([ "$SEARCH_HTTP" = "200" ] && echo 0 || echo 1)"
 
+# --- Doctor/Worker search: doesn't crash (external API may be unconfigured, that's fine) ---
+DOCSEARCH_HTTP="$(curl -s -o /dev/null -w '%{http_code}' -b "$FUNC_COOKIES" "$BACKEND_URL/api/v2/doctors/search?q=te")"
+check "Doctor search: endpoint responds 200, does not crash (got $DOCSEARCH_HTTP)" \
+    "$([ "$DOCSEARCH_HTTP" = "200" ] && echo 0 || echo 1)"
+WORKERSEARCH_HTTP="$(curl -s -o /dev/null -w '%{http_code}' -b "$FUNC_COOKIES" "$BACKEND_URL/api/v2/workers/search?q=te")"
+check "Worker search: endpoint responds 200, does not crash (got $WORKERSEARCH_HTTP)" \
+    "$([ "$WORKERSEARCH_HTTP" = "200" ] && echo 0 || echo 1)"
+
+# --- Doctor/Worker profile: id=1 doesn't crash with a type-validation error
+# (regression check for the profile Path-parameter widening fix -- these
+# used to hard-422 on any externally-sourced id because the router declared
+# doctor_id/employee_id as plain int; 404 is a valid, expected answer on a
+# fresh install with no reserve rows yet, a 422/500 means it regressed) ---
+DOCPROFILE_HTTP="$(curl -s -o /dev/null -w '%{http_code}' -b "$FUNC_COOKIES" "$BACKEND_URL/api/v2/doctors/1/profile")"
+check "Doctor profile: id=1 doesn't crash with a type-validation error (got $DOCPROFILE_HTTP, expect 200 or 404)" \
+    "$([ "$DOCPROFILE_HTTP" = "200" -o "$DOCPROFILE_HTTP" = "404" ] && echo 0 || echo 1)"
+WORKERPROFILE_HTTP="$(curl -s -o /dev/null -w '%{http_code}' -b "$FUNC_COOKIES" "$BACKEND_URL/api/v2/workers/1/profile")"
+check "Worker profile: id=1 doesn't crash with a type-validation error (got $WORKERPROFILE_HTTP, expect 200 or 404)" \
+    "$([ "$WORKERPROFILE_HTTP" = "200" -o "$WORKERPROFILE_HTTP" = "404" ] && echo 0 || echo 1)"
+
+# --- ML Training: Database Growth chart endpoint doesn't crash (regression
+# check for get_current_ml_db_size now querying the live ml.CaseTrainingRecord
+# SQL Server table instead of a SQLite file that is never shipped) ---
+DBGROWTH_HTTP="$(curl -s -o /dev/null -w '%{http_code}' -b "$FUNC_COOKIES" "$BACKEND_URL/api/settings/training/charts/db-growth?days=30")"
+check "ML Training: Database Growth chart endpoint responds 200 (got $DBGROWTH_HTTP)" \
+    "$([ "$DBGROWTH_HTTP" = "200" ] && echo 0 || echo 1)"
+
 curl -s -b "$FUNC_COOKIES" -X POST "$BACKEND_URL/api/auth/logout" >/dev/null
 rm -f "$FUNC_COOKIES"
 

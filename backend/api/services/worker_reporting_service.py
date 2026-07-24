@@ -23,6 +23,49 @@ from ..schemas.worker_reporting_schema import (
     WorkerIdentityBlock,
     WorkerMetricBlock
 )
+from core import hospital_directory_client as directory_client
+
+
+def _external_worker_profile(external_id: str, date_from: Optional[date], date_to: Optional[date]) -> WorkerProfileResponse:
+    """
+    Build a valid, honest "zero history" profile for a worker sourced from
+    the Hospital Directory API who has never appeared in a local incident --
+    there is genuinely nothing to aggregate from dbo tables for them, so
+    this skips those queries entirely rather than looking up a nonexistent
+    int id. Name/job title come from the external API's own exact-lookup so
+    the profile still shows something meaningful, not just the raw id.
+    """
+    result = directory_client.get_worker(external_id)
+    if result["status"] == "ok":
+        w = result["worker"]
+        full_name = w.get("full_name", "")
+        job_title = w.get("job_title")
+        department_id = w.get("department_id")
+        section_id = w.get("section_id")
+        administration_id = w.get("administration_id")
+        is_active = w.get("is_active")
+    else:
+        # External API unreachable/not found -- still return a valid empty
+        # profile rather than raising, since the caller already resolved
+        # this as a known external id (see get_worker_profile).
+        full_name = ""
+        job_title = department_id = section_id = administration_id = is_active = None
+
+    return WorkerProfileResponse(
+        worker=WorkerIdentityBlock(
+            employee_id=directory_client.encode_external_id(external_id),
+            full_name=full_name,
+            job_title=job_title,
+            department_id=department_id,
+            section_id=section_id,
+            administration_id=administration_id,
+            is_active=is_active,
+        ),
+        metrics=WorkerMetricBlock(),
+        incidents=[],
+        period_from=date_from,
+        period_to=date_to,
+    )
 
 
 class WorkerReportingService:
@@ -75,11 +118,19 @@ class WorkerReportingService:
             ... )
             >>> print(f"{profile.worker.full_name}: {profile.metrics.total_incidents} incidents")
         """
+        # An external (never-materialized) worker has no local rows to
+        # aggregate -- return a valid zero-history profile instead of
+        # attempting a DB lookup keyed by a nonexistent int id.
+        external_id = directory_client.decode_external_id(str(employee_id))
+        if external_id:
+            return _external_worker_profile(external_id, date_from, date_to)
+        employee_id = int(employee_id)
+
         try:
             # ============================================
             # STEP 1: GET WORKER IDENTITY
             # ============================================
-            
+
             worker_identity = worker_reporting_db.get_worker_identity(employee_id)
             
             if not worker_identity:
@@ -213,6 +264,36 @@ def get_worker_full_history_service(
         Dict with profile, metrics, items, and meta (V2 schema compatible)
     """
     try:
+        # An external (never-materialized) worker has no local rows to
+        # aggregate -- return a valid zero-history result instead of
+        # attempting a DB lookup keyed by a nonexistent int id.
+        external_id = directory_client.decode_external_id(str(employee_id))
+        if external_id:
+            profile = _external_worker_profile(external_id, date_from, date_to)
+            return {
+                "profile": {
+                    "employee_id": profile.worker.employee_id,
+                    "full_name": profile.worker.full_name,
+                    "job_title": profile.worker.job_title,
+                    "department_id": profile.worker.department_id,
+                    "section_id": profile.worker.section_id,
+                    "administration_id": profile.worker.administration_id,
+                    "is_active": profile.worker.is_active,
+                },
+                "metrics": {},
+                "items": [],
+                "meta": {
+                    "entity_type": "worker",
+                    "entity_id": employee_id,
+                    "period_from": date_from.isoformat() if date_from else None,
+                    "period_to": date_to.isoformat() if date_to else None,
+                    "total": 0,
+                    "limit": limit,
+                    "offset": offset
+                }
+            }
+        employee_id = int(employee_id)
+
         # Get worker identity
         identity = worker_reporting_db.get_worker_identity(employee_id)
         if not identity:
@@ -289,14 +370,34 @@ def export_worker_history_service(
         For JSON: JSON export dict
     """
     try:
-        # Get export data
-        export_data = worker_reporting_db.get_worker_incidents_for_export(
-            employee_id=employee_id,
-            date_from=date_from,
-            date_to=date_to,
-            include_profile=include_profile
-        )
-        
+        # An external (never-materialized) worker has no local incidents to
+        # export -- return a valid empty export instead of querying with a
+        # nonexistent int id.
+        external_id = directory_client.decode_external_id(str(employee_id))
+        if external_id:
+            profile = _external_worker_profile(external_id, date_from, date_to) if include_profile else None
+            export_data = {
+                "worker": {
+                    "employee_id": profile.worker.employee_id,
+                    "full_name": profile.worker.full_name,
+                    "job_title": profile.worker.job_title,
+                    "department_id": profile.worker.department_id,
+                    "section_id": profile.worker.section_id,
+                    "total_incidents": 0,
+                    "is_active": profile.worker.is_active,
+                } if profile else None,
+                "incidents": [],
+                "export_date": datetime.now().strftime('%Y-%m-%d')
+            }
+        else:
+            employee_id = int(employee_id)
+            export_data = worker_reporting_db.get_worker_incidents_for_export(
+                employee_id=employee_id,
+                date_from=date_from,
+                date_to=date_to,
+                include_profile=include_profile
+            )
+
         if format_type == "csv":
             return _generate_worker_csv_export(export_data, employee_id)
         elif format_type == "word":

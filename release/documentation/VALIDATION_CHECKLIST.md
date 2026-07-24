@@ -85,6 +85,19 @@ declaring the deployment done. Check off each item; do not skip any.
       on which category the input routes to).
 - [ ] Model Dashboard (Settings → Training) shows a clear "No training runs
       yet" message on a fresh install, not raw "0/0/0%".
+- [ ] Settings → Training → "Database Growth (Last 30 Days)" chart populates
+      after real incidents are created and a training run completes (counts
+      `ml.CaseTrainingRecord` in SQL Server now, not the old unshipped
+      `patient_feedback_ml.db` SQLite file — expected empty on a brand-new
+      install with no incidents yet, not a failure to investigate).
+- [ ] Doctor/Worker search (Insert Record and History pages): a name that
+      exists in both the reserve table and the Hospital Directory API
+      appears exactly once, not duplicated.
+- [ ] Doctor/Worker History page: profile, statistics, incidents, and export
+      all load without error for both a locally-created (reserve) doctor/
+      worker and one sourced only from the Hospital Directory API (never
+      selected/materialized before) — the latter shows a valid empty/zero
+      history rather than an error.
 - [ ] Restart test: `docker restart pfms-backend` then re-run
       `./scripts/verify_installation.sh` — confirms the app recovers
       cleanly from a container restart.

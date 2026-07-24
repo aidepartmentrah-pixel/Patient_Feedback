@@ -13,7 +13,7 @@ Note:
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Union
 from datetime import date
 
 
@@ -33,7 +33,12 @@ class WorkerIdentityBlock(BaseModel):
         administration_id: Assigned administration ID (may be null)
         is_active: Whether the employee is currently active
     """
-    employee_id: int = Field(..., description="Unique employee identifier")
+    # Union[int, str]: a plain reserve EmployeeID (int), or an opaque
+    # external id (str) for a worker sourced from the Hospital Directory API
+    # who has never appeared in a local incident -- their profile is a
+    # valid, honest "zero history" result, not an error. See
+    # WorkerReportingService.get_worker_profile's early-return branch.
+    employee_id: Union[int, str] = Field(..., description="Unique employee identifier (int for reserve, opaque string for external/unmaterialized)")
     full_name: str = Field(..., description="Employee's full name")
     job_title: Optional[str] = Field(None, description="Current job title or position")
     department_id: Optional[int] = Field(None, description="Assigned department ID")

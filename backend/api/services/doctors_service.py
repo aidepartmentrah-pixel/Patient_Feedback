@@ -9,6 +9,39 @@ import csv
 import io
 import re
 from ..db_layer import doctors_db
+from core import hospital_directory_client as directory_client
+
+
+def _external_doctor_profile(external_id: str) -> Dict[str, Any]:
+    """
+    Build a valid, honest "zero history" profile for a doctor sourced from
+    the Hospital Directory API who has never appeared in a local incident --
+    there is genuinely nothing to look up in dbo tables for them by a
+    nonexistent int id. Mirrors _external_worker_profile in
+    worker_reporting_service.py. Name/specialty come from the external API's
+    own exact-lookup so the profile still shows something meaningful.
+    """
+    result = directory_client.get_doctor(external_id)
+    if result["status"] == "ok":
+        d = result["doctor"]
+        full_name = d.get("full_name", "")
+        specialty = d.get("specialty_name")
+        is_active = d.get("is_active")
+    else:
+        full_name = ""
+        specialty = None
+        is_active = None
+
+    return {
+        "id": directory_client.encode_external_id(external_id),
+        "name_en": full_name,
+        "name_ar": full_name,
+        "specialty": specialty,
+        "status": "active" if is_active else ("inactive" if is_active is False else "unknown"),
+        "source": "external",
+        "source_system": "HCAT",
+        "last_synced_at": None,
+    }
 
 
 class DoctorService:
@@ -257,49 +290,64 @@ class DoctorService:
             raise Exception(f"Failed to fetch reserve doctors: {str(e)}")
     
     @staticmethod
-    def get_doctor_profile(doctor_id: int) -> Dict[str, Any]:
+    def get_doctor_profile(doctor_id) -> Dict[str, Any]:
         """
         Get full doctor profile.
-        
+
         Returns:
             Doctor profile dict
-            
+
         Raises:
             ValueError if doctor not found
         """
         try:
-            profile = doctors_db.get_doctor_profile(doctor_id)
-            
+            external_id = directory_client.decode_external_id(str(doctor_id))
+            if external_id:
+                return _external_doctor_profile(external_id)
+
+            profile = doctors_db.get_doctor_profile(int(doctor_id))
+
             if not profile:
                 raise ValueError(f"Doctor {doctor_id} not found")
-            
+
             return profile
         except Exception as e:
             raise Exception(f"Failed to fetch doctor profile: {str(e)}")
     
     @staticmethod
     def get_doctor_statistics(
-        doctor_id: int,
+        doctor_id,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Get aggregated incident statistics for a doctor.
-        
+
         Validates date range and defaults to last 6 months if not provided.
-        
+
         Returns:
             Dict with statistics and period info
-            
+
         Raises:
             ValueError if dates invalid
         """
         try:
+            # An external (never-materialized) doctor has no local incidents
+            # to aggregate -- return a valid zero-history result instead of
+            # querying with a nonexistent int id.
+            external_id = directory_client.decode_external_id(str(doctor_id))
+            if external_id:
+                _external_doctor_profile(external_id)  # validates the id resolves
+                to_date = to_date or datetime.now().strftime('%Y-%m-%d')
+                from_date = from_date or (datetime.now() - timedelta(days=180)).strftime('%Y-%m-%d')
+                return {'statistics': {}, 'period': {'from': from_date, 'to': to_date}}
+            doctor_id = int(doctor_id)
+
             # Validate doctor exists
             profile = doctors_db.get_doctor_profile(doctor_id)
             if not profile:
                 raise ValueError(f"Doctor {doctor_id} not found")
-            
+
             # Parse and validate dates
             if to_date:
                 try:
@@ -410,7 +458,7 @@ class DoctorService:
     
     @staticmethod
     def get_doctor_incidents(
-        doctor_id: int,
+        doctor_id,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         severity: Optional[str] = None,
@@ -421,16 +469,23 @@ class DoctorService:
     ) -> Dict[str, Any]:
         """
         Get paginated incidents for a doctor.
-        
+
         Returns:
             Dict with incidents array and pagination info
         """
         try:
+            # An external (never-materialized) doctor has no local incidents.
+            external_id = directory_client.decode_external_id(str(doctor_id))
+            if external_id:
+                _external_doctor_profile(external_id)  # validates the id resolves
+                return {'incidents': [], 'total': 0, 'limit': limit, 'offset': offset}
+            doctor_id = int(doctor_id)
+
             # Validate doctor exists
             profile = doctors_db.get_doctor_profile(doctor_id)
             if not profile:
                 raise ValueError(f"Doctor {doctor_id} not found")
-            
+
             # Validate severity if provided
             if severity:
                 if severity not in ['HIGH', 'MEDIUM', 'LOW']:
@@ -472,25 +527,41 @@ class DoctorService:
     
     @staticmethod
     def get_doctor_analytics(
-        doctor_id: int,
+        doctor_id,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Get doctor analytics combining category breakdown and monthly trends.
-        
+
         Returns:
             Dict with categoryBreakdown, monthlyTrend, period
-            
+
         Raises:
             ValueError: If doctor not found or invalid date format
         """
         try:
+            # An external (never-materialized) doctor has no local incidents
+            # to break down -- return a valid zero-history result.
+            external_id = directory_client.decode_external_id(str(doctor_id))
+            if external_id:
+                _external_doctor_profile(external_id)  # validates the id resolves
+                today = datetime.now()
+                default_from = today - timedelta(days=180)
+                parsed_from = datetime.strptime(from_date, '%Y-%m-%d') if from_date else default_from
+                parsed_to = datetime.strptime(to_date, '%Y-%m-%d') if to_date else today
+                return {
+                    'categoryBreakdown': {},
+                    'monthlyTrend': DoctorService._zero_fill_months([], parsed_from, parsed_to),
+                    'period': {'from': parsed_from.strftime('%Y-%m-%d'), 'to': parsed_to.strftime('%Y-%m-%d')}
+                }
+            doctor_id = int(doctor_id)
+
             # Validate doctor exists
             profile = doctors_db.get_doctor_profile(doctor_id)
             if not profile:
                 raise ValueError(f"Doctor with ID {doctor_id} not found")
-            
+
             # Parse and default dates
             today = datetime.now()
             default_from = today - timedelta(days=180)
@@ -585,7 +656,7 @@ class DoctorService:
     
     @staticmethod
     def get_doctor_full_report(
-        doctor_id: int,
+        doctor_id,
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         severity: Optional[str] = None,
@@ -596,25 +667,36 @@ class DoctorService:
     ) -> Dict[str, Any]:
         """
         Get comprehensive doctor report combining all data.
-        
+
         Single call returns: profile, statistics, analytics, incidents.
-        
+
         Returns:
             Dict with profile, statistics, analytics, incidents sections
-            
+
         Raises:
             ValueError: If doctor not found or invalid parameters
         """
         import logging
         logger = logging.getLogger("doctor_full_report")
-        
+
+        # An external (never-materialized) doctor has no local rows -- every
+        # sub-call below already returns a valid zero-history result for it,
+        # so skip the raw int-keyed existence check that would otherwise
+        # error on a nonexistent int id.
+        external_id = directory_client.decode_external_id(str(doctor_id))
+        if not external_id:
+            doctor_id = int(doctor_id)
+
         try:
-            # Validate doctor exists
-            profile = doctors_db.get_doctor_profile(doctor_id)
-            if not profile:
-                logger.warning(f"Doctor with ID {doctor_id} not found in any table.")
-                raise ValueError(f"Doctor with ID {doctor_id} not found")
-            
+            if not external_id:
+                # Validate doctor exists
+                profile = doctors_db.get_doctor_profile(doctor_id)
+                if not profile:
+                    logger.warning(f"Doctor with ID {doctor_id} not found in any table.")
+                    raise ValueError(f"Doctor with ID {doctor_id} not found")
+            else:
+                profile = _external_doctor_profile(external_id)
+
             # Get all components with robust error handling
             profile_data = None
             statistics_data = {'statistics': {}, 'period': None}
@@ -684,7 +766,7 @@ class DoctorService:
 # ==================== FULL HISTORY (Combined — mirrors patient) ====================
 
 def get_doctor_full_history_service(
-    doctor_id: int,
+    doctor_id,
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
     severity: Optional[str] = None,
@@ -696,16 +778,37 @@ def get_doctor_full_history_service(
     """
     Get doctor profile and incidents in single response.
     Mirrors get_patient_full_history_service for UI consistency.
-    
+
     Returns:
         Dict with profile, metrics, items, and meta (V2 schema compatible)
     """
     try:
+        # An external (never-materialized) doctor has no local rows to
+        # aggregate -- return a valid zero-history result instead of
+        # attempting a DB lookup keyed by a nonexistent int id.
+        external_id = directory_client.decode_external_id(str(doctor_id))
+        if external_id:
+            return {
+                "profile": _external_doctor_profile(external_id),
+                "metrics": {},
+                "items": [],
+                "meta": {
+                    "entity_type": "doctor",
+                    "entity_id": doctor_id,
+                    "period_from": from_date,
+                    "period_to": to_date,
+                    "total": 0,
+                    "limit": limit,
+                    "offset": offset
+                }
+            }
+        doctor_id = int(doctor_id)
+
         # Get profile
         profile = doctors_db.get_doctor_profile(doctor_id)
         if not profile:
             raise ValueError(f"Doctor with ID {doctor_id} not found")
-        
+
         # Get incidents
         incidents_data = doctors_db.get_doctor_incidents(
             doctor_id=doctor_id,
@@ -750,7 +853,7 @@ def get_doctor_full_history_service(
 # ==================== EXPORT ====================
 
 def export_doctor_history_service(
-    doctor_id: int,
+    doctor_id,
     format_type: str = "json",
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
@@ -759,28 +862,46 @@ def export_doctor_history_service(
     """
     Generate doctor history export in CSV, JSON, or Word format.
     Mirrors export_patient_history_service.
-    
+
     Args:
         doctor_id: Doctor ID
         format_type: "csv", "json", or "word"
         from_date: Optional start date filter
         to_date: Optional end date filter
         include_profile: Include doctor profile
-    
+
     Returns:
         For CSV: Dict with filename and csv content
         For Word: Dict with filename and word bytes
         For JSON: JSON export dict
     """
     try:
-        # Get export data
-        export_data = doctors_db.get_doctor_incidents_for_export(
-            doctor_id=doctor_id,
-            from_date=from_date,
-            to_date=to_date,
-            include_profile=include_profile
-        )
-        
+        # An external (never-materialized) doctor has no local incidents to
+        # export -- return a valid empty export instead of querying with a
+        # nonexistent int id.
+        external_id = directory_client.decode_external_id(str(doctor_id))
+        if external_id:
+            doc_profile = _external_doctor_profile(external_id) if include_profile else None
+            export_data = {
+                "doctor": {
+                    "doctor_id": doc_profile.get("id"),
+                    "full_name": doc_profile.get("name_en"),
+                    "specialty": doc_profile.get("specialty"),
+                    "status": doc_profile.get("status"),
+                    "total_incidents": 0,
+                } if doc_profile else None,
+                "incidents": [],
+                "export_date": datetime.now().strftime('%Y-%m-%d')
+            }
+        else:
+            doctor_id = int(doctor_id)
+            export_data = doctors_db.get_doctor_incidents_for_export(
+                doctor_id=doctor_id,
+                from_date=from_date,
+                to_date=to_date,
+                include_profile=include_profile
+            )
+
         if format_type == "csv":
             return _generate_doctor_csv_export(export_data, doctor_id)
         elif format_type == "word":

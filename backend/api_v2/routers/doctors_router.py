@@ -23,7 +23,7 @@ Security: All endpoints protected by authentication (where applicable).
 
 from fastapi import APIRouter, Query, Path, HTTPException, status
 from fastapi.responses import StreamingResponse, Response
-from typing import Optional, List
+from typing import Optional, List, Union
 from pydantic import BaseModel, Field
 from backend.api.services.doctors_service import DoctorService, get_doctor_full_history_service, export_doctor_history_service
 from backend.api.services.search_service import search_doctors as search_doctors_service
@@ -49,7 +49,14 @@ class CreateDoctorRequest(BaseModel):
 
 class DoctorSearchItem(BaseModel):
     """Individual doctor item in search results."""
-    doctor_id: Optional[int] = Field(None, description="Doctor ID (if available)")
+    # Union[int, str]: a plain reserve DoctorID (int) or an opaque external
+    # id like "ext__D-1031" (str) for a doctor sourced from the Hospital
+    # Directory API, not yet materialized into a local reserve row -- see
+    # staff_directory_service.search_doctors_merged(). Was Optional[int]
+    # only, which silently coerces a real external string id incorrectly
+    # (or raises) instead of accepting it -- widened for the same reason as
+    # WorkerSearchItem.employee_id in workers_router.py.
+    doctor_id: Optional[Union[int, str]] = Field(None, description="Doctor ID (int for reserve, opaque string for external/unmaterialized; if available)")
     employeeId: Optional[str] = Field(None, description="Employee ID")
     full_name: str = Field(..., description="Doctor full name")
     nameEn: Optional[str] = Field(None, description="English name")
@@ -300,7 +307,7 @@ async def search_doctors(
 
 @router.get("/{doctor_id}/profile", response_model=DoctorProfileV2Response, summary="Get doctor profile")
 async def get_doctor_profile(
-    doctor_id: int = Path(..., gt=0, description="Doctor ID")
+    doctor_id: str = Path(..., min_length=1, description="Doctor ID (int for reserve, or external id like ext__D-1031)")
 ):
     """
     Fetch detailed profile information for a specific doctor.
@@ -345,7 +352,7 @@ async def get_doctor_profile(
 
 @router.get("/{doctor_id}/statistics", summary="Get doctor statistics")
 async def get_doctor_statistics(
-    doctor_id: int = Path(..., gt=0, description="Doctor ID"),
+    doctor_id: str = Path(..., min_length=1, description="Doctor ID (int for reserve, or external id like ext__D-1031)"),
     from_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     to_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)")
 ):
@@ -379,7 +386,7 @@ async def get_doctor_statistics(
 
 @router.get("/{doctor_id}/analytics", summary="Get doctor analytics")
 async def get_doctor_analytics(
-    doctor_id: int = Path(..., gt=0, description="Doctor's ID"),
+    doctor_id: str = Path(..., min_length=1, description="Doctor's ID (int for reserve, or external id like ext__D-1031)"),
     from_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     to_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)")
 ):
@@ -413,7 +420,7 @@ async def get_doctor_analytics(
 
 @router.get("/{doctor_id}/incidents", summary="Get doctor incidents")
 async def get_doctor_incidents(
-    doctor_id: int = Path(..., gt=0, description="Doctor's ID"),
+    doctor_id: str = Path(..., min_length=1, description="Doctor's ID (int for reserve, or external id like ext__D-1031)"),
     from_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     to_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     severity: Optional[str] = Query(None, description="Filter by severity"),
@@ -457,7 +464,7 @@ async def get_doctor_incidents(
 
 @router.get("/{doctor_id}/full-report", summary="Get comprehensive doctor report")
 async def get_doctor_full_report(
-    doctor_id: int = Path(..., gt=0, description="Doctor's ID"),
+    doctor_id: str = Path(..., min_length=1, description="Doctor's ID (int for reserve, or external id like ext__D-1031)"),
     from_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     to_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     severity: Optional[str] = Query(None, description="Filter by severity"),
@@ -511,7 +518,7 @@ async def get_doctor_full_report(
 
 @router.get("/{doctor_id}/full-history", summary="Get doctor full history")
 async def get_doctor_full_history(
-    doctor_id: int = Path(..., gt=0, description="Doctor's ID"),
+    doctor_id: str = Path(..., min_length=1, description="Doctor's ID (int for reserve, or external id like ext__D-1031)"),
     from_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     to_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     severity: Optional[str] = Query(None, description="Filter by severity"),
@@ -558,7 +565,7 @@ async def get_doctor_full_history(
 
 @router.get("/{doctor_id}/export", summary="Export doctor history")
 async def export_doctor_history(
-    doctor_id: int = Path(..., gt=0, description="Doctor's ID"),
+    doctor_id: str = Path(..., min_length=1, description="Doctor's ID (int for reserve, or external id like ext__D-1031)"),
     format: str = Query("json", description="Export format: 'csv', 'json', or 'word'"),
     from_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     to_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),

@@ -45,7 +45,7 @@ def _reserve_search_doctors(search_text: str, limit: int) -> List[Dict[str, Any]
     try:
         pattern = f"%{search_text}%"
         cursor.execute("""
-            SELECT TOP (?) DoctorID, DoctorName, Specialty, IsActive
+            SELECT TOP (?) DoctorID, DoctorName, Specialty, IsActive, ExternalDoctorID
             FROM dbo.APP_RESERVE_DOCTOR
             WHERE DoctorName LIKE ? AND IsActive = 1
             ORDER BY DoctorName
@@ -60,6 +60,7 @@ def _reserve_search_doctors(search_text: str, limit: int) -> List[Dict[str, Any]
                 "is_admitted": False,
                 "is_clinic": False,
                 "source": "reserve",
+                "external_id": row.ExternalDoctorID,
             }
             for row in cursor.fetchall()
         ]
@@ -88,8 +89,18 @@ def search_doctors_merged(search_text: str, limit: int = 20) -> Dict[str, Any]:
     except Exception as e:
         return {"success": False, "doctors": [], "count": 0, "error": f"Failed to search reserve doctors: {str(e)}"}
 
+    # A doctor already materialized into the reserve table (see
+    # materialize_doctor_id) is now represented by its reserve row -- the
+    # external record for the same person must not also be listed, or the
+    # same doctor shows up twice (once as the real int id, once as the
+    # still-unmaterialized-looking ext__ id).
+    materialized_external_ids = {r["external_id"] for r in reserve_items if r.get("external_id")}
+
     result = directory_client.search_doctors(q=search_text, limit=limit)
-    external_items = [_visit_to_doctor_shape(d) for d in result["items"]] if result["status"] == "ok" else []
+    external_items = [
+        _visit_to_doctor_shape(d) for d in result["items"]
+        if str(d.get("doctor_id")) not in materialized_external_ids
+    ] if result["status"] == "ok" else []
 
     combined = reserve_items + external_items
     return {
@@ -192,7 +203,7 @@ def _reserve_search_workers(search_text: str, limit: int) -> List[Dict[str, Any]
     try:
         pattern = f"%{search_text}%"
         cursor.execute("""
-            SELECT TOP (?) EmployeeID, FullName, JobTitle, JobID, DepartmentID, SectionID, AdministrationID, IsManager, IsActive
+            SELECT TOP (?) EmployeeID, FullName, JobTitle, JobID, DepartmentID, SectionID, AdministrationID, IsManager, IsActive, ExternalEmployeeID
             FROM dbo.APP_RESERVE_WORKER
             WHERE FullName LIKE ? AND IsActive = 1
             ORDER BY FullName
@@ -209,6 +220,7 @@ def _reserve_search_workers(search_text: str, limit: int) -> List[Dict[str, Any]
                 "is_manager": bool(row.IsManager) if row.IsManager is not None else False,
                 "is_active": bool(row.IsActive),
                 "source": "reserve",
+                "external_id": row.ExternalEmployeeID,
             }
             for row in cursor.fetchall()
         ]
@@ -239,8 +251,17 @@ def search_workers_merged(search_text: str, limit: int = 20) -> Dict[str, Any]:
     except Exception as e:
         return {"success": False, "employees": [], "count": 0, "error": f"Failed to search reserve workers: {str(e)}"}
 
+    # A worker already materialized into the reserve table (see
+    # materialize_employee_id) is now represented by its reserve row -- the
+    # external record for the same person must not also be listed, or the
+    # same worker shows up twice.
+    materialized_external_ids = {r["external_id"] for r in reserve_items if r.get("external_id")}
+
     result = directory_client.search_workers(q=search_text, limit=limit)
-    external_items = [_visit_to_worker_shape(w) for w in result["items"]] if result["status"] == "ok" else []
+    external_items = [
+        _visit_to_worker_shape(w) for w in result["items"]
+        if str(w.get("employee_id")) not in materialized_external_ids
+    ] if result["status"] == "ok" else []
 
     combined = reserve_items + external_items
     return {

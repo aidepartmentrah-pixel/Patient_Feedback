@@ -146,6 +146,43 @@ installer, deployable through Docker Compose on a Debian offline server.
   `onnxruntime`/`stanza` dependencies from `backend/requirements.txt`, and
   all `extractNER`/NER UI wiring from the frontend (Insert Record, Migration
   Form). Reduces the backend image's dependency footprint.
+- Fixed: Doctor/Worker search returned nothing on the History page and
+  showed duplicate entries on Insert Record. Root cause was the merged
+  reserve+external search (`staff_directory_service.py`) concatenating
+  reserve-table results with Hospital Directory API results with no
+  de-duplication — once a doctor/worker is selected once (which
+  materializes a local reserve row via `materialize_doctor_id`/
+  `materialize_employee_id`), the same person kept showing up twice: once
+  as the new reserve row, once as the still-present external record.
+  Reserve queries now also return the `ExternalDoctorID`/`ExternalEmployeeID`
+  they were materialized from, and external API results already represented
+  by a reserve row are filtered out.
+- Fixed: doctor/worker profile, statistics, analytics, incidents,
+  full-report, full-history, export, and worker actions endpoints all
+  crashed (`422 int_parsing`) when given an externally-sourced (never
+  materialized) id — the v2 routers still declared these path parameters
+  as `int`, and the response schemas (`WorkerIdentityBlock.employee_id`)
+  hadn't been widened to match. All widened to accept both a plain reserve
+  int id and an opaque external id (`ext__D-1031`); an external id now
+  returns a valid, honest zero-history profile (built from the Hospital
+  Directory API's own name/specialty/department lookup) instead of erroring.
+- Fixed: a materialized worker (a real int `EmployeeID` in
+  `APP_RESERVE_WORKER`, created the first time an external worker is
+  selected) was invisible to the Worker History/Reporting page —
+  `worker_reporting_db.get_worker_identity` only ever queried the legacy
+  `APP_VIEWTABLE_HR_EMPLOYEES` view, never the new reserve table. It now
+  checks `APP_RESERVE_WORKER` first, then falls back to the HR view,
+  mirroring how `doctors_db.get_doctor_profile` already handled doctors.
+- Fixed: the Settings → ML/Training tab's "Database Growth (Last 30 Days)"
+  chart was permanently empty. `get_current_ml_db_size()` counted records
+  in `models_directory/patient_feedback_ml.db` — the standalone SQLite file
+  intentionally dropped from this release when ML classification moved to
+  JSON label-map sidecars (see above) — so the count was always 0 and
+  training runs silently skipped recording a data point. It now counts
+  `ml.CaseTrainingRecord` in SQL Server, the real, actively-written training
+  data store (`case_service.py`, `ml_case_training_db.py`) that already
+  replaced the old SQLite file for every other purpose. The chart will
+  populate as real incidents are created and training runs complete.
 
 ## Password handling
 

@@ -16,7 +16,7 @@ Security: All endpoints protected by authentication.
 
 from fastapi import APIRouter, Query, Path, Depends, HTTPException
 from fastapi.responses import StreamingResponse, Response
-from typing import List, Optional
+from typing import List, Optional, Union
 from pydantic import BaseModel, Field
 from datetime import datetime, date
 import traceback
@@ -26,6 +26,7 @@ import logging
 from backend.api.dependencies.user_context import get_current_user
 from backend.api.schemas.auth_models import CurrentUser
 from backend.api.services.search_service import search_employees
+from core import hospital_directory_client as directory_client
 from backend.api_v2.db_layer import action_item_subcase_db
 from backend.api.services.worker_reporting_service import (
     WorkerReportingService,
@@ -48,8 +49,15 @@ router = APIRouter(prefix="/api/v2/workers", tags=["Workers V2"])
 
 class WorkerSearchItem(BaseModel):
     """Individual worker item in search results."""
-    employee_id: int = Field(..., description="Employee unique identifier")
-    id: int = Field(..., description="Employee ID (alias)")
+    # Union[int, str]: a plain reserve EmployeeID (int) or an opaque external
+    # id like "ext__E-5002" (str) for a worker sourced from the Hospital
+    # Directory API, not yet materialized into a local reserve row -- see
+    # staff_directory_service.search_workers_merged(). This used to be a
+    # hard int because nothing upstream ever produced anything else; now
+    # that the merged search legitimately returns external string ids, this
+    # must accept both instead of rejecting the valid value.
+    employee_id: Union[int, str] = Field(..., description="Employee unique identifier (int for reserve, opaque string for external/unmaterialized)")
+    id: Union[int, str] = Field(..., description="Employee ID (alias)")
     full_name: str = Field(..., description="Employee full name")
     name: str = Field(..., description="Employee name (alias)")
     job_title: Optional[str] = Field(None, description="Job title/position")
@@ -326,7 +334,7 @@ class WorkerActionListResponse(BaseModel):
     }
 )
 async def get_worker_actions(
-    employee_id: int,
+    employee_id: str,
     limit: int = Query(50, ge=1, le=200, description="Maximum number of items (1-200)"),
     offset: int = Query(0, ge=0, description="Number of items to skip"),
     status: Optional[str] = Query(None, description="Filter by status (e.g., 'IN_PROGRESS', 'COMPLETED')"),
@@ -382,10 +390,16 @@ async def get_worker_actions(
     Requires authentication. Scope guards enforced by reusing Phase D logic.
     """
     try:
+        # An external (never-materialized) worker has no local action items --
+        # return a valid empty list instead of querying with a nonexistent int id.
+        external_id = directory_client.decode_external_id(employee_id)
+        if external_id:
+            return WorkerActionListResponse(items=[], count=0, limit=limit, offset=offset)
+
         # Phase B — Worker action list endpoint V2
         # Reuse Phase D aggregation DB functions
         result = action_item_subcase_db.get_worker_action_items(
-            employee_id=employee_id,
+            employee_id=int(employee_id),
             limit=limit,
             offset=offset,
             status=status
@@ -436,7 +450,7 @@ async def get_worker_actions(
     }
 )
 async def get_worker_profile(
-    employee_id: int = Path(..., gt=0, description="Employee unique identifier"),
+    employee_id: str = Path(..., min_length=1, description="Employee unique identifier (int for reserve, or external id like ext__E-5002)"),
     date_from: Optional[date] = Query(
         None,
         description="Start date for metrics filtering (YYYY-MM-DD)"
@@ -547,7 +561,7 @@ async def get_worker_profile(
     response_description="Full worker history with profile, metrics, and incidents"
 )
 async def get_worker_full_history(
-    employee_id: int = Path(..., ge=1, description="Employee ID"),
+    employee_id: str = Path(..., min_length=1, description="Employee ID (int for reserve, or external id like ext__E-5002)"),
     date_from: Optional[date] = Query(None, description="Start date filter"),
     date_to: Optional[date] = Query(None, description="End date filter"),
     limit: int = Query(100, ge=1, le=500, description="Max incidents to return"),
@@ -595,7 +609,7 @@ async def get_worker_full_history(
     response_description="Exported worker history file"
 )
 async def export_worker_history(
-    employee_id: int = Path(..., ge=1, description="Employee ID"),
+    employee_id: str = Path(..., min_length=1, description="Employee ID (int for reserve, or external id like ext__E-5002)"),
     format: str = Query("json", pattern="^(csv|json|word)$", description="Export format: csv, json, or word"),
     date_from: Optional[date] = Query(None, description="Start date filter"),
     date_to: Optional[date] = Query(None, description="End date filter"),

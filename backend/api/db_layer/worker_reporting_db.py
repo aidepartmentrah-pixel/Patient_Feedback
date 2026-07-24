@@ -24,14 +24,18 @@ from core.table_config import HR_EMPLOYEES_TABLE
 
 def get_worker_identity(employee_id: int) -> Optional[Dict[str, Any]]:
     """
-    Retrieve worker identity information from HR employee view.
-    
-    Queries the APP_VIEWTABLE_HR_EMPLOYEES table to get basic employee
-    information including name, job title, and organizational assignments.
-    
+    Retrieve worker identity information, checking BOTH sources.
+
+    Checks APP_RESERVE_WORKER first (workers materialized from the Hospital
+    Directory API via staff_directory_service.materialize_employee_id, or
+    created manually -- see database/sqlserver/install/002_create_schema.sql),
+    then falls back to the APP_VIEWTABLE_HR_EMPLOYEES view for pre-existing
+    HR-sourced employees. Mirrors doctors_db.get_doctor_profile's
+    reserve-then-view lookup order.
+
     Args:
-        employee_id: Unique employee identifier from HR system
-    
+        employee_id: Unique employee identifier
+
     Returns:
         Dictionary with employee identity fields:
         - employee_id: int
@@ -41,9 +45,9 @@ def get_worker_identity(employee_id: int) -> Optional[Dict[str, Any]]:
         - section_id: int | None
         - administration_id: int | None
         - is_active: bool | None
-        
-        Returns None if employee not found.
-    
+
+        Returns None if employee not found in either source.
+
     Example:
         >>> worker = get_worker_identity(12345)
         >>> print(worker['full_name'])
@@ -51,12 +55,12 @@ def get_worker_identity(employee_id: int) -> Optional[Dict[str, Any]]:
     """
     conn = None
     cursor = None
-    
+
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        
-        cursor.execute(f"""
+
+        cursor.execute("""
             SELECT
                 EmployeeID,
                 FullName,
@@ -65,15 +69,30 @@ def get_worker_identity(employee_id: int) -> Optional[Dict[str, Any]]:
                 SectionID,
                 AdministrationID,
                 IsActive
-            FROM {HR_EMPLOYEES_TABLE}
+            FROM dbo.APP_RESERVE_WORKER
             WHERE EmployeeID = ?
         """, (employee_id,))
-        
+
         row = cursor.fetchone()
-        
+
+        if not row:
+            cursor.execute(f"""
+                SELECT
+                    EmployeeID,
+                    FullName,
+                    JobTitle,
+                    DepartmentID,
+                    SectionID,
+                    AdministrationID,
+                    IsActive
+                FROM {HR_EMPLOYEES_TABLE}
+                WHERE EmployeeID = ?
+            """, (employee_id,))
+            row = cursor.fetchone()
+
         if not row:
             return None
-        
+
         return {
             "employee_id": row.EmployeeID,
             "full_name": row.FullName,
@@ -83,7 +102,7 @@ def get_worker_identity(employee_id: int) -> Optional[Dict[str, Any]]:
             "administration_id": row.AdministrationID,
             "is_active": bool(row.IsActive) if row.IsActive is not None else None
         }
-        
+
     finally:
         if cursor:
             cursor.close()

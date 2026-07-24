@@ -20,13 +20,6 @@ TRAINING_DB_PATH = os.path.join(
     "training_metadata.db"
 )
 
-# ML Database path
-ML_DB_PATH = os.path.join(
-    str(WORKSPACE_ROOT),
-    "models_directory",
-    "patient_feedback_ml.db"
-)
-
 # Ensure data directory exists
 os.makedirs(os.path.dirname(TRAINING_DB_PATH), exist_ok=True)
 
@@ -296,40 +289,36 @@ def get_ml_db_size_history(days: int = 90) -> List[Dict[str, Any]]:
 
 def get_current_ml_db_size() -> int:
     """
-    Get current number of records in ML database.
-    
+    Get current number of records in the live ML training pool.
+
+    Counts ml.CaseTrainingRecord in SQL Server -- the real, actively-written
+    training data store (see backend/api/services/case_service.py and
+    backend/api/db_layer/ml_case_training_db.py) that replaced the standalone
+    patient_feedback_ml.db SQLite file. That file is no longer shipped as
+    part of the release (see the ML classification JSON label-map sidecar
+    decision), so counting it always returned 0 and left this chart
+    permanently empty.
+
     Returns:
-        Total record count from patient_feedback_encoded table
+        Total record count from ml.CaseTrainingRecord
     """
+    from core.database import get_connection
+
+    conn = None
     try:
-        if not os.path.exists(ML_DB_PATH):
-            print(f"[ML DB SIZE] Database not found at: {ML_DB_PATH}")
-            return 0
-        
-        conn = sqlite3.connect(ML_DB_PATH)
+        conn = get_connection()
         cursor = conn.cursor()
-        
-        # Check if table exists
-        cursor.execute("""
-            SELECT name FROM sqlite_master 
-            WHERE type='table' AND name='patient_feedback_encoded'
-        """)
-        
-        if not cursor.fetchone():
-            print(f"[ML DB SIZE] Table 'patient_feedback_encoded' not found")
-            conn.close()
-            return 0
-        
-        # Get count
-        cursor.execute("SELECT COUNT(*) FROM patient_feedback_encoded")
+        cursor.execute("SELECT COUNT(*) FROM ml.CaseTrainingRecord")
         count = cursor.fetchone()[0]
-        conn.close()
-        
+
         print(f"[ML DB SIZE] Current size: {count} records")
         return count
-        
+
     except Exception as e:
         print(f"[ML DB SIZE ERROR] Could not get ML DB size: {str(e)}")
         import traceback
         traceback.print_exc()
         return 0
+    finally:
+        if conn:
+            conn.close()
