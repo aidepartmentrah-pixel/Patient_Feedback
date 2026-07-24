@@ -28,7 +28,8 @@ release/
    installing.
 4. `documentation/UPDATE_OFFLINE.md` — for future updates.
 5. `documentation/BACKUP_RESTORE.md`, `TROUBLESHOOTING.md`,
-   `LINUX_COMMANDS_REFERENCE.md`, `PORTAINER_GUIDE.md` — as needed.
+   `LINUX_COMMANDS_REFERENCE.md`, `PORTAINER_GUIDE.md`,
+   `DBEAVER_GUIDE.md` — as needed.
 
 ## Verifying this package wasn't corrupted in transit
 

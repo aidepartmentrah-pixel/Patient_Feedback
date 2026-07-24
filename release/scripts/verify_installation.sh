@@ -63,6 +63,7 @@ check "frontend -> backend reverse proxy works" "$?"
 echo ""
 echo "=== 5. Database validation ==="
 CONTAINER="${PROJECT_NAME:-pfms}-sqlserver"
+CONTAINER_BACKEND="${PROJECT_NAME:-pfms}-backend"
 DB_NAME="${DB_DATABASE:-IncidentManager}"
 for sql_file in "$RELEASE_ROOT"/database/sqlserver/validation/*.sql; do
     name="$(basename "$sql_file")"
@@ -127,6 +128,25 @@ echo "=== 8. Drawer Notes labels ==="
 actual_drawer_labels="$(sqlcmd_exec "$CONTAINER" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C -d "$DB_NAME" -h -1 -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM dbo.APP_DrawerLabel WHERE IsActive = 1" | tr -d '[:space:]')"
 check "at least one active Drawer Note label exists (found=$actual_drawer_labels)" \
     "$([ "$actual_drawer_labels" -gt 0 ] && echo 0 || echo 1)"
+
+echo ""
+echo "=== 9. Speech-to-Text model asset transfer ==="
+# The 4 files a CTranslate2 Faster-Whisper model actually needs to load (see
+# scripts/export_whisper_model.sh) -- checked individually because a
+# directory can be non-empty (partial/truncated extraction, or just the
+# .cache/huggingface/ download metadata left behind) without being loadable.
+WHISPER_HOST_DIR="$RELEASE_ROOT/assets/whisper-model-medium"
+for f in config.json model.bin tokenizer.json vocabulary.txt; do
+    check "host: $f present and non-empty at $WHISPER_HOST_DIR" \
+        "$([ -s "$WHISPER_HOST_DIR/$f" ] && echo 0 || echo 1)"
+done
+# Also confirm the read-only bind mount into the backend container actually
+# sees the same files -- catches a wrong host path or a stale container that
+# was started before extraction completed.
+for f in config.json model.bin tokenizer.json vocabulary.txt; do
+    check "container: $f visible at /models/whisper-medium (mount OK)" \
+        "$(sqlcmd_exec "$CONTAINER_BACKEND" test -s "/models/whisper-medium/$f" >/dev/null 2>&1 && echo 0 || echo 1)"
+done
 
 echo ""
 echo "=== Summary: $PASS passed, $FAIL failed ==="

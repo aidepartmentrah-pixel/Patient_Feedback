@@ -66,12 +66,36 @@ if [ ! -f "$MODEL_ZIP" ]; then
     echo "       other way to obtain it on an offline server."
     exit 1
 fi
-if [ -d "$MODEL_DIR" ] && [ -n "$(ls -A "$MODEL_DIR" 2>/dev/null)" ]; then
-    echo "  Already extracted at $MODEL_DIR, skipping."
+# The 4 files a CTranslate2 Faster-Whisper model actually needs to load
+# (see scripts/export_whisper_model.sh) -- a directory can be non-empty
+# (e.g. just the .cache/huggingface/ download metadata, or a truncated
+# extraction) without actually being loadable. Check each required file
+# individually, not just "the directory has something in it."
+REQUIRED_MODEL_FILES="config.json model.bin tokenizer.json vocabulary.txt"
+
+model_dir_complete() {
+    for f in $REQUIRED_MODEL_FILES; do
+        if [ ! -s "$MODEL_DIR/$f" ]; then
+            return 1
+        fi
+    done
+    return 0
+}
+
+if [ -d "$MODEL_DIR" ] && model_dir_complete; then
+    echo "  Already extracted and complete at $MODEL_DIR, skipping."
 else
     mkdir -p "$RELEASE_ROOT/assets"
     unzip -q -o "$MODEL_ZIP" -d "$RELEASE_ROOT/assets"
-    echo "  Extracted to $MODEL_DIR"
+    if ! model_dir_complete; then
+        echo "ERROR: extraction completed but $MODEL_DIR is missing one or more of:"
+        echo "       $REQUIRED_MODEL_FILES"
+        echo "       The release's whisper-model-medium.zip is incomplete or"
+        echo "       corrupted. Speech-to-Text cannot work without these files"
+        echo "       present -- re-copy the release bundle before retrying."
+        exit 1
+    fi
+    echo "  Extracted and verified complete at $MODEL_DIR"
 fi
 
 echo ""

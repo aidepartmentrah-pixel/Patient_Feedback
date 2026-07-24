@@ -20,6 +20,7 @@ DRIFT POLICY (see the approved migration plan):
 No table's rerun path reports success while silently ignoring a real mismatch.
 """
 import argparse
+import base64
 import hashlib
 import json
 import sys
@@ -279,6 +280,97 @@ def provision_custom_views(cur, custom_views, local_user_id_by_source, dry_run):
     print(f"  inserted={inserted} skipped(identical)={skipped}")
 
 
+ML_TRAINING_NON_EMBEDDING_COLUMNS = [
+    "LegacySource", "LegacySourceTable", "LegacySourceRowID",
+    "PossibleIncidentRequestCaseID", "LinkConfidence",
+    "ComplaintText", "ImmediateActionText", "TakenActionText",
+    "FeedbackTypeID", "DomainID", "CategoryID", "SubCategoryID",
+    "ClassificationID", "SeverityLevelID", "StageID", "HarmLevelID",
+    "ImprovementOpportunityTypeID",
+    "MigrationBatchID", "PreservationNotes",
+]
+ML_TRAINING_EMBEDDING_COLUMNS = [
+    "EmbeddingText1", "EmbeddingText2", "EmbeddingText3",
+    "EmbeddingText123", "EmbeddingText23",
+    "SentenceEmbedding1", "SentenceEmbedding2", "SentenceEmbedding3",
+    "SentenceEmbedding4", "SentenceEmbedding5", "SentenceEmbedding6",
+]
+
+
+def load_and_verify_ml_training_artifact():
+    """
+    Optional artifact -- unlike provisioning.v1.json, a fresh install is
+    fully usable without this. Training and the ML dashboards simply start
+    with zero historical seed data and grow from real operational incidents
+    only (the embedding worker already does this automatically -- see
+    ML_ARCHITECTURE_DECISION_RECORD.md). Missing file -> skip gracefully,
+    not an install failure. Present-but-corrupt -> abort, same as the
+    mandatory artifact, since a tampered/truncated file is worse than none.
+    """
+    artifact_path = SEED_DIR / "ml_training_data.v1.json"
+    checksum_path = SEED_DIR / "ml_training_data.v1.json.sha256"
+
+    if not artifact_path.exists():
+        print("\nNOTE: ml_training_data.v1.json not present -- skipping ML historical "
+              "seed provisioning. 'Train All Models' and the training dashboards are "
+              "fully functional without it; they will simply start empty and grow as "
+              "real incidents are processed (see extract_ml_training_data.py to "
+              "produce this artifact from an engineering database that already has "
+              "ml.HistoricalTrainingExample populated).")
+        return None
+
+    if not checksum_path.exists():
+        print("ERROR: ml_training_data.v1.json present but its checksum file is "
+              "missing. Installation aborted rather than trusting an unverifiable artifact.")
+        sys.exit(1)
+
+    actual = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+    expected = checksum_path.read_text(encoding="utf-8").strip().split()[0]
+    if actual != expected:
+        print(f"ERROR: checksum mismatch for ml_training_data.v1.json.\n"
+              f"  expected: {expected}\n  actual:   {actual}\n"
+              f"The release bundle may be corrupted or tampered with. Installation aborted.")
+        sys.exit(1)
+
+    artifact = json.load(open(artifact_path, encoding="utf-8"))
+    records = artifact["historical_training_examples"]
+    print(f"Loaded and verified ml_training_data.v1.json (checksum OK, "
+          f"{len(records)} historical training examples)")
+    return records
+
+
+def provision_ml_training_data(cur, records, dry_run):
+    print(f"\n--- ml.HistoricalTrainingExample ({len(records)} historical examples) ---")
+    inserted = skipped = 0
+
+    col_list = ML_TRAINING_NON_EMBEDDING_COLUMNS + ML_TRAINING_EMBEDDING_COLUMNS
+    placeholders = ", ".join(["?"] * len(col_list))
+    insert_sql = f"INSERT INTO ml.HistoricalTrainingExample ({', '.join(col_list)}) VALUES ({placeholders})"
+
+    for r in records:
+        cur.execute(
+            "SELECT 1 FROM ml.HistoricalTrainingExample WHERE LegacySourceTable = ? AND LegacySourceRowID = ?",
+            r["LegacySourceTable"], r["LegacySourceRowID"],
+        )
+        if cur.fetchone() is not None:
+            skipped += 1
+            continue
+
+        if dry_run:
+            inserted += 1
+            continue
+
+        values = [r.get(col) for col in ML_TRAINING_NON_EMBEDDING_COLUMNS]
+        for col in ML_TRAINING_EMBEDDING_COLUMNS:
+            b64 = r.get(col)
+            values.append(base64.b64decode(b64) if b64 else None)
+
+        cur.execute(insert_sql, values)
+        inserted += 1
+
+    print(f"  inserted={inserted} skipped(already present)={skipped}")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true",
@@ -286,6 +378,7 @@ def main():
     args = parser.parse_args()
 
     artifact, manifest, checksum = load_and_verify_artifact()
+    ml_training_records = load_and_verify_ml_training_artifact()
 
     print(f"Target: {DB_SERVER} / {DB_DATABASE}")
     if args.dry_run:
@@ -300,6 +393,8 @@ def main():
         if not args.dry_run:
             provision_scopes(cur, artifact["users"], local_user_id_by_source, args.dry_run)
             provision_custom_views(cur, artifact.get("custom_views", []), local_user_id_by_source, args.dry_run)
+            if ml_training_records is not None:
+                provision_ml_training_data(cur, ml_training_records, args.dry_run)
         else:
             # Still validate scope logic in dry-run, using a placeholder map
             # (no real LocalUserIDs exist yet for brand-new users in dry-run).
@@ -307,6 +402,8 @@ def main():
                                 for u in artifact["users"]}
             print("\n--- APP_UserRoleScope --- (skipped in dry-run: depends on IDs not yet assigned)")
             provision_custom_views(cur, artifact.get("custom_views", []), placeholder_map, args.dry_run)
+            if ml_training_records is not None:
+                provision_ml_training_data(cur, ml_training_records, args.dry_run)
 
         if not args.dry_run:
             migration_name = f"provisioning_{SOURCE_SYSTEM}"
