@@ -311,6 +311,11 @@ class DoctorService:
                 raise ValueError(f"Doctor {doctor_id} not found")
 
             return profile
+        except ValueError:
+            # Let the router map this to an honest 404, matching worker
+            # profile's behavior (worker_reporting_service.get_worker_profile
+            # raises ValueError uncaught the same way).
+            raise
         except Exception as e:
             raise Exception(f"Failed to fetch doctor profile: {str(e)}")
     

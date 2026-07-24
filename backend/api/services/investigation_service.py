@@ -3,6 +3,11 @@ from collections import defaultdict
 from typing import Literal, Optional
 from core.database import get_connection
 from ..db_layer import admin_units, lookups
+from ..constants.org_unit_types import (
+    ORG_TYPE_ADMINISTRATION,
+    ORG_TYPE_DEPARTMENT,
+    ORG_TYPE_SECTION,
+)
 
 
 # =========================================================
@@ -298,44 +303,37 @@ def get_organizational_hierarchy() -> dict:
     departments = []
     sections = []
     
+    # Node type is read from Type, not ParentID shape -- real migrated HCAT
+    # data uses ParentID = NULL for Administration roots (not self-parenting
+    # as old seed/fixture data did), so inferring root-ness from ParentID
+    # left this empty on real data. See dashboard_service.get_dashboard_hierarchy
+    # for the same fix applied to the dashboard's own hierarchy selectors.
     for unit in raw_units:
         unit_id = unit.UniqueID
         parent_id = unit.ParentID
         name = unit.Name
         unit_type = unit.Type
-        
-        # Administration: ParentID == UniqueID
-        if parent_id == unit_id:
+
+        if unit_type == ORG_TYPE_ADMINISTRATION:
             administrations.append({
                 "id": unit_id,
                 "name_en": name,
                 "name_ar": name,  # Assuming name is bilingual or Arabic
             })
-        
-        # Department: ParentID points to administration, UniqueID != ParentID
-        elif parent_id != unit_id:
-            # Check if parent is an administration
-            parent_is_admin = False
-            for u in raw_units:
-                if u.UniqueID == parent_id and u.ParentID == u.UniqueID:
-                    parent_is_admin = True
-                    break
-            
-            if parent_is_admin:
-                departments.append({
-                    "id": unit_id,
-                    "administration_id": parent_id,
-                    "name_en": name,
-                    "name_ar": name,
-                })
-            else:
-                # Section: ParentID points to department
-                sections.append({
-                    "id": unit_id,
-                    "department_id": parent_id,
-                    "name_en": name,
-                    "name_ar": name,
-                })
+        elif unit_type == ORG_TYPE_DEPARTMENT:
+            departments.append({
+                "id": unit_id,
+                "administration_id": parent_id,
+                "name_en": name,
+                "name_ar": name,
+            })
+        elif unit_type == ORG_TYPE_SECTION:
+            sections.append({
+                "id": unit_id,
+                "department_id": parent_id,
+                "name_en": name,
+                "name_ar": name,
+            })
     
     return {
         "administrations": administrations,
@@ -506,36 +504,31 @@ def _build_org_hierarchy(scope_unit_id: int | None, scope_level: str) -> dict:
     for unit in raw_units:
         unit_id = unit.UniqueID
         parent_id = unit.ParentID
-        
+
         unit_info = {
             "node_id": unit_id,
             "node_name": unit.Name,
             "node_name_ar": unit.Name,
-            "parent_id": parent_id if parent_id != unit_id else None,
+            "parent_id": parent_id,
             "children": [],
         }
-        
-        # Determine node type
-        if parent_id == unit_id:
+
+        # Determine node type from Type, not ParentID shape -- real migrated
+        # HCAT data uses ParentID = NULL for Administration roots (not
+        # self-parenting as old seed/fixture data did). See
+        # dashboard_service.get_dashboard_hierarchy for the same fix.
+        if unit.Type == ORG_TYPE_ADMINISTRATION:
             unit_info["node_type"] = "administration"
             unit_info["level"] = 0
+        elif unit.Type == ORG_TYPE_DEPARTMENT:
+            unit_info["node_type"] = "department"
+            unit_info["level"] = 1
         else:
-            # Check if parent is administration
-            parent_is_admin = False
-            for u in raw_units:
-                if u.UniqueID == parent_id and u.ParentID == u.UniqueID:
-                    parent_is_admin = True
-                    break
-            
-            if parent_is_admin:
-                unit_info["node_type"] = "department"
-                unit_info["level"] = 1
-            else:
-                unit_info["node_type"] = "section"
-                unit_info["level"] = 2
-        
+            unit_info["node_type"] = "section"
+            unit_info["level"] = 2
+
         units_by_id[unit_id] = unit_info
-        if parent_id != unit_id:  # Don't add self-references to parent lookup
+        if parent_id is not None:
             units_by_parent[parent_id].append(unit_info)
     
     # Build tree structure recursively
@@ -563,9 +556,10 @@ def _build_org_hierarchy(scope_unit_id: int | None, scope_level: str) -> dict:
         if root_tree:
             root_nodes = [root_tree]
     else:
-        # Get all top-level administrations
+        # Get all top-level administrations (root-ness read from Type, not
+        # ParentID shape -- see note above)
         for unit in raw_units:
-            if unit.ParentID == unit.UniqueID:
+            if unit.Type == ORG_TYPE_ADMINISTRATION:
                 root_tree = build_tree(unit.UniqueID)
                 if root_tree:
                     root_nodes.append(root_tree)

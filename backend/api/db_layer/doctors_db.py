@@ -217,17 +217,20 @@ def get_doctor_profile(doctor_id: int) -> Optional[Dict[str, Any]]:
             
             return profile
         
-        # Not found in reserve, try hospital view (name from db_settings views.doctors)
+        # Not found in reserve, try the hospital lookup table (name from
+        # db_settings views.doctors -- APP_LOOKUP_DOCTOR, not the obsolete
+        # VW_Doctors view which is intentionally absent on fresh installs).
+        # Same column shape as APP_RESERVE_DOCTOR (see search_doctors above).
         query_hospital = f"""
             SELECT
                 d.DoctorID as id,
-                d.Name as name_en,
-                d.Name as name_ar,
-                d.SpecialityName as specialty,
+                d.DoctorName as name_en,
+                d.DoctorName as name_ar,
+                d.Specialty as specialty,
                 CASE WHEN d.IsActive = 1 THEN 'active' ELSE 'inactive' END as status,
                 'hospital' as source,
-                NULL as source_system,
-                NULL as last_synced_at
+                d.SourceSystem as source_system,
+                d.LastSyncedAt as last_synced_at
             FROM dbo.{DOCTORS_TABLE} d
             WHERE d.DoctorID = ?
         """

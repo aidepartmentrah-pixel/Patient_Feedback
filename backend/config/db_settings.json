@@ -14,7 +14,7 @@
     "views": {
         "hr_employees": "VW_HrEmployeeProfileView",
         "patient_admission": "VW_PatientAdmission",
-        "doctors": "VW_Doctors"
+        "doctors": "APP_LOOKUP_DOCTOR"
     },
     "network": {
         "backend_api_url": "http://localhost:8100",

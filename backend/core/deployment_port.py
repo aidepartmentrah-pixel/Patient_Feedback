@@ -86,7 +86,11 @@ TRUST_SERVER_CERTIFICATE = _db.get("trust_server_certificate", True)
 # =============================================================================
 HR_EMPLOYEES_VIEW = _views.get("hr_employees", "VW_HrEmployeeProfileView")
 PATIENT_ADMISSION_VIEW = _views.get("patient_admission", "VW_PatientAdmission")
-DOCTORS_VIEW = _views.get("doctors", "VW_Doctors")
+# VW_Doctors is an obsolete view intentionally NOT created on fresh installs
+# (see database/sqlserver/install/002_create_schema.sql) -- APP_LOOKUP_DOCTOR
+# is the real table that IS created, mirroring HR_EMPLOYEES_VIEW's pattern of
+# pointing at an object that actually exists on a fresh database.
+DOCTORS_VIEW = _views.get("doctors", "APP_LOOKUP_DOCTOR")
 
 
 # =============================================================================
@@ -177,7 +181,7 @@ DOCTORS_TABLE = DOCTORS_VIEW
 │  3. Views (usually no change needed if offline tables match):               │
 │     HR_EMPLOYEES_VIEW = "VW_HrEmployeeProfileView"                          │
 │     PATIENT_ADMISSION_VIEW = "VW_PatientAdmission"                          │
-│     DOCTORS_VIEW = "VW_Doctors"                                             │
+│     DOCTORS_VIEW = "APP_LOOKUP_DOCTOR"                                      │
 │                                                                             │
 │  4. Network:                                                                │
 │     BACKEND_API_URL = "http://192.168.X.X:8000"                             │
