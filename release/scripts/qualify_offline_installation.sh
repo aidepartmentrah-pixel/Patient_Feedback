@@ -204,6 +204,21 @@ echo "        models are retrained -- see ML_CLASSIFICATION_ISSUE_FOR_DEV_TEAM.m
 echo "        This is not tested as pass/fail here since the correct result"
 echo "        depends on which category the input text happens to route to."
 
+# --- ML Training: history/chart endpoints respond without crashing (a full
+# "Train All Models" run takes ~100s, too heavy for this qualification pass
+# -- this only confirms the endpoints backing the Training.js failure-outcome
+# check and the three dashboard charts are reachable and don't 500) ---
+TRAINING_HISTORY_HTTP="$(curl -s -o /dev/null -w '%{http_code}' -b "$FUNC_COOKIES" "$BACKEND_URL/api/settings/training/history")"
+check "ML Training: history endpoint responds 200 (got $TRAINING_HISTORY_HTTP)" \
+    "$([ "$TRAINING_HISTORY_HTTP" = "200" ] && echo 0 || echo 1)"
+TRAINING_CHARTS_OK=1
+for chart in db-growth performance-trends family-comparison; do
+    code="$(curl -s -o /dev/null -w '%{http_code}' -b "$FUNC_COOKIES" "$BACKEND_URL/api/settings/training/charts/$chart")"
+    [ "$code" = "200" ] || TRAINING_CHARTS_OK=0
+done
+check "ML Training: all 3 dashboard chart endpoints respond 200" \
+    "$([ "$TRAINING_CHARTS_OK" = "1" ] && echo 0 || echo 1)"
+
 # --- Speech-to-Text: model loads and transcribes without error ---
 STT_TEST_WAV="/tmp/qualify_stt_test.wav"
 $PY -c "

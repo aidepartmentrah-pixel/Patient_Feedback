@@ -100,6 +100,29 @@ fi
 echo "  Checksum OK."
 
 echo ""
+echo "  Checking for the optional ML historical training-data seed ..."
+ML_TRAINING_JSON="$PROVISION_DIR/ml_training_data.v1.json"
+ML_TRAINING_SHA="$PROVISION_DIR/ml_training_data.v1.json.sha256"
+if [ -f "$ML_TRAINING_JSON" ] && [ -f "$ML_TRAINING_SHA" ]; then
+    if (cd "$PROVISION_DIR" && sha256sum -c ml_training_data.v1.json.sha256 >/dev/null); then
+        echo "  Found and verified -- 'Train All Models' will have a real historical"
+        echo "  baseline from day one instead of starting empty."
+    else
+        echo "ERROR: ml_training_data.v1.json failed checksum verification."
+        echo "       The release bundle may be corrupted or tampered with in"
+        echo "       transit. Installation aborted -- do not proceed with a"
+        echo "       re-copy of this release before investigating."
+        exit 1
+    fi
+else
+    echo "  Not present -- this is optional, not an error. The system is fully"
+    echo "  functional without it: training and the ML dashboards will simply"
+    echo "  start empty and grow as real incidents are processed (see"
+    echo "  database/sqlserver/seed/extract_ml_training_data.py to produce this"
+    echo "  artifact from an engineering database that already has historical data)."
+fi
+
+echo ""
 echo "[5/6] Starting the stack (schema install + organizational/user provisioning"
 echo "      run automatically as part of db-init) ..."
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d

@@ -183,6 +183,41 @@ installer, deployable through Docker Compose on a Debian offline server.
   data store (`case_service.py`, `ml_case_training_db.py`) that already
   replaced the old SQLite file for every other purpose. The chart will
   populate as real incidents are created and training runs complete.
+- **Fixed: "Train All Models" silently failed with nothing shown to the
+  user.** A fresh install's `ml.CaseTrainingRecord` (and, until now,
+  `ml.HistoricalTrainingExample`) starts empty, so the very first training
+  run failed at the data-split step ("no Completed rows yet — nothing to
+  train on") — the frontend showed the same "Training started successfully"
+  message either way and just went back to idle, with the actual failure
+  visible only in server logs. `Training.js` now checks the run's real
+  outcome (via `/api/settings/training/history`, which records every run
+  including ones that failed before any model artifact was created) once
+  polling detects it stopped, and shows a clear success or failure message.
+  The three training charts (Database Growth, Performance Trends by Family,
+  Family Performance Comparison) also now show an honest "no data yet"
+  message instead of rendering an empty chart box when there's genuinely
+  nothing to plot.
+- **New: real historical training data can now travel with the offline
+  install**, so "Train All Models" has a working baseline from day one
+  instead of needing real incidents to accumulate first. `ml.CaseTrainingRecord`
+  and `ml.HistoricalTrainingExample` (SQL Server's live ML training-data
+  store — see `ML_ARCHITECTURE_DECISION_RECORD.md`) are per-installation
+  database tables, not part of this git history; a fresh Docker install
+  starts with them empty even though an engineering database may already
+  have real historical rows in them (in this case: 1,028 rows, recovered
+  by matching the retired legacy `patient_feedback_ml.db` SQLite store
+  against live incident records — see
+  `database/sqlserver/seed/extract_ml_training_data.py`'s docstring for the
+  full provenance). Same governance as `provisioning.v1.json`: a gitignored,
+  checksummed `ml_training_data.v1.json` artifact, physically shipped
+  alongside the release (never committed — it contains real patient
+  complaint text), restored idempotently by `provision.py` at install time.
+  **Optional, not mandatory** — unlike org units/users, a fresh install
+  without this artifact is still fully functional; training and the
+  dashboards simply start empty and grow from real operational incidents,
+  which the existing background embedding worker already does automatically
+  (verified live: a new incident becomes a `ml.CaseTrainingRecord` row with
+  zero manual steps).
 
 ## Password handling
 

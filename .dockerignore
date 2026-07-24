@@ -40,3 +40,6 @@ database/sqlserver/seed/provisioning.v1.json
 database/sqlserver/seed/provisioning.v1.manifest.json
 database/sqlserver/seed/provisioning.v1.json.sha256
 database/sqlserver/seed/*.local.json
+database/sqlserver/seed/ml_training_data.v1.json
+database/sqlserver/seed/ml_training_data.v1.manifest.json
+database/sqlserver/seed/ml_training_data.v1.json.sha256

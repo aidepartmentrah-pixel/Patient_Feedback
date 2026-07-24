@@ -167,6 +167,12 @@ database/sqlserver/seed/provisioning.v1.json.sha256
 database/sqlserver/seed/installation_test_credentials.local.json
 database/sqlserver/seed/*.local.json
 
+# ML historical training-data seed -- contains real patient complaint text,
+# same governance as provisioning.v1.json above (see extract_ml_training_data.py).
+database/sqlserver/seed/ml_training_data.v1.json
+database/sqlserver/seed/ml_training_data.v1.manifest.json
+database/sqlserver/seed/ml_training_data.v1.json.sha256
+
 # Local scratch dir used by scripts/export_whisper_model.sh -- only the zip
 # it produces (release/assets/*.zip) ships in the release, not this raw copy.
 /assets/

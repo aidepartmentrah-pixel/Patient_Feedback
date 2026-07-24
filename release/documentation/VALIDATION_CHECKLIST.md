@@ -90,6 +90,18 @@ declaring the deployment done. Check off each item; do not skip any.
       `ml.CaseTrainingRecord` in SQL Server now, not the old unshipped
       `patient_feedback_ml.db` SQLite file — expected empty on a brand-new
       install with no incidents yet, not a failure to investigate).
+- [ ] Settings → Training → "Train All Models": click it and confirm a real
+      success or failure message appears once the run finishes (not just
+      "Training started" followed by silence) — the run's actual outcome is
+      checked via `/api/settings/training/history`.
+- [ ] Settings → Training → "Performance Trends by Family" and "Family
+      Performance Comparison" charts show either real data or an honest "no
+      data yet" message — never a blank chart box with no explanation.
+- [ ] If `database/sqlserver/seed/ml_training_data.v1.json` was included in
+      this release, confirm `install_offline.sh`'s "[4/6]" step reports it
+      found and checksum-verified, and that "Train All Models" succeeds on
+      first click with a real historical baseline rather than failing with
+      "no Completed rows yet."
 - [ ] Doctor/Worker search (Insert Record and History pages): a name that
       exists in both the reserve table and the Hospital Directory API
       appears exactly once, not duplicated.
