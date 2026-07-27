@@ -103,7 +103,7 @@ curl http://localhost:8100/api/status
 ```
 
 Check:
-1. Is `sqlserver` healthy? `docker compose ps` should show it `healthy`.
+1. Is `sqlserver` healthy? `docker compose --env-file .env -f compose/docker-compose.yml -p pfms ps` should show it `healthy` (run from the release root; the explicit `-f`/`-p` matter -- a bare `docker compose ps` depends on your current directory and won't reliably find this stack).
 2. Does `.env`'s `MSSQL_SA_PASSWORD` match what SQL Server was actually
    started with? (Changing this in `.env` after first install does **not**
    change the already-running SQL Server's password.)
@@ -169,7 +169,7 @@ the actual problem.
 Collect these before escalating:
 
 ```bash
-docker compose --env-file .env -f compose/docker-compose.yml ps
+docker compose --env-file .env -f compose/docker-compose.yml -p pfms ps
 ./scripts/show_logs.sh > /tmp/pfms-all-logs.txt   # Ctrl+C after a few seconds
 ./scripts/verify_installation.sh
 ```

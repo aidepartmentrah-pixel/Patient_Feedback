@@ -43,7 +43,10 @@ unzip -o assets/whisper-model-medium.zip -d assets/
 ## 3. Create the stack
 
 1. In Portainer, go to **Stacks** → **Add stack**.
-2. Name it `pfms` (or match `PROJECT_NAME` in your `.env`).
+2. Name it `pfms` (or match `PROJECT_NAME` in your `.env`) -- Portainer uses
+   the stack name as the Compose project name, which takes precedence over
+   this compose file's own `name:` key, so this step still matters even
+   though the file now also declares its project name explicitly.
 3. Choose **Upload** and select
    `/opt/pfms-release/compose/docker-compose.yml`, or paste its contents
    into the web editor.

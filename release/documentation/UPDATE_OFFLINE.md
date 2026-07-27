@@ -49,7 +49,7 @@ docker load -i docker-images/db-init.tar
 ./scripts/restore_database.sh <the_backup_filename.bak>
 
 # 3. Recreate containers on the old images:
-docker compose --env-file .env -f compose/docker-compose.yml up -d --force-recreate
+docker compose --env-file .env -f compose/docker-compose.yml -p pfms up -d --force-recreate
 ```
 
 Then run `./scripts/verify_installation.sh` again to confirm the rollback

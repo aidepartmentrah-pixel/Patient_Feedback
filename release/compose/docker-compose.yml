@@ -3,6 +3,14 @@
 # from docker-images/*.tar, never rebuilt on the offline server (per the
 # "Build Once, Validate Once, Deploy Anywhere" principle).
 
+# Explicit project name -- without this, Compose defaults the project name to
+# the basename of the directory containing this file ("compose"), which any
+# other release package that also keeps its compose file in a folder named
+# "compose" would collide with, silently merging both stacks into one Compose
+# project. This is Compose's own supported fix for that ambiguity, and stays
+# consistent with the container_name/network name convention below.
+name: ${PROJECT_NAME:-pfms}
+
 services:
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest

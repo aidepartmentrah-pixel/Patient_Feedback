@@ -19,6 +19,13 @@ RELEASE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$RELEASE_ROOT/.env"
 COMPOSE_FILE="$RELEASE_ROOT/compose/docker-compose.yml"
 
+# shellcheck disable=SC1090
+set -a; source "$ENV_FILE"; set +a
+
+# Explicit -p so Compose's project name doesn't fall back to the basename of
+# the directory containing docker-compose.yml ("compose").
+COMPOSE_ARGS=(--env-file "$ENV_FILE" -f "$COMPOSE_FILE" -p "${PROJECT_NAME:-pfms}")
+
 echo "=== Patient Feedback System - Offline Update ==="
 echo ""
 echo "This will:"
@@ -43,7 +50,7 @@ echo "[2/4] Loading new images ..."
 
 echo ""
 echo "[3/4] Recreating db-init, backend, and frontend (sqlserver is untouched) ..."
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --force-recreate db-init backend frontend
+docker compose "${COMPOSE_ARGS[@]}" up -d --force-recreate db-init backend frontend
 
 echo ""
 echo "[4/4] Verifying ..."
@@ -52,7 +59,7 @@ echo "[4/4] Verifying ..."
     echo "Verification reported failures. To roll back:"
     echo "  1. Reload the previous release's images (docker load -i <old .tar files>)"
     echo "  2. Restore the pre-update backup: scripts/restore_database.sh <backup file printed above>"
-    echo "  3. Recreate containers: docker compose --env-file .env -f compose/docker-compose.yml up -d --force-recreate"
+    echo "  3. Recreate containers: docker compose --env-file .env -f compose/docker-compose.yml -p \${PROJECT_NAME:-pfms} up -d --force-recreate"
     exit 1
 }
 

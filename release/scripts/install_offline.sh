@@ -53,6 +53,16 @@ if grep -q "__SET_ME__" "$ENV_FILE"; then
     exit 1
 fi
 
+# shellcheck disable=SC1090
+set -a; source "$ENV_FILE"; set +a
+
+# Explicit -p so Compose's project name doesn't fall back to the basename of
+# the directory containing docker-compose.yml ("compose") -- also set as
+# compose.yml's own top-level `name:` now, this flag is belt-and-suspenders
+# so this script is correct even if run against a copy of the compose file
+# without that key.
+COMPOSE_ARGS=(--env-file "$ENV_FILE" -f "$COMPOSE_FILE" -p "${PROJECT_NAME:-pfms}")
+
 echo "[1/5] Loading Docker images ..."
 "$SCRIPT_DIR/load_images.sh"
 
@@ -149,17 +159,17 @@ fi
 echo ""
 echo "[5/6] Starting the stack (schema install + organizational/user provisioning"
 echo "      run automatically as part of db-init) ..."
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
+docker compose "${COMPOSE_ARGS[@]}" up -d
 
 echo "  Waiting for db-init (schema install + provisioning) to finish ..."
 for _ in $(seq 1 60); do
-    db_init_status="$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps -a --format '{{.Name}} {{.State}} {{.ExitCode}}' db-init 2>/dev/null || true)"
+    db_init_status="$(docker compose "${COMPOSE_ARGS[@]}" ps -a --format '{{.Name}} {{.State}} {{.ExitCode}}' db-init 2>/dev/null || true)"
     case "$db_init_status" in
         *"exited 0"*) echo "  db-init completed successfully."; break ;;
         *"exited"*)
             echo ""
             echo "ERROR: db-init failed (schema install or provisioning). Logs:"
-            docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs db-init
+            docker compose "${COMPOSE_ARGS[@]}" logs db-init
             echo ""
             echo "Installation aborted. Fix the issue above before re-running."
             exit 1
@@ -175,7 +185,7 @@ attempt=0
 max_attempts=30  # ~7.5 minutes at 15s intervals -- the model is already
                  # local (no download), so this should be quick.
 while [ "$attempt" -lt "$max_attempts" ]; do
-    status="$(docker inspect --format='{{.State.Health.Status}}' "$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps -q backend)" 2>/dev/null || echo "starting")"
+    status="$(docker inspect --format='{{.State.Health.Status}}' "$(docker compose "${COMPOSE_ARGS[@]}" ps -q backend)" 2>/dev/null || echo "starting")"
     if [ "$status" = "healthy" ]; then
         echo ""
         echo "=== Installation complete. Backend is healthy. ==="

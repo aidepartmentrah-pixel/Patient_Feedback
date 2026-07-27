@@ -12,7 +12,7 @@ cd /opt/pfms-release
 ## Checking container status
 
 ```bash
-docker compose --env-file .env -f compose/docker-compose.yml ps
+docker compose --env-file .env -f compose/docker-compose.yml -p pfms ps
 ```
 
 Expected columns: `NAME`, `STATUS` (look for `healthy`, `Up`, or for

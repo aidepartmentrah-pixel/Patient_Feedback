@@ -37,12 +37,12 @@ sqlcmd_exec() {
 }
 
 echo "=== 1. Container status ==="
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -p "${PROJECT_NAME:-pfms}" ps
 
 echo ""
 echo "=== 2. Container health ==="
 for svc in sqlserver backend frontend; do
-    cid="$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps -q "$svc")"
+    cid="$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -p "${PROJECT_NAME:-pfms}" ps -q "$svc")"
     status="$(docker inspect --format='{{.State.Health.Status}}' "$cid" 2>/dev/null || echo "unknown")"
     check "$svc is healthy (was: $status)" "$([ "$status" = "healthy" ] && echo 0 || echo 1)"
 done
