@@ -1,0 +1,12 @@
+# Force LF line endings for files that must run/parse correctly on Linux,
+# regardless of core.autocrlf on a contributor's Windows machine (this repo
+# has core.autocrlf=true locally, which silently reintroduces CRLF into
+# these files otherwise -- see release/scripts/*.sh CRLF bug, 2026-07-27).
+*.sh text eol=lf
+*.json text eol=lf
+*.sql text eol=lf
+*.py text eol=lf
+*.template text eol=lf
+.env* text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

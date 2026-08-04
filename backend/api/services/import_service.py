@@ -7,6 +7,7 @@ import base64
 import hashlib
 from datetime import datetime, date
 from io import BytesIO
+from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
 from openpyxl import Workbook, load_workbook
@@ -19,6 +20,8 @@ from ..db_layer import import_db
 from ..db_layer import ml_import_batch_db
 from ..db_layer.incident_parent import assign_case_to_incident
 from .case_service import create_case
+from . import staff_directory_service
+from . import patient_directory_service
 
 # Source-system tag for ml.ImportSourceRecordMap — generalizes the exact
 # idempotency pattern already proven by dbo.APP_DataMigration_Map for the
@@ -29,6 +32,24 @@ EXCEL_IMPORT_SOURCE_SYSTEM = "ExcelImportTemplate"
 # used as the default when the optional "Feedback Risk Type" column is blank,
 # since case_service.create_case() requires clinical_risk_type_id.
 DEFAULT_CLINICAL_RISK_TYPE_ID = 1
+
+# Must match case_service.py's is_red_flag/is_never_event checks
+# (clinical_risk_type_id == 2 / == 3) -- used here only to badge a row for
+# human visibility in the review screen/report, since 'import_closed' save
+# mode keeps every imported case Closed regardless of risk type.
+RED_FLAG_RISK_TYPE_ID = 2
+NEVER_EVENT_RISK_TYPE_ID = 3
+
+# Where staged (uploaded-but-not-yet-confirmed) files live between
+# stage_upload() and confirm_import(), keyed by ImportBatchID. Filesystem-
+# based rather than a new DB column/table: no schema change needed, and it
+# works fine across multiple backend worker processes on one server since
+# they share a filesystem.
+STAGING_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "import_staging"
+
+
+def _staged_file_path(import_batch_id: int) -> Path:
+    return STAGING_DIR / f"{import_batch_id}.xlsx"
 
 
 # ============================================================
@@ -62,9 +83,9 @@ TEMPLATE_COLUMNS = [
     ("Doctor 1",                    "doctors",          False, 25),
     ("Doctor 2",                    "doctors",          False, 25),
     ("Doctor 3",                    "doctors",          False, 25),
-    ("Worker 1 (Full Name)",        None,               False, 25),
-    ("Worker 2 (Full Name)",        None,               False, 25),
-    ("Worker 3 (Full Name)",        None,               False, 25),
+    ("Worker 1 (Full Name)",        "workers",          False, 25),
+    ("Worker 2 (Full Name)",        "workers",          False, 25),
+    ("Worker 3 (Full Name)",        "workers",          False, 25),
 ]
 
 # Column index constants (0-based)
@@ -99,6 +120,67 @@ COL_WORKER3      = 27
 
 MAX_DATA_ROWS = 2000  # data validation applies up to this row
 
+DIRECTORY_LOOKUP_LIMIT = 500  # matches the Hospital Directory API's per-call max (see hospital_directory_client)
+
+
+# ============================================================
+# DIRECTORY LOOKUPS (doctors / workers / patients)
+# ============================================================
+
+def _load_directory_lookups() -> Dict[str, Dict[str, Any]]:
+    """
+    Merged doctor/worker lookups (reserve + Hospital Directory API),
+    replacing the old APP_LOOKUP_DOCTOR/HR_EMPLOYEES_TABLE-only source.
+    IDs may be a plain reserve int or an opaque external id string --
+    case_service.create_case() already resolves either one via
+    materialize_doctor_id()/materialize_employee_id(), so no extra
+    resolution is needed here or at commit time.
+
+    Capped at DIRECTORY_LOOKUP_LIMIT reserve + DIRECTORY_LOOKUP_LIMIT
+    external entries per category (a single API page) -- a hospital with
+    more active doctors/workers than that would need pagination added
+    here; not attempted since it's well past what a dropdown list is
+    usable for anyway.
+    """
+    maps: Dict[str, Any] = {}
+    lists: Dict[str, Any] = {}
+
+    doc_result = staff_directory_service.search_doctors_merged("", limit=DIRECTORY_LOOKUP_LIMIT)
+    doctors = doc_result.get("doctors", []) if doc_result.get("success") else []
+    maps["doctors"] = {(d["name"] or "").lower().strip(): d["doctor_id"] for d in doctors if d.get("name")}
+    lists["doctors"] = [d["name"] for d in doctors if d.get("name")]
+
+    wrk_result = staff_directory_service.search_workers_merged("", limit=DIRECTORY_LOOKUP_LIMIT)
+    workers = wrk_result.get("employees", []) if wrk_result.get("success") else []
+    maps["workers"] = {(w["full_name"] or "").lower().strip(): w["employee_id"] for w in workers if w.get("full_name")}
+    lists["workers"] = [w["full_name"] for w in workers if w.get("full_name")]
+
+    return {"maps": maps, "lists": lists}
+
+
+def _load_lookups() -> Dict[str, Dict[str, Any]]:
+    """import_db.load_all_lookups() plus the directory-sourced doctor/worker lists."""
+    data = import_db.load_all_lookups()
+    directory_data = _load_directory_lookups()
+    data["maps"].update(directory_data["maps"])
+    data["lists"].update(directory_data["lists"])
+    return data
+
+
+def _count_patient_matches(full_name: str) -> int:
+    """
+    Exact-name match count across reserve + Hospital Directory patients.
+    Replaces the old count against the retired dbo.VW_PatientAdmission view.
+    """
+    result = patient_directory_service.search_patients_insert_flow(full_name, limit=50)
+    if not result.get("success"):
+        raise Exception(result.get("error") or "Patient search failed")
+    target = full_name.strip().lower()
+    return sum(
+        1 for p in result["patients"]
+        if (p.get("full_name") or "").strip().lower() == target
+    )
+
 
 # ============================================================
 # TEMPLATE GENERATOR
@@ -109,7 +191,7 @@ def generate_template() -> BytesIO:
     Build the Excel import template with live DB dropdowns.
     Returns BytesIO of the .xlsx file.
     """
-    data = import_db.load_all_lookups()
+    data = _load_lookups()
     lookup_lists = data["lists"]
 
     wb = Workbook()
@@ -207,16 +289,122 @@ def generate_template() -> BytesIO:
 # UPLOAD PIPELINE
 # ============================================================
 
-def process_upload(file_bytes: bytes, created_by_user_id: int = 1) -> Dict[str, Any]:
+def _is_flagged_risk(risk_type_id: Optional[int]) -> bool:
+    """Red flag or never event — see RED_FLAG_RISK_TYPE_ID/NEVER_EVENT_RISK_TYPE_ID."""
+    return risk_type_id in (RED_FLAG_RISK_TYPE_ID, NEVER_EVENT_RISK_TYPE_ID)
+
+
+def _validate_and_group(file_bytes: bytes) -> Dict[str, Any]:
     """
-    Full import pipeline:
-      checksum dedup → parse → group → validate → per-group duplicate check
-      → import valid groups → report
-    Returns a structured report dict including base64-encoded rejected Excel.
+    Parse -> group by Incident Group Key -> validate each group -> check
+    per-group duplicate status. Pure computation, no case/incident writes —
+    shared by stage_upload() (preview) and confirm_import() (re-validated
+    fresh right before commit, so anything that changed in the lookups
+    between preview and confirm — e.g. a doctor added in Settings — is
+    picked up automatically).
+    """
+    data = _load_lookups()
+    maps = data["maps"]
+
+    rows = _parse_excel(file_bytes)
+
+    groups = _group_rows(rows)
+    valid_groups: List[Tuple[str, List[dict], dict]] = []
+    rejected_groups: List[Dict[str, Any]] = []
+    all_warnings: List[Dict[str, str]] = []
+
+    for group_key, group_rows in groups.items():
+        result = _validate_group(group_key, group_rows, maps)
+        if result["valid"]:
+            valid_groups.append((group_key, group_rows, result))
+        else:
+            rejected_groups.append({
+                "group_key": group_key,
+                "rows": group_rows,
+                "reason": result["error"],
+                "status": "red",
+            })
+        all_warnings.extend(result.get("warnings", []))
+
+    # Record-level duplicate check — has this Incident Group Key already
+    # been imported in a previous upload? Checked before any case creation.
+    dedup_conn = get_connection()
+    dedup_cursor = dedup_conn.cursor()
+    try:
+        still_valid_groups = []
+        for group_key, group_rows, validation in valid_groups:
+            already_imported = ml_import_batch_db.find_group_already_imported(
+                dedup_cursor, EXCEL_IMPORT_SOURCE_SYSTEM, group_key
+            )
+            if already_imported:
+                rejected_groups.append({
+                    "group_key": group_key,
+                    "rows": group_rows,
+                    "reason": f"Incident Group Key '{group_key}' was already imported previously — duplicate",
+                    "status": "duplicate",
+                })
+            else:
+                still_valid_groups.append((group_key, group_rows, validation))
+        valid_groups = still_valid_groups
+    finally:
+        dedup_cursor.close()
+        dedup_conn.close()
+
+    return {
+        "rows": rows,
+        "groups": groups,
+        "valid_groups": valid_groups,
+        "rejected_groups": rejected_groups,
+        "warnings": all_warnings,
+    }
+
+
+def _build_preview_groups(valid_groups: List[Tuple[str, List[dict], dict]],
+                           rejected_groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Shape validated/rejected groups for the review screen: one entry per
+    Incident Group Key, colored per the decided taxonomy (green/yellow ready,
+    red/duplicate blocked), with a red-flag/never-event badge that's purely
+    informational -- it never blocks the group or changes its color.
+    """
+    preview: List[Dict[str, Any]] = []
+
+    for group_key, group_rows, validation in valid_groups:
+        validated_rows = validation["validated_rows"]
+        preview.append({
+            "group_key": group_key,
+            "status": "yellow" if validation["is_new_patient"] else "green",
+            "is_new_patient": validation["is_new_patient"],
+            "patient_name": validation["patient_name"],
+            "row_count": len(validated_rows),
+            "has_flagged_risk": any(_is_flagged_risk(r.get("risk_type_id")) for r in validated_rows),
+            "reason": None,
+        })
+
+    for rejected in rejected_groups:
+        preview.append({
+            "group_key": rejected["group_key"],
+            "status": rejected["status"],  # "red" or "duplicate"
+            "is_new_patient": False,
+            "patient_name": None,
+            "row_count": len(rejected["rows"]),
+            "has_flagged_risk": False,
+            "reason": rejected["reason"],
+        })
+
+    return preview
+
+
+def stage_upload(file_bytes: bytes, uploaded_by_user_id: int = 1) -> Dict[str, Any]:
+    """
+    Phase 1: checksum dedup -> parse -> group -> validate -> per-group
+    duplicate check -> build a review-screen preview grouped by incident.
+    Nothing is written to APP_Incident/APP_IncidentCase here — the staged
+    file is persisted so confirm_import(import_batch_id) can commit it later.
     """
     file_checksum = hashlib.sha256(file_bytes).hexdigest()
 
-    # 0. Batch-level duplicate check — has this exact file already been
+    # Batch-level duplicate check — has this exact file already been
     # imported successfully? (see ML_ARCHITECTURE_DECISION_RECORD.md 4.8)
     batch_conn = get_connection()
     batch_cursor = batch_conn.cursor()
@@ -234,73 +422,93 @@ def process_upload(file_bytes: bytes, created_by_user_id: int = 1) -> Dict[str, 
             original_file_name=None,
             file_checksum=file_checksum,
             template_version="v1",
-            uploaded_by_user_id=created_by_user_id,
+            uploaded_by_user_id=uploaded_by_user_id,
         )
         batch_conn.commit()
     finally:
         batch_cursor.close()
         batch_conn.close()
 
-    data = import_db.load_all_lookups()
-    maps = data["maps"]
+    STAGING_DIR.mkdir(parents=True, exist_ok=True)
+    _staged_file_path(import_batch_id).write_bytes(file_bytes)
 
-    # 1. Parse
-    rows = _parse_excel(file_bytes)
-    if not rows:
+    validated = _validate_and_group(file_bytes)
+    if not validated["rows"]:
         return _empty_report("No data rows found in the uploaded file.")
 
-    # 2. Group by Incident Group Key
-    groups = _group_rows(rows)
+    preview_groups = _build_preview_groups(validated["valid_groups"], validated["rejected_groups"])
 
-    valid_groups: List[Tuple[str, List[dict], dict]] = []
-    rejected_groups: List[Dict[str, Any]] = []
-    all_warnings: List[Dict[str, str]] = []
-
-    # 3. Validate
-    for group_key, group_rows in groups.items():
-        result = _validate_group(group_key, group_rows, maps)
-        if result["valid"]:
-            valid_groups.append((group_key, group_rows, result))
-        else:
-            rejected_groups.append({
-                "group_key": group_key,
-                "rows": group_rows,
-                "reason": result["error"],
-            })
-        all_warnings.extend(result.get("warnings", []))
-
-    # 3.5 Record-level duplicate check — has this Incident Group Key already
-    # been imported in a previous upload? Checked before any case creation.
-    dedup_conn = get_connection()
-    dedup_cursor = dedup_conn.cursor()
+    summary_conn = get_connection()
+    summary_cursor = summary_conn.cursor()
     try:
-        still_valid_groups = []
-        for group_key, group_rows, validation in valid_groups:
-            already_imported = ml_import_batch_db.find_group_already_imported(
-                dedup_cursor, EXCEL_IMPORT_SOURCE_SYSTEM, group_key
-            )
-            if already_imported:
-                rejected_groups.append({
-                    "group_key": group_key,
-                    "rows": group_rows,
-                    "reason": f"Incident Group Key '{group_key}' was already imported previously — duplicate",
-                })
-            else:
-                still_valid_groups.append((group_key, group_rows, validation))
-        valid_groups = still_valid_groups
+        ml_import_batch_db.update_batch_summary(
+            summary_cursor, import_batch_id,
+            total_rows=len(validated["rows"]),
+            status="PendingReview",
+        )
+        summary_conn.commit()
     finally:
-        dedup_cursor.close()
-        dedup_conn.close()
+        summary_cursor.close()
+        summary_conn.close()
 
-    # 4. Import valid groups
+    return {
+        "import_batch_id": import_batch_id,
+        "status": "PendingReview",
+        "total_rows": len(validated["rows"]),
+        "groups": preview_groups,
+        "warnings": validated["warnings"],
+    }
+
+
+def confirm_import(import_batch_id: int, confirmed_by_user_id: int = 1) -> Dict[str, Any]:
+    """
+    Phase 2: re-validate the staged file fresh (catches anything that
+    changed in the lookups since staging) and actually commit every fully
+    valid incident group. Call only after the user has reviewed
+    stage_upload()'s preview and clicked Add.
+    """
+    batch_conn = get_connection()
+    batch_cursor = batch_conn.cursor()
+    try:
+        batch = ml_import_batch_db.get_batch(batch_cursor, import_batch_id)
+    finally:
+        batch_cursor.close()
+        batch_conn.close()
+
+    if batch is None:
+        raise ValueError(f"Import batch {import_batch_id} not found.")
+    if batch["Status"] != "PendingReview":
+        raise ValueError(
+            f"Import batch {import_batch_id} is not awaiting confirmation "
+            f"(status: {batch['Status']}) — it may have already been confirmed."
+        )
+
+    staged_path = _staged_file_path(import_batch_id)
+    if not staged_path.exists():
+        raise ValueError(
+            f"Staged file for batch {import_batch_id} is no longer available — please re-upload."
+        )
+    file_bytes = staged_path.read_bytes()
+
+    validated = _validate_and_group(file_bytes)
+    rows = validated["rows"]
+    groups = validated["groups"]
+    valid_groups = validated["valid_groups"]
+    rejected_groups = validated["rejected_groups"]
+    all_warnings = validated["warnings"]
+
+    # Import valid groups
     imported: List[Dict[str, Any]] = []
     new_patients_count = 0
 
     for group_key, group_rows, validation in valid_groups:
         try:
             imp_result = _import_group(group_key, validation["validated_rows"],
-                                       validation["is_new_patient"], created_by_user_id,
+                                       validation["is_new_patient"], confirmed_by_user_id,
                                        import_batch_id)
+            imp_result["has_flagged_risk"] = any(
+                _is_flagged_risk(r.get("risk_type_id")) for r in validation["validated_rows"]
+            )
             imported.append(imp_result)
             if validation["is_new_patient"]:
                 new_patients_count += 1
@@ -309,9 +517,10 @@ def process_upload(file_bytes: bytes, created_by_user_id: int = 1) -> Dict[str, 
                 "group_key": group_key,
                 "rows": group_rows,
                 "reason": f"Import error: {exc}",
+                "status": "red",
             })
 
-    # 5. Build rejected Excel
+    # Build rejected Excel
     rejected_b64 = None
     if rejected_groups:
         rej_buf = _generate_rejected_excel(rejected_groups)
@@ -321,7 +530,7 @@ def process_upload(file_bytes: bytes, created_by_user_id: int = 1) -> Dict[str, 
     total_failed_rows_within_groups = sum(r.get("rows_failed", 0) for r in imported)
     total_rejected_rows = sum(len(r["rows"]) for r in rejected_groups) + total_failed_rows_within_groups
 
-    # 6. Update batch summary (best-effort — never blocks the response)
+    # Update batch summary (best-effort — never blocks the response)
     try:
         summary_conn = get_connection()
         summary_cursor = summary_conn.cursor()
@@ -341,6 +550,12 @@ def process_upload(file_bytes: bytes, created_by_user_id: int = 1) -> Dict[str, 
     except Exception as e:
         print(f"[IMPORT BATCH WARNING] Failed to update batch summary: {e}")
 
+    # The staged file has served its purpose — nothing left to re-confirm.
+    try:
+        staged_path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
     return {
         "summary": {
             "import_batch_id": import_batch_id,
@@ -355,12 +570,25 @@ def process_upload(file_bytes: bytes, created_by_user_id: int = 1) -> Dict[str, 
         },
         "imported": imported,
         "rejected": [
-            {"group_key": r["group_key"], "reason": r["reason"]}
+            {"group_key": r["group_key"], "reason": r["reason"], "status": r.get("status", "red")}
             for r in rejected_groups
         ],
         "warnings": all_warnings,
         "rejected_excel_b64": rejected_b64,
     }
+
+
+def process_upload(file_bytes: bytes, created_by_user_id: int = 1) -> Dict[str, Any]:
+    """
+    One-shot convenience wrapper: stage then immediately confirm, preserving
+    the pre-review-screen behavior (used by existing tests and any caller
+    that doesn't need the review step). New UI flows should call
+    stage_upload() and confirm_import() separately instead.
+    """
+    staged = stage_upload(file_bytes, uploaded_by_user_id=created_by_user_id)
+    if "import_batch_id" not in staged:
+        return staged  # blocked before staging (e.g. duplicate file, empty file)
+    return confirm_import(staged["import_batch_id"], confirmed_by_user_id=created_by_user_id)
 
 
 # ============================================================
@@ -557,15 +785,15 @@ def _validate_group(group_key: str, rows: List[Dict], maps: Dict) -> Dict[str, A
                     doctor_ids.append((doc_id, doc_name))
 
         # --- Workers (warn if not found) ---
-        worker_ids: List[int] = []
+        worker_ids: List[Tuple[Any, str]] = []
         for wrk_col in (COL_WORKER1, COL_WORKER2, COL_WORKER3):
             wrk_name = _get(row, wrk_col)
             if wrk_name:
-                wrk_id = import_db.find_worker_by_name(wrk_name)
+                wrk_id = _lookup(maps, "workers", wrk_name)
                 if wrk_id is None:
-                    warnings.append({"group_key": group_key, "message": f"Worker '{wrk_name}' not found in HR system — skipped"})
+                    warnings.append({"group_key": group_key, "message": f"Worker '{wrk_name}' not found — skipped"})
                 else:
-                    worker_ids.append(wrk_id)
+                    worker_ids.append((wrk_id, wrk_name))
 
         if errors:
             # First error in any row rejects the whole group
@@ -602,13 +830,7 @@ def _validate_group(group_key: str, rows: List[Dict], maps: Dict) -> Dict[str, A
     # --- Patient ambiguity check (done once per group) ---
     is_new_patient = False
     if patient_name:
-        conn = get_connection()
-        cursor = conn.cursor()
-        try:
-            match_count = import_db.count_patient_exact(patient_name, cursor)
-        finally:
-            cursor.close()
-            conn.close()
+        match_count = _count_patient_matches(patient_name)
 
         if match_count > 1:
             return {
@@ -672,8 +894,8 @@ def _build_case_service_payload(vrow: Dict, patient_name: str) -> Dict[str, Any]
             for doc_id, doc_name in vrow.get("doctor_ids", [])
         ],
         "employees": [
-            {"employee_id": emp_id, "full_name": ""}
-            for emp_id in vrow.get("worker_ids", [])
+            {"employee_id": emp_id, "full_name": emp_name}
+            for emp_id, emp_name in vrow.get("worker_ids", [])
         ],
     }
 
@@ -737,7 +959,7 @@ def _import_group(
     for idx, vrow in enumerate(validated_rows, start=1):
         try:
             data = _build_case_service_payload(vrow, patient_name)
-            result = create_case(data, context='BulkImport', save_mode='workflow')
+            result = create_case(data, context='BulkImport', save_mode='import_closed')
 
             if not result.get("success"):
                 row_errors.append({"row_index": idx, "error": result.get("message", "Unknown error")})

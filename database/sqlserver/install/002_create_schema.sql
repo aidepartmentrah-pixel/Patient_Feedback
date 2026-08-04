@@ -1016,6 +1016,26 @@ CREATE TABLE [dbo].[APP_Users] (
 );
 GO
 
+-- Separate, purpose-built store for the "export user credentials" admin
+-- feature. Deliberately NOT the same as PasswordHash above: that column is
+-- bcrypt (one-way, used for login, never touched here) -- this column is
+-- Fernet-encrypted (reversible) so an admin can export a real, working
+-- password on demand. Encrypted with PASSWORD_EXPORT_ENCRYPTION_KEY (see
+-- core/settings_encryption.py's pattern) -- a *different* key than
+-- SETTINGS_ENCRYPTION_KEY, so rotating/compromising one doesn't affect the
+-- other. A row only exists here if an admin has explicitly made that
+-- user's password exportable; most accounts will have no row at all.
+IF OBJECT_ID('dbo.APP_UserPasswordExport', 'U') IS NULL
+CREATE TABLE [dbo].[APP_UserPasswordExport] (
+    [UserID] int NOT NULL,
+    [EncryptedPassword] nvarchar(500) NOT NULL,
+    [UpdatedAt] datetime2 NOT NULL DEFAULT (sysutcdatetime()),
+    [UpdatedByUserID] int NULL,
+    CONSTRAINT [PK_APP_UserPasswordExport] PRIMARY KEY CLUSTERED ([UserID]),
+    CONSTRAINT [FK_APP_UserPasswordExport_User] FOREIGN KEY ([UserID]) REFERENCES [dbo].[APP_Users] ([UserID])
+);
+GO
+
 IF OBJECT_ID('dbo.IncidentRequest', 'U') IS NULL
 CREATE TABLE [dbo].[IncidentRequest] (
     [UniqueID] int IDENTITY(1,1) NOT NULL,

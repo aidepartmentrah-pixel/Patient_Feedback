@@ -390,3 +390,269 @@ IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_Roles] WHERE [RoleID] = 6)
     INSERT INTO [dbo].[APP_Roles] ([RoleID], [RoleCode], [RoleNameEn], [RoleNameAr]) VALUES (6, N'ADMINISTRATION_ADMIN', N'Administration Administrator', N'مسؤول الإدارة العامة');
 SET IDENTITY_INSERT [dbo].[APP_Roles] OFF;
 GO
+
+-- dbo.APP_SystemSettings: Automatic Force Close Policy defaults
+-- These 4 keys were never seeded anywhere in the original installer, so a
+-- fresh install always fails at Settings > Governance > Force Close Policy
+-- with "setting not found" (404) -- not caused by any later change, this
+-- feature simply never had default rows. Disabled by default (safe) with
+-- placeholder deadlines; hospital admin adjusts via the Force Close Policy
+-- page itself once it loads.
+IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_SystemSettings] WHERE [SettingKey] = N'automatic_force_close_enabled')
+    INSERT INTO [dbo].[APP_SystemSettings] ([SettingKey], [SettingValue], [SettingLabel], [SettingLabelAr], [SettingType], [Description], [DescriptionAr], [IsActive])
+    VALUES (N'automatic_force_close_enabled', N'false', N'Automatic Force Close Enabled', N'تفعيل الإغلاق القسري التلقائي', N'boolean', N'Whether the automatic force-close engine runs on its schedule.', N'ما إذا كان محرك الإغلاق القسري التلقائي يعمل وفق جدولته.', 1);
+IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_SystemSettings] WHERE [SettingKey] = N'section_deadline_days')
+    INSERT INTO [dbo].[APP_SystemSettings] ([SettingKey], [SettingValue], [SettingLabel], [SettingLabelAr], [SettingType], [Description], [DescriptionAr], [IsActive])
+    VALUES (N'section_deadline_days', N'7', N'Section Deadline (Days)', N'مهلة القسم (أيام)', N'integer', N'Days before a case is auto-escalated/force-closed at the section level.', N'عدد الأيام قبل تصعيد/إغلاق الحالة تلقائيًا على مستوى القسم.', 1);
+IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_SystemSettings] WHERE [SettingKey] = N'department_deadline_days')
+    INSERT INTO [dbo].[APP_SystemSettings] ([SettingKey], [SettingValue], [SettingLabel], [SettingLabelAr], [SettingType], [Description], [DescriptionAr], [IsActive])
+    VALUES (N'department_deadline_days', N'14', N'Department Deadline (Days)', N'مهلة الإدارة (أيام)', N'integer', N'Days before a case is auto-escalated/force-closed at the department level.', N'عدد الأيام قبل تصعيد/إغلاق الحالة تلقائيًا على مستوى الإدارة.', 1);
+IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_SystemSettings] WHERE [SettingKey] = N'administration_deadline_days')
+    INSERT INTO [dbo].[APP_SystemSettings] ([SettingKey], [SettingValue], [SettingLabel], [SettingLabelAr], [SettingType], [Description], [DescriptionAr], [IsActive])
+    VALUES (N'administration_deadline_days', N'30', N'Administration Deadline (Days)', N'مهلة الإدارة العامة (أيام)', N'integer', N'Days before a case is auto-escalated/force-closed at the administration level.', N'عدد الأيام قبل تصعيد/إغلاق الحالة تلقائيًا على مستوى الإدارة العامة.', 1);
+GO
+
+-- dbo.APP_RCAFactorCategory + dbo.APP_RCASuggestion: default Root-Cause-
+-- Analysis taxonomy. This table was previously created empty by every
+-- installer with zero starter data -- per explicit product decision, ship a
+-- sensible default set (6 standard RCA categories, 2 cause/action pairs
+-- each) so the RCA Suggestions page is usable from day one. Hospitals can
+-- edit, deactivate, or add their own via the Settings > Governance > RCA
+-- Suggestions page itself -- this is a starting point, not a fixed list.
+--
+-- NOTE on pairing: APP_RCASuggestion.PairedSuggestionID has a unique index
+-- that (per SQL Server's default behavior, unlike Postgres/MySQL) treats
+-- multiple NULLs as duplicates. So the ACTION_ITEM row must be inserted
+-- WITH its PairedSuggestionID already set (pointing at the cause) -- never
+-- insert it NULL and UPDATE it after, or a second concurrent NULL row will
+-- violate uniqueness and silently corrupt SCOPE_IDENTITY() for the next
+-- statement (this bit us once already while writing this script).
+
+IF NOT EXISTS (SELECT 1 FROM dbo.APP_RCAFactorCategory WHERE CategoryCode = N'COMMUNICATION')
+    INSERT INTO dbo.APP_RCAFactorCategory (CategoryCode, CategoryNameEn, CategoryNameAr, SortOrder, IsActive)
+    VALUES (N'COMMUNICATION', N'Communication', N'التواصل', 10, 1);
+GO
+IF NOT EXISTS (SELECT 1 FROM dbo.APP_RCAFactorCategory WHERE CategoryCode = N'STAFFING_TRAINING')
+    INSERT INTO dbo.APP_RCAFactorCategory (CategoryCode, CategoryNameEn, CategoryNameAr, SortOrder, IsActive)
+    VALUES (N'STAFFING_TRAINING', N'Staffing & Training', N'التوظيف والتدريب', 20, 1);
+GO
+IF NOT EXISTS (SELECT 1 FROM dbo.APP_RCAFactorCategory WHERE CategoryCode = N'POLICY_PROCEDURE')
+    INSERT INTO dbo.APP_RCAFactorCategory (CategoryCode, CategoryNameEn, CategoryNameAr, SortOrder, IsActive)
+    VALUES (N'POLICY_PROCEDURE', N'Policy & Procedure', N'السياسات والإجراءات', 30, 1);
+GO
+IF NOT EXISTS (SELECT 1 FROM dbo.APP_RCAFactorCategory WHERE CategoryCode = N'EQUIPMENT_TECHNOLOGY')
+    INSERT INTO dbo.APP_RCAFactorCategory (CategoryCode, CategoryNameEn, CategoryNameAr, SortOrder, IsActive)
+    VALUES (N'EQUIPMENT_TECHNOLOGY', N'Equipment & Technology', N'المعدات والتقنية', 40, 1);
+GO
+IF NOT EXISTS (SELECT 1 FROM dbo.APP_RCAFactorCategory WHERE CategoryCode = N'ENVIRONMENT_FACILITY')
+    INSERT INTO dbo.APP_RCAFactorCategory (CategoryCode, CategoryNameEn, CategoryNameAr, SortOrder, IsActive)
+    VALUES (N'ENVIRONMENT_FACILITY', N'Environment & Facility', N'البيئة والمرافق', 50, 1);
+GO
+IF NOT EXISTS (SELECT 1 FROM dbo.APP_RCAFactorCategory WHERE CategoryCode = N'HUMAN_FACTORS')
+    INSERT INTO dbo.APP_RCAFactorCategory (CategoryCode, CategoryNameEn, CategoryNameAr, SortOrder, IsActive)
+    VALUES (N'HUMAN_FACTORS', N'Human Factors', N'العوامل البشرية', 60, 1);
+GO
+
+-- COMMUNICATION
+IF NOT EXISTS (
+    SELECT 1 FROM dbo.APP_RCASuggestion s JOIN dbo.APP_RCAFactorCategory c ON c.CategoryID = s.CategoryID
+    WHERE c.CategoryCode = N'COMMUNICATION' AND s.SuggestionType = 'CAUSE' AND s.SuggestionTextEn = N'Incomplete handover between shifts led to missed information'
+)
+BEGIN
+    DECLARE @CatID INT = (SELECT CategoryID FROM dbo.APP_RCAFactorCategory WHERE CategoryCode = N'COMMUNICATION');
+    DECLARE @CauseID INT; DECLARE @ActionID INT;
+    INSERT INTO dbo.APP_RCASuggestion (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr, SortOrder, IsActive)
+    VALUES (@CatID, 'CAUSE', N'Incomplete handover between shifts led to missed information', N'تسليم غير مكتمل بين النوبات أدى إلى فقدان معلومات', 0, 1);
+    SET @CauseID = SCOPE_IDENTITY();
+    INSERT INTO dbo.APP_RCASuggestion (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr, SortOrder, IsActive, PairedSuggestionID)
+    VALUES (@CatID, 'ACTION_ITEM', N'Implement a structured shift-handover checklist', N'تطبيق قائمة تحقق منظمة لتسليم النوبات', 0, 1, @CauseID);
+    SET @ActionID = SCOPE_IDENTITY();
+    UPDATE dbo.APP_RCASuggestion SET PairedSuggestionID = @ActionID WHERE SuggestionID = @CauseID;
+END
+GO
+IF NOT EXISTS (
+    SELECT 1 FROM dbo.APP_RCASuggestion s JOIN dbo.APP_RCAFactorCategory c ON c.CategoryID = s.CategoryID
+    WHERE c.CategoryCode = N'COMMUNICATION' AND s.SuggestionType = 'CAUSE' AND s.SuggestionTextEn = N'Patient/family was not adequately informed about the care plan'
+)
+BEGIN
+    DECLARE @CatID INT = (SELECT CategoryID FROM dbo.APP_RCAFactorCategory WHERE CategoryCode = N'COMMUNICATION');
+    DECLARE @CauseID INT; DECLARE @ActionID INT;
+    INSERT INTO dbo.APP_RCASuggestion (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr, SortOrder, IsActive)
+    VALUES (@CatID, 'CAUSE', N'Patient/family was not adequately informed about the care plan', N'لم يتم إبلاغ المريض/الأسرة بشكل كافٍ بخطة الرعاية', 1, 1);
+    SET @CauseID = SCOPE_IDENTITY();
+    INSERT INTO dbo.APP_RCASuggestion (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr, SortOrder, IsActive, PairedSuggestionID)
+    VALUES (@CatID, 'ACTION_ITEM', N'Establish a mandatory patient education step before discharge', N'إنشاء خطوة تثقيف إلزامية للمريض قبل الخروج', 1, 1, @CauseID);
+    SET @ActionID = SCOPE_IDENTITY();
+    UPDATE dbo.APP_RCASuggestion SET PairedSuggestionID = @ActionID WHERE SuggestionID = @CauseID;
+END
+GO
+
+-- STAFFING_TRAINING
+IF NOT EXISTS (
+    SELECT 1 FROM dbo.APP_RCASuggestion s JOIN dbo.APP_RCAFactorCategory c ON c.CategoryID = s.CategoryID
+    WHERE c.CategoryCode = N'STAFFING_TRAINING' AND s.SuggestionType = 'CAUSE' AND s.SuggestionTextEn = N'Staff member had not completed required competency training'
+)
+BEGIN
+    DECLARE @CatID INT = (SELECT CategoryID FROM dbo.APP_RCAFactorCategory WHERE CategoryCode = N'STAFFING_TRAINING');
+    DECLARE @CauseID INT; DECLARE @ActionID INT;
+    INSERT INTO dbo.APP_RCASuggestion (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr, SortOrder, IsActive)
+    VALUES (@CatID, 'CAUSE', N'Staff member had not completed required competency training', N'لم يكمل الموظف التدريب اللازم على الكفاءة', 0, 1);
+    SET @CauseID = SCOPE_IDENTITY();
+    INSERT INTO dbo.APP_RCASuggestion (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr, SortOrder, IsActive, PairedSuggestionID)
+    VALUES (@CatID, 'ACTION_ITEM', N'Schedule mandatory refresher training within 30 days', N'جدولة تدريب تنشيطي إلزامي خلال 30 يومًا', 0, 1, @CauseID);
+    SET @ActionID = SCOPE_IDENTITY();
+    UPDATE dbo.APP_RCASuggestion SET PairedSuggestionID = @ActionID WHERE SuggestionID = @CauseID;
+END
+GO
+IF NOT EXISTS (
+    SELECT 1 FROM dbo.APP_RCASuggestion s JOIN dbo.APP_RCAFactorCategory c ON c.CategoryID = s.CategoryID
+    WHERE c.CategoryCode = N'STAFFING_TRAINING' AND s.SuggestionType = 'CAUSE' AND s.SuggestionTextEn = N'Unit was understaffed during the shift when the incident occurred'
+)
+BEGIN
+    DECLARE @CatID INT = (SELECT CategoryID FROM dbo.APP_RCAFactorCategory WHERE CategoryCode = N'STAFFING_TRAINING');
+    DECLARE @CauseID INT; DECLARE @ActionID INT;
+    INSERT INTO dbo.APP_RCASuggestion (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr, SortOrder, IsActive)
+    VALUES (@CatID, 'CAUSE', N'Unit was understaffed during the shift when the incident occurred', N'كانت الوحدة تعاني من نقص في الموظفين خلال النوبة التي وقع فيها الحادث', 1, 1);
+    SET @CauseID = SCOPE_IDENTITY();
+    INSERT INTO dbo.APP_RCASuggestion (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr, SortOrder, IsActive, PairedSuggestionID)
+    VALUES (@CatID, 'ACTION_ITEM', N'Review staffing ratios and adjust shift scheduling', N'مراجعة نسب التوظيف وتعديل جدولة النوبات', 1, 1, @CauseID);
+    SET @ActionID = SCOPE_IDENTITY();
+    UPDATE dbo.APP_RCASuggestion SET PairedSuggestionID = @ActionID WHERE SuggestionID = @CauseID;
+END
+GO
+
+-- POLICY_PROCEDURE
+IF NOT EXISTS (
+    SELECT 1 FROM dbo.APP_RCASuggestion s JOIN dbo.APP_RCAFactorCategory c ON c.CategoryID = s.CategoryID
+    WHERE c.CategoryCode = N'POLICY_PROCEDURE' AND s.SuggestionType = 'CAUSE' AND s.SuggestionTextEn = N'Existing procedure was outdated and did not reflect current practice'
+)
+BEGIN
+    DECLARE @CatID INT = (SELECT CategoryID FROM dbo.APP_RCAFactorCategory WHERE CategoryCode = N'POLICY_PROCEDURE');
+    DECLARE @CauseID INT; DECLARE @ActionID INT;
+    INSERT INTO dbo.APP_RCASuggestion (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr, SortOrder, IsActive)
+    VALUES (@CatID, 'CAUSE', N'Existing procedure was outdated and did not reflect current practice', N'الإجراء الحالي قديم ولا يعكس الممارسة الحالية', 0, 1);
+    SET @CauseID = SCOPE_IDENTITY();
+    INSERT INTO dbo.APP_RCASuggestion (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr, SortOrder, IsActive, PairedSuggestionID)
+    VALUES (@CatID, 'ACTION_ITEM', N'Revise and republish the standard operating procedure', N'مراجعة وإعادة نشر إجراء التشغيل القياسي', 0, 1, @CauseID);
+    SET @ActionID = SCOPE_IDENTITY();
+    UPDATE dbo.APP_RCASuggestion SET PairedSuggestionID = @ActionID WHERE SuggestionID = @CauseID;
+END
+GO
+IF NOT EXISTS (
+    SELECT 1 FROM dbo.APP_RCASuggestion s JOIN dbo.APP_RCAFactorCategory c ON c.CategoryID = s.CategoryID
+    WHERE c.CategoryCode = N'POLICY_PROCEDURE' AND s.SuggestionType = 'CAUSE' AND s.SuggestionTextEn = N'Staff deviated from the documented procedure'
+)
+BEGIN
+    DECLARE @CatID INT = (SELECT CategoryID FROM dbo.APP_RCAFactorCategory WHERE CategoryCode = N'POLICY_PROCEDURE');
+    DECLARE @CauseID INT; DECLARE @ActionID INT;
+    INSERT INTO dbo.APP_RCASuggestion (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr, SortOrder, IsActive)
+    VALUES (@CatID, 'CAUSE', N'Staff deviated from the documented procedure', N'انحرف الموظفون عن الإجراء الموثق', 1, 1);
+    SET @CauseID = SCOPE_IDENTITY();
+    INSERT INTO dbo.APP_RCASuggestion (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr, SortOrder, IsActive, PairedSuggestionID)
+    VALUES (@CatID, 'ACTION_ITEM', N'Conduct a procedure-compliance audit and staff briefing', N'إجراء تدقيق للامتثال للإجراءات وإحاطة للموظفين', 1, 1, @CauseID);
+    SET @ActionID = SCOPE_IDENTITY();
+    UPDATE dbo.APP_RCASuggestion SET PairedSuggestionID = @ActionID WHERE SuggestionID = @CauseID;
+END
+GO
+
+-- EQUIPMENT_TECHNOLOGY
+IF NOT EXISTS (
+    SELECT 1 FROM dbo.APP_RCASuggestion s JOIN dbo.APP_RCAFactorCategory c ON c.CategoryID = s.CategoryID
+    WHERE c.CategoryCode = N'EQUIPMENT_TECHNOLOGY' AND s.SuggestionType = 'CAUSE' AND s.SuggestionTextEn = N'Medical equipment malfunctioned or was unavailable when needed'
+)
+BEGIN
+    DECLARE @CatID INT = (SELECT CategoryID FROM dbo.APP_RCAFactorCategory WHERE CategoryCode = N'EQUIPMENT_TECHNOLOGY');
+    DECLARE @CauseID INT; DECLARE @ActionID INT;
+    INSERT INTO dbo.APP_RCASuggestion (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr, SortOrder, IsActive)
+    VALUES (@CatID, 'CAUSE', N'Medical equipment malfunctioned or was unavailable when needed', N'تعطلت المعدات الطبية أو لم تكن متوفرة عند الحاجة', 0, 1);
+    SET @CauseID = SCOPE_IDENTITY();
+    INSERT INTO dbo.APP_RCASuggestion (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr, SortOrder, IsActive, PairedSuggestionID)
+    VALUES (@CatID, 'ACTION_ITEM', N'Schedule preventive maintenance and verify equipment availability checklist', N'جدولة الصيانة الوقائية والتحقق من قائمة توفر المعدات', 0, 1, @CauseID);
+    SET @ActionID = SCOPE_IDENTITY();
+    UPDATE dbo.APP_RCASuggestion SET PairedSuggestionID = @ActionID WHERE SuggestionID = @CauseID;
+END
+GO
+IF NOT EXISTS (
+    SELECT 1 FROM dbo.APP_RCASuggestion s JOIN dbo.APP_RCAFactorCategory c ON c.CategoryID = s.CategoryID
+    WHERE c.CategoryCode = N'EQUIPMENT_TECHNOLOGY' AND s.SuggestionType = 'CAUSE' AND s.SuggestionTextEn = N'System/software issue delayed access to patient information'
+)
+BEGIN
+    DECLARE @CatID INT = (SELECT CategoryID FROM dbo.APP_RCAFactorCategory WHERE CategoryCode = N'EQUIPMENT_TECHNOLOGY');
+    DECLARE @CauseID INT; DECLARE @ActionID INT;
+    INSERT INTO dbo.APP_RCASuggestion (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr, SortOrder, IsActive)
+    VALUES (@CatID, 'CAUSE', N'System/software issue delayed access to patient information', N'مشكلة في النظام/البرنامج أخرت الوصول إلى معلومات المريض', 1, 1);
+    SET @CauseID = SCOPE_IDENTITY();
+    INSERT INTO dbo.APP_RCASuggestion (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr, SortOrder, IsActive, PairedSuggestionID)
+    VALUES (@CatID, 'ACTION_ITEM', N'Escalate to IT for a system-reliability review', N'التصعيد إلى تقنية المعلومات لمراجعة موثوقية النظام', 1, 1, @CauseID);
+    SET @ActionID = SCOPE_IDENTITY();
+    UPDATE dbo.APP_RCASuggestion SET PairedSuggestionID = @ActionID WHERE SuggestionID = @CauseID;
+END
+GO
+
+-- ENVIRONMENT_FACILITY
+IF NOT EXISTS (
+    SELECT 1 FROM dbo.APP_RCASuggestion s JOIN dbo.APP_RCAFactorCategory c ON c.CategoryID = s.CategoryID
+    WHERE c.CategoryCode = N'ENVIRONMENT_FACILITY' AND s.SuggestionType = 'CAUSE' AND s.SuggestionTextEn = N'Physical layout or noise level contributed to the error'
+)
+BEGIN
+    DECLARE @CatID INT = (SELECT CategoryID FROM dbo.APP_RCAFactorCategory WHERE CategoryCode = N'ENVIRONMENT_FACILITY');
+    DECLARE @CauseID INT; DECLARE @ActionID INT;
+    INSERT INTO dbo.APP_RCASuggestion (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr, SortOrder, IsActive)
+    VALUES (@CatID, 'CAUSE', N'Physical layout or noise level contributed to the error', N'ساهم التصميم المادي أو مستوى الضوضاء في الخطأ', 0, 1);
+    SET @CauseID = SCOPE_IDENTITY();
+    INSERT INTO dbo.APP_RCASuggestion (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr, SortOrder, IsActive, PairedSuggestionID)
+    VALUES (@CatID, 'ACTION_ITEM', N'Review unit layout and implement noise-reduction measures', N'مراجعة تصميم الوحدة وتطبيق إجراءات تقليل الضوضاء', 0, 1, @CauseID);
+    SET @ActionID = SCOPE_IDENTITY();
+    UPDATE dbo.APP_RCASuggestion SET PairedSuggestionID = @ActionID WHERE SuggestionID = @CauseID;
+END
+GO
+IF NOT EXISTS (
+    SELECT 1 FROM dbo.APP_RCASuggestion s JOIN dbo.APP_RCAFactorCategory c ON c.CategoryID = s.CategoryID
+    WHERE c.CategoryCode = N'ENVIRONMENT_FACILITY' AND s.SuggestionType = 'CAUSE' AND s.SuggestionTextEn = N'Inadequate signage or labeling led to confusion'
+)
+BEGIN
+    DECLARE @CatID INT = (SELECT CategoryID FROM dbo.APP_RCAFactorCategory WHERE CategoryCode = N'ENVIRONMENT_FACILITY');
+    DECLARE @CauseID INT; DECLARE @ActionID INT;
+    INSERT INTO dbo.APP_RCASuggestion (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr, SortOrder, IsActive)
+    VALUES (@CatID, 'CAUSE', N'Inadequate signage or labeling led to confusion', N'أدت اللافتات أو العلامات غير الكافية إلى الارتباك', 1, 1);
+    SET @CauseID = SCOPE_IDENTITY();
+    INSERT INTO dbo.APP_RCASuggestion (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr, SortOrder, IsActive, PairedSuggestionID)
+    VALUES (@CatID, 'ACTION_ITEM', N'Improve signage and standardize labeling across the unit', N'تحسين اللافتات وتوحيد العلامات في الوحدة', 1, 1, @CauseID);
+    SET @ActionID = SCOPE_IDENTITY();
+    UPDATE dbo.APP_RCASuggestion SET PairedSuggestionID = @ActionID WHERE SuggestionID = @CauseID;
+END
+GO
+
+-- HUMAN_FACTORS
+IF NOT EXISTS (
+    SELECT 1 FROM dbo.APP_RCASuggestion s JOIN dbo.APP_RCAFactorCategory c ON c.CategoryID = s.CategoryID
+    WHERE c.CategoryCode = N'HUMAN_FACTORS' AND s.SuggestionType = 'CAUSE' AND s.SuggestionTextEn = N'Staff fatigue or high workload contributed to the incident'
+)
+BEGIN
+    DECLARE @CatID INT = (SELECT CategoryID FROM dbo.APP_RCAFactorCategory WHERE CategoryCode = N'HUMAN_FACTORS');
+    DECLARE @CauseID INT; DECLARE @ActionID INT;
+    INSERT INTO dbo.APP_RCASuggestion (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr, SortOrder, IsActive)
+    VALUES (@CatID, 'CAUSE', N'Staff fatigue or high workload contributed to the incident', N'ساهم إرهاق الموظفين أو ارتفاع عبء العمل في الحادث', 0, 1);
+    SET @CauseID = SCOPE_IDENTITY();
+    INSERT INTO dbo.APP_RCASuggestion (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr, SortOrder, IsActive, PairedSuggestionID)
+    VALUES (@CatID, 'ACTION_ITEM', N'Review workload distribution and shift-length policy', N'مراجعة توزيع عبء العمل وسياسة طول النوبة', 0, 1, @CauseID);
+    SET @ActionID = SCOPE_IDENTITY();
+    UPDATE dbo.APP_RCASuggestion SET PairedSuggestionID = @ActionID WHERE SuggestionID = @CauseID;
+END
+GO
+IF NOT EXISTS (
+    SELECT 1 FROM dbo.APP_RCASuggestion s JOIN dbo.APP_RCAFactorCategory c ON c.CategoryID = s.CategoryID
+    WHERE c.CategoryCode = N'HUMAN_FACTORS' AND s.SuggestionType = 'CAUSE' AND s.SuggestionTextEn = N'Distraction or interruption occurred during a critical task'
+)
+BEGIN
+    DECLARE @CatID INT = (SELECT CategoryID FROM dbo.APP_RCAFactorCategory WHERE CategoryCode = N'HUMAN_FACTORS');
+    DECLARE @CauseID INT; DECLARE @ActionID INT;
+    INSERT INTO dbo.APP_RCASuggestion (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr, SortOrder, IsActive)
+    VALUES (@CatID, 'CAUSE', N'Distraction or interruption occurred during a critical task', N'حدث تشتيت أو مقاطعة أثناء مهمة حرجة', 1, 1);
+    SET @CauseID = SCOPE_IDENTITY();
+    INSERT INTO dbo.APP_RCASuggestion (CategoryID, SuggestionType, SuggestionTextEn, SuggestionTextAr, SortOrder, IsActive, PairedSuggestionID)
+    VALUES (@CatID, 'ACTION_ITEM', N'Introduce a "no-interruption zone" protocol for critical tasks', N'تطبيق بروتوكول "منطقة عدم المقاطعة" للمهام الحرجة', 1, 1, @CauseID);
+    SET @ActionID = SCOPE_IDENTITY();
+    UPDATE dbo.APP_RCASuggestion SET PairedSuggestionID = @ActionID WHERE SuggestionID = @CauseID;
+END
+GO

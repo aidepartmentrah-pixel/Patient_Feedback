@@ -43,6 +43,27 @@ def find_batch_by_checksum(cursor, file_checksum: str) -> Optional[Dict[str, Any
     return dict(zip(columns, row))
 
 
+def get_batch(cursor, import_batch_id: int) -> Optional[Dict[str, Any]]:
+    """Fetch one batch row by id, or None if it doesn't exist."""
+    cursor.execute("SELECT * FROM ml.ImportBatch WHERE ImportBatchID = ?", (import_batch_id,))
+    row = cursor.fetchone()
+    if row is None:
+        return None
+    columns = [c[0] for c in cursor.description]
+    return dict(zip(columns, row))
+
+
+def list_batches(cursor, limit: int = 50) -> List[Dict[str, Any]]:
+    """Most recent import batches, newest first -- backs the batch history page."""
+    cursor.execute(
+        "SELECT TOP (?) * FROM ml.ImportBatch ORDER BY UploadedAt DESC",
+        (limit,),
+    )
+    rows = cursor.fetchall()
+    columns = [c[0] for c in cursor.description]
+    return [dict(zip(columns, row)) for row in rows]
+
+
 def update_batch_summary(cursor, import_batch_id: int, **counts) -> None:
     """
     counts may include any of: total_rows, accepted_rows, rejected_rows,

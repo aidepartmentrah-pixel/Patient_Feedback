@@ -27,7 +27,7 @@ def get_all_user_credentials(conn) -> List[Any]:
     
     try:
         query = """
-            SELECT 
+            SELECT
                 u.UserID,
                 u.Username,
                 u.PasswordHash,
@@ -36,11 +36,13 @@ def get_all_user_credentials(conn) -> List[Any]:
                 r.RoleCode,
                 a.Name AS org_unit_name,
                 s.OrgUnitType,
-                s.OrgUnitID
+                s.OrgUnitID,
+                pe.EncryptedPassword
             FROM dbo.APP_Users u
             LEFT JOIN dbo.APP_UserRoleScope s ON u.UserID = s.UserID
             LEFT JOIN dbo.APP_Roles r ON s.RoleID = r.RoleID
             LEFT JOIN dbo.AdminsrationUnit a ON s.OrgUnitID = a.UniqueID
+            LEFT JOIN dbo.APP_UserPasswordExport pe ON u.UserID = pe.UserID
             ORDER BY u.UserID, r.RoleCode
         """
         

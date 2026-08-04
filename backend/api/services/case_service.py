@@ -34,7 +34,7 @@ from backend.api.services.staff_directory_service import materialize_doctor_id, 
 from backend.api.db_layer.incident_parent import create_incident_parent, assign_case_to_incident
 from backend.api.db_layer import ml_embedding_job_db
 from backend.api.db_layer import ml_case_training_db
-from backend.api.constants.case_statuses import DRAFT_STATUS_ID, READY_TO_SEND_STATUS_ID
+from backend.api.constants.case_statuses import DRAFT_STATUS_ID, READY_TO_SEND_STATUS_ID, CLOSED_STATUS_ID
 
 # Maps insert/update payload keys -> ml.CaseTrainingRecord columns. Kept in
 # one place since both create_case() and update_case() need the same mapping.
@@ -385,6 +385,18 @@ def create_case(data: Dict[str, Any], context: str = 'ManualInsert', save_mode: 
             requires_explanation_bit = 0
         elif save_mode == 'complete':
             case_status_id = READY_TO_SEND_STATUS_ID
+            explanation_status_id = 4
+            requires_explanation_bit = 0
+        elif save_mode == 'import_closed':
+            # Bulk-import rule: every imported case lands Closed and bypasses
+            # the live messaging/inbox workflow, regardless of clinical risk
+            # type -- unlike 'workflow' below, a red flag / never event does
+            # NOT reopen it here. ClinicalRiskTypeID itself is still stored
+            # as given, so the case remains identifiable for reporting; any
+            # human-visibility need for red-flag/never-event imports is
+            # handled by the import review screen/report, not by reopening
+            # the case's workflow.
+            case_status_id = CLOSED_STATUS_ID
             explanation_status_id = 4
             requires_explanation_bit = 0
         else:

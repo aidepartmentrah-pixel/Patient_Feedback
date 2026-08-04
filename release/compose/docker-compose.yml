@@ -80,6 +80,10 @@ services:
       # Hospital Directory API key), see core/settings_encryption.py. Never
       # stored in the database itself -- only here, in the environment.
       SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY}
+      # Separate Fernet key for the "export user credentials" admin feature
+      # (dbo.APP_UserPasswordExport), see core/password_export_encryption.py.
+      # Deliberately a different key than SETTINGS_ENCRYPTION_KEY above.
+      PASSWORD_EXPORT_ENCRYPTION_KEY: ${PASSWORD_EXPORT_ENCRYPTION_KEY}
     ports:
       - "${BACKEND_HOST_PORT:-8100}:8100"
     volumes:

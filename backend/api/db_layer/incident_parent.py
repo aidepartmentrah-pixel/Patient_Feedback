@@ -6,9 +6,17 @@ def create_incident_parent(data: dict) -> int:
     conn = get_connection()
     cursor = conn.cursor()
     try:
+        # incident_number is NOT NULL with no DB-side default. incident_id
+        # isn't known until after the INSERT (it's an IDENTITY column), so
+        # the real value can't be computed up front -- insert a placeholder
+        # to satisfy the constraint, then overwrite it below once incident_id
+        # is known. Same "INC-000123" format the /next-numbers preview
+        # endpoint already shows workers before they save
+        # (insert_router.py get_next_numbers).
         cursor.execute(
             """
             INSERT INTO dbo.APP_Incident (
+                incident_number,
                 patient_name,
                 primary_doctor_name,
                 primary_worker_name,
@@ -20,8 +28,9 @@ def create_incident_parent(data: dict) -> int:
                 created_by_user_id
             )
             OUTPUT INSERTED.incident_id
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
+            "PENDING",
             data.get("patient_name"),
             data.get("primary_doctor_name"),
             data.get("primary_worker_name"),
@@ -33,8 +42,15 @@ def create_incident_parent(data: dict) -> int:
             data.get("created_by_user_id"),
         )
         row = cursor.fetchone()
+        incident_id = int(row[0])
+
+        cursor.execute(
+            "UPDATE dbo.APP_Incident SET incident_number = ? WHERE incident_id = ?",
+            f"INC-{incident_id:06d}",
+            incident_id,
+        )
         conn.commit()
-        return int(row[0])
+        return incident_id
     finally:
         conn.close()
 

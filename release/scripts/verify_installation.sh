@@ -149,6 +149,24 @@ for f in config.json model.bin tokenizer.json vocabulary.txt; do
 done
 
 echo ""
+echo "=== 10. Force Close Policy & RCA Suggestions default configuration ==="
+actual_force_close_settings="$(sqlcmd_exec "$CONTAINER" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C -d "$DB_NAME" -h -1 -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM dbo.APP_SystemSettings WHERE SettingKey IN ('automatic_force_close_enabled','section_deadline_days','department_deadline_days','administration_deadline_days')" | tr -d '[:space:]')"
+check "all 4 Force Close Policy settings present (found=$actual_force_close_settings, expected=4)" \
+    "$([ "$actual_force_close_settings" = "4" ] && echo 0 || echo 1)"
+
+actual_rca_categories="$(sqlcmd_exec "$CONTAINER" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C -d "$DB_NAME" -h -1 -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM dbo.APP_RCAFactorCategory" | tr -d '[:space:]')"
+check "at least one RCA factor category exists (found=$actual_rca_categories)" \
+    "$([ "$actual_rca_categories" -gt 0 ] && echo 0 || echo 1)"
+
+actual_rca_suggestions="$(sqlcmd_exec "$CONTAINER" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C -d "$DB_NAME" -h -1 -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM dbo.APP_RCASuggestion" | tr -d '[:space:]')"
+check "at least one RCA suggestion exists (found=$actual_rca_suggestions)" \
+    "$([ "$actual_rca_suggestions" -gt 0 ] && echo 0 || echo 1)"
+
+actual_rca_unpaired="$(sqlcmd_exec "$CONTAINER" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C -d "$DB_NAME" -h -1 -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM dbo.APP_RCASuggestion WHERE PairedSuggestionID IS NULL" | tr -d '[:space:]')"
+check "no unpaired RCA cause/action suggestions (found=$actual_rca_unpaired)" \
+    "$([ "$actual_rca_unpaired" = "0" ] && echo 0 || echo 1)"
+
+echo ""
 echo "=== Summary: $PASS passed, $FAIL failed ==="
 echo "NOTE: this script covers infrastructure/database integrity only. Run"
 echo "      scripts/qualify_offline_installation.sh for functional checks"

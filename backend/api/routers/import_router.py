@@ -1,7 +1,8 @@
 """
 Import Router — Hospital Data Intake Pipeline
-GET  /api/import/template   — download the Excel import template
-POST /api/import/upload     — upload filled template, get import report
+GET  /api/import/template            — download the Excel import template
+POST /api/import/upload              — upload filled template, get a review preview (nothing committed yet)
+POST /api/import/{batch_id}/confirm  — commit a previously staged upload after review
 """
 
 from fastapi import APIRouter, UploadFile, File, HTTPException
@@ -31,9 +32,11 @@ async def download_template():
 @router.post("/upload")
 async def upload_import_file(file: UploadFile = File(...)):
     """
-    Upload a filled import template (.xlsx).
-    Returns a structured import report. Rejected rows are base64-encoded Excel
-    in the response field 'rejected_excel_b64'.
+    Upload a filled import template (.xlsx) for review.
+    Parses, validates, and groups by incident, but writes nothing to the
+    database yet. Returns a preview (one entry per incident group, colored
+    green/yellow/red/duplicate) plus an import_batch_id to pass to
+    POST /{batch_id}/confirm once the user has reviewed it.
     """
     if not file.filename.endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Only .xlsx files are accepted.")
@@ -43,7 +46,23 @@ async def upload_import_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
     try:
-        report = import_service.process_upload(contents, created_by_user_id=1)
-        return JSONResponse(content=report)
+        preview = import_service.stage_upload(contents, uploaded_by_user_id=1)
+        return JSONResponse(content=preview)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Import processing failed: {exc}")
+
+
+@router.post("/{batch_id}/confirm")
+async def confirm_import_batch(batch_id: int):
+    """
+    Commit a previously staged upload (see POST /upload) after the user has
+    reviewed the preview. Re-validates the staged file fresh right before
+    committing, then imports every fully valid incident group.
+    """
+    try:
+        report = import_service.confirm_import(batch_id, confirmed_by_user_id=1)
+        return JSONResponse(content=report)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Import confirmation failed: {exc}")

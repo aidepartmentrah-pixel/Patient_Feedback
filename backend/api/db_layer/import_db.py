@@ -6,7 +6,6 @@ Pure SQL operations only. No business logic.
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, date
 from core.database import get_connection
-from core.table_config import HR_EMPLOYEES_TABLE, PATIENT_ADMISSION_TABLE
 
 
 # ============================================================
@@ -122,11 +121,11 @@ def load_all_lookups() -> Dict[str, Any]:
         maps["buildings"] = {(r.BuildingName or "").lower().strip(): r.BuildingID for r in rows if r.BuildingName}
         lists["buildings"] = [r.BuildingName for r in rows if r.BuildingName]
 
-        # Doctors
-        cursor.execute("SELECT DoctorID, DoctorName FROM dbo.APP_LOOKUP_DOCTOR WHERE IsActive=1 ORDER BY DoctorName")
-        rows = cursor.fetchall()
-        maps["doctors"] = {(r.DoctorName or "").lower().strip(): r.DoctorID for r in rows if r.DoctorName}
-        lists["doctors"] = [r.DoctorName for r in rows if r.DoctorName]
+        # NOTE: doctors/workers are NOT loaded here. They come from the
+        # merged reserve + Hospital Directory API source instead (see
+        # import_service._load_directory_lookups) -- this module is pure
+        # local SQL only and has no business reaching out to the external
+        # directory client.
 
     finally:
         cursor.close()
@@ -138,17 +137,12 @@ def load_all_lookups() -> Dict[str, Any]:
 # ============================================================
 # PATIENT MATCHING
 # ============================================================
-
-def count_patient_exact(full_name: str, cursor) -> int:
-    """Count exact FullName matches across both patient tables."""
-    cursor.execute(f"""
-        SELECT COUNT(*) FROM (
-            SELECT FullName FROM {PATIENT_ADMISSION_TABLE} WHERE FullName = ?
-            UNION ALL
-            SELECT FullName FROM dbo.APP_RESERVE_PATIENT WHERE FullName = ?
-        ) AS combined
-    """, (full_name, full_name))
-    return cursor.fetchone()[0]
+# Exact-match counting against the Hospital Directory API + reserve table
+# now lives in import_service._count_patient_matches (it needs the external
+# API client, which is business logic, not pure SQL -- this module stays
+# SQL-only). count_patient_exact() used to query the retired
+# dbo.VW_PatientAdmission view directly and crashed on any install where
+# that view no longer exists.
 
 
 def create_reserve_patient(full_name: str, created_by_user_id: int, cursor) -> None:
@@ -166,25 +160,12 @@ def create_reserve_patient(full_name: str, created_by_user_id: int, cursor) -> N
 
 
 # ============================================================
-# WORKER MATCHING (per-query — HR view may be large)
+# WORKER MATCHING
 # ============================================================
-
-def find_worker_by_name(full_name: str) -> Optional[int]:
-    """Return EmployeeID for exact FullName match, or None."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute(
-            f"SELECT EmployeeID FROM {HR_EMPLOYEES_TABLE} WHERE FullName = ?",
-            (full_name,)
-        )
-        rows = cursor.fetchall()
-        if len(rows) == 1:
-            return rows[0].EmployeeID
-        return None
-    finally:
-        cursor.close()
-        conn.close()
+# find_worker_by_name() used to query HR_EMPLOYEES_TABLE (a stale local HR
+# view) directly. Worker matching now goes through the merged reserve +
+# Hospital Directory API source, same as doctors -- see
+# import_service._load_directory_lookups.
 
 
 # ============================================================
