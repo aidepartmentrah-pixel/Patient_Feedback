@@ -1031,8 +1031,11 @@ CREATE TABLE [dbo].[APP_UserPasswordExport] (
     [EncryptedPassword] nvarchar(500) NOT NULL,
     [UpdatedAt] datetime2 NOT NULL DEFAULT (sysutcdatetime()),
     [UpdatedByUserID] int NULL,
-    CONSTRAINT [PK_APP_UserPasswordExport] PRIMARY KEY CLUSTERED ([UserID]),
-    CONSTRAINT [FK_APP_UserPasswordExport_User] FOREIGN KEY ([UserID]) REFERENCES [dbo].[APP_Users] ([UserID])
+    CONSTRAINT [PK_APP_UserPasswordExport] PRIMARY KEY CLUSTERED ([UserID])
+    -- FK_APP_UserPasswordExport_User -> dbo.APP_Users(UserID) is added in
+    -- 004_create_constraints.sql, not here: APP_Users' own primary key
+    -- isn't created until 004 (see PK__APP_User__... there), same as every
+    -- other cross-table FK in this schema -- 002 only creates bare tables.
 );
 GO
 

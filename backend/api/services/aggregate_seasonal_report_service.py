@@ -44,8 +44,8 @@ def _fetch_doctors_with_incident_counts(
         query = f"""
             SELECT
                 icd.DoctorID,
-                COALESCE(d.DoctorName, vw.Name, rd.DoctorName, CONCAT('Doctor ', icd.DoctorID)) as DoctorName,
-                COALESCE(d.Specialty, vw.SpecialityName, rd.Specialty, '') as Specialty,
+                COALESCE(d.DoctorName, vw.DoctorName, rd.DoctorName, CONCAT('Doctor ', icd.DoctorID)) as DoctorName,
+                COALESCE(d.Specialty, vw.Specialty, rd.Specialty, '') as Specialty,
                 COUNT(*) as TotalIncidents,
                 -- Complaints (FeedbackIntentTypeID != 2, i.e. NOT NOTICE)
                 SUM(CASE WHEN COALESCE(ic.FeedbackIntentTypeID, 1) != 2 THEN 1 ELSE 0 END) as TotalComplaints,
@@ -71,8 +71,8 @@ def _fetch_doctors_with_incident_counts(
             WHERE CONVERT(DATE, ic.FeedbackRecievedDate) >= ?
               AND CONVERT(DATE, ic.FeedbackRecievedDate) <= ?
             GROUP BY icd.DoctorID,
-                     COALESCE(d.DoctorName, vw.Name, rd.DoctorName, CONCAT('Doctor ', icd.DoctorID)),
-                     COALESCE(d.Specialty, vw.SpecialityName, rd.Specialty, '')
+                     COALESCE(d.DoctorName, vw.DoctorName, rd.DoctorName, CONCAT('Doctor ', icd.DoctorID)),
+                     COALESCE(d.Specialty, vw.Specialty, rd.Specialty, '')
             ORDER BY COUNT(*) DESC
         """
         

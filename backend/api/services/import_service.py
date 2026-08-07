@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
 from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side, Protection
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.utils import get_column_letter
 
@@ -27,6 +27,17 @@ from . import patient_directory_service
 # idempotency pattern already proven by dbo.APP_DataMigration_Map for the
 # Phase K legacy-migration path (see ML_ARCHITECTURE_DECISION_RECORD.md 4.8).
 EXCEL_IMPORT_SOURCE_SYSTEM = "ExcelImportTemplate"
+
+# Injected into each parsed row dict to carry its real Excel sheet row
+# number through grouping/validation -- lets the review screen reference a
+# specific physical row for inline edits (see the /rows/{row_number} patch
+# endpoints). Not a real template header, so it can't collide with one.
+ROW_NUMBER_KEY = "__row_number__"
+
+# Grouping key used when Incident Group Key is blank -- a real, presentable
+# string (not an internal-looking sentinel) since it's shown directly in
+# the review screen as the group's label.
+MISSING_GROUP_KEY_LABEL = "(No Group Key)"
 
 # Clinical risk type ID meaning "Ordinary" (no red flag / never event) —
 # used as the default when the optional "Feedback Risk Type" column is blank,
@@ -52,34 +63,58 @@ def _staged_file_path(import_batch_id: int) -> Path:
     return STAGING_DIR / f"{import_batch_id}.xlsx"
 
 
+# Generated batch reports are persisted here so the batch history page can
+# offer a "download report" link for past batches, not just the one just
+# confirmed -- the original uploaded rows for rejected groups aren't stored
+# anywhere else (only accepted rows become real case records), so the
+# report itself is the only durable record of what a past batch contained.
+REPORTS_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "import_reports"
+
+
+def _report_file_path(import_batch_id: int) -> Path:
+    return REPORTS_DIR / f"{import_batch_id}.xlsx"
+
+
+def get_report_path(import_batch_id: int) -> Optional[Path]:
+    """Path to a past batch's saved report, or None if it doesn't exist."""
+    path = _report_file_path(import_batch_id)
+    return path if path.exists() else None
+
+
 # ============================================================
 # TEMPLATE COLUMN DEFINITIONS
 # ============================================================
 
 # (excel_header, lookup_list_key_or_inline_list, is_mandatory, col_width)
+# Record Type is optional (defaults to Complaint if blank) rather than
+# mandatory, so templates/sheets filled out before this column existed
+# still work without every row being rejected.
+# Feedback Type was dropped: dbo.APP_LOOKUP_FEEDBACK_INTENT_TYPE only has 2
+# values ("Improvement Opportunity" / "Notice") that map 1:1 onto Record
+# Type (Complaint/Notice) -- it's auto-derived instead, see
+# _feedback_intent_type_id_for_record_type().
 TEMPLATE_COLUMNS = [
-    ("Incident Group Key",          None,               True,  22),
+    ("Incident Group Key (رقم)",    None,               True,  22),
     ("Patient Name",                None,               True,  25),
-    ("Complaint Date (YYYY-MM-DD)", None,               True,  22),
-    ("Feedback Type (النوع)",       "feedback_types",   True,  20),
+    ("Incident Date",               None,               True,  22),
+    ("Received Date",               None,               True,  22),
+    ("Record Type",                 ["Complaint", "Notice"], False, 16),
     ("Source (المصدر)",             "sources",          True,  20),
     ("Issuing Dept (قسم الصادر)",   "org_units",        True,  28),
     ("Domain",                      "domains",          True,  20),
     ("Category",                    "categories",       True,  22),
     ("Subcategory",                 "subcategories",    True,  22),
     ("Classification",              "classifications",  True,  30),
-    ("Severity",                    "severities",       False, 16),
-    ("Stage",                       "stages",           False, 16),
-    ("Harm Level",                  "harm_levels",      False, 16),
-    ("Feedback Risk Type",          "risk_types",       False, 20),
-    ("Building",                    "buildings",        False, 18),
+    ("Severity",                    "severities",       True,  16),
+    ("Stage",                       "stages",           True,  16),
+    ("Harm Level",                  "harm_levels",      True,  16),
+    ("Feedback Risk Type",          "risk_types",       True,  20),
+    ("Building",                    "buildings",        True,  18),
     ("Is Inpatient",                ["Yes", "No"],      False, 14),
     ("Complaint Text",              None,               True,  50),
     ("Immediate Action",            None,               False, 40),
     ("Taken Action (الإجراءات المتخذة)", None,          False, 40),
-    ("Target Dept 1",               "org_units",        False, 28),
-    ("Target Dept 2",               "org_units",        False, 28),
-    ("Target Dept 3",               "org_units",        False, 28),
+    ("Target Dept",                 "org_units",        True,  28),
     ("Doctor 1",                    "doctors",          False, 25),
     ("Doctor 2",                    "doctors",          False, 25),
     ("Doctor 3",                    "doctors",          False, 25),
@@ -89,36 +124,47 @@ TEMPLATE_COLUMNS = [
 ]
 
 # Column index constants (0-based)
-COL_GROUP_KEY    = 0
-COL_PATIENT      = 1
-COL_DATE         = 2
-COL_FB_TYPE      = 3
-COL_SOURCE       = 4
-COL_ISSUING_DEPT = 5
-COL_DOMAIN       = 6
-COL_CATEGORY     = 7
-COL_SUBCATEGORY  = 8
-COL_CLASS        = 9
-COL_SEVERITY     = 10
-COL_STAGE        = 11
-COL_HARM         = 12
-COL_RISK         = 13
-COL_BUILDING     = 14
-COL_INPATIENT    = 15
-COL_COMPLAINT    = 16
-COL_IMMEDIATE    = 17
-COL_TAKEN        = 18
-COL_DEPT1        = 19
-COL_DEPT2        = 20
-COL_DEPT3        = 21
-COL_DOCTOR1      = 22
-COL_DOCTOR2      = 23
-COL_DOCTOR3      = 24
-COL_WORKER1      = 25
-COL_WORKER2      = 26
-COL_WORKER3      = 27
+COL_GROUP_KEY      = 0
+COL_PATIENT        = 1
+COL_INCIDENT_DATE  = 2
+COL_DATE           = 3  # Received Date
+COL_RECORD_TYPE    = 4
+COL_SOURCE         = 5
+COL_ISSUING_DEPT   = 6
+COL_DOMAIN         = 7
+COL_CATEGORY       = 8
+COL_SUBCATEGORY    = 9
+COL_CLASS          = 10
+COL_SEVERITY       = 11
+COL_STAGE          = 12
+COL_HARM           = 13
+COL_RISK           = 14
+COL_BUILDING       = 15
+COL_INPATIENT      = 16
+COL_COMPLAINT      = 17
+COL_IMMEDIATE      = 18
+COL_TAKEN          = 19
+COL_TARGET_DEPT    = 20
+COL_DOCTOR1        = 21
+COL_DOCTOR2        = 22
+COL_DOCTOR3        = 23
+COL_WORKER1        = 24
+COL_WORKER2        = 25
+COL_WORKER3        = 26
 
 MAX_DATA_ROWS = 2000  # data validation applies up to this row
+
+RECORD_TYPE_IDS = {"complaint": 1, "notice": 2}
+DEFAULT_RECORD_TYPE_ID = 1  # Complaint
+
+# dbo.APP_LOOKUP_FEEDBACK_INTENT_TYPE: 1=Improvement Opportunity (used for
+# Complaint records), 2=Notice (used for Notice records) -- confirmed
+# 1:1 with Record Type, see TEMPLATE_COLUMNS comment above.
+FEEDBACK_INTENT_TYPE_BY_RECORD_TYPE = {1: 1, 2: 2}
+
+
+def _feedback_intent_type_id_for_record_type(record_type_id: int) -> int:
+    return FEEDBACK_INTENT_TYPE_BY_RECORD_TYPE.get(record_type_id, 1)
 
 DIRECTORY_LOOKUP_LIMIT = 500  # matches the Hospital Directory API's per-call max (see hospital_directory_client)
 
@@ -186,6 +232,83 @@ def _count_patient_matches(full_name: str) -> int:
 # TEMPLATE GENERATOR
 # ============================================================
 
+_INSTRUCTIONS_TITLE = "تعليمات استخدام قالب استيراد الحالات"
+
+# Case, Incident, and Closed are kept in English inside the Arabic text on
+# purpose -- staff were trained on the app using these English terms, so
+# translating them would introduce unfamiliar vocabulary instead of helping.
+_INSTRUCTIONS_TEXT = [
+    "كل صف في هذا الملف يمثل Case واحد وليس Incident. الصفوف التي لها نفس "
+    "رقم Incident Group Key سيتم دمجها معًا تحت Incident واحد في النظام.",
+    "رقم Incident Group Key يجب أن يكون رقمًا فقط (مثال: 1)، بدون حروف أو رموز.",
+    "الأعمدة التي تحتوي على قائمة منسدلة (مثل التصنيف، القسم، الطبيب) يجب اختيار "
+    "القيمة منها فقط. لا تكتب نصًا غير موجود في القائمة، وإلا سيتم رفض الصف مع توضيح السبب.",
+    "لا تقم بتغيير ترتيب الأعمدة أو أسماء العناوين أو حذف/إضافة أعمدة. "
+    "الملف محمي لمنع ذلك، ويمكنك فقط تعبئة الخلايا المخصصة للبيانات.",
+    "إذا مر وقت طويل منذ تحميل هذا الملف، يفضل تحميل نسخة جديدة قبل التعبئة "
+    "لضمان أن القوائم المنسدلة (الأطباء، الأقسام، وغيرها) محدثة.",
+    "بعد رفع الملف، سيظهر لك تقرير يوضح كل Case تمت إضافتها بنجاح (مع رقمها "
+    "الجديد في النظام) وكل Case تم رفضها مع سبب الرفض بوضوح.",
+    "جميع الـ Cases التي يتم استيرادها تدخل النظام بحالة Closed مباشرة، "
+    "ولا تمر عبر نظام الرسائل أو صندوق الوارد.",
+    "إذا كان الطبيب أو الموظف غير موجود في القائمة، يمكنك ترك الخانة فارغة "
+    "والمتابعة، أو إضافته أولاً من صفحة الإعدادات > الأطباء ثم إعادة تحميل القالب.",
+]
+
+
+def _add_instructions_sheet(wb: Workbook) -> None:
+    """
+    Visible, RTL instructions sheet, first tab in the file (but not the
+    active one on open -- see generate_template's wb.active -- so the file
+    opens straight onto the fillable grid; Instructions is one click away).
+    Numbered-card layout: badge column + wrapped text column, bordered rows.
+    """
+    ins = wb.create_sheet("تعليمات - Instructions", 0)
+    ins.sheet_view.rightToLeft = True
+    ins.sheet_view.showGridLines = False
+    ins.column_dimensions["A"].width = 6
+    ins.column_dimensions["B"].width = 100
+
+    title_fill = PatternFill("solid", fgColor="1F4E79")
+    badge_fill = PatternFill("solid", fgColor="2E75B6")
+    card_fill = PatternFill("solid", fgColor="F2F7FC")
+    thin = Side(style="thin", color="D0DCE8")
+    card_border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    # Title banner
+    ins.merge_cells("A1:B1")
+    title_cell = ins.cell(row=1, column=1, value=_INSTRUCTIONS_TITLE)
+    title_cell.font = Font(bold=True, size=16, color="FFFFFF")
+    title_cell.fill = title_fill
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ins.row_dimensions[1].height = 36
+
+    row_i = 3
+    for i, line in enumerate(_INSTRUCTIONS_TEXT, start=1):
+        badge = ins.cell(row=row_i, column=1, value=i)
+        badge.font = Font(bold=True, size=13, color="FFFFFF")
+        badge.fill = badge_fill
+        badge.alignment = Alignment(horizontal="center", vertical="center")
+        badge.border = card_border
+
+        text = ins.cell(row=row_i, column=2, value=line)
+        text.font = Font(size=12)
+        text.fill = card_fill
+        text.alignment = Alignment(horizontal="right", vertical="center", wrap_text=True)
+        text.border = card_border
+
+        # Rough auto-height: ~45 chars per line at this column width/font size
+        ins.row_dimensions[row_i].height = max(30, 15 * (len(line) // 45 + 1))
+        ins.row_dimensions[row_i + 1].height = 8  # spacer between cards
+        row_i += 2
+
+    ins.protection.sheet = True
+    ins.protection.formatCells = True
+    ins.protection.formatColumns = True
+    ins.protection.insertColumns = True
+    ins.protection.deleteColumns = True
+
+
 def generate_template() -> BytesIO:
     """
     Build the Excel import template with live DB dropdowns.
@@ -218,8 +341,8 @@ def generate_template() -> BytesIO:
         lookup_col += 1
 
     # ---- Template sheet ----
-    ts = wb.create_sheet("Import Template", 0)
-    ts.sheet_view.rightToLeft = False
+    ts = wb.create_sheet("Import Template", 1)
+    ts.sheet_view.rightToLeft = True
 
     header_fill = PatternFill("solid", fgColor="1F4E79")
     mandatory_fill = PatternFill("solid", fgColor="2E75B6")
@@ -240,10 +363,36 @@ def generate_template() -> BytesIO:
     ts.row_dimensions[1].height = 40
     ts.freeze_panes = "A2"
 
-    # Apply data validation dropdowns
+    # Apply data validation dropdowns (+ a couple of special-cased columns
+    # that aren't list-based lookups: date type-checking, numeric-only Group Key)
     for col_i, (_, lookup_key, _, _) in enumerate(TEMPLATE_COLUMNS, start=1):
         col_letter = get_column_letter(col_i)
         cell_range = f"{col_letter}2:{col_letter}{MAX_DATA_ROWS}"
+        col_index0 = col_i - 1
+
+        if col_index0 in (COL_INCIDENT_DATE, COL_DATE):
+            dv = DataValidation(
+                type="date", operator="greaterThan", formula1="1900-01-01",
+                allow_blank=True,
+            )
+            dv.error = "Please enter a valid date (use the cell's date picker)."
+            dv.errorTitle = "Invalid date"
+            dv.sqref = cell_range
+            ts.add_data_validation(dv)
+            for row_i in range(2, MAX_DATA_ROWS + 1):
+                ts.cell(row=row_i, column=col_i).number_format = "yyyy-mm-dd"
+            continue
+
+        if col_index0 == COL_GROUP_KEY:
+            dv = DataValidation(
+                type="whole", operator="greaterThan", formula1="0",
+                allow_blank=True,
+            )
+            dv.error = "Incident Group Key must be a number only (e.g. 1), no letters."
+            dv.errorTitle = "Numbers only"
+            dv.sqref = cell_range
+            ts.add_data_validation(dv)
+            continue
 
         if lookup_key is None:
             continue
@@ -268,9 +417,12 @@ def generate_template() -> BytesIO:
         ts.add_data_validation(dv)
 
     # Instructions row (row 2 is first data row)
-    ts.cell(row=2, column=COL_GROUP_KEY + 1).value = "IMP-001"
+    ts.cell(row=2, column=COL_GROUP_KEY + 1).value = 1
     ts.cell(row=2, column=COL_PATIENT + 1).value = "Patient Name Here"
-    ts.cell(row=2, column=COL_DATE + 1).value = datetime.today().strftime("%Y-%m-%d")
+    ts.cell(row=2, column=COL_INCIDENT_DATE + 1).value = datetime.today().date()
+    ts.cell(row=2, column=COL_INCIDENT_DATE + 1).number_format = "yyyy-mm-dd"
+    ts.cell(row=2, column=COL_DATE + 1).value = datetime.today().date()
+    ts.cell(row=2, column=COL_DATE + 1).number_format = "yyyy-mm-dd"
     ts.cell(row=2, column=COL_COMPLAINT + 1).value = "Complaint text here"
 
     # Style the example row lightly
@@ -278,6 +430,31 @@ def generate_template() -> BytesIO:
     for col_i in range(1, len(TEMPLATE_COLUMNS) + 1):
         cell = ts.cell(row=2, column=col_i)
         cell.fill = example_fill
+
+    # ---- Lock the structure: header + column layout can't be touched,
+    # only the data-entry cells below it. Matches the decision that the
+    # template must be "fully locked structure" given the original problem
+    # was a customer editing it without knowing they shouldn't.
+    for row in ts.iter_rows(min_row=2, max_row=MAX_DATA_ROWS, max_col=len(TEMPLATE_COLUMNS)):
+        for cell in row:
+            cell.protection = Protection(locked=False)
+    ts.protection.sheet = True
+    ts.protection.formatCells = True
+    ts.protection.formatColumns = True
+    ts.protection.formatRows = True
+    ts.protection.insertColumns = True
+    ts.protection.insertRows = True
+    ts.protection.deleteColumns = True
+    ts.protection.deleteRows = True
+    ts.protection.sort = True
+    ts.protection.autoFilter = True
+    ts.protection.selectLockedCells = False
+    ts.protection.selectUnlockedCells = False
+
+    _add_instructions_sheet(wb)
+    # Instructions is the first tab (visible, one click away) but the file
+    # should open straight onto the fillable grid, not a wall of text.
+    wb.active = wb.sheetnames.index(ts.title)
 
     buf = BytesIO()
     wb.save(buf)
@@ -292,6 +469,17 @@ def generate_template() -> BytesIO:
 def _is_flagged_risk(risk_type_id: Optional[int]) -> bool:
     """Red flag or never event — see RED_FLAG_RISK_TYPE_ID/NEVER_EVENT_RISK_TYPE_ID."""
     return risk_type_id in (RED_FLAG_RISK_TYPE_ID, NEVER_EVENT_RISK_TYPE_ID)
+
+
+def _summarize_row_errors(row_results: List[Dict[str, Any]]) -> str:
+    """One-line summary of a group's per-row errors, for contexts that only
+    show a single reason string (the report Excel, legacy display)."""
+    parts = []
+    for r in row_results:
+        if r["errors"]:
+            messages = "; ".join(e["message"] for e in r["errors"])
+            parts.append(f"Row {r['row_number']}: {messages}")
+    return " | ".join(parts) if parts else "Unknown validation error"
 
 
 def _validate_and_group(file_bytes: bytes) -> Dict[str, Any]:
@@ -321,7 +509,8 @@ def _validate_and_group(file_bytes: bytes) -> Dict[str, Any]:
             rejected_groups.append({
                 "group_key": group_key,
                 "rows": group_rows,
-                "reason": result["error"],
+                "reason": _summarize_row_errors(result["rows"]),
+                "row_results": result["rows"],
                 "status": "red",
             })
         all_warnings.extend(result.get("warnings", []))
@@ -341,6 +530,7 @@ def _validate_and_group(file_bytes: bytes) -> Dict[str, Any]:
                     "group_key": group_key,
                     "rows": group_rows,
                     "reason": f"Incident Group Key '{group_key}' was already imported previously — duplicate",
+                    "row_results": validation["rows"],
                     "status": "duplicate",
                 })
             else:
@@ -359,18 +549,59 @@ def _validate_and_group(file_bytes: bytes) -> Dict[str, Any]:
     }
 
 
+def _json_safe(value: Any) -> Any:
+    """Make a raw cell value JSON-serializable (dates/datetimes -> ISO strings)."""
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    return value
+
+
+def _row_preview(row_result: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Shape one row for the review grid using the CURRENT template's column
+    set, not whatever headers happened to be in the uploaded file. A file
+    uploaded before a template change (e.g. missing the newer Incident Date
+    column, or still carrying a since-removed one like the old Feedback
+    Type) would otherwise leak stale, unpatchable field names into the grid
+    -- editing them would silently do nothing, since patch_staged_rows()
+    only recognizes today's TEMPLATE_COLUMNS headers. Columns the file
+    never had simply show up blank here, ready to be filled in through the
+    grid even though the original upload didn't have them.
+    """
+    raw = row_result["raw"]
+    return {
+        "row_number": row_result["row_number"],
+        "errors": row_result["errors"],
+        "fields": {col[0]: _json_safe(raw.get(col[0])) for col in TEMPLATE_COLUMNS},
+        "derived_hierarchy": row_result.get("derived_hierarchy") or {"domain": None, "category": None, "subcategory": None},
+    }
+
+
 def _build_preview_groups(valid_groups: List[Tuple[str, List[dict], dict]],
-                           rejected_groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+                           rejected_groups: List[Dict[str, Any]],
+                           order: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     """
     Shape validated/rejected groups for the review screen: one entry per
     Incident Group Key, colored per the decided taxonomy (green/yellow ready,
     red/duplicate blocked), with a red-flag/never-event badge that's purely
-    informational -- it never blocks the group or changes its color.
+    informational -- it never blocks the group or changes its color. Each
+    group carries its individual rows (row_number, per-row errors, editable
+    field values) so the review grid can show and fix a specific row.
+
+    `order` is the Incident Group Key sequence as it first appeared in the
+    uploaded file (see _group_rows -- a plain dict, insertion-ordered). Valid
+    and rejected groups are validated as two separate passes below, which
+    would otherwise bunch every ready group first and every rejected group
+    after; sorting by `order` at the end restores the file's natural
+    row-by-row order so a reviewer scanning the screen sees groups in the
+    same sequence they appear in Excel, statuses interleaved.
     """
     preview: List[Dict[str, Any]] = []
 
     for group_key, group_rows, validation in valid_groups:
-        validated_rows = validation["validated_rows"]
+        validated_rows = [r["data"] for r in validation["rows"]]
         preview.append({
             "group_key": group_key,
             "status": "yellow" if validation["is_new_patient"] else "green",
@@ -379,6 +610,7 @@ def _build_preview_groups(valid_groups: List[Tuple[str, List[dict], dict]],
             "row_count": len(validated_rows),
             "has_flagged_risk": any(_is_flagged_risk(r.get("risk_type_id")) for r in validated_rows),
             "reason": None,
+            "rows": [_row_preview(r) for r in validation["rows"]],
         })
 
     for rejected in rejected_groups:
@@ -390,7 +622,12 @@ def _build_preview_groups(valid_groups: List[Tuple[str, List[dict], dict]],
             "row_count": len(rejected["rows"]),
             "has_flagged_risk": False,
             "reason": rejected["reason"],
+            "rows": [_row_preview(r) for r in rejected.get("row_results", [])],
         })
+
+    if order is not None:
+        order_index = {key: i for i, key in enumerate(order)}
+        preview.sort(key=lambda g: order_index.get(g["group_key"], len(order_index)))
 
     return preview
 
@@ -436,7 +673,7 @@ def stage_upload(file_bytes: bytes, uploaded_by_user_id: int = 1) -> Dict[str, A
     if not validated["rows"]:
         return _empty_report("No data rows found in the uploaded file.")
 
-    preview_groups = _build_preview_groups(validated["valid_groups"], validated["rejected_groups"])
+    preview_groups = _build_preview_groups(validated["valid_groups"], validated["rejected_groups"], order=list(validated["groups"].keys()))
 
     summary_conn = get_connection()
     summary_cursor = summary_conn.cursor()
@@ -460,6 +697,152 @@ def stage_upload(file_bytes: bytes, uploaded_by_user_id: int = 1) -> Dict[str, A
     }
 
 
+def _load_pending_batch(import_batch_id: int) -> Dict[str, Any]:
+    """Fetch a batch and assert it's still PendingReview, or raise ValueError."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        batch = ml_import_batch_db.get_batch(cursor, import_batch_id)
+    finally:
+        cursor.close()
+        conn.close()
+
+    if batch is None:
+        raise ValueError(f"Import batch {import_batch_id} not found.")
+    if batch["Status"] != "PendingReview":
+        raise ValueError(
+            f"Import batch {import_batch_id} is not awaiting review (status: {batch['Status']})."
+        )
+    return batch
+
+
+def patch_staged_rows(import_batch_id: int, patches: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Apply field edits directly onto the staged Excel file for a still-
+    PendingReview batch, then re-validate. patches: [{"row_number": int,
+    "fields": {header: value}}, ...] -- the caller (PATCH /rows/{n}) always
+    passes a single-row list, but this stays list-shaped since the file
+    open/save is one cycle regardless of how many rows it covers. No other
+    code path needs to change: resume_preview()/confirm_import() already
+    just re-read whatever's currently in the staged file.
+
+    Incident Group Key is deliberately not patchable here -- changing it
+    would move a row into a different incident group entirely, which needs
+    a full re-group, not a single-cell edit. Fix that one in Excel and
+    re-upload, same as before this feature existed.
+    """
+    _load_pending_batch(import_batch_id)  # raises ValueError if not found/not PendingReview
+
+    staged_path = _staged_file_path(import_batch_id)
+    if not staged_path.exists():
+        raise ValueError(
+            f"Staged file for batch {import_batch_id} is no longer available — please re-upload."
+        )
+
+    header_to_col = {col[0]: i + 1 for i, col in enumerate(TEMPLATE_COLUMNS)}
+    group_key_header = TEMPLATE_COLUMNS[COL_GROUP_KEY][0]
+    date_headers = {TEMPLATE_COLUMNS[COL_INCIDENT_DATE][0], TEMPLATE_COLUMNS[COL_DATE][0]}
+
+    wb = load_workbook(staged_path)
+    ws = wb["Import Template"] if "Import Template" in wb.sheetnames else wb.active
+
+    for patch in patches:
+        row_number = patch.get("row_number")
+        if not isinstance(row_number, int) or row_number < 2:
+            continue
+        for header, value in (patch.get("fields") or {}).items():
+            if header == group_key_header:
+                continue  # not patchable, see docstring
+            col_i = header_to_col.get(header)
+            if col_i is None:
+                continue  # unknown field name, ignore rather than error the whole batch
+            cell = ws.cell(row=row_number, column=col_i)
+            if header in date_headers and value:
+                cell.value = datetime.strptime(str(value), "%Y-%m-%d").date()
+                cell.number_format = "yyyy-mm-dd"
+            else:
+                cell.value = value if value not in ("", None) else None
+
+    wb.save(staged_path)
+
+    validated = _validate_and_group(staged_path.read_bytes())
+    preview_groups = _build_preview_groups(validated["valid_groups"], validated["rejected_groups"], order=list(validated["groups"].keys()))
+    return {
+        "import_batch_id": import_batch_id,
+        "status": "PendingReview",
+        "total_rows": len(validated["rows"]),
+        "groups": preview_groups,
+        "warnings": validated["warnings"],
+    }
+
+
+def get_editable_lookups() -> Dict[str, List[str]]:
+    """
+    Plain internal lookup lists for the review grid's lookup-field editors
+    (Classification, Department, Domain, etc.) -- small, fetched once,
+    filtered client-side. Doctor/Worker are deliberately excluded: those
+    use live search instead (GET /api/records/search/doctors|employees),
+    same directory the manual Insert Record form already searches.
+    """
+    data = _load_lookups()
+    lists = dict(data["lists"])
+    lists.pop("doctors", None)
+    lists.pop("workers", None)
+    return lists
+
+
+def discard_batch(import_batch_id: int) -> None:
+    """Discard a still-PendingReview batch: delete its DB row and staged file."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        batch = ml_import_batch_db.get_batch(cursor, import_batch_id)
+        if batch is None:
+            raise ValueError(f"Import batch {import_batch_id} not found.")
+        if batch["Status"] == "Completed":
+            raise ValueError(
+                f"Import batch {import_batch_id} has already been confirmed and can't be discarded."
+            )
+        ml_import_batch_db.delete_batch(cursor, import_batch_id)
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+    staged_path = _staged_file_path(import_batch_id)
+    if staged_path.exists():
+        staged_path.unlink()
+
+
+def resume_preview(import_batch_id: int) -> Dict[str, Any]:
+    """
+    Re-open the review screen for a batch that's still PendingReview --
+    e.g. the user uploaded, then refreshed/navigated away before clicking
+    Add, losing the in-browser preview state. Re-reads the still-staged
+    file and re-validates fresh, same as stage_upload()'s first pass, just
+    without re-creating the batch row or re-checking the file checksum.
+    """
+    _load_pending_batch(import_batch_id)
+
+    staged_path = _staged_file_path(import_batch_id)
+    if not staged_path.exists():
+        raise ValueError(
+            f"Staged file for batch {import_batch_id} is no longer available — please re-upload."
+        )
+    file_bytes = staged_path.read_bytes()
+
+    validated = _validate_and_group(file_bytes)
+    preview_groups = _build_preview_groups(validated["valid_groups"], validated["rejected_groups"], order=list(validated["groups"].keys()))
+
+    return {
+        "import_batch_id": import_batch_id,
+        "status": "PendingReview",
+        "total_rows": len(validated["rows"]),
+        "groups": preview_groups,
+        "warnings": validated["warnings"],
+    }
+
+
 def confirm_import(import_batch_id: int, confirmed_by_user_id: int = 1) -> Dict[str, Any]:
     """
     Phase 2: re-validate the staged file fresh (catches anything that
@@ -467,21 +850,7 @@ def confirm_import(import_batch_id: int, confirmed_by_user_id: int = 1) -> Dict[
     valid incident group. Call only after the user has reviewed
     stage_upload()'s preview and clicked Add.
     """
-    batch_conn = get_connection()
-    batch_cursor = batch_conn.cursor()
-    try:
-        batch = ml_import_batch_db.get_batch(batch_cursor, import_batch_id)
-    finally:
-        batch_cursor.close()
-        batch_conn.close()
-
-    if batch is None:
-        raise ValueError(f"Import batch {import_batch_id} not found.")
-    if batch["Status"] != "PendingReview":
-        raise ValueError(
-            f"Import batch {import_batch_id} is not awaiting confirmation "
-            f"(status: {batch['Status']}) — it may have already been confirmed."
-        )
+    _load_pending_batch(import_batch_id)
 
     staged_path = _staged_file_path(import_batch_id)
     if not staged_path.exists():
@@ -499,17 +868,20 @@ def confirm_import(import_batch_id: int, confirmed_by_user_id: int = 1) -> Dict[
 
     # Import valid groups
     imported: List[Dict[str, Any]] = []
+    imported_with_rows: List[Tuple[Dict[str, Any], List[Dict]]] = []
     new_patients_count = 0
 
     for group_key, group_rows, validation in valid_groups:
         try:
-            imp_result = _import_group(group_key, validation["validated_rows"],
+            validated_rows = [r["data"] for r in validation["rows"]]
+            imp_result = _import_group(group_key, validated_rows,
                                        validation["is_new_patient"], confirmed_by_user_id,
                                        import_batch_id)
             imp_result["has_flagged_risk"] = any(
-                _is_flagged_risk(r.get("risk_type_id")) for r in validation["validated_rows"]
+                _is_flagged_risk(r.get("risk_type_id")) for r in validated_rows
             )
             imported.append(imp_result)
+            imported_with_rows.append((imp_result, group_rows))
             if validation["is_new_patient"]:
                 new_patients_count += 1
         except Exception as exc:
@@ -520,11 +892,15 @@ def confirm_import(import_batch_id: int, confirmed_by_user_id: int = 1) -> Dict[
                 "status": "red",
             })
 
-    # Build rejected Excel
-    rejected_b64 = None
-    if rejected_groups:
-        rej_buf = _generate_rejected_excel(rejected_groups)
-        rejected_b64 = base64.b64encode(rej_buf.getvalue()).decode()
+    # Full report Excel: green (imported, with new Incident Number) +
+    # red/blue (rejected/duplicate, with reason) -- always generated, not
+    # just when something was rejected, since it's the receipt of the batch.
+    report_buf = _generate_import_report_excel(imported_with_rows, rejected_groups)
+    report_bytes = report_buf.getvalue()
+    rejected_b64 = base64.b64encode(report_bytes).decode()
+
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    _report_file_path(import_batch_id).write_bytes(report_bytes)
 
     total_imported_rows = sum(r["rows_imported"] for r in imported)
     total_failed_rows_within_groups = sum(r.get("rows_failed", 0) for r in imported)
@@ -608,11 +984,11 @@ def _parse_excel(file_bytes: bytes) -> List[Dict[str, Any]]:
 
     headers = [cell.value for cell in sheet[1]]
     rows = []
-    for row in sheet.iter_rows(min_row=2, values_only=True):
+    for row_number, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
         # Skip completely empty rows
         if all(v is None or str(v).strip() == "" for v in row):
             continue
-        row_dict = {}
+        row_dict = {ROW_NUMBER_KEY: row_number}
         for i, val in enumerate(row):
             if i < len(headers) and headers[i]:
                 row_dict[headers[i]] = val
@@ -626,11 +1002,17 @@ def _parse_excel(file_bytes: bytes) -> List[Dict[str, Any]]:
 
 def _group_rows(rows: List[Dict]) -> Dict[str, List[Dict]]:
     groups: Dict[str, List[Dict]] = {}
+    header = TEMPLATE_COLUMNS[COL_GROUP_KEY][0]
     for row in rows:
-        key_raw = row.get("Incident Group Key")
-        key = str(key_raw).strip() if key_raw is not None else ""
+        key_raw = row.get(header)
+        if isinstance(key_raw, (int, float)) and float(key_raw).is_integer():
+            # Excel hands back a real number for the numeric-only Group Key
+            # column -- normalize 1.0/1 to the same "1" grouping key.
+            key = str(int(key_raw))
+        else:
+            key = str(key_raw).strip() if key_raw is not None else ""
         if not key:
-            key = "__NO_KEY__"
+            key = MISSING_GROUP_KEY_LABEL
         groups.setdefault(key, []).append(row)
     return groups
 
@@ -654,197 +1036,266 @@ def _lookup(maps: Dict, category: str, value: Optional[str]) -> Optional[int]:
     return maps.get(category, {}).get(value.lower().strip())
 
 
+def _parse_date_cell(raw: Any, field_label: str) -> Tuple[Optional[date], Optional[str]]:
+    """Parse a date-typed template cell, returning (parsed_date, error_message)."""
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return None, f"{field_label} is missing"
+    if isinstance(raw, datetime):
+        return raw.date(), None
+    if isinstance(raw, date):
+        return raw, None
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(str(raw).strip().split(" ")[0], fmt).date(), None
+        except ValueError:
+            continue
+    return None, f"{field_label} '{raw}' is not a valid date (use YYYY-MM-DD)"
+
+
 def _validate_group(group_key: str, rows: List[Dict], maps: Dict) -> Dict[str, Any]:
+    """
+    Validates every row in a group -- every row is checked regardless of
+    earlier rows' errors (unlike the old version, which stopped at the
+    first bad row), so the review screen can show and let the user fix
+    each broken row individually. A group is valid only if every one of
+    its rows ends up with zero errors.
+    """
     warnings: List[Dict] = []
-    validated_rows: List[Dict] = []
+    row_results: List[Dict[str, Any]] = []
     patient_name = None
 
-    for row_num, row in enumerate(rows, start=1):
-        errors = []
+    for row in rows:
+        row_number = row.get(ROW_NUMBER_KEY)
+        errors: List[Dict[str, str]] = []
+
+        def add_error(field: str, message: str) -> None:
+            errors.append({"field": field, "message": message})
 
         # --- Patient name (consistent across group) ---
         pname = _get(row, COL_PATIENT)
         if not pname:
-            errors.append("Patient Name is missing")
+            add_error("Patient Name", "Patient Name is missing")
         else:
             if patient_name is None:
                 patient_name = pname
             elif pname.lower().strip() != patient_name.lower().strip():
-                errors.append(
-                    f"Row {row_num}: Patient Name '{pname}' differs from group patient '{patient_name}'"
-                )
+                add_error("Patient Name", f"Patient Name '{pname}' differs from group patient '{patient_name}'")
 
-        # --- Date ---
-        date_raw = _get(row, COL_DATE)
-        parsed_date = None
-        if not date_raw:
-            errors.append("Complaint Date is missing")
-        else:
-            for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
-                try:
-                    parsed_date = datetime.strptime(str(date_raw).split(" ")[0], fmt).date()
-                    break
-                except ValueError:
-                    continue
-            if parsed_date is None:
-                errors.append(f"Complaint Date '{date_raw}' is not a valid date (use YYYY-MM-DD)")
+        # --- Incident Date / Received Date ---
+        # Both are Excel date-typed, so openpyxl usually hands back a real
+        # datetime/date object -- handled directly rather than round-tripped
+        # through a string. Plain text is still accepted as a fallback for
+        # legacy sheets copy-pasted from before these columns had a date type.
+        incident_date_raw = row.get(TEMPLATE_COLUMNS[COL_INCIDENT_DATE][0])
+        parsed_incident_date, incident_date_error = _parse_date_cell(incident_date_raw, "Incident Date")
+        if incident_date_error:
+            add_error("Incident Date", incident_date_error)
+
+        date_raw = row.get(TEMPLATE_COLUMNS[COL_DATE][0])
+        parsed_date, received_date_error = _parse_date_cell(date_raw, "Received Date")
+        if received_date_error:
+            add_error("Received Date", received_date_error)
+
+        # You can't receive a complaint before the incident that prompted it
+        # actually happened -- same rule case_service.create_case() enforces
+        # for manual entry, checked here too so it shows as a clear preview
+        # rejection instead of a raw error at confirm time.
+        if parsed_incident_date and parsed_date and parsed_incident_date > parsed_date:
+            add_error("Incident Date", "Incident Date cannot be after Received Date")
 
         # --- Complaint Text ---
         complaint = _get(row, COL_COMPLAINT)
         if not complaint:
-            errors.append("Complaint Text is missing")
-
-        # --- Feedback Type (mandatory) ---
-        fb_type_name = _get(row, COL_FB_TYPE)
-        fb_type_id = _lookup(maps, "feedback_types", fb_type_name)
-        if not fb_type_name:
-            errors.append("Feedback Type is missing")
-        elif fb_type_id is None:
-            errors.append(f"Feedback Type '{fb_type_name}' not found in database")
+            add_error("Complaint Text", "Complaint Text is missing")
 
         # --- Source (mandatory) ---
         source_name = _get(row, COL_SOURCE)
         source_id = _lookup(maps, "sources", source_name)
         if not source_name:
-            errors.append("Source is missing")
+            add_error("Source", "Source is missing")
         elif source_id is None:
-            errors.append(f"Source '{source_name}' not found in database")
+            add_error("Source", f"Source '{source_name}' not found in database")
 
         # --- Issuing Dept (mandatory) ---
         issuing_name = _get(row, COL_ISSUING_DEPT)
         issuing_id = _lookup(maps, "org_units", issuing_name)
         if not issuing_name:
-            errors.append("Issuing Dept is missing")
+            add_error("Issuing Dept", "Issuing Dept is missing")
         elif issuing_id is None:
-            errors.append(f"Issuing Dept '{issuing_name}' not found — reject")
+            add_error("Issuing Dept", f"Issuing Dept '{issuing_name}' not found — reject")
 
-        # --- Classification (mandatory, drives domain/category/subcategory) ---
+        # --- Record Type (optional, defaults to Complaint) ---
+        record_type_name = _get(row, COL_RECORD_TYPE)
+        if record_type_name:
+            record_type_id = RECORD_TYPE_IDS.get(record_type_name.lower().strip())
+            if record_type_id is None:
+                add_error("Record Type", f"Record Type '{record_type_name}' not recognized — use Complaint or Notice")
+        else:
+            record_type_id = DEFAULT_RECORD_TYPE_ID
+
+        # --- Classification (mandatory for Complaint rows; Notice rows
+        # don't require it, mirroring case_service's own Notice exception —
+        # drives domain/category/subcategory when present) ---
         class_name = _get(row, COL_CLASS)
         class_id = _lookup(maps, "classifications", class_name)
         domain_id = category_id = subcategory_id = None
         if not class_name:
-            errors.append("Classification is missing")
+            if record_type_id != RECORD_TYPE_IDS["notice"]:
+                add_error("Classification", "Classification is missing")
         elif class_id is None:
-            errors.append(f"Classification '{class_name}' not found — reject")
+            add_error("Classification", f"Classification '{class_name}' not found — reject")
         else:
             chain = maps.get("classification_chains", {}).get(class_id, {})
             domain_id = chain.get("domain_id")
             category_id = chain.get("category_id")
             subcategory_id = chain.get("subcategory_id")
 
-        # --- Optional lookups (warn+nullify if not found) ---
+        # Display-only breadcrumb, computed whenever Classification resolved
+        # -- independent of `errors`/`row_data` below, which stay gated on
+        # the row being fully valid. An otherwise-invalid row (e.g. a bad
+        # Severity) still has a real, resolved Classification chain worth
+        # showing the reviewer, not just a blank "derived" placeholder.
+        derived_hierarchy = {
+            "domain": maps.get("domain_names", {}).get(domain_id),
+            "category": maps.get("category_names", {}).get(category_id),
+            "subcategory": maps.get("subcategory_names", {}).get(subcategory_id),
+        }
+
+        # --- Severity / Stage / Harm Level / Feedback Risk Type / Building
+        # (all mandatory now -- was warn-and-continue, per explicit decision
+        # to require every field with no exceptions) ---
         severity_name = _get(row, COL_SEVERITY)
         severity_id = _lookup(maps, "severities", severity_name)
-        if severity_name and severity_id is None:
-            warnings.append({"group_key": group_key, "message": f"Severity '{severity_name}' not found — imported as empty"})
+        if not severity_name:
+            add_error("Severity", "Severity is missing")
+        elif severity_id is None:
+            add_error("Severity", f"Severity '{severity_name}' not found — reject")
 
         stage_name = _get(row, COL_STAGE)
         stage_id = _lookup(maps, "stages", stage_name)
-        if stage_name and stage_id is None:
-            warnings.append({"group_key": group_key, "message": f"Stage '{stage_name}' not found — imported as empty"})
+        if not stage_name:
+            add_error("Stage", "Stage is missing")
+        elif stage_id is None:
+            add_error("Stage", f"Stage '{stage_name}' not found — reject")
 
         harm_name = _get(row, COL_HARM)
         harm_id = _lookup(maps, "harm_levels", harm_name)
-        if harm_name and harm_id is None:
-            warnings.append({"group_key": group_key, "message": f"Harm Level '{harm_name}' not found — imported as empty"})
+        if not harm_name:
+            add_error("Harm Level", "Harm Level is missing")
+        elif harm_id is None:
+            add_error("Harm Level", f"Harm Level '{harm_name}' not found — reject")
 
         risk_name = _get(row, COL_RISK)
         risk_id = _lookup(maps, "risk_types", risk_name)
-        if risk_name and risk_id is None:
-            warnings.append({"group_key": group_key, "message": f"Risk Type '{risk_name}' not found — imported as empty"})
+        if not risk_name:
+            add_error("Feedback Risk Type", "Feedback Risk Type is missing")
+        elif risk_id is None:
+            add_error("Feedback Risk Type", f"Risk Type '{risk_name}' not found — reject")
 
         building_name = _get(row, COL_BUILDING)
         building_id = _lookup(maps, "buildings", building_name)
-        if building_name and building_id is None:
-            warnings.append({"group_key": group_key, "message": f"Building '{building_name}' not found — imported as empty"})
+        if not building_name:
+            add_error("Building", "Building is missing")
+        elif building_id is None:
+            add_error("Building", f"Building '{building_name}' not found — reject")
 
         # --- Is Inpatient ---
         inpatient_val = _get(row, COL_INPATIENT)
         is_inpatient = str(inpatient_val).strip().lower() in ("yes", "نعم", "1", "true") if inpatient_val else False
 
-        # --- Target Departments (reject if specified but not found) ---
+        # --- Target Department (mandatory) ---
+        # One column, not three: a row represents a case, not an incident,
+        # and a case has exactly one target department.
         target_dept_ids: List[int] = []
-        for dept_col in (COL_DEPT1, COL_DEPT2, COL_DEPT3):
-            dept_name = _get(row, dept_col)
-            if dept_name:
-                dept_id = _lookup(maps, "org_units", dept_name)
-                if dept_id is None:
-                    errors.append(f"Target Department '{dept_name}' not found — reject")
-                else:
-                    target_dept_ids.append(dept_id)
+        dept_name = _get(row, COL_TARGET_DEPT)
+        if not dept_name:
+            add_error("Target Dept", "Target Dept is missing")
+        else:
+            dept_id = _lookup(maps, "org_units", dept_name)
+            if dept_id is None:
+                add_error("Target Dept", f"Target Department '{dept_name}' not found — reject")
+            else:
+                target_dept_ids.append(dept_id)
 
-        # --- Doctors (warn if not found) ---
+        # --- Doctors: all three slots optional -- warn, don't block, if
+        # given but not found; silent if blank. ---
         doctor_ids: List[Tuple[int, str]] = []
         for doc_col in (COL_DOCTOR1, COL_DOCTOR2, COL_DOCTOR3):
             doc_name = _get(row, doc_col)
             if doc_name:
                 doc_id = _lookup(maps, "doctors", doc_name)
                 if doc_id is None:
-                    warnings.append({"group_key": group_key, "message": f"Doctor '{doc_name}' not found — imported without doctor linkage"})
+                    warnings.append({"group_key": group_key, "row_number": row_number, "message": f"Doctor '{doc_name}' not found — imported without doctor linkage"})
                 else:
                     doctor_ids.append((doc_id, doc_name))
 
-        # --- Workers (warn if not found) ---
+        # --- Workers: same as doctors, all three slots optional. ---
         worker_ids: List[Tuple[Any, str]] = []
         for wrk_col in (COL_WORKER1, COL_WORKER2, COL_WORKER3):
             wrk_name = _get(row, wrk_col)
             if wrk_name:
                 wrk_id = _lookup(maps, "workers", wrk_name)
                 if wrk_id is None:
-                    warnings.append({"group_key": group_key, "message": f"Worker '{wrk_name}' not found — skipped"})
+                    warnings.append({"group_key": group_key, "row_number": row_number, "message": f"Worker '{wrk_name}' not found — skipped"})
                 else:
                     worker_ids.append((wrk_id, wrk_name))
 
-        if errors:
-            # First error in any row rejects the whole group
-            return {
-                "valid": False,
-                "error": f"Row {row_num}: {errors[0]}",
-                "warnings": warnings,
+        row_data = None
+        if not errors:
+            row_data = {
+                "patient_name": pname,
+                "feedback_date": parsed_date,
+                "incident_date": parsed_incident_date,
+                "record_type_id": record_type_id,
+                "feedback_intent_id": _feedback_intent_type_id_for_record_type(record_type_id),
+                "source_id": source_id,
+                "issuing_org_unit_id": issuing_id,
+                "domain_id": domain_id,
+                "category_id": category_id,
+                "subcategory_id": subcategory_id,
+                "classification_id": class_id,
+                "severity_id": severity_id,
+                "stage_id": stage_id,
+                "harm_id": harm_id,
+                "risk_type_id": risk_id,
+                "building_id": building_id,
+                "is_inpatient": is_inpatient,
+                "complaint_text": complaint,
+                "immediate_action": _get(row, COL_IMMEDIATE),
+                "taken_action": _get(row, COL_TAKEN),
+                "target_dept_ids": target_dept_ids,
+                "doctor_ids": doctor_ids,
+                "worker_ids": worker_ids,
             }
 
-        validated_rows.append({
-            "patient_name": pname,
-            "feedback_date": parsed_date,
-            "feedback_intent_id": fb_type_id,
-            "source_id": source_id,
-            "issuing_org_unit_id": issuing_id,
-            "domain_id": domain_id,
-            "category_id": category_id,
-            "subcategory_id": subcategory_id,
-            "classification_id": class_id,
-            "severity_id": severity_id,
-            "stage_id": stage_id,
-            "harm_id": harm_id,
-            "risk_type_id": risk_id,
-            "building_id": building_id,
-            "is_inpatient": is_inpatient,
-            "complaint_text": complaint,
-            "immediate_action": _get(row, COL_IMMEDIATE),
-            "taken_action": _get(row, COL_TAKEN),
-            "target_dept_ids": target_dept_ids,
-            "doctor_ids": doctor_ids,
-            "worker_ids": worker_ids,
+        row_results.append({
+            "row_number": row_number,
+            "errors": errors,
+            "data": row_data,
+            "raw": {k: v for k, v in row.items() if k != ROW_NUMBER_KEY},
+            "derived_hierarchy": derived_hierarchy,
         })
 
-    # --- Patient ambiguity check (done once per group) ---
+    # --- Patient ambiguity check (group-level, once per group) ---
+    # Only worth the directory-search round trip if every row is otherwise
+    # clean -- no point checking a group that's already going to be
+    # rejected for unrelated reasons. If ambiguous, every row's blocked on
+    # it, since it's the shared patient the whole group was validated against.
     is_new_patient = False
-    if patient_name:
+    if patient_name and all(not r["errors"] for r in row_results):
         match_count = _count_patient_matches(patient_name)
-
         if match_count > 1:
-            return {
-                "valid": False,
-                "error": f"Patient '{patient_name}' matches {match_count} records — ambiguous, cannot import",
-                "warnings": warnings,
-            }
+            ambiguous_msg = {"field": "Patient Name", "message": f"Patient '{patient_name}' matches {match_count} records — ambiguous, cannot import"}
+            for r in row_results:
+                r["errors"].append(ambiguous_msg)
+                r["data"] = None
         is_new_patient = (match_count == 0)
 
     return {
-        "valid": True,
-        "error": None,
+        "group_key": group_key,
+        "valid": all(not r["errors"] for r in row_results),
+        "rows": row_results,
         "warnings": warnings,
-        "validated_rows": validated_rows,
         "patient_name": patient_name,
         "is_new_patient": is_new_patient,
     }
@@ -857,19 +1308,19 @@ def _validate_group(group_key: str, rows: List[Dict], maps: Dict) -> Dict[str, A
 def _build_case_service_payload(vrow: Dict, patient_name: str) -> Dict[str, Any]:
     """
     Translate an import_service validated-row dict into the data shape
-    case_service.create_case() expects. The Excel template doesn't collect a
-    distinct "incident date" or a "requires explanation" checkbox, so both
-    get sensible defaults (incident_date falls back to the complaint date,
-    matching the same fallback used elsewhere in the app; requires_explanation
-    defaults to False — the FSM's own red-flag/never-event check, driven by
-    the template's optional Risk Type column, is what actually opens the
-    explanation workflow for imported rows that need it).
+    case_service.create_case() expects. Incident Date and Received Date are
+    now distinct template columns (both mandatory, validated against each
+    other in _validate_group). requires_explanation defaults to False — the
+    FSM's own red-flag/never-event check, driven by the template's optional
+    Risk Type column, is what actually opens the explanation workflow for
+    imported rows that need it (moot anyway under save_mode='import_closed',
+    which keeps every imported case Closed regardless).
     """
     return {
-        "record_type_id": 1,  # Excel import template is complaint-only, not Notice
+        "record_type_id": vrow.get("record_type_id", DEFAULT_RECORD_TYPE_ID),
         "patient_name": patient_name,
         "feedback_received_date": vrow["feedback_date"],
-        "incident_date": vrow["feedback_date"],
+        "incident_date": vrow["incident_date"],
         "feedback_intent_type_id": vrow["feedback_intent_id"],
         "source_id": vrow.get("source_id"),
         "issuing_department_id": vrow["issuing_org_unit_id"],
@@ -1006,26 +1457,57 @@ def _import_group(
 # INTERNAL — REJECTED EXCEL
 # ============================================================
 
-def _generate_rejected_excel(rejected_groups: List[Dict]) -> BytesIO:
+def _generate_import_report_excel(
+    imported_with_rows: List[Tuple[Dict[str, Any], List[Dict]]],
+    rejected_groups: List[Dict[str, Any]],
+) -> BytesIO:
+    """
+    Full receipt of a confirmed batch: every original row, green if imported
+    (with its new system Incident Number) or red/blue if rejected (with the
+    reason) -- matches the original ask (green=imported+new ID, red=failure
+    +reason), extended with a distinct color for duplicates so that reason
+    isn't confused with a plain validation failure.
+    """
     wb = Workbook()
     ws = wb.active
-    ws.title = "Rejected Groups"
+    ws.title = "Import Report"
+    ws.sheet_view.rightToLeft = True
 
-    # Build header from template columns + reason column
-    headers = [col[0] for col in TEMPLATE_COLUMNS] + ["Rejection Reason"]
+    headers = [col[0] for col in TEMPLATE_COLUMNS] + ["Result", "System ID / Reason"]
     for col_i, h in enumerate(headers, start=1):
         cell = ws.cell(row=1, column=col_i, value=h)
         cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = PatternFill("solid", fgColor="C00000")
+        cell.fill = PatternFill("solid", fgColor="1F4E79")
+
+    green_fill = PatternFill("solid", fgColor="C6EFCE")
+    red_fill = PatternFill("solid", fgColor="FFC7CE")
+    duplicate_fill = PatternFill("solid", fgColor="BDD7EE")
 
     row_i = 2
+    for imp_result, group_rows in imported_with_rows:
+        incident_number = f"INC-{imp_result['incident_id']:06d}"
+        for row_data in group_rows:
+            for col_i, (header, _, _, _) in enumerate(TEMPLATE_COLUMNS, start=1):
+                cell = ws.cell(row=row_i, column=col_i, value=row_data.get(header))
+                cell.fill = green_fill
+            ws.cell(row=row_i, column=len(TEMPLATE_COLUMNS) + 1, value="Imported").fill = green_fill
+            ws.cell(row=row_i, column=len(TEMPLATE_COLUMNS) + 2, value=incident_number).fill = green_fill
+            row_i += 1
+
     for group in rejected_groups:
-        reason = group["reason"]
+        fill = duplicate_fill if group.get("status") == "duplicate" else red_fill
+        result_label = "Duplicate" if group.get("status") == "duplicate" else "Rejected"
         for row_data in group["rows"]:
             for col_i, (header, _, _, _) in enumerate(TEMPLATE_COLUMNS, start=1):
-                ws.cell(row=row_i, column=col_i, value=row_data.get(header))
-            ws.cell(row=row_i, column=len(TEMPLATE_COLUMNS) + 1, value=reason)
+                cell = ws.cell(row=row_i, column=col_i, value=row_data.get(header))
+                cell.fill = fill
+            ws.cell(row=row_i, column=len(TEMPLATE_COLUMNS) + 1, value=result_label).fill = fill
+            ws.cell(row=row_i, column=len(TEMPLATE_COLUMNS) + 2, value=group["reason"]).fill = fill
             row_i += 1
+
+    for col_i in range(1, len(headers) + 1):
+        ws.column_dimensions[get_column_letter(col_i)].width = 20
+    ws.freeze_panes = "A2"
 
     buf = BytesIO()
     wb.save(buf)
@@ -1045,3 +1527,20 @@ def _empty_report(message: str) -> Dict[str, Any]:
         "warnings": [{"group_key": "-", "message": message}],
         "rejected_excel_b64": None,
     }
+
+
+def list_import_batches(limit: int = 50) -> List[Dict[str, Any]]:
+    """Batch history for the review UI — mirrors the ML Training Run Artifacts table layout."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        batches = ml_import_batch_db.list_batches(cursor, limit=limit)
+    finally:
+        cursor.close()
+        conn.close()
+
+    for b in batches:
+        for key in ("UploadedAt", "CompletedAt"):
+            if b.get(key) is not None:
+                b[key] = b[key].isoformat()
+    return batches

@@ -194,6 +194,14 @@ database/sqlserver/seed/ml_training_data.v1.json.sha256
 # it produces (release/assets/*.zip) ships in the release, not this raw copy.
 /assets/
 
+# Runtime state for the Excel import feature (staged uploads awaiting
+# confirm, and generated batch reports) -- see import_service.py's
+# STAGING_DIR/REPORTS_DIR. Server-local scratch/output, not source; batch
+# IDs and filenames are meaningless outside the specific database they were
+# generated against.
+backend/data/import_staging/
+backend/data/import_reports/
+
 ENV/
 env.bak/
 venv.bak/

@@ -1123,13 +1123,14 @@ def get_complaint_by_id(complaint_id: int) -> Optional[Dict[str, Any]]:
         
         # Fetch linked employees (supervisors/workers)
         employee_query = f"""
-            SELECT 
+            SELECT
                 e.EmployeeID as employee_id,
-                hr.FullName as full_name,
-                hr.JobTitle as job_title,
+                COALESCE(hr.FullName, reserve.FullName) as full_name,
+                COALESCE(hr.JobTitle, reserve.JobTitle) as job_title,
                 e.IsPrimary as is_primary
             FROM dbo.APP_IncidentCaseEmployee e
             LEFT JOIN {HR_EMPLOYEES_TABLE} hr ON e.EmployeeID = hr.EmployeeID
+            LEFT JOIN dbo.APP_RESERVE_WORKER reserve ON e.EmployeeID = reserve.EmployeeID
             WHERE e.IncidentRequestCaseID = ?
             ORDER BY e.IsPrimary DESC, e.EmployeeID
         """
@@ -1149,9 +1150,9 @@ def get_complaint_by_id(complaint_id: int) -> Optional[Dict[str, Any]]:
         
         # Fetch linked doctors (check both hospital view and reserve table)
         doctor_query = f"""
-            SELECT 
+            SELECT
                 d.DoctorID as doctor_id,
-                COALESCE(doc.Name, reserve.DoctorName) as doctor_name,
+                COALESCE(doc.DoctorName, reserve.DoctorName) as doctor_name,
                 d.IsPrimary as is_primary
             FROM dbo.APP_IncidentCaseDoctor d
             LEFT JOIN {DOCTORS_TABLE} doc ON d.DoctorID = doc.DoctorID

@@ -53,6 +53,13 @@ def get_batch(cursor, import_batch_id: int) -> Optional[Dict[str, Any]]:
     return dict(zip(columns, row))
 
 
+def delete_batch(cursor, import_batch_id: int) -> None:
+    """Delete a batch row (only ever called for PendingReview/Processing
+    batches -- a Completed batch's ImportSourceRecordMap rows reference
+    real cases and must never be deleted this way)."""
+    cursor.execute("DELETE FROM ml.ImportBatch WHERE ImportBatchID = ?", (import_batch_id,))
+
+
 def list_batches(cursor, limit: int = 50) -> List[Dict[str, Any]]:
     """Most recent import batches, newest first -- backs the batch history page."""
     cursor.execute(

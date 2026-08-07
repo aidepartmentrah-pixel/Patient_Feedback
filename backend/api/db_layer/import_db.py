@@ -48,18 +48,21 @@ def load_all_lookups() -> Dict[str, Any]:
         cursor.execute("SELECT DomainID, DomainName FROM dbo.APP_LOOKUP_DOMAIN ORDER BY DomainOrder")
         rows = cursor.fetchall()
         maps["domains"] = {(r.DomainName or "").lower().strip(): r.DomainID for r in rows if r.DomainName}
+        maps["domain_names"] = {r.DomainID: r.DomainName for r in rows if r.DomainName}
         lists["domains"] = [r.DomainName for r in rows if r.DomainName]
 
         # Categories
         cursor.execute("SELECT CategoryID, CategoryName FROM dbo.APP_LOOKUP_CATEGORY ORDER BY CategoryOrder")
         rows = cursor.fetchall()
         maps["categories"] = {(r.CategoryName or "").lower().strip(): r.CategoryID for r in rows if r.CategoryName}
+        maps["category_names"] = {r.CategoryID: r.CategoryName for r in rows if r.CategoryName}
         lists["categories"] = [r.CategoryName for r in rows if r.CategoryName]
 
         # Subcategories
         cursor.execute("SELECT SubCategoryID, SubCategoryName FROM dbo.APP_LOOKUP_SUBCATEGORY ORDER BY SubCategoryName")
         rows = cursor.fetchall()
         maps["subcategories"] = {(r.SubCategoryName or "").lower().strip(): r.SubCategoryID for r in rows if r.SubCategoryName}
+        maps["subcategory_names"] = {r.SubCategoryID: r.SubCategoryName for r in rows if r.SubCategoryName}
         lists["subcategories"] = [r.SubCategoryName for r in rows if r.SubCategoryName]
 
         # Classifications + chain data (domain/category/subcategory per classification)
@@ -183,13 +186,23 @@ def insert_incident(
 ) -> int:
     cursor.execute("""
         INSERT INTO dbo.APP_Incident
-            (patient_name, feedback_intent_type_id, issuing_org_unit_id,
+            (incident_number, patient_name, feedback_intent_type_id, issuing_org_unit_id,
              building_id, is_inpatient, created_by_user_id)
         OUTPUT INSERTED.incident_id
-        VALUES (?,?,?,?,?,?)
-    """, (patient_name, feedback_intent_type_id, issuing_org_unit_id,
+        VALUES (?,?,?,?,?,?,?)
+    """, ("PENDING", patient_name, feedback_intent_type_id, issuing_org_unit_id,
           building_id, int(is_inpatient), created_by_user_id))
-    return cursor.fetchone()[0]
+    incident_id = int(cursor.fetchone()[0])
+
+    # incident_number is NOT NULL with no DB-side default, and incident_id
+    # isn't known until after the INSERT (IDENTITY column) -- same
+    # placeholder-then-overwrite pattern as incident_parent.create_incident_parent,
+    # same "INC-000123" format.
+    cursor.execute(
+        "UPDATE dbo.APP_Incident SET incident_number = ? WHERE incident_id = ?",
+        (f"INC-{incident_id:06d}", incident_id),
+    )
+    return incident_id
 
 
 def insert_case(

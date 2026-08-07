@@ -80,15 +80,29 @@ def _split_statements(batch: str):
     not a SQL syntax problem. One statement per execute() avoids it entirely.
     Accumulates lines until one ends with ';', so a two-line
     "IF NOT EXISTS (...)\\n    INSERT ...;" pair stays together as one statement.
+
+    BEGIN/END-aware: a "IF NOT EXISTS (...) BEGIN ... END" block can contain
+    several ;-terminated statements (DECLARE/INSERT/SET/UPDATE) that share
+    local variables and MUST run together in one execute() call, or the
+    variables are out of scope by the second statement. Lines are only
+    treated as statement boundaries while BEGIN/END nesting depth is 0 --
+    matched as whole trimmed lines (this codebase's seed scripts always put
+    BEGIN/END alone on their own line), not as a general T-SQL parser.
     """
     statements = []
     buf = []
+    depth = 0
     for line in batch.splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("--"):
             continue
         buf.append(line)
-        if stripped.endswith(";"):
+        upper = stripped.upper()
+        if upper == "BEGIN" or upper.endswith(" BEGIN"):
+            depth += 1
+        elif upper == "END":
+            depth -= 1
+        if depth == 0 and stripped.endswith(";"):
             statements.append("\n".join(buf))
             buf = []
     if buf:

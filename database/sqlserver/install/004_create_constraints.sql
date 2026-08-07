@@ -248,6 +248,10 @@ IF NOT EXISTS (SELECT 1 FROM sys.key_constraints WHERE name = 'PK__APP_User__178
 ALTER TABLE [dbo].[APP_Users] ADD CONSTRAINT [PK__APP_User__1788CCACCB9F4027] PRIMARY KEY CLUSTERED ([UserID]);
 GO
 
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_APP_UserPasswordExport_User')
+ALTER TABLE [dbo].[APP_UserPasswordExport] ADD CONSTRAINT [FK_APP_UserPasswordExport_User] FOREIGN KEY ([UserID]) REFERENCES [dbo].[APP_Users] ([UserID]);
+GO
+
 IF NOT EXISTS (SELECT 1 FROM sys.key_constraints WHERE name = 'PK_IncidentRequest')
 ALTER TABLE [dbo].[IncidentRequest] ADD CONSTRAINT [PK_IncidentRequest] PRIMARY KEY CLUSTERED ([UniqueID]);
 GO
