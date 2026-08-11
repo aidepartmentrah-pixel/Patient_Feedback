@@ -317,3 +317,6 @@ data_exploration/patient_feedback.db
 model_training/patient_feedback.db
 models_directory/patient_feedback.db
 models_directory/Classification_Models/model_storage/mpnet_embeddings/model.safetensors
+
+# Packager output — fully generated, never hand-authored
+/release_packager/
