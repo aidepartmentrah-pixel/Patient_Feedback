@@ -392,7 +392,7 @@ def verify_integration(
 #   "disabled"           — integration not configured or Enabled=0 (not an error)
 #   "unauthorized"        — 401 from the API (bad/expired key)
 #   "not_found"           — 404 (get_patient only)
-#   "bad_request"          — 400 (e.g. no search criteria given)
+#   "bad_request"          — 400 or 422 (e.g. no search criteria given)
 #   "timeout" / "connection_error" / "ssl_error" — network-level failure
 #   "http_error"           — any other non-2xx status
 #   "invalid_response"      — 2xx but body wasn't parseable JSON in the expected shape
@@ -455,7 +455,7 @@ def _get(path: str, params: dict) -> dict:
         return {"status": "unauthorized", "message": "Hospital Directory API rejected the configured API key (401 Unauthorized)."}
     if resp.status_code == 404:
         return {"status": "not_found", "message": "Not found."}
-    if resp.status_code == 400:
+    if resp.status_code in (400, 422):
         try:
             detail = resp.json().get("message", resp.text[:300])
         except Exception:
