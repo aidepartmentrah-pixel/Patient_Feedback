@@ -1,3 +1,61 @@
+# Patient Feedback System — Release 1.1.0
+
+**Release date:** 2026-08-14
+**Prepared by:** RAH Lab
+**Application Release:** 1.1.0 (bulk import feature overhaul — backward compatible with 1.0.0)
+**Infrastructure Release compatibility:** RAH-OIP 1.0.0 or later
+**Database schema:** unchanged from 1.0.0 — no migration required, safe to update in place
+
+## Contents
+
+| Component | Version | Notes |
+|---|---|---|
+| Backend | 1.1.0 | `rah-pfms-backend:1.1.0` |
+| Frontend | 1.1.0 | `rah-pfms-frontend:1.1.0` |
+| DB init/migrate | 1.1.0 | content unchanged from 1.0.0 (no schema/seed changes) — retagged `rah-pfms-db-init:1.1.0` to match this release's shared `APP_VERSION`, since `compose/docker-compose.yml` resolves all three images off one version variable |
+
+## What's new
+
+Application-code-only release focused on the bulk Excel import feature. No
+database schema changes, no new environment variables/secrets, no new
+infrastructure components — a straight image swap over an existing 1.0.0
+install.
+
+- **Import template reordered to mirror the hospital's real source report**
+  column-for-column, so staff can paste their existing Excel data in one
+  shot instead of retyping/reordering it. Sheet protection that was
+  fighting normal paste/resize use was removed; column-identity is now
+  enforced server-side at upload time instead (a stronger guarantee than
+  the old client-side Excel lock, which had no password anyway).
+- **Tolerant lookup matching** for Source/Department/Severity/Harm/etc. —
+  minor wording drift in real hospital data (e.g. "Moderate" vs. the
+  database's "Medium") no longer hard-rejects an otherwise-valid row. Every
+  non-exact match is flagged for review, never silently auto-corrected.
+- **Dual-channel Classification matching**: the database's Classification
+  list is Arabic-only, but the source data provides both an Arabic and an
+  English classification per row. Both are now used as independent
+  evidence for the same match instead of discarding one language's signal.
+- **Incident grouping redesigned**: rows are now grouped into one incident
+  by the hospital's own legacy record number (already present in the
+  source data) instead of requiring staff to hand-type a separate grouping
+  number per row — the old manual field was a real source of data-entry
+  error at scale (100+ rows) and has been removed.
+- Fixed a false "Record Type not recognized" rejection, a misleading
+  "mandatory" marking on fields the system never actually validated
+  (Domain/Category/Subcategory — these are informational, always derived
+  from Classification), and several review-screen display bugs where a
+  correctly-resolved value (Record Type, Classification) displayed as
+  blank/unset.
+
+## Upgrade note
+
+This is a drop-in image update over an existing 1.0.0 deployment — run
+`update_offline.sh` per `UPDATE_OFFLINE.md`. No database migration step
+applies. Anyone with an already-downloaded import template should
+re-download a fresh copy after updating; the column layout changed.
+
+---
+
 # Patient Feedback System — Release 1.0.0
 
 **Release date:** 2026-07-22

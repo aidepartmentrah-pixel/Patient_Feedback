@@ -163,7 +163,7 @@ def check_health(
         try:
             cfg = get_active_config()
         except IntegrationNotConfiguredError as e:
-            return {"success": False, "status_code": None, "message": str(e), "duration_ms": 0.0}
+            return {"success": False, "status_code": None, "message": str(e), "duration_ms": 0.0, "attempted": False}
         base_url = cfg["base_url"]
         if timeout_seconds is None:
             timeout_seconds = cfg["timeout_seconds"]
@@ -174,11 +174,11 @@ def check_health(
     verify_tls = True if verify_tls is None else verify_tls
 
     if not base_url:
-        return {"success": False, "status_code": None, "message": "No API base URL is configured.", "duration_ms": 0.0}
+        return {"success": False, "status_code": None, "message": "No API base URL is configured.", "duration_ms": 0.0, "attempted": False}
 
     normalized, error = normalize_base_url(base_url)
     if error:
-        return {"success": False, "status_code": None, "message": error, "duration_ms": 0.0}
+        return {"success": False, "status_code": None, "message": error, "duration_ms": 0.0, "attempted": False}
 
     url = f"{normalized}/health"
 
@@ -187,13 +187,14 @@ def check_health(
         duration_ms = round((time.time() - start) * 1000, 1)
 
         if resp.status_code == 200:
-            return {"success": True, "status_code": 200, "message": "Hospital Directory API is reachable.", "duration_ms": duration_ms}
+            return {"success": True, "status_code": 200, "message": "Hospital Directory API is reachable.", "duration_ms": duration_ms, "attempted": True}
 
         return {
             "success": False,
             "status_code": resp.status_code,
             "message": f"Health check returned HTTP {resp.status_code}.",
             "duration_ms": duration_ms,
+            "attempted": True,
         }
 
     except requests.exceptions.SSLError:
@@ -202,18 +203,21 @@ def check_health(
             "message": "TLS certificate verification failed. If this is a self-signed/internal certificate, "
                         "disable 'Verify TLS certificate' for this integration.",
             "duration_ms": round((time.time() - start) * 1000, 1),
+            "attempted": True,
         }
     except requests.exceptions.Timeout:
         return {
             "success": False, "status_code": None,
             "message": f"Connection timed out after {timeout_seconds}s.",
             "duration_ms": round((time.time() - start) * 1000, 1),
+            "attempted": True,
         }
     except requests.exceptions.ConnectionError:
         return {
             "success": False, "status_code": None,
             "message": f"Could not reach {normalized} — connection refused or host unreachable.",
             "duration_ms": round((time.time() - start) * 1000, 1),
+            "attempted": True,
         }
     except Exception as e:
         logger.error(f"Unexpected error checking Hospital Directory API health: {type(e).__name__}: {e}")
@@ -221,6 +225,7 @@ def check_health(
             "success": False, "status_code": None,
             "message": f"Unexpected error: {str(e)[:300]}",
             "duration_ms": round((time.time() - start) * 1000, 1),
+            "attempted": True,
         }
 
 
@@ -342,11 +347,20 @@ def verify_integration(
     health_result = check_health(base_url, timeout_seconds, verify_tls)
 
     if not health_result["success"]:
+        # "attempted" distinguishes a real network failure (DNS/connection/
+        # TLS/timeout — a request actually went out) from a validation
+        # failure caught before any request was made (bad scheme, missing
+        # host, not configured). Labeling the latter "Server unreachable"
+        # is misleading — the server was never even contacted.
+        if health_result.get("attempted", True):
+            prefix, skip_reason = "Server unreachable", "Skipped — server unreachable."
+        else:
+            prefix, skip_reason = "Configuration error", "Skipped — invalid configuration."
         return {
             "success": False,
             "health": health_result,
-            "auth": {"success": False, "status_code": None, "message": "Skipped — server unreachable.", "duration_ms": 0.0},
-            "message": f"Server unreachable: {health_result['message']}",
+            "auth": {"success": False, "status_code": None, "message": skip_reason, "duration_ms": 0.0},
+            "message": f"{prefix}: {health_result['message']}",
         }
 
     auth_result = verify_api_key(base_url, api_key, timeout_seconds, verify_tls)

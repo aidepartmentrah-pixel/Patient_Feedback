@@ -225,19 +225,22 @@ class MonthlyReportService:
             else:
                 period_end = date(year, month + 1, 1) - timedelta(days=1)
             
+            # Levantine/Syriac Arabic month names (as used in Lebanon and
+            # Bilad al-Sham), not the standard Arabic names — e.g. "آب" not
+            # "أغسطس" for August.
             months = {
-                1: ("January", "يناير"),
-                2: ("February", "فبراير"),
-                3: ("March", "مارس"),
-                4: ("April", "أبريل"),
-                5: ("May", "مايو"),
-                6: ("June", "يونيو"),
-                7: ("July", "يوليو"),
-                8: ("August", "أغسطس"),
-                9: ("September", "سبتمبر"),
-                10: ("October", "أكتوبر"),
-                11: ("November", "نوفمبر"),
-                12: ("December", "ديسمبر")
+                1: ("January", "كانون الثاني"),
+                2: ("February", "شباط"),
+                3: ("March", "آذار"),
+                4: ("April", "نيسان"),
+                5: ("May", "أيار"),
+                6: ("June", "حزيران"),
+                7: ("July", "تموز"),
+                8: ("August", "آب"),
+                9: ("September", "أيلول"),
+                10: ("October", "تشرين الأول"),
+                11: ("November", "تشرين الثاني"),
+                12: ("December", "كانون الأول")
             }
             
             label = f"{months[month][0]} {year}"
@@ -355,19 +358,22 @@ class MonthlyReportService:
             else:
                 period_end = date(year, month + 1, 1) - timedelta(days=1)
             
+            # Levantine/Syriac Arabic month names (as used in Lebanon and
+            # Bilad al-Sham), not the standard Arabic names — e.g. "آب" not
+            # "أغسطس" for August.
             months = {
-                1: ("January", "يناير"),
-                2: ("February", "فبراير"),
-                3: ("March", "مارس"),
-                4: ("April", "أبريل"),
-                5: ("May", "مايو"),
-                6: ("June", "يونيو"),
-                7: ("July", "يوليو"),
-                8: ("August", "أغسطس"),
-                9: ("September", "سبتمبر"),
-                10: ("October", "أكتوبر"),
-                11: ("November", "نوفمبر"),
-                12: ("December", "ديسمبر")
+                1: ("January", "كانون الثاني"),
+                2: ("February", "شباط"),
+                3: ("March", "آذار"),
+                4: ("April", "نيسان"),
+                5: ("May", "أيار"),
+                6: ("June", "حزيران"),
+                7: ("July", "تموز"),
+                8: ("August", "آب"),
+                9: ("September", "أيلول"),
+                10: ("October", "تشرين الأول"),
+                11: ("November", "تشرين الثاني"),
+                12: ("December", "كانون الأول")
             }
             
             label = f"{months[month][0]} {year}"

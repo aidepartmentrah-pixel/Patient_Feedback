@@ -6,12 +6,13 @@ Handles template generation, Excel parsing, validation, and controlled import.
 import base64
 import hashlib
 from datetime import datetime, date
+from difflib import SequenceMatcher
 from io import BytesIO
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
 from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Font, Alignment, PatternFill, Border, Side, Protection
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.utils import get_column_letter
 
@@ -34,7 +35,7 @@ EXCEL_IMPORT_SOURCE_SYSTEM = "ExcelImportTemplate"
 # endpoints). Not a real template header, so it can't collide with one.
 ROW_NUMBER_KEY = "__row_number__"
 
-# Grouping key used when Incident Group Key is blank -- a real, presentable
+# Grouping key used when the Incident Number (Old System) is blank -- a real, presentable
 # string (not an internal-looking sentinel) since it's shown directly in
 # the review screen as the group's label.
 MISSING_GROUP_KEY_LABEL = "(No Group Key)"
@@ -93,28 +94,63 @@ def get_report_path(import_batch_id: int) -> Optional[Path]:
 # values ("Improvement Opportunity" / "Notice") that map 1:1 onto Record
 # Type (Complaint/Notice) -- it's auto-derived instead, see
 # _feedback_intent_type_id_for_record_type().
+# Column order is deliberately NOT grouped by topic. It's split into 3 zones
+# so the middle zone is a 1:1 positional mirror of the hospital's real source
+# spreadsheet (Desktop/data.xlsx, sheet "أساسية(1+2+3)2025+1-2026") -- since a
+# raw Excel block-paste is purely positional (it doesn't match by header
+# text the way _parse_excel does), matching the source's own column order is
+# what lets the team paste their whole sheet in one shot with zero manual
+# reordering. Zone 1 (no source equivalent, entered manually, kept leftmost
+# for visibility) -> Zone 2 (source mirror, placeholders inline for source
+# columns we don't use, so nothing needs deleting/skipping before pasting)
+# -> Zone 3 (remaining our-system-only fields, filled manually/left blank).
+# Placeholder columns (lookup_key=None, mandatory=False, no COL_* constant
+# below) are never read by _get()/_validate_group() -- they only exist to
+# hold pasted source data so the block's column count/order lines up.
 TEMPLATE_COLUMNS = [
-    ("Incident Group Key (رقم)",    None,               True,  22),
-    ("Patient Name",                None,               True,  25),
+    # ---- Zone 1: no source equivalent, manual entry ----
     ("Incident Date",               None,               True,  22),
+
+    # ---- Zone 2: mirrors data.xlsx column-for-column ----
     ("Received Date",               None,               True,  22),
-    ("Record Type",                 ["Complaint", "Notice"], False, 16),
-    ("Source (المصدر)",             "sources",          True,  20),
+    # This IS the old system's Incident number -- not a meaningless legacy
+    # ID. This system's Incident->Case structure was deliberately built to
+    # mirror the old system's, so rows sharing this number are the same
+    # incident there and must be grouped the same way here. _group_rows()
+    # groups by this column (see COL_INCIDENT_KEY) instead of a separate
+    # hand-typed key, which doesn't scale past a handful of rows -- typing a
+    # correct, consistent grouping number for ~100 rows by hand is exactly
+    # how rows for different patients ended up sharing one group number.
+    ("Incident Number (Old System) (الرقم)", None,      True,  20),
+    ("Patient Name",                None,               True,  25),
     ("Issuing Dept (قسم الصادر)",   "org_units",        True,  28),
-    ("Domain",                      "domains",          True,  20),
-    ("Category",                    "categories",       True,  22),
-    ("Subcategory",                 "subcategories",    True,  22),
-    ("Classification",              "classifications",  True,  30),
+    ("Administration (ادارة) — reference only, not imported", None, False, 24),
+    ("Directorate Concerned (الدائرة المعنية) — reference only, not imported", None, False, 28),
+    ("Target Dept",                 "org_units",        True,  28),
+    ("Source (المصدر)",             "sources",          True,  20),
+    ("Record Type",                 ["Complaint", "Notice"], False, 16),
+    # Domain/Category/Subcategory are informational only -- the system
+    # always derives these from the matched Classification
+    # (classification_chains[class_id]); nothing typed in these 3 cells is
+    # ever read. Labeled and marked non-mandatory accordingly, rather than
+    # implying an independent requirement the backend doesn't enforce.
+    ("Domain (auto-derived from Classification)", None, False, 20),
+    ("Category (auto-derived from Classification)", None, False, 22),
+    ("Subcategory (auto-derived from Classification)", None, False, 22),
+    ("Classification (Arabic)",     "classifications",  True,  30),
+    ("Classification (English)",    None,               False, 30),
+    ("Complaint Text",              None,               True,  60),
+    ("Immediate Action",            None,               False, 50),
+    ("Taken Action (الإجراءات المتخذة)", None,          False, 50),
     ("Severity",                    "severities",       True,  16),
     ("Stage",                       "stages",           True,  16),
     ("Harm Level",                  "harm_levels",      True,  16),
+    ("Status — reference only, not imported (imports are always closed)", None, False, 16),
     ("Feedback Risk Type",          "risk_types",       True,  20),
+
+    # ---- Zone 3: no source equivalent, manual entry / optional ----
     ("Building",                    "buildings",        True,  18),
     ("Is Inpatient",                ["Yes", "No"],      False, 14),
-    ("Complaint Text",              None,               True,  50),
-    ("Immediate Action",            None,               False, 40),
-    ("Taken Action (الإجراءات المتخذة)", None,          False, 40),
-    ("Target Dept",                 "org_units",        True,  28),
     ("Doctor 1",                    "doctors",          False, 25),
     ("Doctor 2",                    "doctors",          False, 25),
     ("Doctor 3",                    "doctors",          False, 25),
@@ -123,38 +159,60 @@ TEMPLATE_COLUMNS = [
     ("Worker 3 (Full Name)",        "workers",          False, 25),
 ]
 
-# Column index constants (0-based)
-COL_GROUP_KEY      = 0
-COL_PATIENT        = 1
-COL_INCIDENT_DATE  = 2
-COL_DATE           = 3  # Received Date
-COL_RECORD_TYPE    = 4
-COL_SOURCE         = 5
-COL_ISSUING_DEPT   = 6
-COL_DOMAIN         = 7
-COL_CATEGORY       = 8
-COL_SUBCATEGORY    = 9
-COL_CLASS          = 10
-COL_SEVERITY       = 11
-COL_STAGE          = 12
-COL_HARM           = 13
-COL_RISK           = 14
-COL_BUILDING       = 15
-COL_INPATIENT      = 16
-COL_COMPLAINT      = 17
-COL_IMMEDIATE      = 18
-COL_TAKEN          = 19
-COL_TARGET_DEPT    = 20
-COL_DOCTOR1        = 21
-COL_DOCTOR2        = 22
-COL_DOCTOR3        = 23
-COL_WORKER1        = 24
-COL_WORKER2        = 25
-COL_WORKER3        = 26
+# Column index constants (0-based). Only fields actually looked up by
+# business logic get a constant -- the placeholder columns (including
+# Domain/Category/Subcategory, which are display-only/derived) don't need
+# one since nothing ever reads them.
+COL_INCIDENT_DATE  = 0
+COL_DATE           = 1  # Received Date
+COL_INCIDENT_KEY   = 2  # Incident Number (Old System) (الرقم) -- the grouping key, see TEMPLATE_COLUMNS comment
+COL_PATIENT        = 3
+COL_ISSUING_DEPT   = 4
+COL_TARGET_DEPT    = 7
+COL_SOURCE         = 8
+COL_RECORD_TYPE    = 9
+COL_CLASS_AR       = 13
+COL_CLASS_EN       = 14
+COL_COMPLAINT      = 15
+COL_IMMEDIATE      = 16
+COL_TAKEN          = 17
+COL_SEVERITY       = 18
+COL_STAGE          = 19
+COL_HARM           = 20
+COL_RISK           = 22
+COL_BUILDING       = 23
+COL_INPATIENT      = 24
+COL_DOCTOR1        = 25
+COL_DOCTOR2        = 26
+COL_DOCTOR3        = 27
+COL_WORKER1        = 28
+COL_WORKER2        = 29
+COL_WORKER3        = 30
 
-MAX_DATA_ROWS = 2000  # data validation applies up to this row
+MAX_DATA_ROWS = 5000  # data validation applies up to this row; generous headroom so a slightly-oversized paste doesn't spill past the unlocked range
 
-RECORD_TYPE_IDS = {"complaint": 1, "notice": 2}
+# Row layout of the "Import Template" sheet -- a merged zone-label row sits
+# above the real header row (see generate_template's zone_bounds). Module-
+# level (not just local to generate_template) because _validate_headers()
+# and _parse_excel() below have to read from the SAME rows the template was
+# generated with, or every upload looks like it's missing every column.
+GROUP_ROW = 1
+HEADER_ROW = 2
+FIRST_DATA_ROW = 3
+LAST_DATA_ROW = MAX_DATA_ROWS + 1
+
+RECORD_TYPE_IDS = {
+    "complaint": 1,
+    "notice": 2,
+    # The real source's "النوع" (Type) column holds this exact value on every
+    # single row (verified: all 464 real rows) -- it's the hospital's generic
+    # "improvement opportunity" tag, not a Complaint/Notice signal, so it
+    # never varies and never actually discriminates between the two. Treated
+    # as Complaint since that's what this whole feed is, and it's already
+    # Record Type's own default when the field is blank -- without this
+    # alias, every row hard-errors as "not recognized" instead.
+    "فرصة تحسين": 1,
+}
 DEFAULT_RECORD_TYPE_ID = 1  # Complaint
 
 # dbo.APP_LOOKUP_FEEDBACK_INTENT_TYPE: 1=Improvement Opportunity (used for
@@ -239,12 +297,15 @@ _INSTRUCTIONS_TITLE = "تعليمات استخدام قالب استيراد ا�
 # translating them would introduce unfamiliar vocabulary instead of helping.
 _INSTRUCTIONS_TEXT = [
     "كل صف في هذا الملف يمثل Case واحد وليس Incident. الصفوف التي لها نفس "
-    "رقم Incident Group Key سيتم دمجها معًا تحت Incident واحد في النظام.",
-    "رقم Incident Group Key يجب أن يكون رقمًا فقط (مثال: 1)، بدون حروف أو رموز.",
+    "رقم \"الرقم\" (Incident Number في النظام القديم) سيتم دمجها معًا تحت "
+    "Incident واحد في النظام، تمامًا كما كانت في النظام القديم.",
+    "عمود \"الرقم\" يجب أن يكون رقمًا فقط، بدون حروف أو رموز، ويجب تعبئته "
+    "في كل صف حتى يتم تجميع الصفوف بشكل صحيح.",
     "الأعمدة التي تحتوي على قائمة منسدلة (مثل التصنيف، القسم، الطبيب) يجب اختيار "
     "القيمة منها فقط. لا تكتب نصًا غير موجود في القائمة، وإلا سيتم رفض الصف مع توضيح السبب.",
     "لا تقم بتغيير ترتيب الأعمدة أو أسماء العناوين أو حذف/إضافة أعمدة. "
-    "الملف محمي لمنع ذلك، ويمكنك فقط تعبئة الخلايا المخصصة للبيانات.",
+    "الملف غير محمي تقنيًا، لكن أي تغيير في أسماء الأعمدة سيؤدي إلى رفض الملف "
+    "بالكامل عند الرفع مع رسالة توضح السبب.",
     "إذا مر وقت طويل منذ تحميل هذا الملف، يفضل تحميل نسخة جديدة قبل التعبئة "
     "لضمان أن القوائم المنسدلة (الأطباء، الأقسام، وغيرها) محدثة.",
     "بعد رفع الملف، سيظهر لك تقرير يوضح كل Case تمت إضافتها بنجاح (مع رقمها "
@@ -344,6 +405,9 @@ def generate_template() -> BytesIO:
     ts = wb.create_sheet("Import Template", 1)
     ts.sheet_view.rightToLeft = True
 
+    # Row layout (GROUP_ROW/HEADER_ROW/FIRST_DATA_ROW/LAST_DATA_ROW) is
+    # module-level now -- see the comment near MAX_DATA_ROWS. _validate_headers()
+    # and _parse_excel() read from the same constants, so the two stay in sync.
     header_fill = PatternFill("solid", fgColor="1F4E79")
     mandatory_fill = PatternFill("solid", fgColor="2E75B6")
     header_font = Font(bold=True, color="FFFFFF", size=11)
@@ -353,21 +417,46 @@ def generate_template() -> BytesIO:
     )
 
     for col_i, (header, lookup_key, mandatory, width) in enumerate(TEMPLATE_COLUMNS, start=1):
-        cell = ts.cell(row=1, column=col_i, value=header)
+        cell = ts.cell(row=HEADER_ROW, column=col_i, value=header)
         cell.fill = mandatory_fill if mandatory else header_fill
         cell.font = header_font
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         cell.border = border
         ts.column_dimensions[get_column_letter(col_i)].width = width
 
-    ts.row_dimensions[1].height = 40
-    ts.freeze_panes = "A2"
+    ts.row_dimensions[HEADER_ROW].height = 40
+
+    # ---- Zone-label row: groups the columns into 3 visual bands so the
+    # team can see at a glance which block to paste their Excel data into.
+    # Derived from the COL_* constants (not hardcoded numbers) so it stays
+    # correct if TEMPLATE_COLUMNS' zone boundaries ever move -- each zone is
+    # assumed to start at the constant named here (true by construction,
+    # see the comment above TEMPLATE_COLUMNS).
+    zone_bounds = [
+        (COL_INCIDENT_DATE + 1, COL_DATE,  "1F4E5A", "PART 1 — Fill In Manually"),
+        (COL_DATE + 1,      COL_BUILDING,  "C0522B", "PART 2 — Paste Your Excel Data Here"),
+        (COL_BUILDING + 1,  len(TEMPLATE_COLUMNS), "5B6B73", "PART 3 — Additional Info (Manual / Optional)"),
+    ]
+    for start_col, end_col, color, label in zone_bounds:
+        ts.merge_cells(start_row=GROUP_ROW, start_column=start_col, end_row=GROUP_ROW, end_column=end_col)
+        cell = ts.cell(row=GROUP_ROW, column=start_col, value=label)
+        cell.fill = PatternFill("solid", fgColor=color)
+        cell.font = Font(bold=True, color="FFFFFF", size=12)
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        # merge_cells only styles the top-left cell -- apply fill/border to
+        # every cell in the merged range so the band of color is continuous.
+        for col_i in range(start_col, end_col + 1):
+            ts.cell(row=GROUP_ROW, column=col_i).fill = PatternFill("solid", fgColor=color)
+            ts.cell(row=GROUP_ROW, column=col_i).border = border
+    ts.row_dimensions[GROUP_ROW].height = 40
+
+    ts.freeze_panes = f"A{FIRST_DATA_ROW}"
 
     # Apply data validation dropdowns (+ a couple of special-cased columns
-    # that aren't list-based lookups: date type-checking, numeric-only Group Key)
+    # that aren't list-based lookups: date type-checking, numeric-only Incident Number)
     for col_i, (_, lookup_key, _, _) in enumerate(TEMPLATE_COLUMNS, start=1):
         col_letter = get_column_letter(col_i)
-        cell_range = f"{col_letter}2:{col_letter}{MAX_DATA_ROWS}"
+        cell_range = f"{col_letter}{FIRST_DATA_ROW}:{col_letter}{LAST_DATA_ROW}"
         col_index0 = col_i - 1
 
         if col_index0 in (COL_INCIDENT_DATE, COL_DATE):
@@ -379,16 +468,16 @@ def generate_template() -> BytesIO:
             dv.errorTitle = "Invalid date"
             dv.sqref = cell_range
             ts.add_data_validation(dv)
-            for row_i in range(2, MAX_DATA_ROWS + 1):
+            for row_i in range(FIRST_DATA_ROW, LAST_DATA_ROW + 1):
                 ts.cell(row=row_i, column=col_i).number_format = "yyyy-mm-dd"
             continue
 
-        if col_index0 == COL_GROUP_KEY:
+        if col_index0 == COL_INCIDENT_KEY:
             dv = DataValidation(
                 type="whole", operator="greaterThan", formula1="0",
                 allow_blank=True,
             )
-            dv.error = "Incident Group Key must be a number only (e.g. 1), no letters."
+            dv.error = "Incident Number (Old System) must be a number only, no letters."
             dv.errorTitle = "Numbers only"
             dv.sqref = cell_range
             ts.add_data_validation(dv)
@@ -416,40 +505,50 @@ def generate_template() -> BytesIO:
         dv.sqref = cell_range
         ts.add_data_validation(dv)
 
-    # Instructions row (row 2 is first data row)
-    ts.cell(row=2, column=COL_GROUP_KEY + 1).value = 1
-    ts.cell(row=2, column=COL_PATIENT + 1).value = "Patient Name Here"
-    ts.cell(row=2, column=COL_INCIDENT_DATE + 1).value = datetime.today().date()
-    ts.cell(row=2, column=COL_INCIDENT_DATE + 1).number_format = "yyyy-mm-dd"
-    ts.cell(row=2, column=COL_DATE + 1).value = datetime.today().date()
-    ts.cell(row=2, column=COL_DATE + 1).number_format = "yyyy-mm-dd"
-    ts.cell(row=2, column=COL_COMPLAINT + 1).value = "Complaint text here"
+    # Instructions row (FIRST_DATA_ROW is the first real data row)
+    ts.cell(row=FIRST_DATA_ROW, column=COL_PATIENT + 1).value = "Patient Name Here"
+    # Incident Date deliberately gets NO example value (same treatment as
+    # Target Dept/Doctor/Worker below) -- it has no source equivalent and
+    # must be filled manually per row. A real, valid-looking date here was a
+    # silent trap: if a user builds many rows by extending/dragging from the
+    # example row instead of retyping Incident Date on every single one,
+    # today's date rode along on every row while the correctly-pasted
+    # Received Date showed the real historical date, tripping the (correctly
+    # working) "Incident Date cannot be after Received Date" check.
+    ts.cell(row=FIRST_DATA_ROW, column=COL_INCIDENT_DATE + 1).number_format = "yyyy-mm-dd"
+    ts.cell(row=FIRST_DATA_ROW, column=COL_DATE + 1).value = datetime.today().date()
+    ts.cell(row=FIRST_DATA_ROW, column=COL_DATE + 1).number_format = "yyyy-mm-dd"
+    ts.cell(row=FIRST_DATA_ROW, column=COL_COMPLAINT + 1).value = "Complaint text here"
 
     # Style the example row lightly
     example_fill = PatternFill("solid", fgColor="EBF3FB")
     for col_i in range(1, len(TEMPLATE_COLUMNS) + 1):
-        cell = ts.cell(row=2, column=col_i)
+        cell = ts.cell(row=FIRST_DATA_ROW, column=col_i)
         cell.fill = example_fill
 
-    # ---- Lock the structure: header + column layout can't be touched,
-    # only the data-entry cells below it. Matches the decision that the
-    # template must be "fully locked structure" given the original problem
-    # was a customer editing it without knowing they shouldn't.
-    for row in ts.iter_rows(min_row=2, max_row=MAX_DATA_ROWS, max_col=len(TEMPLATE_COLUMNS)):
+    # No sheet protection at all -- column identity (the original reason this
+    # sheet was ever locked down) is enforced server-side instead, by name,
+    # at upload time (see _validate_headers), which is a real guarantee
+    # regardless of any client-side Excel lock (there was never a password on
+    # it anyway, so it was never a hard barrier). Every restriction protection
+    # used to add here -- paste, resize, insert, sort, and even just clicking
+    # near the header/zone-label rows -- was recurring real friction for
+    # near-zero actual safety benefit, so it's gone. If a header ever does
+    # get renamed/deleted, the failure mode is a clear upload-time rejection
+    # with instructions to re-download, not silent data corruption.
+    #
+    # The long free-text columns (Complaint Text, Immediate Action, Taken
+    # Action) still get wrap_text so paragraph-length values stay readable
+    # instead of clipping, matching how the source spreadsheet itself
+    # displays them (tall wrapped rows). No explicit row height is set on
+    # purpose -- Excel auto-fits row height to wrapped content as long as the
+    # row's height isn't pinned to a fixed value, which none of these are.
+    wide_text_cols = {COL_COMPLAINT, COL_IMMEDIATE, COL_TAKEN}
+    wrap_alignment = Alignment(wrap_text=True, vertical="top")
+    for row in ts.iter_rows(min_row=FIRST_DATA_ROW, max_row=LAST_DATA_ROW, max_col=len(TEMPLATE_COLUMNS)):
         for cell in row:
-            cell.protection = Protection(locked=False)
-    ts.protection.sheet = True
-    ts.protection.formatCells = True
-    ts.protection.formatColumns = True
-    ts.protection.formatRows = True
-    ts.protection.insertColumns = True
-    ts.protection.insertRows = True
-    ts.protection.deleteColumns = True
-    ts.protection.deleteRows = True
-    ts.protection.sort = True
-    ts.protection.autoFilter = True
-    ts.protection.selectLockedCells = False
-    ts.protection.selectUnlockedCells = False
+            if cell.column - 1 in wide_text_cols:
+                cell.alignment = wrap_alignment
 
     _add_instructions_sheet(wb)
     # Instructions is the first tab (visible, one click away) but the file
@@ -484,7 +583,7 @@ def _summarize_row_errors(row_results: List[Dict[str, Any]]) -> str:
 
 def _validate_and_group(file_bytes: bytes) -> Dict[str, Any]:
     """
-    Parse -> group by Incident Group Key -> validate each group -> check
+    Parse -> group by Incident Number (Old System) -> validate each group -> check
     per-group duplicate status. Pure computation, no case/incident writes —
     shared by stage_upload() (preview) and confirm_import() (re-validated
     fresh right before commit, so anything that changed in the lookups
@@ -515,30 +614,17 @@ def _validate_and_group(file_bytes: bytes) -> Dict[str, Any]:
             })
         all_warnings.extend(result.get("warnings", []))
 
-    # Record-level duplicate check — has this Incident Group Key already
-    # been imported in a previous upload? Checked before any case creation.
-    dedup_conn = get_connection()
-    dedup_cursor = dedup_conn.cursor()
-    try:
-        still_valid_groups = []
-        for group_key, group_rows, validation in valid_groups:
-            already_imported = ml_import_batch_db.find_group_already_imported(
-                dedup_cursor, EXCEL_IMPORT_SOURCE_SYSTEM, group_key
-            )
-            if already_imported:
-                rejected_groups.append({
-                    "group_key": group_key,
-                    "rows": group_rows,
-                    "reason": f"Incident Group Key '{group_key}' was already imported previously — duplicate",
-                    "row_results": validation["rows"],
-                    "status": "duplicate",
-                })
-            else:
-                still_valid_groups.append((group_key, group_rows, validation))
-        valid_groups = still_valid_groups
-    finally:
-        dedup_cursor.close()
-        dedup_conn.close()
+    # NOTE: there is deliberately no cross-upload duplicate check on Incident
+    # Group Key here. The key is purely a within-file grouping label (rows
+    # sharing the same key become one incident) -- it resets to 1, 2, 3... on
+    # every file, so the same key is expected to reappear in every upload.
+    # Treating it as a durable external identifier (which an earlier version
+    # of this pipeline did, via find_group_already_imported) meant the very
+    # first import using key "1" permanently blocked every future import that
+    # also used "1", i.e. almost all of them. Batch-level dedup (the exact
+    # same file re-uploaded, checked via file_checksum in stage_upload) is
+    # the real duplicate guard; _import_group's external_record_id is scoped
+    # per-batch so it stays unique without reintroducing that check.
 
     return {
         "rows": rows,
@@ -576,6 +662,7 @@ def _row_preview(row_result: Dict[str, Any]) -> Dict[str, Any]:
         "errors": row_result["errors"],
         "fields": {col[0]: _json_safe(raw.get(col[0])) for col in TEMPLATE_COLUMNS},
         "derived_hierarchy": row_result.get("derived_hierarchy") or {"domain": None, "category": None, "subcategory": None},
+        "resolved_display": row_result.get("resolved_display") or {"record_type": None},
     }
 
 
@@ -584,13 +671,13 @@ def _build_preview_groups(valid_groups: List[Tuple[str, List[dict], dict]],
                            order: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     """
     Shape validated/rejected groups for the review screen: one entry per
-    Incident Group Key, colored per the decided taxonomy (green/yellow ready,
+    Incident Number (Old System), colored per the decided taxonomy (green/yellow ready,
     red/duplicate blocked), with a red-flag/never-event badge that's purely
     informational -- it never blocks the group or changes its color. Each
     group carries its individual rows (row_number, per-row errors, editable
     field values) so the review grid can show and fix a specific row.
 
-    `order` is the Incident Group Key sequence as it first appeared in the
+    `order` is the Incident Number (Old System) sequence as it first appeared in the
     uploaded file (see _group_rows -- a plain dict, insertion-ordered). Valid
     and rejected groups are validated as two separate passes below, which
     would otherwise bunch every ready group first and every rejected group
@@ -604,8 +691,9 @@ def _build_preview_groups(valid_groups: List[Tuple[str, List[dict], dict]],
         validated_rows = [r["data"] for r in validation["rows"]]
         preview.append({
             "group_key": group_key,
-            "status": "yellow" if validation["is_new_patient"] else "green",
+            "status": "yellow" if (validation["is_new_patient"] or validation.get("has_fuzzy_match")) else "green",
             "is_new_patient": validation["is_new_patient"],
+            "has_fuzzy_match": validation.get("has_fuzzy_match", False),
             "patient_name": validation["patient_name"],
             "row_count": len(validated_rows),
             "has_flagged_risk": any(_is_flagged_risk(r.get("risk_type_id")) for r in validated_rows),
@@ -639,6 +727,10 @@ def stage_upload(file_bytes: bytes, uploaded_by_user_id: int = 1) -> Dict[str, A
     Nothing is written to APP_Incident/APP_IncidentCase here — the staged
     file is persisted so confirm_import(import_batch_id) can commit it later.
     """
+    header_error = _validate_headers(file_bytes)
+    if header_error:
+        return _empty_report(header_error)
+
     file_checksum = hashlib.sha256(file_bytes).hexdigest()
 
     # Batch-level duplicate check — has this exact file already been
@@ -726,10 +818,10 @@ def patch_staged_rows(import_batch_id: int, patches: List[Dict[str, Any]]) -> Di
     code path needs to change: resume_preview()/confirm_import() already
     just re-read whatever's currently in the staged file.
 
-    Incident Group Key is deliberately not patchable here -- changing it
-    would move a row into a different incident group entirely, which needs
-    a full re-group, not a single-cell edit. Fix that one in Excel and
-    re-upload, same as before this feature existed.
+    Incident Number (Old System) -- the grouping key -- is deliberately not
+    patchable here -- changing it would move a row into a different incident
+    group entirely, which needs a full re-group, not a single-cell edit. Fix
+    that one in Excel and re-upload, same as before this feature existed.
     """
     _load_pending_batch(import_batch_id)  # raises ValueError if not found/not PendingReview
 
@@ -740,7 +832,7 @@ def patch_staged_rows(import_batch_id: int, patches: List[Dict[str, Any]]) -> Di
         )
 
     header_to_col = {col[0]: i + 1 for i, col in enumerate(TEMPLATE_COLUMNS)}
-    group_key_header = TEMPLATE_COLUMNS[COL_GROUP_KEY][0]
+    group_key_header = TEMPLATE_COLUMNS[COL_INCIDENT_KEY][0]
     date_headers = {TEMPLATE_COLUMNS[COL_INCIDENT_DATE][0], TEMPLATE_COLUMNS[COL_DATE][0]}
 
     wb = load_workbook(staged_path)
@@ -748,7 +840,7 @@ def patch_staged_rows(import_batch_id: int, patches: List[Dict[str, Any]]) -> Di
 
     for patch in patches:
         row_number = patch.get("row_number")
-        if not isinstance(row_number, int) or row_number < 2:
+        if not isinstance(row_number, int) or row_number < FIRST_DATA_ROW:
             continue
         for header, value in (patch.get("fields") or {}).items():
             if header == group_key_header:
@@ -971,6 +1063,40 @@ def process_upload(file_bytes: bytes, created_by_user_id: int = 1) -> Dict[str, 
 # INTERNAL — PARSE
 # ============================================================
 
+def _validate_headers(file_bytes: bytes) -> Optional[str]:
+    """
+    Confirm every expected column name is present somewhere in HEADER_ROW.
+    _parse_excel below keys each row by whatever header TEXT actually sits
+    in HEADER_ROW, not by column position, so a column dragged to a new
+    position is harmless -- its header and data move together and the
+    name-based lookup still finds it. A renamed or deleted header is the one
+    edit that silently drops that column's data with no error, so that's
+    what this catches, up front, before staging or parsing anything.
+    Order-independent on purpose: reordering isn't a correctness problem,
+    only identity is.
+    """
+    wb = load_workbook(BytesIO(file_bytes), data_only=True)
+    sheet = None
+    for name in wb.sheetnames:
+        if name == "Import Template":
+            sheet = wb[name]
+            break
+    if sheet is None:
+        sheet = wb.active
+
+    actual_headers = {str(c.value).strip() for c in sheet[HEADER_ROW] if c.value is not None}
+    expected_headers = {col[0] for col in TEMPLATE_COLUMNS}
+    missing = expected_headers - actual_headers
+    if not missing:
+        return None
+    return (
+        "This file is missing expected column(s): " + ", ".join(sorted(missing)) +
+        ". A column header may have been renamed or deleted. Please re-download "
+        "a fresh template and copy your data into it, keeping the original "
+        "column headers intact."
+    )
+
+
 def _parse_excel(file_bytes: bytes) -> List[Dict[str, Any]]:
     wb = load_workbook(BytesIO(file_bytes), data_only=True)
     # Prefer "Import Template" sheet, else use first visible sheet
@@ -982,9 +1108,9 @@ def _parse_excel(file_bytes: bytes) -> List[Dict[str, Any]]:
     if sheet is None:
         sheet = wb.active
 
-    headers = [cell.value for cell in sheet[1]]
+    headers = [cell.value for cell in sheet[HEADER_ROW]]
     rows = []
-    for row_number, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+    for row_number, row in enumerate(sheet.iter_rows(min_row=FIRST_DATA_ROW, values_only=True), start=FIRST_DATA_ROW):
         # Skip completely empty rows
         if all(v is None or str(v).strip() == "" for v in row):
             continue
@@ -1002,12 +1128,12 @@ def _parse_excel(file_bytes: bytes) -> List[Dict[str, Any]]:
 
 def _group_rows(rows: List[Dict]) -> Dict[str, List[Dict]]:
     groups: Dict[str, List[Dict]] = {}
-    header = TEMPLATE_COLUMNS[COL_GROUP_KEY][0]
+    header = TEMPLATE_COLUMNS[COL_INCIDENT_KEY][0]
     for row in rows:
         key_raw = row.get(header)
         if isinstance(key_raw, (int, float)) and float(key_raw).is_integer():
-            # Excel hands back a real number for the numeric-only Group Key
-            # column -- normalize 1.0/1 to the same "1" grouping key.
+            # Excel hands back a real number for the numeric-only Incident
+            # Number column -- normalize 1.0/1 to the same "1" grouping key.
             key = str(int(key_raw))
         else:
             key = str(key_raw).strip() if key_raw is not None else ""
@@ -1034,6 +1160,221 @@ def _lookup(maps: Dict, category: str, value: Optional[str]) -> Optional[int]:
     if not value:
         return None
     return maps.get(category, {}).get(value.lower().strip())
+
+
+FUZZY_MATCH_THRESHOLD = 0.87  # conservative; substring containment scores 0.99 and is checked first regardless
+
+# Curated "bank" of known real-world variants per DB value, keyed by the
+# DB value's lowercased form (matching maps[category]'s key space) -> list
+# of additional lowercased phrasings actually seen in real hospital exports.
+# Minimum 0 extra entries (the DB value itself is always an implicit
+# candidate), no maximum -- extend this as new variants are spotted.
+# Exists because some real variants share almost no characters with the
+# canonical DB value (e.g. "Moderate" vs DB "Medium" scores 0.29 similarity
+# -- nowhere near any workable threshold) and can only be caught by an
+# explicit alias, not by character-sequence matching alone.
+LOOKUP_ALIASES: Dict[str, Dict[str, List[str]]] = {
+    "severities": {
+        "medium": ["moderate"],
+    },
+    "harm_levels": {
+        "moderate": ["moderate harm"],
+        "minor": ["minor harm"],
+        "severe": ["severe harm", "high severe"],
+    },
+    "risk_types": {
+        "ordinary": ["ordinary complaint"],
+    },
+}
+
+# Classification -> known English phrasing(s), keyed by the DB's Arabic
+# value (the DB's `classifications` lookup is Arabic-only -- confirmed
+# against the real DB list; English classification text scores 0.00-0.18
+# similarity against it, a categorical script mismatch no threshold fixes).
+# Built empirically from a real 464-row hospital export, where the source
+# already pairs an Arabic and an English classification per row for the same
+# underlying value: 75 of 77 distinct Arabic values paired 1:1 with a single
+# English phrasing; 2 have more than one observed English phrasing due to
+# real inconsistent data entry (kept as multiple entries here on purpose --
+# _match_classification tries all of them and takes the best).
+CLASSIFICATION_EN_ALIASES: Dict[str, List[str]] = {
+    'خلل في متابعة حالة المريض': ['Examination/Monitoring Problems'],
+    'تجاهل المريض': ['Ignoring Patients'],
+    'خلل في العناية التمريضية(الحفاض,إجراء الحمام..)': ['Nursing Care Problems(Diapper,bath..)'],
+    'نقص في مهارة التمريض(المصل..)': ['IV Problem(Nursing Skills..)'],
+    'انتظار الأدوار': ['Delay Access(Waiting for Consultation..)'],
+    'برتوكول طبي': ['Medical Protocol'],
+    'مشاكل في المستلزمات (الشراشف/وسادة/حرام...)': ['Problems in ihe facilities(pillows, covers..)'],
+    'مواعيد بعيدة(العيادات الخارجية,القلبية..)': ['Delay Access(Clinic Appointment)'],
+    'خلل في إجراءات حماية المريض(التقاط جرثومة..)': ['Nasocomial Infection Problem'],
+    'المعتقدات والمبادئ': ['Respect for beliefs'],
+    'اعتراض حول آلية الزيارة': ['Visiting Process'],
+    'تأخر النقل (من وإلى..)': ['Delay Transfer(room..)'],
+    'خطأ تمريضي(شكة المصل..)': ['IV Problem(IV Insertion Error..)'],
+    'مشاكل تتعلق بالإقامة(أجهزة غير كافية,أسرة,تهوئة..)': ['Accomodation Problems(Devices,Beds..)', 'accomodation Problems(area problem..)'],
+    'خلل تنسيق مع الأقسام الأخرى': ['Coordination Failure(Team,Other Departements..)'],
+    'التواصل الغائب': ['Absent Communication'],
+    'التواصل غير الصحيح': ['Incorrect Communication'],
+    'ضجة الموظفين': ['Noise(Employee..)'],
+    'إنتظار الإجراءات الطبية(صور,فحوصات..)': ['Delay Procedure(Waiting for Imaging,LAB.Tests..)'],
+    'تأجيل/تأخير(عملية,تمييل..)': ['Surgical Procedures Delayed'],
+    'إجراءات معقّدة/موافقات/تكاليف': ['Complex Procedures/Approvals/Costs'],
+    'تأخر تقارير الصور': ['Delayed Procedure(Imaging Reports..)'],
+    'عدم الرد على الجرس(غير موصل)': ['Failure to Respond(Nurse call unfunctional)'],
+    'التواصل المتأخر': ['Delayed Communication'],
+    'خطأ دواء': ['Error -Medication'],
+    'تأخر في الرد على الNurse call': ['Delayed Nurse call'],
+    'خطأ تمريضي(يهدد سلامة المريض)': ['Technical skills of Staff(that compromise Safety)'],
+    'إهمال عام(الرعاية الشخصية,الرعاية الصحية,بيئة آمنة,الدعم النفسي..)': ['Neglect -General (Basic Care,Medical Care,Safe Environment,Physiological Support..)'],
+    'عدم الإحترام': ['Disrespect'],
+    'الإنتظار للمعاينة': ['Delay Access(Waiting for Consultation..)'],
+    'طلبات الدرجة الأولى-': ['First Class Services'],
+    'تأخير عام': ['Delay -General(Delay to Respond..)'],
+    'خلل في العناية التمريضية(الميل..)': ['Problem Procedure(Foley..)'],
+    'أجهزة ولوازم (قسم العمليات,قسم الإيكو..)': ['Equipement & Supplies Problems(OR,Echo..)'],
+    'الضجة(أجهوة,أبواب..)': ['Noise(Devices,Doors..)'],
+    'العقر السريري': ['Bed Sore Problems'],
+    'مضاعفات(اختلاط جراحي..)': ['Complications(Surgical Complication)'],
+    'عدم توفر سرير(عادي,عناية..)': ['Bed Unavailablity'],
+    'عدم تنسيق حالات المرضى': ['Patient Cases not Organized'],
+    'رفض الإستماع المريض/المرافق': ['Dimissing Patients', 'Ignoring Patients'],
+    'تأخر إجراء طبي': ['Delay Medical Pocedure'],
+    'خلل تنسيق إداري(مع الأقسام الأخرى..)': ['Coordination Problem(Team,Other Departements..)'],
+    'عدم التوثيق(اللوازم الطبية,أمر المغادرة..)': ['Documentation Problem(Devices,Discharge..)'],
+    'عدم الموافقة(الخطة العلاجية,قرار المغادرة..)': ['Failure to Agree(Treatment Plan,Discharge Decision..)'],
+    'الزيارة اليومية للطبيب': ['Daily Doctor Visits(Attending Physician,Consulting Physician)'],
+    'إعطاء مواعيد صور متأخرة': ['Delay Access(Imaging Appointment)'],
+    'خلل تنسيق طبي(الأطباء,التمريض..)': ['Teamwork Problem(Doctors,Nursing..)'],
+    'تحويل المريض من الطوارئ إلى العيادات': ['Disagreement Protocol(ER..)'],
+    'خلل في التواصل(إعطاء المعلومات..)': ['Failure to Provide(Information,Treatment..)'],
+    'خطأ في إجراء الصورة': ['Imaging Procedure Error'],
+    'خلل تنسيق(مع الأقسام الأخرى..)': ['Coordination Problem(Team,Other Departements..)'],
+    'خطأ فنيّين(المختبر,الأشعة..)': ['Error Procedure(Lab,X-Ray..)'],
+    'عدم الرد على الإتصالات الخارجية': ['Phone Calls Not Anwered'],
+    'تأخر حضور الطبيب': ['Delay Procedure(Medical Attendance..)'],
+    'تأخر نتائج الفحوصات': ['Delayed Test Results'],
+    'خلل في تحديد المواعيد (الصور..)': ['Scheduling Error'],
+    'الضجة الصادرة(عدد الزوار,المرضى..)': ['Noise(Accompagnant,Patients..)'],
+    'خطأ في التشخيص': ['Error - Diagnosis'],
+    'نقص مهارة فنيّ المختبر(نتائج,سحب الدم..)': ['Technician Skills Deficiency(Tests..)'],
+    'آلية نقل العيّنة إلى مختبر خارجي': ['Disagreement Protocol(Lab..)'],
+    'تقصير في متابعة حالة المريض': ['Error in Monitoring'],
+    'عدم تقبّل حضور الطبيب المساعد': ['Failure to Provide(Assistant Visit Issue..)'],
+    'مشكلة في الأمن(حدوث سرقة..)': ['Security Problem(Lost ..)'],
+    'مشاكل في الأجهزة(المعلوماتية..)': ['IT Problems'],
+    'مشاكل في النظافة(الغرفة,الحمام..)': ['Hygene Problem(Room..)'],
+    'بطء تنظيف طارىء': ['Delay Cleaning'],
+    'تغذية متعدد(الأكل بارد,غير كاف..)': ['Nutritional Problem(Cold Food,Insufficient..)'],
+    'بيئة غير آمنة': ['Unsafe Environment'],
+    'تغذية(تغليف غير آمن)': ['Unsafe Packaging for Food'],
+    'مشاكل تتعلق بالإقامة(محارم,سلة النفايات..)': ['Accomodation Problems(Tissue,Basket...)'],
+    'مشاكل تتعلق بالإقامة(جغرافية المكان..)': ['accomodation Problems(area problem..)'],
+    'مشاكل تتعلق بالإقامة(التكييف,التدفئة..)': ['Accomodation Problems(Air Conditioning..)'],
+    'الضجة من الورشة': ['Noise(Workshop..)'],
+    'الضجة': ['Noise(Devices,Doors..)'],
+    'ضجة الورشة': ['Noise(Workshop..)'],
+    'تأخر إنجاز ملف المغادرة': ['Discharge Delay Problem'],
+    'تنسيق حالات المرضى(عدم القدرة على الراحة والنوم..)': ['Patient Case Coordination'],
+}
+
+
+def _lookup_fuzzy(maps: Dict, category: str, value: Optional[str]) -> Tuple[Optional[int], Optional[str]]:
+    """
+    Two-tier match: exact first (via _lookup), then a fallback against the
+    whole bank of known variants per DB value (canonical name + any curated
+    LOOKUP_ALIASES entries) -- not just the one canonical string, since some
+    real variants don't resemble it closely enough for similarity scoring
+    alone to find (see LOOKUP_ALIASES' docstring). Each candidate variant is
+    checked via substring containment first (near-certain, score 0.99), then
+    difflib.SequenceMatcher ratio as a fallback for spacing/typo noise.
+
+    Returns (matched_id, warning) -- warning is set exactly when the match
+    wasn't exact, so callers can flag the row for review (see
+    _validate_group's has_fuzzy_match) instead of treating it as clean.
+    """
+    exact_id = _lookup(maps, category, value)
+    if exact_id is not None or not value:
+        return exact_id, None
+
+    norm = value.lower().strip()
+    candidates = maps.get(category, {})  # {lowercased db name: id}
+    aliases = LOOKUP_ALIASES.get(category, {})
+    if not candidates:
+        return None, None
+
+    best_db_name, best_id, best_score = None, None, 0.0
+    for db_name, db_id in candidates.items():
+        for variant in (db_name, *aliases.get(db_name, [])):
+            score = 0.99 if (norm in variant or variant in norm) else SequenceMatcher(None, norm, variant).ratio()
+            if score > best_score:
+                best_db_name, best_id, best_score = db_name, db_id, score
+
+    if best_id is not None and best_score >= FUZZY_MATCH_THRESHOLD:
+        return best_id, f"'{value}' matched to '{best_db_name.title()}' ({best_score:.0%} match) — please verify"
+    return None, None
+
+
+CLASSIFICATION_SINGLE_CHANNEL_OVERRIDE = 0.90  # a lone channel this strong wins outright, see _match_classification
+
+
+def _match_classification(maps: Dict, arabic_value: Optional[str], english_value: Optional[str]) -> Tuple[Optional[int], Optional[str]]:
+    """
+    Dual-channel classification match. The DB's `classifications` lookup is
+    Arabic-only, but the source data pairs an Arabic AND an English
+    classification per row for the same underlying value -- so rather than
+    picking one language and discarding the other's evidence (the original,
+    simpler design), this scores every DB candidate on both channels and
+    combines them into one decision metric ("the error from both"):
+
+        combined(d) = average of whichever channel(s) actually have input
+                      (a blank field is simply not consulted, rather than
+                      dragging the average down as a phantom zero)
+
+    A sufficiently strong SINGLE channel (>= CLASSIFICATION_SINGLE_CHANNEL_OVERRIDE)
+    wins outright regardless of combined(d) -- otherwise a near-certain match
+    on one channel could get wrongly rejected just because the other
+    channel's score (e.g. a thin/missing CLASSIFICATION_EN_ALIASES entry)
+    drags the average below FUZZY_MATCH_THRESHOLD.
+
+    Returns (matched_id, warning) -- warning is set exactly when the match
+    wasn't a clean exact Arabic match, same contract as _lookup_fuzzy.
+    """
+    exact_id = _lookup(maps, "classifications", arabic_value)
+    if exact_id is not None:
+        return exact_id, None
+
+    candidates = maps.get("classifications", {})  # {lowercased arabic db name: id}
+    ar_norm = (arabic_value or "").lower().strip()
+    en_norm = (english_value or "").lower().strip()
+    if not candidates or not (ar_norm or en_norm):
+        return None, None
+
+    def score(norm: str, variant: str) -> float:
+        if not norm or not variant:
+            return 0.0
+        return 0.99 if (norm in variant or variant in norm) else SequenceMatcher(None, norm, variant).ratio()
+
+    best_db_name, best_id = None, None
+    best_combined, best_ar, best_en = -1.0, 0.0, 0.0
+
+    for db_name, db_id in candidates.items():
+        ar_score = score(ar_norm, db_name)
+        en_score = max((score(en_norm, v.lower().strip()) for v in CLASSIFICATION_EN_ALIASES.get(db_name, [])), default=0.0)
+
+        channels = [s for s, present in ((ar_score, bool(ar_norm)), (en_score, bool(en_norm))) if present]
+        combined = sum(channels) / len(channels) if channels else 0.0
+
+        if combined > best_combined:
+            best_db_name, best_id = db_name, db_id
+            best_combined, best_ar, best_en = combined, ar_score, en_score
+
+    if best_id is None:
+        return None, None
+
+    if best_combined >= FUZZY_MATCH_THRESHOLD or max(best_ar, best_en) >= CLASSIFICATION_SINGLE_CHANNEL_OVERRIDE:
+        detail = (f"Arabic {best_ar:.0%}" if ar_norm else "") + (", " if ar_norm and en_norm else "") + (f"English {best_en:.0%}" if en_norm else "")
+        return best_id, f"Classification matched to '{best_db_name}' ({detail}) — please verify"
+    return None, None
 
 
 def _parse_date_cell(raw: Any, field_label: str) -> Tuple[Optional[date], Optional[str]]:
@@ -1063,6 +1404,7 @@ def _validate_group(group_key: str, rows: List[Dict], maps: Dict) -> Dict[str, A
     warnings: List[Dict] = []
     row_results: List[Dict[str, Any]] = []
     patient_name = None
+    has_fuzzy_match = False
 
     for row in rows:
         row_number = row.get(ROW_NUMBER_KEY)
@@ -1070,6 +1412,23 @@ def _validate_group(group_key: str, rows: List[Dict], maps: Dict) -> Dict[str, A
 
         def add_error(field: str, message: str) -> None:
             errors.append({"field": field, "message": message})
+
+        def note_fuzzy(warning: Optional[str]) -> None:
+            """Record a _lookup_fuzzy() non-exact-match warning and flag the
+            group for review (see has_fuzzy_match in the return dict below)."""
+            nonlocal has_fuzzy_match
+            if warning:
+                warnings.append({"group_key": group_key, "row_number": row_number, "message": warning})
+                has_fuzzy_match = True
+
+        # --- Incident Number (Old System) -- the grouping key itself.
+        # Blank rows already end up lumped into one MISSING_GROUP_KEY_LABEL
+        # bucket by _group_rows(), which would otherwise only surface as a
+        # confusing patient-mismatch error once several unrelated blank-key
+        # rows collide there. An explicit check gives a direct, actionable
+        # message instead, consistent with every other mandatory field. ---
+        if not _get(row, COL_INCIDENT_KEY):
+            add_error("Incident Number", "Incident Number (Old System) is missing")
 
         # --- Patient name (consistent across group) ---
         pname = _get(row, COL_PATIENT)
@@ -1110,7 +1469,8 @@ def _validate_group(group_key: str, rows: List[Dict], maps: Dict) -> Dict[str, A
 
         # --- Source (mandatory) ---
         source_name = _get(row, COL_SOURCE)
-        source_id = _lookup(maps, "sources", source_name)
+        source_id, source_warning = _lookup_fuzzy(maps, "sources", source_name)
+        note_fuzzy(source_warning)
         if not source_name:
             add_error("Source", "Source is missing")
         elif source_id is None:
@@ -1118,7 +1478,8 @@ def _validate_group(group_key: str, rows: List[Dict], maps: Dict) -> Dict[str, A
 
         # --- Issuing Dept (mandatory) ---
         issuing_name = _get(row, COL_ISSUING_DEPT)
-        issuing_id = _lookup(maps, "org_units", issuing_name)
+        issuing_id, issuing_warning = _lookup_fuzzy(maps, "org_units", issuing_name)
+        note_fuzzy(issuing_warning)
         if not issuing_name:
             add_error("Issuing Dept", "Issuing Dept is missing")
         elif issuing_id is None:
@@ -1135,15 +1496,22 @@ def _validate_group(group_key: str, rows: List[Dict], maps: Dict) -> Dict[str, A
 
         # --- Classification (mandatory for Complaint rows; Notice rows
         # don't require it, mirroring case_service's own Notice exception —
-        # drives domain/category/subcategory when present) ---
-        class_name = _get(row, COL_CLASS)
-        class_id = _lookup(maps, "classifications", class_name)
+        # drives domain/category/subcategory when present). Dual-channel:
+        # the DB's classifications lookup is Arabic-only, but the source
+        # pairs an Arabic + English classification per row for the same
+        # value, so both are used as independent evidence (see
+        # _match_classification / CLASSIFICATION_EN_ALIASES) instead of
+        # discarding whichever one isn't the DB's language. ---
+        class_name_ar = _get(row, COL_CLASS_AR)
+        class_name_en = _get(row, COL_CLASS_EN)
+        class_id, class_warning = _match_classification(maps, class_name_ar, class_name_en)
+        note_fuzzy(class_warning)
         domain_id = category_id = subcategory_id = None
-        if not class_name:
+        if not class_name_ar and not class_name_en:
             if record_type_id != RECORD_TYPE_IDS["notice"]:
                 add_error("Classification", "Classification is missing")
         elif class_id is None:
-            add_error("Classification", f"Classification '{class_name}' not found — reject")
+            add_error("Classification", f"Classification '{class_name_ar or class_name_en}' not found — reject")
         else:
             chain = maps.get("classification_chains", {}).get(class_id, {})
             domain_id = chain.get("domain_id")
@@ -1161,39 +1529,59 @@ def _validate_group(group_key: str, rows: List[Dict], maps: Dict) -> Dict[str, A
             "subcategory": maps.get("subcategory_names", {}).get(subcategory_id),
         }
 
+        # Display-only resolved values for fields where the raw Excel text
+        # doesn't directly match what the review grid needs to highlight --
+        # same "independent of errors/row_data" reasoning as derived_hierarchy
+        # above. Record Type in particular: the raw cell can be a recognized
+        # alias (e.g. "فرصة تحسين" -> Complaint) that the review UI's
+        # Complaint/Notice toggle can't detect from the raw text alone, since
+        # it isn't literally "Complaint" or "Notice".
+        resolved_display = {
+            "record_type": (
+                "Complaint" if record_type_id == RECORD_TYPE_IDS["complaint"]
+                else "Notice" if record_type_id == RECORD_TYPE_IDS["notice"]
+                else None
+            ),
+        }
+
         # --- Severity / Stage / Harm Level / Feedback Risk Type / Building
         # (all mandatory now -- was warn-and-continue, per explicit decision
         # to require every field with no exceptions) ---
         severity_name = _get(row, COL_SEVERITY)
-        severity_id = _lookup(maps, "severities", severity_name)
+        severity_id, severity_warning = _lookup_fuzzy(maps, "severities", severity_name)
+        note_fuzzy(severity_warning)
         if not severity_name:
             add_error("Severity", "Severity is missing")
         elif severity_id is None:
             add_error("Severity", f"Severity '{severity_name}' not found — reject")
 
         stage_name = _get(row, COL_STAGE)
-        stage_id = _lookup(maps, "stages", stage_name)
+        stage_id, stage_warning = _lookup_fuzzy(maps, "stages", stage_name)
+        note_fuzzy(stage_warning)
         if not stage_name:
             add_error("Stage", "Stage is missing")
         elif stage_id is None:
             add_error("Stage", f"Stage '{stage_name}' not found — reject")
 
         harm_name = _get(row, COL_HARM)
-        harm_id = _lookup(maps, "harm_levels", harm_name)
+        harm_id, harm_warning = _lookup_fuzzy(maps, "harm_levels", harm_name)
+        note_fuzzy(harm_warning)
         if not harm_name:
             add_error("Harm Level", "Harm Level is missing")
         elif harm_id is None:
             add_error("Harm Level", f"Harm Level '{harm_name}' not found — reject")
 
         risk_name = _get(row, COL_RISK)
-        risk_id = _lookup(maps, "risk_types", risk_name)
+        risk_id, risk_warning = _lookup_fuzzy(maps, "risk_types", risk_name)
+        note_fuzzy(risk_warning)
         if not risk_name:
             add_error("Feedback Risk Type", "Feedback Risk Type is missing")
         elif risk_id is None:
             add_error("Feedback Risk Type", f"Risk Type '{risk_name}' not found — reject")
 
         building_name = _get(row, COL_BUILDING)
-        building_id = _lookup(maps, "buildings", building_name)
+        building_id, building_warning = _lookup_fuzzy(maps, "buildings", building_name)
+        note_fuzzy(building_warning)
         if not building_name:
             add_error("Building", "Building is missing")
         elif building_id is None:
@@ -1211,10 +1599,11 @@ def _validate_group(group_key: str, rows: List[Dict], maps: Dict) -> Dict[str, A
         if not dept_name:
             add_error("Target Dept", "Target Dept is missing")
         else:
-            dept_id = _lookup(maps, "org_units", dept_name)
+            dept_id, dept_warning = _lookup_fuzzy(maps, "org_units", dept_name)
             if dept_id is None:
                 add_error("Target Dept", f"Target Department '{dept_name}' not found — reject")
             else:
+                note_fuzzy(dept_warning)
                 target_dept_ids.append(dept_id)
 
         # --- Doctors: all three slots optional -- warn, don't block, if
@@ -1223,10 +1612,11 @@ def _validate_group(group_key: str, rows: List[Dict], maps: Dict) -> Dict[str, A
         for doc_col in (COL_DOCTOR1, COL_DOCTOR2, COL_DOCTOR3):
             doc_name = _get(row, doc_col)
             if doc_name:
-                doc_id = _lookup(maps, "doctors", doc_name)
+                doc_id, doc_warning = _lookup_fuzzy(maps, "doctors", doc_name)
                 if doc_id is None:
                     warnings.append({"group_key": group_key, "row_number": row_number, "message": f"Doctor '{doc_name}' not found — imported without doctor linkage"})
                 else:
+                    note_fuzzy(doc_warning)
                     doctor_ids.append((doc_id, doc_name))
 
         # --- Workers: same as doctors, all three slots optional. ---
@@ -1234,10 +1624,11 @@ def _validate_group(group_key: str, rows: List[Dict], maps: Dict) -> Dict[str, A
         for wrk_col in (COL_WORKER1, COL_WORKER2, COL_WORKER3):
             wrk_name = _get(row, wrk_col)
             if wrk_name:
-                wrk_id = _lookup(maps, "workers", wrk_name)
+                wrk_id, wrk_warning = _lookup_fuzzy(maps, "workers", wrk_name)
                 if wrk_id is None:
                     warnings.append({"group_key": group_key, "row_number": row_number, "message": f"Worker '{wrk_name}' not found — skipped"})
                 else:
+                    note_fuzzy(wrk_warning)
                     worker_ids.append((wrk_id, wrk_name))
 
         row_data = None
@@ -1274,6 +1665,7 @@ def _validate_group(group_key: str, rows: List[Dict], maps: Dict) -> Dict[str, A
             "data": row_data,
             "raw": {k: v for k, v in row.items() if k != ROW_NUMBER_KEY},
             "derived_hierarchy": derived_hierarchy,
+            "resolved_display": resolved_display,
         })
 
     # --- Patient ambiguity check (group-level, once per group) ---
@@ -1298,6 +1690,7 @@ def _validate_group(group_key: str, rows: List[Dict], maps: Dict) -> Dict[str, A
         "warnings": warnings,
         "patient_name": patient_name,
         "is_new_patient": is_new_patient,
+        "has_fuzzy_match": has_fuzzy_match,
     }
 
 
@@ -1421,12 +1814,14 @@ def _import_group(
             # Link this case to the group's shared incident parent
             assign_case_to_incident(case_id, incident_id)
 
-            # Record-level import idempotency mapping (generalizes
-            # APP_DataMigration_Map's proven pattern). One group can span
-            # multiple rows/cases, so each gets its own '{group_key}#{idx}'
-            # external ID — group-level dedup uses a prefix match instead
-            # (see find_group_already_imported).
-            external_record_id = f"{group_key}#{idx}"
+            # Traceability mapping (case <-> source row), not a duplicate
+            # guard -- see the note in _validate_and_group on why Incident
+            # Group Key can't be a cross-upload identifier. Scoped by
+            # import_batch_id (always a real, unique batch at this point)
+            # so ml.ImportSourceRecordMap's UNIQUE(ExternalSourceSystem,
+            # ExternalRecordID) constraint can't collide between two
+            # different uploads that happen to reuse the same group key.
+            external_record_id = f"{import_batch_id}:{group_key}#{idx}"
             map_conn = get_connection()
             map_cursor = map_conn.cursor()
             try:

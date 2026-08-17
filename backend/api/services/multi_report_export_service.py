@@ -505,8 +505,12 @@ class MultiReportExportService:
     def _get_month_name(self, month: int, language: str) -> str:
         """Get month name in specified language."""
         months_en = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-        months_ar = ["", "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"]
-        
+        # Levantine/Syriac Arabic month names (Lebanon / Bilad al-Sham usage),
+        # matching monthly_report_service.py's period label — e.g. "آب" not
+        # "أغسطس" for August.
+        months_ar = ["", "كانون الثاني", "شباط", "آذار", "نيسان", "أيار", "حزيران",
+                     "تموز", "آب", "أيلول", "تشرين الأول", "تشرين الثاني", "كانون الأول"]
+
         if language == "ar":
             return months_ar[month]
         return months_en[month]

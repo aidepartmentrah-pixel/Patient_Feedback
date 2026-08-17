@@ -11,14 +11,18 @@ Two independent page templates:
   - Complaint / Improvement Opportunity form (one full landscape page
     per complaint): scope strip, classification table, complaint-data
     block (narrative gets the majority of the width), immediate-action /
-    actions-taken block, approval/signature grid, RCA instruction note.
-  - Notice / Commendation form (one flowing table, multiple notices per
-    page): scope strip once, then a 7-column table, then the approval
-    grid once at the end.
+    actions-taken block, RCA instruction note.
+  - Notice / Commendation form (one flowing table per unit): scope strip,
+    then a 7-column table of that unit's notices.
 
-An optional trailing appendix page renders the unit-distribution data
-(intent_counts) that has no equivalent on the paper form, kept plain
-and separate from the two literal form pages.
+Records are grouped by primary target org unit (see _group_by_unit), and
+each unit's batch of complaint/notice pages is followed by its own
+standalone signature page (_render_signature_page) — the paper form's
+approval grid is physically handed to one person per batch, so it can
+appear at most once per unit, not once per record. See Complaint Details /
+Immediate Action / Actions Taken sizing via the 3 registered narrative
+styles (_register_narrative_styles) for the one piece of user-adjustable
+formatting in the document.
 
 Pure renderer: zero DB queries, zero business-logic calculations.
 All data arrives pre-computed in report_data.
@@ -39,6 +43,7 @@ from docx.shared import Pt, Mm, Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
 from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE
 from docx.enum.section import WD_ORIENT, WD_SECTION
+from docx.enum.style import WD_STYLE_TYPE
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
@@ -68,6 +73,93 @@ def _ar_run(para, text: str, size: int = 10, bold: bool = False,
     """
     run = _ar_run_base(para, text, size=size, bold=bold, italic=italic, color=color)
     run._element.rPr.rFonts.set(qn('w:cs'), 'Traditional Arabic')
+    return run
+
+
+def _ltr_run(para, text: str, size: int = 10, bold: bool = False, color: str = None):
+    """
+    Like _ar_run, but forces this run to render left-to-right via an
+    explicit w:rPr/w:rtl w:val="0" override, instead of relying on Unicode
+    bidi-isolate characters (LRI U+2066 / PDI U+2069) to keep an LTR chunk
+    (dates, report codes) from reordering inside surrounding RTL Arabic.
+    Those isolate marks are a newer Unicode 6.3 feature that some Word
+    font/rendering combinations don't treat as invisible — they render as
+    visible placeholder boxes labeled "LRI"/"PDI" instead. The run-level
+    w:rtl override is the standard OOXML mechanism for this and has no
+    such fallback-glyph failure mode.
+    """
+    run = _ar_run(para, text, size=size, bold=bold, color=color)
+    rtl_el = OxmlElement('w:rtl')
+    rtl_el.set(qn('w:val'), '0')
+    run._element.rPr.append(rtl_el)
+    return run
+
+
+# ---------------------------------------------------------------------------
+# NARRATIVE PARAGRAPH STYLES  (user-adjustable text size in Word)
+# ---------------------------------------------------------------------------
+#
+# Complaint Details / Immediate Action / Actions Taken body text used to
+# carry hardcoded per-run font sizes, which Word's Styles pane can't touch —
+# direct run formatting always wins over style formatting. These three real
+# Word paragraph styles let a user select the text, bump the size once in
+# Word, and "Update Style to Match Selection" to resize every occurrence of
+# that block type across the whole document in one step.
+
+STYLE_COMPLAINT_NARRATIVE = 'نص محتوى الشكوى'
+STYLE_IMMEDIATE_ACTION    = 'نص الإجراءات الفورية'
+STYLE_ACTIONS_TAKEN       = 'نص الإجراءات المتخذة'
+STYLE_COMPLAINT_DATA      = 'نص بيانات الشكوى'  # قسم الصادر / المصدر / P.Name values
+
+# Bumped up from the previous hardcoded run sizes (11 / 10 / 10) per the
+# "make it bigger" request — these are now just the starting point; the
+# whole reason they're styles is so the user can go further from here.
+_NARRATIVE_STYLE_SIZES = {
+    STYLE_COMPLAINT_NARRATIVE: 13,
+    STYLE_IMMEDIATE_ACTION: 12,
+    STYLE_ACTIONS_TAKEN: 12,
+    STYLE_COMPLAINT_DATA: 12,
+}
+
+
+def _register_narrative_styles(doc: Document) -> None:
+    """
+    Registers the narrative + complaint-data styles on doc.styles. Must run
+    once per document, before any paragraph tries to use them.
+    """
+    for style_name, size in _NARRATIVE_STYLE_SIZES.items():
+        style = doc.styles.add_style(style_name, WD_STYLE_TYPE.PARAGRAPH)
+        style.base_style = doc.styles['Normal']
+        style.font.name = 'Traditional Arabic'
+        style.font.size = Pt(size)
+        # Complex-script (Arabic) font override, same w:cs trick _ar_run
+        # applies per-run — python-docx's font.name only sets w:ascii/w:hAnsi.
+        rPr = style.element.find(qn('w:rPr'))
+        rFonts = rPr.find(qn('w:rFonts'))
+        rFonts.set(qn('w:cs'), 'Traditional Arabic')
+        if style_name == STYLE_COMPLAINT_DATA:
+            # Matches the bold=True the direct-formatting version of these
+            # 3 fields always used (_labeled_cell's value_bold default).
+            style.font.bold = True
+        # Without qFormat, Word's on-ribbon Quick Style Gallery doesn't show
+        # a newly added custom style at all — it's only reachable via the
+        # full Styles pane. quick_style (w:qFormat) + a low priority number
+        # is what actually makes "one click in the ribbon" true, matching
+        # the whole point of using a style instead of direct formatting.
+        style.quick_style = True
+        style.priority = 2
+
+
+def _styled_ar_run(para, text: str, color: str = None):
+    """
+    Adds a run with NO direct font name/size — it inherits both entirely
+    from the paragraph's assigned narrative style. Setting size here would
+    silently defeat the point of using a style at all, since direct
+    run-level formatting overrides style formatting in Word.
+    """
+    run = para.add_run(text or '')
+    if color:
+        run.font.color.rgb = RGBColor.from_string(color)
     return run
 
 
@@ -150,11 +242,19 @@ def _labeled_cell(cell, label: str, value: str,
                   label_size: int = 7,
                   value_bold: bool = True,
                   bg: str = None,
-                  align: str = 'right'):
+                  align: str = 'right',
+                  doc: Document = None,
+                  style_name: str = None):
     """
     Two-paragraph cell: small bilingual label on top (always centered —
     label text is "Arabic / English"), larger value below (right-aligned —
     pure Arabic/data content, ragged-left like classic RTL print layouts).
+
+    When doc + style_name are both given, the value paragraph uses that
+    real Word style (no direct size) instead of value_size/value_bold, so
+    it becomes one-click resizable in Word — same mechanism as the
+    narrative styles. Existing callers that don't pass these two keep the
+    prior direct-formatting behavior unchanged.
     """
     if bg:
         _set_cell_shading(cell, bg)
@@ -170,11 +270,16 @@ def _labeled_cell(cell, label: str, value: str,
     _ar_run(lp, label, size=label_size, color=label_color)
 
     vp = cell.add_paragraph()
+    if doc is not None and style_name:
+        vp.style = doc.styles[style_name]
     vp.alignment = WD_ALIGN_PARAGRAPH.RIGHT if align == 'right' else WD_ALIGN_PARAGRAPH.CENTER
     vp.paragraph_format.space_before = Pt(2)
     vp.paragraph_format.space_after  = Pt(3)
     vp._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-    _ar_run(vp, value or '—', size=value_size, bold=value_bold, color=value_color)
+    if doc is not None and style_name:
+        _styled_ar_run(vp, value or '—', color=value_color)
+    else:
+        _ar_run(vp, value or '—', size=value_size, bold=value_bold, color=value_color)
 
 
 def _cell_para0(cell, align: str = 'center'):
@@ -320,6 +425,34 @@ def _scope_labels(report_entity_name: Optional[str], report_entity_type: Optiona
     return '—', '—', '—'
 
 
+def _unit_key(record: Dict):
+    """
+    Identity key for a record's primary target unit — prefers IDs over
+    names (two different sections can share a display name) so grouping
+    for the per-batch signature pages below is exact, not string-based.
+    """
+    p = _primary_target(record)
+    return (
+        p.get('section_id') or p.get('section_name'),
+        p.get('department_id') or p.get('department_name'),
+        p.get('administration_id') or p.get('administration_name'),
+    )
+
+
+def _group_by_unit(records: List[Dict]):
+    """
+    Stable group-by primary target unit: preserves each group's first-seen
+    order and keeps every record belonging to that unit contiguous, even if
+    the incoming list interleaves units — needed so a single signature page
+    can immediately follow each unit's complete, uninterrupted batch of
+    records. Returns [(unit_display_label, [records...]), ...].
+    """
+    groups: Dict[Any, List[Dict]] = {}
+    for record in records:
+        groups.setdefault(_unit_key(record), []).append(record)
+    return [(_target_display(recs[0]), recs) for recs in groups.values()]
+
+
 # ---------------------------------------------------------------------------
 # SCOPE STRIP  (الإدارة / الدائرة / الوحدة الإدارية-القسم / الشهر)
 # ---------------------------------------------------------------------------
@@ -462,7 +595,10 @@ def _classification_table(doc: Document, complaint: Dict):
 # Label cell first (index 0) so it renders at the RIGHT edge under RTL
 # bidiVisual — Arabic reads right-to-left, so the "بيانات الشكوى" side label
 # belongs where reading starts, not at the left.
-_COMPLAINT_DATA_WIDTHS = [8, 22, 18, 26, 196]  # sum = 270mm; narrative = 196mm (74.8%)
+# The 3 value boxes (قسم الصادر/المصدر/P.Name) are equal width on purpose —
+# previously 22/18/26mm, an inconsistent spread that left المصدر cramped;
+# now uniform so the row reads as one consistent group.
+_COMPLAINT_DATA_WIDTHS = [8, 26, 26, 26, 184]  # sum = 270mm; narrative = 184mm (68.1%)
 
 
 def _complaint_data_block(doc: Document, complaint: Dict):
@@ -476,11 +612,11 @@ def _complaint_data_block(doc: Document, complaint: Dict):
     label_cell, issuing_cell, source_cell, patient_cell, narrative_cell = row.cells
 
     _labeled_cell(issuing_cell, 'قسم الصادر', complaint.get('section_name') or '—',
-                  value_size=9, label_size=7.5, align='center')
+                  label_size=7.5, align='center', doc=doc, style_name=STYLE_COMPLAINT_DATA)
     _labeled_cell(source_cell, 'المصدر', complaint.get('source_name') or '—',
-                  value_size=9, label_size=7.5, align='center')
+                  label_size=7.5, align='center', doc=doc, style_name=STYLE_COMPLAINT_DATA)
     _labeled_cell(patient_cell, 'P.Name', complaint.get('patient_name') or '—',
-                  value_size=9, label_size=7.5, align='center')
+                  label_size=7.5, align='center', doc=doc, style_name=STYLE_COMPLAINT_DATA)
 
     _cell_v_center(narrative_cell)
     narrative_cell.text = ''
@@ -494,7 +630,8 @@ def _complaint_data_block(doc: Document, complaint: Dict):
 
     text = _truncate_for_fit(complaint.get('complaint_text') or '', NARRATIVE_MAX_CHARS)
     nb = narrative_cell.add_paragraph()
-    nb.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    nb.style = doc.styles[STYLE_COMPLAINT_NARRATIVE]
+    nb.alignment = WD_ALIGN_PARAGRAPH.CENTER
     nb.paragraph_format.space_before = Pt(3)
     nb.paragraph_format.space_after  = Pt(3)
     nb.paragraph_format.right_indent = Mm(3)
@@ -505,7 +642,7 @@ def _complaint_data_block(doc: Document, complaint: Dict):
     sp_el.set(qn('w:line'), '265')
     sp_el.set(qn('w:lineRule'), 'auto')
     pPr.append(sp_el)
-    _ar_run(nb, text or 'لا يوجد نص للشكوى', size=11, color=DARK_TEXT)
+    _styled_ar_run(nb, text or 'لا يوجد نص للشكوى', color=DARK_TEXT)
 
     _vertical_label_cell(label_cell, 'بيانات الشكوى')
 
@@ -538,7 +675,7 @@ def _action_block(doc: Document, complaint: Dict):
     row = tbl.rows[0]
     label_cell, immediate_cell, taken_cell = row.cells
 
-    def _fill(cell, header_ar, header_en, text):
+    def _fill(cell, header_ar, header_en, text, style_name):
         _set_cell_shading(cell, WHITE)
         cell.text = ''
         hp = cell.paragraphs[0]
@@ -552,16 +689,19 @@ def _action_block(doc: Document, complaint: Dict):
 
         body_text = _truncate_for_fit(text or '', ACTION_MAX_CHARS)
         bp = cell.add_paragraph()
-        bp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        bp.style = doc.styles[style_name]
+        bp.alignment = WD_ALIGN_PARAGRAPH.CENTER
         bp.paragraph_format.space_before = Pt(3)
         bp.paragraph_format.space_after  = Pt(3)
         bp.paragraph_format.right_indent = Mm(2)
         bp.paragraph_format.left_indent  = Mm(2)
         bp._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-        _ar_run(bp, body_text or '—', size=10, color=DARK_TEXT)
+        _styled_ar_run(bp, body_text or '—', color=DARK_TEXT)
 
-    _fill(immediate_cell, 'الإجراءات الفورية', 'Immediate Action', complaint.get('immediate_action'))
-    _fill(taken_cell, 'الإجراءات المتخذة', 'Actions Taken', complaint.get('taken_action'))
+    _fill(immediate_cell, 'الإجراءات الفورية', 'Immediate Action',
+          complaint.get('immediate_action'), STYLE_IMMEDIATE_ACTION)
+    _fill(taken_cell, 'الإجراءات المتخذة', 'Actions Taken',
+          complaint.get('taken_action'), STYLE_ACTIONS_TAKEN)
     _vertical_label_cell(label_cell, 'المتابعة')
 
     for ci, w in enumerate(_ACTION_WIDTHS):
@@ -627,6 +767,13 @@ def _set_para_mark_size(p, pt: float):
 
 
 def _approval_grid(doc: Document):
+    """
+    Row-height floors here are deliberately generous (unlike most tables in
+    this file): _approval_grid is only ever called from
+    _render_signature_page, a dedicated, otherwise-empty page — not squeezed
+    alongside the rest of a complaint's content anymore, so there's no
+    reason to keep it as compact as the old shared-page version needed.
+    """
     tbl = doc.add_table(rows=4, cols=5)
     tbl.autofit = False
     tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -635,47 +782,71 @@ def _approval_grid(doc: Document):
 
     hdr = tbl.rows[0]
     hdr.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-    hdr.height = _mm_to_dxa(1.0)
+    # NOTE: row.height expects a Length (EMU) value, NOT the raw twips int
+    # _mm_to_dxa() returns — python-docx silently treats a bare int as
+    # already-EMU and divides it by 635 when serializing to w:trHeight/@w:val,
+    # so _mm_to_dxa(12) here would have written an effectively-zero explicit
+    # height (AT_LEAST + near-zero floor = pure content-driven autosize,
+    # not the deliberate floor this file's comments describe). Mm() is the
+    # correct Length type — same pattern _set_row_col_width already uses
+    # correctly for column widths.
+    hdr.height = Mm(12)
     for ci, label in enumerate([''] + _APPROVAL_ROLES):
         c = hdr.cells[ci]
         _set_cell_shading(c, 'F2F2F2')
-        _tighten_cell_margins(c)
+        _tighten_cell_margins(c, top_mm=3, bottom_mm=3)
         cp = _cell_para0(c, 'center')
-        _ar_run(cp, label, size=6.5, bold=True, color=DARK_TEXT)
+        _ar_run(cp, label, size=11, bold=True, color=DARK_TEXT)
         _set_row_col_width(hdr, ci, _APPROVAL_COL_WIDTHS[ci])
     _set_row_cant_split(hdr)
 
     # Field labels: Arabic only (English dropped), centered instead of
     # right-aligned now that there's no bilingual "/" split to anchor.
-    # Row-height floors trimmed further now that the two real height
-    # drivers (hidden 10pt space-after, and the blank signature cells'
-    # font-size fallback below) are actually fixed — these numbers matter
-    # again instead of being floors nothing ever reached.
-    field_rows = [('الاسم', 3.5), ('التاريخ', 3.5), ('التوقيع', 5.0)]
+    # التوقيع (signature) row is tallest of the three — needs real room for
+    # an actual pen signature, not just a label-height line.
+    field_rows = [('الاسم', 20), ('التاريخ', 20), ('التوقيع', 45)]
     for ri, (field_lbl, h) in enumerate(field_rows):
         row = tbl.rows[ri + 1]
         row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-        row.height = _mm_to_dxa(h)
+        row.height = Mm(h)  # see Mm(12) note above — same EMU-vs-twips fix
         c0 = row.cells[0]
         _set_cell_shading(c0, 'F8F8F8')
-        _tighten_cell_margins(c0)
+        _tighten_cell_margins(c0, top_mm=3, bottom_mm=3)
         p0 = _cell_para0(c0, 'center')
-        _ar_run(p0, field_lbl, size=7, bold=True, color=NAVY)
+        _ar_run(p0, field_lbl, size=11, bold=True, color=NAVY)
         _set_row_col_width(row, 0, _APPROVAL_COL_WIDTHS[0])
         for ci in range(1, 5):
             _set_cell_shading(row.cells[ci], WHITE)
-            _tighten_cell_margins(row.cells[ci])
+            _tighten_cell_margins(row.cells[ci], top_mm=3, bottom_mm=3)
             # Blank signature cell: no visible text, but its empty
-            # paragraph mark still needs an explicit small font size or it
-            # silently falls back to Normal's 10pt for line-height purposes
-            # — larger than every labeled cell — and becomes the real
-            # (invisible) reason the row wouldn't shrink. See
-            # _set_para_mark_size's docstring.
+            # paragraph mark still needs an explicit font size or it
+            # silently falls back to Normal's 10pt for line-height purposes.
+            # See _set_para_mark_size's docstring.
             bp = _cell_para0(row.cells[ci], 'center')
-            _set_para_mark_size(bp, 7)
+            _set_para_mark_size(bp, 11)
             _set_row_col_width(row, ci, _APPROVAL_COL_WIDTHS[ci])
         _set_row_cant_split(row)
     return tbl
+
+
+def _render_signature_page(doc: Document, unit_label: str, count: int, noun_label: str):
+    """
+    Standalone page carrying just one batch's approval/signature grid.
+    Physically, complaints/notices for one org unit get sent by hand to one
+    person for one signature — so the grid can't repeat per record (that
+    forces multiple signatures for a single batch) and can't be shared
+    across units in the same file either. Captioned with the unit name and
+    record count since this page is meant to be separated from the rest and
+    handed off on its own — without the caption there'd be no way to tell
+    whose batch it belongs to once detached.
+    """
+    cap = _new_para(doc, align='center', space_before=6, space_after=2)
+    _ar_run(cap, 'توقيع الدفعة  /  Batch Signature', size=12, bold=True, color=NAVY)
+
+    sub = _new_para(doc, align='center', space_before=0, space_after=10)
+    _ar_run(sub, f'{unit_label}   —   عدد {noun_label}: {count}', size=9.5, color=GREY_TEXT)
+
+    _approval_grid(doc)
 
 
 # ---------------------------------------------------------------------------
@@ -748,9 +919,6 @@ def _render_complaint_page(doc: Document, complaint: Dict, index: int, total: in
     _action_block(doc, complaint)
     _gap(doc, 0.15)
 
-    _approval_grid(doc)
-    _gap(doc, 0.1)
-
     _instruction_note(doc)
 
     pg_para = _new_para(doc, align='center', space_before=2, space_after=0)
@@ -791,12 +959,15 @@ def _notice_case_number(notice: Dict) -> str:
     return str(notice.get('id', '—'))
 
 
-def _render_notices_section(doc: Document, notices: List[Dict],
-                             report_entity_name: Optional[str],
-                             report_entity_type: Optional[str],
-                             period: Dict):
-    admin_name, dept_name, sec_name = _scope_labels(report_entity_name, report_entity_type)
-    period_label = period.get('label_ar') or period.get('label') or '—'
+def _render_notices_table(doc: Document, notices: List[Dict],
+                           admin_name: str, dept_name: str, sec_name: str,
+                           period_label: str):
+    """
+    Scope strip + notices table for ONE unit's batch (or, when notices is
+    empty, a single empty-state table for the whole report). No signature
+    grid here — see _render_notices_section, which appends one standalone
+    _render_signature_page per batch instead.
+    """
     _four_cell_strip(doc, admin_name, dept_name, sec_name, period_label)
     _gap(doc, 3)
 
@@ -854,76 +1025,54 @@ def _render_notices_section(doc: Document, notices: List[Dict],
         row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
         row.height = _mm_to_dxa(9)
 
-    _gap(doc, 3)
-    _approval_grid(doc)
 
+def _render_notices_section(doc: Document, notices: List[Dict],
+                             report_entity_name: Optional[str],
+                             report_entity_type: Optional[str],
+                             period: Dict,
+                             skip_signature: bool = False):
+    """
+    Groups notices by primary target unit — same rationale as the
+    complaints path (see the 'complaints' branch in
+    generate_monthly_stylish_docx): one physical batch, one signature page,
+    on its own, immediately after that batch's table.
 
-# ---------------------------------------------------------------------------
-# APPENDIX PAGE  (intent_counts — unit distribution, plain formal style)
-# ---------------------------------------------------------------------------
+    skip_signature=True (whole-hospital/unfiltered exports — see the
+    _NO_SINGLE_UNIT_TYPES check in generate_monthly_stylish_docx) omits every
+    signature page: that export isn't routed to one physical unit to sign.
+    """
+    period_label = period.get('label_ar') or period.get('label') or '—'
 
-def _render_appendix_page(doc: Document, intent_counts: Dict):
-    title = _new_para(doc, align='center', space_before=0, space_after=6)
-    _ar_run(title, 'ملحق: توزيع السجلات حسب الوحدة  /  Appendix: Records by Unit',
-            size=13, bold=True, color=NAVY)
-
-    sections = intent_counts.get('sections') or []
-    depts    = intent_counts.get('departments') or []
-    admins   = intent_counts.get('administrations') or []
-
-    rows_data = []
-    for u in sections: rows_data.append((u, 'قسم / Section'))
-    for u in depts:    rows_data.append((u, 'دائرة / Department'))
-    for u in admins:   rows_data.append((u, 'إدارة / Administration'))
-
-    if not rows_data:
-        ep = _new_para(doc, align='center', space_before=10, space_after=0)
-        _ar_run(ep, 'لا توجد بيانات توزيع لهذه الفترة.', size=10, italic=True, color=GREY_TEXT)
+    if not notices:
+        admin_name, dept_name, sec_name = _scope_labels(report_entity_name, report_entity_type)
+        _render_notices_table(doc, [], admin_name, dept_name, sec_name, period_label)
+        if not skip_signature:
+            _page_break(doc)
+            _render_signature_page(doc, report_entity_name or '—', 0, 'التنويهات')
         return
 
-    headers = [
-        ('اسم الوحدة / Unit Name', 90),
-        ('نوع الوحدة / Type', 50),
-        ('الشكاوى / Complaints', 40),
-        ('التنويهات / Notices', 40),
-        ('المجموع / Total', 40),
-    ]
-    tbl = doc.add_table(rows=1, cols=len(headers))
-    tbl.autofit = False
-    tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-    _apply_minimal_table_borders(tbl, outer=BORDER_OUTER, outer_sz=6, inner=BORDER_INNER, inner_sz=3)
-    _set_rtl_table(tbl)
+    groups = _group_by_unit(notices)
+    items: List[tuple] = []
+    for unit_label, group_notices in groups:
+        items.append(('table', unit_label, group_notices))
+        if not skip_signature:
+            items.append(('signature', unit_label, len(group_notices)))
 
-    hdr = tbl.rows[0]
-    for ci, (label, w) in enumerate(headers):
-        c = hdr.cells[ci]
-        _set_cell_shading(c, 'F2F2F2')
-        cp = _cell_para0(c, 'center')
-        _ar_run(cp, label, size=8.5, bold=True, color=DARK_TEXT)
-        _set_row_col_width(hdr, ci, w)
-    hdr.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-    hdr.height = _mm_to_dxa(8)
-    _set_table_header_repeat(hdr)
-    _set_row_cant_split(hdr)
-
-    for ri, (unit, type_lbl) in enumerate(rows_data):
-        row = tbl.add_row()
-        bg = 'F7F7F7' if ri % 2 == 0 else WHITE
-        vals = [
-            unit.get('unit_name', '—'), type_lbl,
-            str(unit.get('complaint_count', 0)),
-            str(unit.get('notice_count', 0)),
-            str(unit.get('total_count', 0)),
-        ]
-        for ci, (val, (_label, w)) in enumerate(zip(vals, headers)):
-            c = row.cells[ci]
-            _set_cell_shading(c, bg)
-            cp = _cell_para0(c, 'center' if ci > 0 else 'right')
-            _ar_run(cp, val, size=9, color=DARK_TEXT)
-            _set_row_col_width(row, ci, w)
-        row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-        row.height = _mm_to_dxa(7)
-        _set_row_cant_split(row)
+    for i, item in enumerate(items):
+        tag, unit_label, payload = item
+        try:
+            if tag == 'table':
+                p = _primary_target(payload[0])
+                admin_name = p.get('administration_name') or '—'
+                dept_name = p.get('department_name') or '—'
+                sec_name = p.get('section_name') or '—'
+                _render_notices_table(doc, payload, admin_name, dept_name, sec_name, period_label)
+            else:
+                _render_signature_page(doc, unit_label, payload, 'التنويهات')
+        except Exception as e:
+            print(f'[STYLISH] Warning: failed to render notices item #{i} ({unit_label}): {e}')
+        if i < len(items) - 1:
+            _page_break(doc)
 
 
 # ---------------------------------------------------------------------------
@@ -990,16 +1139,13 @@ def _setup_section(sec, title_ar: str, subtitle: str, footer_text: str,
     tp.paragraph_format.space_after  = int(Pt(1))
     _ar_run(tp, title_ar, size=10, bold=True, color=NAVY)
 
-    # Info line — three bidi fixes preserved/added:
+    # Info line — two bidi fixes:
     # 1. Strip ASCII parens from config text (bidi-mirrors backwards in RTL).
     # 2. Insert RLM (U+200F) after each colon preceding an LTR token, so the
-    #    colon stays anchored to the Arabic RTL context.
-    # 3. Wrap each LTR chunk (the date range, the report code) in Unicode
-    #    directional isolates (U+2066 LRI ... U+2069 PDI). Without this, the
-    #    digits/dashes of "2026-01-01 — 2026-01-31" are only weakly-LTR on
-    #    their own and can get reordered by the bidi algorithm relative to
-    #    the surrounding Arabic — isolating the whole chunk forces it to stay
-    #    together as one atomic left-to-right unit regardless of context.
+    #    colon stays anchored to the Arabic RTL context, then render the LTR
+    #    chunk itself (date range, report code) as its own run with an
+    #    explicit w:rtl="0" override via _ltr_run — see that helper's
+    #    docstring for why this replaced the old Unicode-isolate approach.
     hdr_info_para = title_cell.add_paragraph()
     hdr_info_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
     hdr_info_para.paragraph_format.space_before = int(Pt(0))
@@ -1010,11 +1156,12 @@ def _setup_section(sec, title_ar: str, subtitle: str, footer_text: str,
     _ar_run(hdr_info_para, clean_subtitle, size=7, italic=True, color=GREY_TEXT)
     _ar_run(hdr_info_para, '   |   ', size=7, color=GREY_TEXT)
     RLM = '‏'
-    LRI, PDI = '⁦', '⁩'
-    _ar_run(hdr_info_para, f'{RLM}الفترة:{RLM} {LRI}{period_str}{PDI}', size=7, bold=True, color=GREY_TEXT)
+    _ar_run(hdr_info_para, f'{RLM}الفترة:{RLM} ', size=7, bold=True, color=GREY_TEXT)
+    _ltr_run(hdr_info_para, period_str, size=7, bold=True, color=GREY_TEXT)
     if report_code:
         _ar_run(hdr_info_para, '   |   ', size=7, color=GREY_TEXT)
-        _ar_run(hdr_info_para, f'{RLM}رمز التقرير:{RLM} {LRI}{report_code}{PDI}', size=7, color=GREY_TEXT)
+        _ar_run(hdr_info_para, f'{RLM}رمز التقرير:{RLM} ', size=7, color=GREY_TEXT)
+        _ltr_run(hdr_info_para, report_code, size=7, color=GREY_TEXT)
 
     hdr_tbl.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
     hdr_tbl.rows[0].height = _mm_to_dxa(9)
@@ -1053,7 +1200,6 @@ def _setup_section(sec, title_ar: str, subtitle: str, footer_text: str,
 
 _COMPLAINT_TITLE_DEFAULT = 'التقرير الشهري لفرص التحسين من المرضى ومرافقيهم'
 _NOTICE_TITLE = 'التقرير الشهري للتنويهات من المرضى ومرافقيهم'
-_APPENDIX_TITLE = 'ملحق التقرير الشهري — توزيع السجلات حسب الوحدة'
 
 
 def generate_monthly_stylish_docx(
@@ -1099,10 +1245,8 @@ def generate_monthly_stylish_docx(
         else:                        report_entity_name = 'مستوى المستشفى'
 
     period: Dict = {}
-    intent_counts: Dict = {}
     if isinstance(report_data, dict):
         period = report_data.get('period', {}) or {}
-        intent_counts = report_data.get('intent_counts', {}) or {}
 
     cfg = _load_report_config()
     subtitle = cfg.get('header_subtitle', 'Health Care Analysis Tool - HCAT')
@@ -1115,19 +1259,25 @@ def generate_monthly_stylish_docx(
     doc = Document()
     doc.styles['Normal'].font.name = 'Traditional Arabic'
     doc.styles['Normal'].font.size = Pt(10)
+    _register_narrative_styles(doc)
 
-    has_appendix = any((intent_counts.get(k) or []) for k in ('sections', 'departments', 'administrations'))
+    # A whole-hospital/unfiltered export isn't routed to one physical unit
+    # to sign, so it gets no signature page at all — see
+    # report_export_service.py:130-176 for where each of these values comes
+    # from. Multi-export ZIP entries always pass a real unit_type
+    # ('administration'/'department'/'section'), never one of these, so
+    # they're unaffected (see multi_report_export_service.py:395-396).
+    _NO_SINGLE_UNIT_TYPES = {None, 'hospital', 'all_administrations', 'all_departments', 'all_sections'}
+    skip_signature = report_entity_type in _NO_SINGLE_UNIT_TYPES
 
     plan: List[str] = []
     if complaints: plan.append('complaints')
     if notices:    plan.append('notices')
-    if has_appendix: plan.append('appendix')
     if not plan: plan = ['empty']
 
     titles = {
         'complaints': complaint_title,
         'notices': _NOTICE_TITLE,
-        'appendix': _APPENDIX_TITLE,
         'empty': complaint_title,
     }
 
@@ -1139,26 +1289,42 @@ def generate_monthly_stylish_docx(
 
         if kind == 'complaints':
             total_c = len(complaints)
-            for idx, complaint in enumerate(complaints, start=1):
+            # Group complaints by primary target unit so each unit's batch
+            # gets exactly one signature page, immediately after its own
+            # complaint pages (see _group_by_unit / _render_signature_page).
+            # Flattened into one (tag, payload) item list so the existing
+            # "break BETWEEN items only, never after the last one" pattern
+            # — which avoids a blank trailing page — applies uniformly to
+            # both complaint pages and the signature pages interleaved
+            # between batches.
+            groups = _group_by_unit(complaints)
+            items: List[tuple] = []
+            idx = 0
+            for unit_label, group_complaints in groups:
+                for complaint in group_complaints:
+                    idx += 1
+                    items.append(('complaint', complaint, idx))
+                if not skip_signature:
+                    items.append(('signature', unit_label, len(group_complaints)))
+
+            for i, item in enumerate(items):
                 try:
-                    _render_complaint_page(doc, complaint, idx, total_c, period)
+                    if item[0] == 'complaint':
+                        _, complaint, cidx = item
+                        _render_complaint_page(doc, complaint, cidx, total_c, period)
+                    else:
+                        _, unit_label, count = item
+                        _render_signature_page(doc, unit_label, count, 'الشكاوى')
                 except Exception as e:
-                    print(f'[STYLISH] Warning: failed to render complaint #{idx}: {e}')
-                # Break BETWEEN complaints only — not after the last one,
-                # which would leave a blank trailing page (see the note in
-                # _render_complaint_page).
-                if idx < total_c:
+                    print(f'[STYLISH] Warning: failed to render complaints item #{i}: {e}')
+                if i < len(items) - 1:
                     _page_break(doc)
         elif kind == 'notices':
             try:
-                _render_notices_section(doc, notices, report_entity_name, report_entity_type, period)
+                _render_notices_section(doc, notices, report_entity_name, report_entity_type, period,
+                                         skip_signature=skip_signature)
             except Exception as e:
                 print(f'[STYLISH] Warning: failed to render notices section: {e}')
-        elif kind == 'appendix':
-            try:
-                _render_appendix_page(doc, intent_counts)
-            except Exception as e:
-                print(f'[STYLISH] Warning: failed to render appendix: {e}')
         elif kind == 'empty':
             ep = _new_para(doc, align='center', space_before=20, space_after=0)
             _ar_run(ep, 'لا توجد سجلات لهذه الفترة — No records for this period.',

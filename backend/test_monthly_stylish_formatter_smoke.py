@@ -195,8 +195,23 @@ def run():
     doc_a = _open_and_basic_checks("Full fixture", content_a)
     if doc_a is not None:
         _check_geometry("Full fixture", doc_a)
-        check("Full fixture: has >= 3 sections (complaints+notices+appendix)",
-              len(doc_a.sections) >= 3)
+        # Appendix page was removed entirely — only complaints + notices
+        # sections remain (each a distinct page-geometry section).
+        check("Full fixture: has >= 2 sections (complaints+notices)",
+              len(doc_a.sections) >= 2)
+        full_text_a = _full_text(doc_a)
+        check("Full fixture: no leftover appendix title text",
+              "ملحق: توزيع السجلات" not in full_text_a)
+        # Both fixture complaints (and both fixture notices) share the same
+        # primary target unit, so grouping collapses each into exactly one
+        # batch -> exactly one signature grid each (2 total), not one per
+        # record (which would have given 3+ before this change). Role label
+        # unique to the approval grid (unlike "مسؤول العملية", which also
+        # appears inside the RCA instruction note on every complaint page).
+        check("Full fixture: exactly one signature grid per batch (2 total)",
+              full_text_a.count("خاص خدمات المرضى") == 2)
+        check("Full fixture: batch signature page caption present",
+              "توقيع الدفعة" in full_text_a)
 
     # (b) Empty complaints + empty notices
     report_data_empty = {
@@ -230,6 +245,71 @@ def run():
         full_text = _full_text(doc_c)
         check("Long-complaint fixture: truncation marker present",
               "النص الكامل في النظام" in full_text)
+
+    # (d) Multiple distinct units within one FILTERED export (e.g. a
+    # department-level export whose complaints span >1 section beneath it):
+    # 2 complaints in unit A, 1 in unit B, interleaved (not pre-sorted) —
+    # must still yield exactly 2 signature pages (one per unit, batch
+    # contiguous regardless of input order), not 3 (one per complaint), and
+    # not 0 (department is a real filtered scope, not whole-hospital — see
+    # fixture (e) below for the whole-hospital/no-signature case).
+    unit_a = {"section_id": 10, "section_name": "قسم أ",
+              "department_id": 20, "department_name": "دائرة أ",
+              "administration_id": 30, "administration_name": "إدارة أ",
+              "is_primary": True}
+    unit_b = {"section_id": 11, "section_name": "قسم ب",
+              "department_id": 21, "department_name": "دائرة ب",
+              "administration_id": 31, "administration_name": "إدارة ب",
+              "is_primary": True}
+    report_data_multi_unit = {
+        "complaints": [
+            _complaint_fixture(id=3001, incident_id=3001, target_departments=[unit_a]),
+            _complaint_fixture(id=3002, incident_id=3002, target_departments=[unit_b]),
+            _complaint_fixture(id=3003, incident_id=3003, target_departments=[unit_a]),
+        ],
+        "notices": [],
+        "period": _period_fixture(),
+        "intent_counts": {},
+    }
+    content_d = generate_monthly_stylish_docx(
+        report_data_multi_unit, filename="test_multi_unit.docx",
+        report_entity_name="دائرة أ", report_entity_type="department",
+    )
+    doc_d = _open_and_basic_checks("Multi-unit fixture", content_d)
+    if doc_d is not None:
+        _check_geometry("Multi-unit fixture", doc_d)
+        full_text_d = _full_text(doc_d)
+        check("Multi-unit fixture: exactly 2 signature grids (one per unit, not per complaint)",
+              full_text_d.count("خاص خدمات المرضى") == 2)
+        check("Multi-unit fixture: both unit names appear in batch captions",
+              "قسم أ" in full_text_d and "قسم ب" in full_text_d)
+
+    # (e) Whole-hospital / unfiltered export (report_entity_type is None,
+    # or explicitly "hospital") spanning multiple sections — must have ZERO
+    # signature grids: this file isn't routed to one physical unit to sign.
+    # Complaint/notice content itself still renders normally.
+    report_data_hospital_wide = {
+        "complaints": [
+            _complaint_fixture(id=4001, incident_id=4001, target_departments=[unit_a]),
+            _complaint_fixture(id=4002, incident_id=4002, target_departments=[unit_b]),
+        ],
+        "notices": [_notice_fixture(id=4003, incident_id=4003)],
+        "period": _period_fixture(),
+        "intent_counts": {},
+    }
+    for _type_label, _entity_type in (("None", None), ("'hospital'", "hospital")):
+        content_e = generate_monthly_stylish_docx(
+            report_data_hospital_wide, filename="test_hospital_wide.docx",
+            report_entity_name="مستوى المستشفى", report_entity_type=_entity_type,
+        )
+        doc_e = _open_and_basic_checks(f"Hospital-wide fixture (type={_type_label})", content_e)
+        if doc_e is not None:
+            _check_geometry(f"Hospital-wide fixture (type={_type_label})", doc_e)
+            full_text_e = _full_text(doc_e)
+            check(f"Hospital-wide fixture (type={_type_label}): zero signature grids",
+                  full_text_e.count("خاص خدمات المرضى") == 0)
+            check(f"Hospital-wide fixture (type={_type_label}): complaint content still present",
+                  "قسم أ" in full_text_e and "قسم ب" in full_text_e)
 
     print("=" * 70)
     if FAILURES:

@@ -117,24 +117,6 @@ def find_source_record_map(
     return row[0] if row else None
 
 
-def find_group_already_imported(
-    cursor, external_source_system: str, group_key: str
-) -> bool:
-    """
-    Group-level duplicate check. A single Incident Group Key can span
-    multiple rows/cases, each recorded as its own '{group_key}#{row_index}'
-    ExternalRecordID (see record_source_map) — this checks whether ANY row
-    from this group was already imported, via a prefix match, without
-    requiring the exact row composition to match between uploads.
-    """
-    cursor.execute(
-        "SELECT TOP 1 1 FROM ml.ImportSourceRecordMap "
-        "WHERE ExternalSourceSystem = ? AND ExternalRecordID LIKE ?",
-        (external_source_system, group_key + "#%"),
-    )
-    return cursor.fetchone() is not None
-
-
 def record_source_map(
     cursor,
     import_batch_id: Optional[int],
