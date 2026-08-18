@@ -20,7 +20,7 @@ block — it's whatever `SQLSERVER_HOST_PORT` is set to in this release's
 actual value before connecting:
 
 ```bash
-grep SQLSERVER_HOST_PORT /opt/pfms-release/.env
+grep SQLSERVER_HOST_PORT /opt/rah/apps/pfms/.env
 ```
 
 If it still shows the default, DBeaver connects on `1433`. There is no
@@ -31,7 +31,7 @@ conflict with 8100/8101/8102 either way — different port, different service.
 From the same `.env` file:
 
 ```bash
-grep -E "MSSQL_SA_PASSWORD|DB_DATABASE" /opt/pfms-release/.env
+grep -E "MSSQL_SA_PASSWORD|DB_DATABASE" /opt/rah/apps/pfms/.env
 ```
 
 - **Username**: `sa`

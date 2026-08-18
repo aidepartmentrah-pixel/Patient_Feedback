@@ -8,26 +8,25 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RELEASE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-ENV_FILE="$RELEASE_ROOT/.env"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/_common.sh"
 
 if [ $# -ne 1 ]; then
     echo "Usage: $0 <backup_filename.bak>"
     echo ""
-    echo "Available backups in $RELEASE_ROOT/backups:"
-    ls -1 "$RELEASE_ROOT/backups" 2>/dev/null || echo "  (none found)"
+    echo "Available backups in $LIVE_ROOT/backups:"
+    ls -1 "$LIVE_ROOT/backups" 2>/dev/null || echo "  (none found)"
     exit 1
 fi
 
 BACKUP_FILE="$1"
 
-if [ ! -f "$RELEASE_ROOT/backups/$BACKUP_FILE" ]; then
-    echo "ERROR: $RELEASE_ROOT/backups/$BACKUP_FILE not found."
+if [ ! -f "$LIVE_ROOT/backups/$BACKUP_FILE" ]; then
+    echo "ERROR: $LIVE_ROOT/backups/$BACKUP_FILE not found."
     exit 1
 fi
 
-# shellcheck disable=SC1090
-set -a; source "$ENV_FILE"; set +a
+load_env
 
 CONTAINER="${PROJECT_NAME:-pfms}-sqlserver"
 DB_NAME="${DB_DATABASE:-IncidentManager}"

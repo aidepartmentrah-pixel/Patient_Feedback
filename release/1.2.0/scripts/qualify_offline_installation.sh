@@ -16,16 +16,13 @@
 # the already-installed database. Qualification is a read-mostly acceptance
 # test on top of a finished install, not a transactional part of installing.
 
-set -uo pipefail  # not -e: run every check, report all results
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RELEASE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-ENV_FILE="$RELEASE_ROOT/.env"
-COMPOSE_FILE="$RELEASE_ROOT/compose/docker-compose.yml"
-CREDS_FILE="$RELEASE_ROOT/database/sqlserver/seed/installation_test_credentials.local.json"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/_common.sh"
+set +e; set -uo pipefail  # not -e: run every check, report all results
+load_env
 
-# shellcheck disable=SC1090
-set -a; source "$ENV_FILE"; set +a
+CREDS_FILE="$LIVE_ROOT/database/sqlserver/seed/installation_test_credentials.local.json"
 
 BACKEND_URL="http://localhost:${BACKEND_HOST_PORT:-8100}"
 CONTAINER="${PROJECT_NAME:-pfms}-sqlserver"
@@ -65,10 +62,18 @@ declare -A ALLOWED_UNITS
 declare -A ROLE_FOR_USER
 
 python_or_die() {
-    command -v python3 >/dev/null 2>&1 && { echo python3; return; }
-    command -v python >/dev/null 2>&1 && { echo python; return; }
-    echo "ERROR: no python3/python found on this server -- required to parse"
-    echo "       installation_test_credentials.local.json and login responses."
+    # Checks functionality, not just PATH presence -- on Windows, `python3`
+    # often resolves to the Microsoft Store's non-functional execution-alias
+    # stub, which passes `command -v` but doesn't actually run anything. The
+    # real offline Debian target never hits this (real python3, no stub).
+    for candidate in python3 python; do
+        if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c "1" >/dev/null 2>&1; then
+            echo "$candidate"
+            return
+        fi
+    done
+    echo "ERROR: no working python3/python found on this server -- required to"
+    echo "       parse installation_test_credentials.local.json and login responses."
     exit 1
 }
 PY="$(python_or_die)"

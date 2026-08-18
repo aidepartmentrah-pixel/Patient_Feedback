@@ -1,0 +1,36 @@
+{
+  "release_version": "1.2.0",
+  "image_version": "1.2.0",
+  "generated_at": "2026-08-18T10:10:50Z",
+  "source_git_commit": "914267772e4a37b2c7ffb2063d8d35207b7e89be",
+  "package": {
+    "total_files": 86,
+    "total_size_bytes": 4919597343
+  },
+  "images": [
+    {
+      "image": "rah-pfms-backend:1.2.0",
+      "docker_image_id": "sha256:a30156bfbf8afec596fc3e38ab7e0814794b23f2ebcac2cad6f83c6135de9279",
+      "tar_file": "docker-images/backend.tar",
+      "tar_size_bytes": 3382807040,
+      "tar_sha256": "3b92b49ee3ae031dcfcaedf5d765f9a2ec5cf9309905c86b49a23d70e7d160a4"
+    },
+    {
+      "image": "rah-pfms-frontend:1.2.0",
+      "docker_image_id": "sha256:5cc67df304ff1ee232387e25e8dfb951afd68f39bb00523dca6ce348b591831f",
+      "tar_file": "docker-images/frontend.tar",
+      "tar_size_bytes": 24308736,
+      "tar_sha256": "5be548a47a5bfbca7c943821bb5d510073aa1e42de3a3101d3b07b1447d9a3f2"
+    },
+    {
+      "image": "rah-pfms-db-init:1.2.0",
+      "docker_image_id": "sha256:f3d05984ec937c899768a85df70a80327dfc8e61e1c822bff12769f5bea649b1",
+      "tar_file": "docker-images/db-init.tar",
+      "tar_size_bytes": 60594176,
+      "tar_sha256": "12f9ddf307f006bc6dbdcfa124baf66fa01c3649a6e91b5579a38505af2d9a1e"
+    }
+  ],
+  "checksums_file": "checksums/release_hashes.txt",
+  "release_notes": "documentation/RELEASE_NOTES.md",
+  "qualification_status": "Engineered Release -- Awaiting Offline Qualification"
+}

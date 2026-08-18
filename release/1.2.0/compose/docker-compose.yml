@@ -104,7 +104,19 @@ services:
       backend:
         condition: service_healthy
     ports:
+      # 80: HTTP, redirects to HTTPS (see nginx.conf) -- kept mapped so a
+      # plain http:// URL still resolves to something (a redirect) instead
+      # of connection-refused.
       - "${FRONTEND_HOST_PORT:-8101}:80"
+      # 8102 is OR-LAB's pre-reserved "spare" port for this app -- used here
+      # for HTTPS rather than allocating a new, not-yet-cleared port.
+      - "${FRONTEND_HTTPS_PORT:-8102}:443"
+    volumes:
+      # Generated once by scripts/generate_certificate.sh on first install
+      # (see install_offline.sh) and persisted at the live deployment level,
+      # same as .env/assets/backups -- never baked into the image, never
+      # touched by update_offline.sh.
+      - ../certs:/etc/nginx/certs:ro
     restart: unless-stopped
 
 volumes:

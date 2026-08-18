@@ -151,43 +151,47 @@ venv_dbinstall/
 backups/
 *.bak
 
-# Offline release artifacts (built locally, not source) -- see release/README.md
-release/docker-images/*.tar
-release/checksums/*
-release/assets/*.zip
+# Offline release artifacts (built locally, not source) -- see release/README.md.
+# Each release version lives in its own release/<version>/ folder (e.g.
+# release/1.2.0/) -- the wildcard covers all of them without editing this
+# file again on the next version bump.
+release/*/docker-images/*.tar
+release/*/checksums/*
+release/*/assets/*.zip
 
 # Source-system extraction / provisioning data -- see the migration plan.
 # Raw extracts contain real plaintext credentials; provisioning artifacts and
 # test-credential files are deployment artifacts, not source, and are never
 # committed even though they ship physically in the release bundle.
 #
-# Duplicated under release/ too -- release/database/sqlserver/seed/ is a
-# separate physical copy (the actual release bundle contents), not a symlink,
-# so a rule anchored at database/sqlserver/seed/... does NOT also match
-# release/database/sqlserver/seed/... (confirmed the hard way: these ended up
-# committed under the release/ path even though the root-level copies were
-# always correctly ignored).
+# Duplicated under release/<version>/ too -- release/<version>/database/sqlserver/seed/
+# is a separate physical copy (the actual release bundle contents), not a
+# symlink, so a rule anchored at database/sqlserver/seed/... does NOT also
+# match release/<version>/database/sqlserver/seed/... (confirmed the hard
+# way: these ended up committed under the release/ path even though the
+# root-level copies were always correctly ignored). Wildcarded on <version>
+# for the same reason as the artifacts block above.
 database/sqlserver/seed/raw_extract/
 database/sqlserver/seed/provisioning.v1.json
 database/sqlserver/seed/provisioning.v1.manifest.json
 database/sqlserver/seed/provisioning.v1.json.sha256
 database/sqlserver/seed/installation_test_credentials.local.json
 database/sqlserver/seed/*.local.json
-release/database/sqlserver/seed/raw_extract/
-release/database/sqlserver/seed/provisioning.v1.json
-release/database/sqlserver/seed/provisioning.v1.manifest.json
-release/database/sqlserver/seed/provisioning.v1.json.sha256
-release/database/sqlserver/seed/installation_test_credentials.local.json
-release/database/sqlserver/seed/*.local.json
+release/*/database/sqlserver/seed/raw_extract/
+release/*/database/sqlserver/seed/provisioning.v1.json
+release/*/database/sqlserver/seed/provisioning.v1.manifest.json
+release/*/database/sqlserver/seed/provisioning.v1.json.sha256
+release/*/database/sqlserver/seed/installation_test_credentials.local.json
+release/*/database/sqlserver/seed/*.local.json
 
 # ML historical training-data seed -- contains real patient complaint text,
 # same governance as provisioning.v1.json above (see extract_ml_training_data.py).
 database/sqlserver/seed/ml_training_data.v1.json
 database/sqlserver/seed/ml_training_data.v1.manifest.json
 database/sqlserver/seed/ml_training_data.v1.json.sha256
-release/database/sqlserver/seed/ml_training_data.v1.json
-release/database/sqlserver/seed/ml_training_data.v1.manifest.json
-release/database/sqlserver/seed/ml_training_data.v1.json.sha256
+release/*/database/sqlserver/seed/ml_training_data.v1.json
+release/*/database/sqlserver/seed/ml_training_data.v1.manifest.json
+release/*/database/sqlserver/seed/ml_training_data.v1.json.sha256
 database/sqlserver/seed/ml_training_data.v1.json.sha256
 
 # Local scratch dir used by scripts/export_whisper_model.sh -- only the zip

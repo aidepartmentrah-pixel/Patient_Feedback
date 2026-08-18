@@ -9,6 +9,7 @@ Copy this entire folder to the target Debian server and follow
 ```
 release/
 ├── README.md                    <- you are here
+├── release-manifest.json        <- machine-readable snapshot of package contents
 ├── .env.offline.template        <- copy to .env and fill in before install
 ├── docker-images/                <- backend.tar, frontend.tar, db-init.tar
 ├── compose/

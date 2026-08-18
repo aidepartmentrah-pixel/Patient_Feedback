@@ -20,6 +20,14 @@ FROM python:3.11-slim
 ENV PYTHONUNBUFFERED=1 \
     DEBIAN_FRONTEND=noninteractive
 
+# deb.debian.org's plain-HTTP edge (Fastly) intermittently 403s package
+# index fetches; https to the same host is reliable. Harmless either way --
+# apt trusts the Release file signature, not transport security -- but this
+# avoids build-time flakiness.
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null; \
+    sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list 2>/dev/null; \
+    true
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         gnupg2 \

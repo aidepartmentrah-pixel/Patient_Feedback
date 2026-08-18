@@ -11,8 +11,10 @@
 set -euo pipefail
 
 MODEL_SIZE="${1:-medium}"
+RELEASE_VERSION="${2:-1.2.0}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="$REPO_ROOT/assets/whisper-model-${MODEL_SIZE}"
+RELEASE_DIR="$REPO_ROOT/release/${RELEASE_VERSION}"
 
 echo "==> Downloading '${MODEL_SIZE}' model inside a scratch container..."
 mkdir -p "$OUT_DIR"
@@ -39,8 +41,8 @@ echo "==> Done. Contents of ${OUT_DIR}:"
 ls -lh "$OUT_DIR"
 echo
 echo "==> Zipping for release packaging..."
-mkdir -p "$REPO_ROOT/release/assets"
-ZIP_PATH="$REPO_ROOT/release/assets/whisper-model-${MODEL_SIZE}.zip"
+mkdir -p "$RELEASE_DIR/assets"
+ZIP_PATH="$RELEASE_DIR/assets/whisper-model-${MODEL_SIZE}.zip"
 
 # Deliberately using Python's zipfile module (via the already-built backend
 # image) rather than `zip` or PowerShell's Compress-Archive. Compress-Archive
@@ -71,7 +73,7 @@ docker rm "$ZIP_CONTAINER" >/dev/null
 
 echo "==> Wrote $ZIP_PATH"
 echo "==> Verifying archive uses forward slashes and the expected top-level folder..."
-MSYS_NO_PATHCONV=1 docker run --rm -v "$REPO_ROOT/release/assets:/z:ro" --entrypoint python rah-pfms-backend:1.0.0 -c "
+MSYS_NO_PATHCONV=1 docker run --rm -v "$RELEASE_DIR/assets:/z:ro" --entrypoint python rah-pfms-backend:1.0.0 -c "
 import zipfile
 with zipfile.ZipFile('/z/whisper-model-${MODEL_SIZE}.zip') as zf:
     names = zf.namelist()

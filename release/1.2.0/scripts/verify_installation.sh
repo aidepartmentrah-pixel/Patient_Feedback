@@ -3,15 +3,11 @@
 # frontend reachability, and the database validation scripts from
 # database/sqlserver/validation/.
 
-set -uo pipefail  # not -e: we want to run every check and report all results
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RELEASE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-ENV_FILE="$RELEASE_ROOT/.env"
-COMPOSE_FILE="$RELEASE_ROOT/compose/docker-compose.yml"
-
-# shellcheck disable=SC1090
-set -a; source "$ENV_FILE"; set +a
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/_common.sh"
+set +e; set -uo pipefail  # not -e: we want to run every check and report all results
+load_env
 
 PASS=0
 FAIL=0
@@ -37,12 +33,12 @@ sqlcmd_exec() {
 }
 
 echo "=== 1. Container status ==="
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -p "${PROJECT_NAME:-pfms}" ps
+compose ps
 
 echo ""
 echo "=== 2. Container health ==="
 for svc in sqlserver backend frontend; do
-    cid="$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -p "${PROJECT_NAME:-pfms}" ps -q "$svc")"
+    cid="$(compose ps -q "$svc")"
     status="$(docker inspect --format='{{.State.Health.Status}}' "$cid" 2>/dev/null || echo "unknown")"
     check "$svc is healthy (was: $status)" "$([ "$status" = "healthy" ] && echo 0 || echo 1)"
 done
@@ -65,7 +61,7 @@ echo "=== 5. Database validation ==="
 CONTAINER="${PROJECT_NAME:-pfms}-sqlserver"
 CONTAINER_BACKEND="${PROJECT_NAME:-pfms}-backend"
 DB_NAME="${DB_DATABASE:-IncidentManager}"
-for sql_file in "$RELEASE_ROOT"/database/sqlserver/validation/*.sql; do
+for sql_file in "$LIVE_ROOT"/database/sqlserver/validation/*.sql; do
     name="$(basename "$sql_file")"
     sqlcmd_exec -i "$CONTAINER" /opt/mssql-tools18/bin/sqlcmd \
         -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C -d "$DB_NAME" \
@@ -75,7 +71,7 @@ done
 
 echo ""
 echo "=== 6. Organizational unit / user provisioning integrity ==="
-MANIFEST="$RELEASE_ROOT/database/sqlserver/seed/provisioning.v1.manifest.json"
+MANIFEST="$LIVE_ROOT/database/sqlserver/seed/provisioning.v1.manifest.json"
 if [ ! -f "$MANIFEST" ]; then
     check "provisioning.v1.manifest.json exists" 1
 else
@@ -135,7 +131,7 @@ echo "=== 9. Speech-to-Text model asset transfer ==="
 # scripts/export_whisper_model.sh) -- checked individually because a
 # directory can be non-empty (partial/truncated extraction, or just the
 # .cache/huggingface/ download metadata left behind) without being loadable.
-WHISPER_HOST_DIR="$RELEASE_ROOT/assets/whisper-model-medium"
+WHISPER_HOST_DIR="$LIVE_ROOT/assets/whisper-model-medium"
 for f in config.json model.bin tokenizer.json vocabulary.txt; do
     check "host: $f present and non-empty at $WHISPER_HOST_DIR" \
         "$([ -s "$WHISPER_HOST_DIR/$f" ] && echo 0 || echo 1)"
