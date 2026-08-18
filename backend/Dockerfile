@@ -48,8 +48,15 @@ COPY project_paths.py project_paths.py
 COPY models_directory/ models_directory/
 COPY backend/ backend/
 
+# Whisper model, baked in at a fixed path instead of a runtime bind mount
+# (RAH platform rule: everything a container needs must already be inside
+# the image when `docker build` finishes). Faster_Wisper.py's
+# get_whisper_model() already treats WHISPER_MODEL_PATH as authoritative
+# when set (see docker-compose.yml) -- it stays pointed at this same path.
+COPY assets/whisper-model-medium /models/whisper-medium
+
 RUN useradd --create-home --uid 1000 appuser \
-    && chown -R appuser:appuser /app \
+    && chown -R appuser:appuser /app /models \
     # Pre-create cache dirs with correct ownership. Named volumes mounted at
     # a path that doesn't yet exist in the image are created root-owned by
     # Docker on first mount; pre-creating them here (with appuser ownership)

@@ -194,9 +194,12 @@ release/*/database/sqlserver/seed/ml_training_data.v1.manifest.json
 release/*/database/sqlserver/seed/ml_training_data.v1.json.sha256
 database/sqlserver/seed/ml_training_data.v1.json.sha256
 
-# Local scratch dir used by scripts/export_whisper_model.sh -- only the zip
-# it produces (release/assets/*.zip) ships in the release, not this raw copy.
-/assets/
+# assets/whisper-model-medium is now tracked for real and baked into the
+# backend image at build time (RAH platform rule: everything a container
+# needs must already be inside the image when `docker build` finishes --
+# see docs/decisions/packager-responsibility-boundaries.md in
+# Air-Gapped-System-Platform). Used to be gitignored, which meant it never
+# existed on a fresh clone.
 
 # Runtime state for the Excel import feature (staged uploads awaiting
 # confirm, and generated batch reports) -- see import_service.py's
