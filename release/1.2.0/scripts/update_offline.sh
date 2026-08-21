@@ -135,6 +135,12 @@ echo "[5/6] Verifying ..."
     exit 1
 }
 
+# Refresh the "genuinely installed" marker to the new version now that
+# verification has actually passed -- see _common.sh's
+# live_deployment_exists(). Kept in sync with install_offline.sh's own
+# write of the same file.
+echo "$IMAGE_VERSION" > "$INSTALLED_VERSION_FILE"
+
 echo ""
 echo "[6/6] Updating operational documentation and DBeaver connection ..."
 load_env

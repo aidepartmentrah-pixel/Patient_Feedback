@@ -43,6 +43,9 @@ IMAGE_VERSION="$(cat "$RELEASE_ROOT/IMAGE_VERSION" 2>/dev/null || echo "$RELEASE
 LIVE_ROOT="${PFMS_LIVE_ROOT:-/opt/rah/apps/${APP_SLUG}}"
 ENV_FILE="$LIVE_ROOT/.env"
 COMPOSE_FILE="$LIVE_ROOT/compose/docker-compose.yml"
+# Written only after a fully successful, verified install or update -- see
+# live_deployment_exists() below.
+INSTALLED_VERSION_FILE="$LIVE_ROOT/INSTALLED_VERSION"
 
 # Canonical operational documentation root -- shared across ALL RAH
 # applications on this server (an Obsidian-compatible vault), deliberately
@@ -54,8 +57,18 @@ APP_DOCS_DIR="$DOCS_ROOT/Applications/${APP_SLUG}"
 # True once a live deployment has been established (install_offline.sh has
 # run successfully at least once). Scripts use this to refuse to "update"
 # a nonexistent deployment or to refuse to "install" over an existing one.
+#
+# Deliberately checks INSTALLED_VERSION_FILE, not COMPOSE_FILE: the RAH
+# Offline Installation Platform pre-renders compose/ and other release
+# resources into LIVE_ROOT as a preparation step immediately before
+# invoking install_offline.sh, for a fresh installation, not only an
+# update. Checking COMPOSE_FILE would false-positive against that normal
+# preparation and refuse a genuine first install. INSTALLED_VERSION_FILE
+# is only ever written after a fully successful, verified install/update
+# (see install_offline.sh and update_offline.sh), so it is the correct
+# signal instead.
 live_deployment_exists() {
-    [ -f "$COMPOSE_FILE" ]
+    [ -f "$INSTALLED_VERSION_FILE" ]
 }
 
 # Loads the persistent production .env from the live deployment -- never

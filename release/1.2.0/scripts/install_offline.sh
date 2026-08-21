@@ -259,6 +259,15 @@ if [ "$status" != "healthy" ]; then
     exit 1
 fi
 
+# Written only now that the backend has actually reported healthy -- this
+# is the authoritative "installation genuinely completed" signal
+# live_deployment_exists() checks (see _common.sh). Must not be written any
+# earlier: the Platform pre-renders compose/ and other resources into
+# LIVE_ROOT before this script even starts, so anything written before a
+# real success confirmation would falsely mark an incomplete/failed
+# attempt as installed.
+echo "$IMAGE_VERSION" > "$INSTALLED_VERSION_FILE"
+
 echo ""
 echo "[9/9] Updating operational documentation and DBeaver connection ..."
 load_env
