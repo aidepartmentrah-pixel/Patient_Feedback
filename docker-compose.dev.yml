@@ -12,3 +12,17 @@ services:
     volumes:
       - ./backend:/app/backend
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8100", "--reload"]
+
+  # nginx.conf (2026-07-23, see its own comments) now requires HTTPS -- the
+  # mic API needs a secure context -- and expects a cert mounted at
+  # /etc/nginx/certs. The base docker-compose.yml never got that wiring
+  # (only release/1.2.0/compose/docker-compose.yml did), so plain `docker
+  # compose up frontend` here crash-loops on a missing cert file. Dev-only
+  # fix: mount a local self-signed cert (generated once via
+  # release/1.2.0/scripts/generate_certificate.sh into ./.dev-certs-root/certs,
+  # gitignored) and publish 443 the same way release/1.2.0 does.
+  frontend:
+    ports:
+      - "${FRONTEND_HTTPS_PORT:-8112}:443"
+    volumes:
+      - ./.dev-certs-root/certs:/etc/nginx/certs:ro

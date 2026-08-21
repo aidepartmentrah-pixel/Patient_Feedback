@@ -327,3 +327,4 @@ models_directory/Classification_Models/model_storage/mpnet_embeddings/model.safe
 
 # Packager output — fully generated, never hand-authored
 /release_packager/
+.dev-certs-root/
