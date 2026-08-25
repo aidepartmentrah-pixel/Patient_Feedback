@@ -126,21 +126,16 @@ check "at least one active Drawer Note label exists (found=$actual_drawer_labels
     "$([ "$actual_drawer_labels" -gt 0 ] && echo 0 || echo 1)"
 
 echo ""
-echo "=== 9. Speech-to-Text model asset transfer ==="
-# The 4 files a CTranslate2 Faster-Whisper model actually needs to load (see
+echo "=== 9. Speech-to-Text model present in the backend image ==="
+# The model is baked into the backend image at build time (see
+# backend/Dockerfile) -- no host extraction or bind mount involved anymore,
+# so this only needs to check inside the container. The 4 files a
+# CTranslate2 Faster-Whisper model actually needs to load (see
 # scripts/export_whisper_model.sh) -- checked individually because a
-# directory can be non-empty (partial/truncated extraction, or just the
-# .cache/huggingface/ download metadata left behind) without being loadable.
-WHISPER_HOST_DIR="$LIVE_ROOT/assets/whisper-model-medium"
+# directory can be non-empty (e.g. just leftover .cache/huggingface/
+# metadata) without actually being loadable.
 for f in config.json model.bin tokenizer.json vocabulary.txt; do
-    check "host: $f present and non-empty at $WHISPER_HOST_DIR" \
-        "$([ -s "$WHISPER_HOST_DIR/$f" ] && echo 0 || echo 1)"
-done
-# Also confirm the read-only bind mount into the backend container actually
-# sees the same files -- catches a wrong host path or a stale container that
-# was started before extraction completed.
-for f in config.json model.bin tokenizer.json vocabulary.txt; do
-    check "container: $f visible at /models/whisper-medium (mount OK)" \
+    check "container: $f present at /models/whisper-medium (baked into image)" \
         "$(sqlcmd_exec "$CONTAINER_BACKEND" test -s "/models/whisper-medium/$f" >/dev/null 2>&1 && echo 0 || echo 1)"
 done
 

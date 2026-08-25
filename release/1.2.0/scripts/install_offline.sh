@@ -10,16 +10,18 @@
 #   4. Establishes the canonical live deployment -- copies this release's
 #      Compose definition and DB seed data into /opt/rah/apps/pfms/, which
 #      is what actually runs from here on, independent of this release
-#      folder's location.
-#   5. Extracts the Speech-to-Text model asset (assets/whisper-model-medium.zip).
-#   6. Verifies the organizational-unit/user provisioning artifact's checksum
+#      folder's location. (The Speech-to-Text model is baked into the
+#      backend image at build time -- see backend/Dockerfile -- not
+#      extracted here; there used to be a runtime-extraction step for it,
+#      retired once the image started carrying it directly.)
+#   5. Verifies the organizational-unit/user provisioning artifact's checksum
 #      (fails immediately if missing or corrupted -- this release must never
 #      complete an install with zero organizational units and no accounts).
-#   7. Generates a self-signed TLS certificate for SERVER_HOSTNAME_OR_IP
+#   6. Generates a self-signed TLS certificate for SERVER_HOSTNAME_OR_IP
 #      (persists across updates -- see scripts/generate_certificate.sh).
-#   8. Starts the full stack (SQL Server -> db-init [schema + provisioning] ->
+#   7. Starts the full stack (SQL Server -> db-init [schema + provisioning] ->
 #      backend -> frontend).
-#   9. Waits for the backend to report healthy, updates the operational
+#   8. Waits for the backend to report healthy, updates the operational
 #      documentation vault (/opt/rah/documentation/Applications/pfms/),
 #      auto-provisions a DBeaver connection if DBeaver is present, and
 #      prints the result.
@@ -104,62 +106,21 @@ fi
 
 load_env
 
-echo "[1/9] Loading Docker images ..."
+echo "[1/8] Loading Docker images ..."
 "$SCRIPT_DIR/load_images.sh"
 
 echo ""
-echo "[2/9] Establishing the canonical live deployment at $LIVE_ROOT ..."
+echo "[2/8] Establishing the canonical live deployment at $LIVE_ROOT ..."
 sync_version_owned_resources
-echo "  Compose definition and DB seed data copied."
+echo "  Compose definition and DB seed data copied. (Speech-to-Text model is"
+echo "  baked into the backend image -- nothing to extract here.)"
 
 echo ""
-echo "[3/9] Extracting the Speech-to-Text model asset ..."
-MODEL_ZIP="$RELEASE_ROOT/assets/whisper-model-medium.zip"
-MODEL_DIR="$LIVE_ROOT/assets/whisper-model-medium"
-if [ ! -f "$MODEL_ZIP" ]; then
-    echo "ERROR: $MODEL_ZIP not found. The release package is incomplete -- the"
-    echo "       Speech-to-Text model asset is required; the backend has no"
-    echo "       other way to obtain it on an offline server."
-    exit 1
-fi
-# The 4 files a CTranslate2 Faster-Whisper model actually needs to load
-# (see scripts/export_whisper_model.sh) -- a directory can be non-empty
-# (e.g. just the .cache/huggingface/ download metadata, or a truncated
-# extraction) without actually being loadable. Check each required file
-# individually, not just "the directory has something in it."
-REQUIRED_MODEL_FILES="config.json model.bin tokenizer.json vocabulary.txt"
-
-model_dir_complete() {
-    for f in $REQUIRED_MODEL_FILES; do
-        if [ ! -s "$MODEL_DIR/$f" ]; then
-            return 1
-        fi
-    done
-    return 0
-}
-
-if [ -d "$MODEL_DIR" ] && model_dir_complete; then
-    echo "  Already extracted and complete at $MODEL_DIR, skipping."
-else
-    mkdir -p "$LIVE_ROOT/assets"
-    unzip -q -o "$MODEL_ZIP" -d "$LIVE_ROOT/assets"
-    if ! model_dir_complete; then
-        echo "ERROR: extraction completed but $MODEL_DIR is missing one or more of:"
-        echo "       $REQUIRED_MODEL_FILES"
-        echo "       The release's whisper-model-medium.zip is incomplete or"
-        echo "       corrupted. Speech-to-Text cannot work without these files"
-        echo "       present -- re-copy the release bundle before retrying."
-        exit 1
-    fi
-    echo "  Extracted and verified complete at $MODEL_DIR"
-fi
-
-echo ""
-echo "[4/9] Creating backup directory (for future updates) ..."
+echo "[3/8] Creating backup directory (for future updates) ..."
 mkdir -p "$LIVE_ROOT/backups"
 
 echo ""
-echo "[5/9] Verifying the organizational-unit/user provisioning artifact ..."
+echo "[4/8] Verifying the organizational-unit/user provisioning artifact ..."
 PROVISION_DIR="$LIVE_ROOT/database/sqlserver/seed"
 PROVISION_JSON="$PROVISION_DIR/provisioning.v1.json"
 PROVISION_SHA="$PROVISION_DIR/provisioning.v1.json.sha256"
@@ -203,7 +164,7 @@ else
 fi
 
 echo ""
-echo "[6/9] Generating the TLS certificate ..."
+echo "[5/8] Generating the TLS certificate ..."
 CERT_FILE="$LIVE_ROOT/certs/cert.pem"
 if [ -f "$CERT_FILE" ]; then
     echo "  Already present at $CERT_FILE, skipping (persists across updates --"
@@ -214,7 +175,7 @@ else
 fi
 
 echo ""
-echo "[7/9] Starting the stack (schema install + organizational/user provisioning"
+echo "[6/8] Starting the stack (schema install + organizational/user provisioning"
 echo "      run automatically as part of db-init) ..."
 compose up -d
 
@@ -236,7 +197,7 @@ for _ in $(seq 1 60); do
 done
 
 echo ""
-echo "[8/9] Waiting for the backend to become healthy ..."
+echo "[7/8] Waiting for the backend to become healthy ..."
 
 attempt=0
 max_attempts=30  # ~7.5 minutes at 15s intervals -- the model is already
@@ -269,7 +230,7 @@ fi
 echo "$IMAGE_VERSION" > "$INSTALLED_VERSION_FILE"
 
 echo ""
-echo "[9/9] Updating operational documentation and DBeaver connection ..."
+echo "[8/8] Updating operational documentation and DBeaver connection ..."
 load_env
 update_operational_docs "Installed"
 "$SCRIPT_DIR/provision_dbeaver.sh"

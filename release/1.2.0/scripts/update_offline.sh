@@ -63,10 +63,21 @@ echo "  5. Recreate db-init, backend, and frontend containers."
 echo "  6. Leave the SQL Server container and its data untouched."
 echo "  7. Update the operational documentation vault and DBeaver connection."
 echo ""
-read -r -p "Continue? Type YES to proceed: " confirm
-if [ "$confirm" != "YES" ]; then
-    echo "Aborted."
-    exit 1
+# The RAH Offline Installation Platform, not only a human operator, may
+# invoke this script -- non-interactively, with no terminal attached to
+# answer a prompt. RAH_ACTIVE_DEPLOYMENT_PATH being present in the
+# environment is the same orchestrator-driven-invocation signal already
+# used elsewhere in this Integration Guide's own conventions (see also
+# RAH_BACKUP_SOURCE_PATH in restore_database.sh). A manual run keeps the
+# confirmation unchanged.
+if [ -n "${RAH_ACTIVE_DEPLOYMENT_PATH:-}" ]; then
+    echo "Platform-driven update -- skipping the interactive confirmation."
+else
+    read -r -p "Continue? Type YES to proceed: " confirm
+    if [ "$confirm" != "YES" ]; then
+        echo "Aborted."
+        exit 1
+    fi
 fi
 
 echo ""

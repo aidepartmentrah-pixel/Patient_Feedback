@@ -33,7 +33,7 @@ services:
     restart: unless-stopped
 
   db-init:
-    image: rah-pfms-db-init:${APP_VERSION:-1.0.0}
+    image: rah-pfms-db-init:1.2.0
     depends_on:
       sqlserver:
         condition: service_healthy
@@ -53,7 +53,7 @@ services:
     restart: "no"
 
   backend:
-    image: rah-pfms-backend:${APP_VERSION:-1.0.0}
+    image: rah-pfms-backend:1.2.0
     container_name: ${PROJECT_NAME:-pfms}-backend
     depends_on:
       sqlserver:
@@ -67,13 +67,13 @@ services:
       DB_PASSWORD: ${MSSQL_SA_PASSWORD}
       USE_WINDOWS_AUTH: "false"
       TRUST_SERVER_CERTIFICATE: "true"
-      # Extracted from assets/whisper-model-medium.zip by install_offline.sh
-      # before this container starts (see scripts/export_whisper_model.sh on
-      # the engineering side). Faster_Wisper.py's get_whisper_model() loads
-      # directly from this path -- no huggingface.co access needed at
-      # runtime. HF_HUB_OFFLINE is defense-in-depth: any accidental
-      # name-based fallback fails fast locally instead of hanging trying to
-      # reach the internet.
+      # Baked into the backend image at build time (see backend/Dockerfile,
+      # COPY assets/whisper-model-medium /models/whisper-medium) -- no
+      # runtime extraction or bind mount needed anymore. Faster_Wisper.py's
+      # get_whisper_model() loads directly from this path -- no
+      # huggingface.co access needed at runtime. HF_HUB_OFFLINE is
+      # defense-in-depth: any accidental name-based fallback fails fast
+      # locally instead of hanging trying to reach the internet.
       WHISPER_MODEL_PATH: /models/whisper-medium
       HF_HUB_OFFLINE: "1"
       # Fernet key for encrypting stored integration secrets (currently: the
@@ -88,7 +88,6 @@ services:
       - "${BACKEND_HOST_PORT:-8100}:8100"
     volumes:
       - backend_config:/app/backend/config
-      - ../assets/whisper-model-medium:/models/whisper-medium:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8100/api/status"]
@@ -98,7 +97,7 @@ services:
       retries: 5
 
   frontend:
-    image: rah-pfms-frontend:${APP_VERSION:-1.0.0}
+    image: rah-pfms-frontend:1.2.0
     container_name: ${PROJECT_NAME:-pfms}-frontend
     depends_on:
       backend:
