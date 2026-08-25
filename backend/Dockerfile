@@ -32,6 +32,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# Created before the large COPYs below so they can use --chown= directly,
+# rather than a separate `chown -R` RUN step afterward. On Docker's overlay
+# filesystem, chown-ing already-copied content forces a full copy-up of
+# every touched file into a new layer -- for multi-GB content
+# (models_directory/, the Whisper model) that silently nearly doubled this
+# image's real size (found during Pass 5/HCAT re-verification, 2026-08-25:
+# a lone `chown -R appuser:appuser /app /models` layer alone cost 2.86GB).
+# COPY --chown= sets ownership as part of the copy itself, no duplicate
+# layer.
+RUN useradd --create-home --uid 1000 appuser
+
 # Install Python dependencies before copying source, for layer caching.
 # torch is installed separately from the CPU-only PyTorch index first --
 # this backend does CPU-side classification/embeddings inference, not the
@@ -43,28 +54,29 @@ RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.9.0 \
     && pip install --no-cache-dir -r backend/requirements.txt
 
-# Application source, preserving repo-root-relative layout.
-COPY project_paths.py project_paths.py
-COPY models_directory/ models_directory/
-COPY backend/ backend/
+# Application source, preserving repo-root-relative layout. --chown= here,
+# not a separate RUN chown -R afterward -- see the note above.
+COPY --chown=appuser:appuser project_paths.py project_paths.py
+COPY --chown=appuser:appuser models_directory/ models_directory/
+COPY --chown=appuser:appuser backend/ backend/
 
 # Whisper model, baked in at a fixed path instead of a runtime bind mount
 # (RAH platform rule: everything a container needs must already be inside
 # the image when `docker build` finishes). Faster_Wisper.py's
 # get_whisper_model() already treats WHISPER_MODEL_PATH as authoritative
 # when set (see docker-compose.yml) -- it stays pointed at this same path.
-COPY assets/whisper-model-medium /models/whisper-medium
+COPY --chown=appuser:appuser assets/whisper-model-medium /models/whisper-medium
 
-RUN useradd --create-home --uid 1000 appuser \
-    && chown -R appuser:appuser /app /models \
-    # Pre-create cache dirs with correct ownership. Named volumes mounted at
-    # a path that doesn't yet exist in the image are created root-owned by
-    # Docker on first mount; pre-creating them here (with appuser ownership)
-    # means Docker copies this ownership into the volume instead. Without
-    # this, huggingface_hub/matplotlib get silent Permission Denied errors
-    # under the non-root appuser and STT model loading fails open (app still
-    # reports healthy, but transcription is broken).
-    && mkdir -p /home/appuser/.cache/huggingface /home/appuser/.cache/matplotlib \
+# Pre-create cache dirs with correct ownership. Named volumes mounted at
+# a path that doesn't yet exist in the image are created root-owned by
+# Docker on first mount; pre-creating them here (with appuser ownership)
+# means Docker copies this ownership into the volume instead. Without
+# this, huggingface_hub/matplotlib get silent Permission Denied errors
+# under the non-root appuser and STT model loading fails open (app still
+# reports healthy, but transcription is broken). These are freshly created,
+# empty directories -- chown here is cheap, unlike over already-copied
+# multi-GB content above.
+RUN mkdir -p /home/appuser/.cache/huggingface /home/appuser/.cache/matplotlib \
     && chown -R appuser:appuser /home/appuser/.cache
 
 WORKDIR /app/backend
