@@ -29,6 +29,7 @@ an API-sourced string id cannot go directly into those columns. So:
     duplicated.
 """
 
+import time
 from typing import Any, Dict, List, Optional
 
 from core.database import get_connection
@@ -244,6 +245,58 @@ def _visit_to_worker_shape(w: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+# Confirmed via live testing directly against the real Hospital Directory
+# API: GET /workers?q=... silently ignores q entirely -- total count is
+# identical with and without a query. So search_workers_merged() below
+# can't rely on the external API to filter; it fetches a full snapshot
+# (paginated, since a single call is capped at 500) and filters in Python
+# instead, caching briefly so repeat searches don't re-hit the external API
+# on every keystroke. Same module-level-dict + time.monotonic() TTL pattern
+# already used in org_tree_service.py -- no new dependency (cachetools is
+# in requirements.txt but unused anywhere in this repo).
+_worker_cache: Optional[List[dict]] = None
+_worker_cache_loaded_at: Optional[float] = None
+_worker_cache_status = "ok"
+_worker_cache_message: Optional[str] = None
+_WORKER_CACHE_TTL_SECONDS = 300
+
+
+def _fetch_all_external_workers():
+    """Page through GET /workers (500-row cap per call) to build a full
+    snapshot, since q is confirmed ignored server-side."""
+    all_items, offset, page_size = [], 0, 500
+    while True:
+        result = directory_client.search_workers(limit=page_size, offset=offset)
+        if result["status"] != "ok":
+            if all_items:
+                return all_items, "ok", None  # use partial results already fetched
+            return [], result["status"], result.get("message")
+        page = result.get("items", [])
+        all_items.extend(page)
+        total = result.get("total", len(all_items))
+        offset += page_size
+        if len(page) < page_size or offset >= total:
+            break
+    return all_items, "ok", None
+
+
+def _get_cached_external_workers():
+    global _worker_cache, _worker_cache_loaded_at, _worker_cache_status, _worker_cache_message
+    is_stale = (
+        _worker_cache_loaded_at is not None
+        and (time.monotonic() - _worker_cache_loaded_at) > _WORKER_CACHE_TTL_SECONDS
+    )
+    if _worker_cache is None or is_stale:
+        items, status, message = _fetch_all_external_workers()
+        if status == "ok" or _worker_cache is None:
+            # Don't let a transient failure wipe out a previously-good
+            # cache -- keep serving stale-but-real data rather than
+            # nothing, unless we've never successfully fetched at all.
+            _worker_cache, _worker_cache_status, _worker_cache_message = items, status, message
+            _worker_cache_loaded_at = time.monotonic()
+    return _worker_cache or [], _worker_cache_status, _worker_cache_message
+
+
 def search_workers_merged(search_text: str, limit: int = 20) -> Dict[str, Any]:
     """Merged reserve + external worker search, same {success, employees, count} shape as before."""
     try:
@@ -257,19 +310,24 @@ def search_workers_merged(search_text: str, limit: int = 20) -> Dict[str, Any]:
     # same worker shows up twice.
     materialized_external_ids = {r["external_id"] for r in reserve_items if r.get("external_id")}
 
-    result = directory_client.search_workers(q=search_text, limit=limit)
-    external_items = [
-        _visit_to_worker_shape(w) for w in result["items"]
-        if str(w.get("employee_id")) not in materialized_external_ids
-    ] if result["status"] == "ok" else []
+    all_external, ext_status, ext_message = _get_cached_external_workers()
+    if ext_status == "ok":
+        needle = search_text.strip().lower()
+        matched = [w for w in all_external if needle in (w.get("full_name") or "").lower()]
+        external_items = [
+            _visit_to_worker_shape(w) for w in matched[:limit]
+            if str(w.get("employee_id")) not in materialized_external_ids
+        ]
+    else:
+        external_items = []
 
     combined = reserve_items + external_items
     return {
         "success": True,
         "employees": combined,
         "count": len(combined),
-        "external_status": result["status"],
-        "external_message": result.get("message"),
+        "external_status": ext_status,
+        "external_message": ext_message,
     }
 
 
