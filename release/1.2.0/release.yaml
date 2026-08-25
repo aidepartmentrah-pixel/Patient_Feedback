@@ -1,0 +1,259 @@
+manifest_schema_version: "1.0"
+
+application:
+  name: PatientFeedbackSystem
+  slug: pfms
+  description: >-
+    Patient Feedback System (PFMS/HCAT) -- incident/feedback intake,
+    ML-assisted classification and triage across 6 baked classification
+    model bundles, organizational-unit/user provisioning from the
+    hospital's real Hospital Directory, and Speech-to-Text incident intake
+    via a baked-in Faster-Whisper model. Real SQL Server backend, a
+    genuine cross-repo Docker Compose build (backend in this repository,
+    frontend in Front_End_Feedback_Analysis).
+
+release:
+  version: "1.2.0"
+  created_at: "2026-08-25T10:38:08Z"
+  summary: >-
+    First Release-Contract-compliant Release for this application. Hand-
+    constructed from this repository's own pre-existing release/1.2.0
+    tooling (not built via the shared RAH Packaging Engine), reusing its
+    real content per Pass 5's own construction plan. Fixes 3 real,
+    predicted bug-pattern recurrences found during planning (backup path
+    contract, SQL Server backup-volume UID ownership, a stale Whisper
+    model bind-mount left over from an incomplete "bake into image"
+    migration) before this Release was ever finalized.
+  release_type: application
+  engineering_state: awaiting_offline_qualification
+
+source:
+  repository: Patient_Feedback
+  git_commit: 9da163858427fdcb8c929b1e03def406622ac106
+  source_dirty: true
+
+compatibility:
+  release_contract_version: "1.0"
+  minimum_rah_oip_version: "1.0"
+  supported_architectures:
+    - amd64
+
+deployment:
+  canonical_path: /opt/rah/apps/pfms
+  compose_project_name: pfms
+  entrypoints:
+    install: scripts/install_offline.sh
+    update: scripts/update_offline.sh
+    verify: scripts/verify_installation.sh
+    backup: scripts/backup_database.sh
+    restore: scripts/restore_database.sh
+  supported_operations:
+    fresh_install: true
+    update: true
+    downgrade: false
+    reinstall: false
+  transition:
+    accepted_installed_versions: []
+    requires_existing_deployment_for_update: true
+
+configuration:
+  template: configuration/.env.offline.template
+  inputs:
+    - key: PROJECT_NAME
+      label: Compose project name
+      type: string
+      required: true
+      source: fixed
+      default: pfms
+    - key: APP_VERSION
+      label: Application/image version
+      type: string
+      required: true
+      source: fixed
+      default: "1.2.0"
+    # RC-SEC-001/003 and RC-CFG-004 forbid a real value on any
+    # password-type/secret-marked input in release.yaml, full stop --
+    # regardless of *why* the app wants a fixed value. install_offline.sh's
+    # own manual-run fallback still auto-fills its historical fixed value
+    # (see RELEASE_NOTES.md "Password handling") when Platform hasn't
+    # already rendered .env, so a manual, no-Platform install is
+    # unaffected. Under a Platform-driven install, source: operator means
+    # the operator must explicitly supply this value -- a real, disclosed
+    # behavior difference from the app's original "auto-fill" convenience,
+    # not a silent one. Flagged in Pass 5's own planning notes.
+    - key: MSSQL_SA_PASSWORD
+      label: SQL Server SA password
+      type: password
+      required: true
+      source: operator
+      secret: true
+    - key: MSSQL_PID
+      label: SQL Server license edition
+      type: choice
+      required: true
+      source: operator
+    - key: DB_DATABASE
+      label: Database name
+      type: string
+      required: true
+      source: fixed
+      default: IncidentManager
+    - key: SQLSERVER_HOST_PORT
+      label: SQL Server host port
+      type: port
+      required: true
+      source: operator
+      default: 1433
+    - key: BACKEND_HOST_PORT
+      label: Backend API host port
+      type: port
+      required: true
+      source: operator
+      default: 8100
+    - key: FRONTEND_HOST_PORT
+      label: Frontend HTTP host port (redirects to HTTPS)
+      type: port
+      required: true
+      source: operator
+      default: 8101
+    - key: FRONTEND_HTTPS_PORT
+      label: Frontend HTTPS host port
+      type: port
+      required: true
+      source: operator
+      default: 8102
+    - key: SERVER_HOSTNAME_OR_IP
+      label: Server hostname/IP clinical workstations will use
+      type: hostname
+      required: true
+      source: operator
+    - key: SETTINGS_ENCRYPTION_KEY
+      label: Hospital Directory API settings encryption key (Fernet)
+      type: password
+      required: true
+      source: generated
+      secret: true
+    - key: PASSWORD_EXPORT_ENCRYPTION_KEY
+      label: Exported-credential encryption key (Fernet)
+      type: password
+      required: true
+      source: generated
+      secret: true
+
+docker:
+  compose_file: compose/docker-compose.yml
+  images:
+    - service: sqlserver
+      repository: mcr.microsoft.com/mssql/server
+      tag: "2022-latest"
+      archive: docker-images/sqlserver.tar
+      required: true
+    - service: db-init
+      repository: rah-pfms-db-init
+      tag: "1.2.0"
+      archive: docker-images/db-init.tar
+      required: true
+    - service: backend
+      repository: rah-pfms-backend
+      tag: "1.2.0"
+      archive: docker-images/backend.tar
+      required: true
+    - service: frontend
+      repository: rah-pfms-frontend
+      tag: "1.2.0"
+      archive: docker-images/frontend.tar
+      required: true
+
+database:
+  required: true
+  platform: sqlserver
+  deployment_mode: application_managed
+  target_schema_version: "011"
+  # No separate invocable initialization entrypoint: db-init's own
+  # container command runs database/sqlserver/install's numbered scripts
+  # automatically at startup (baked into the db-init image) -- same shape
+  # as HCopilot's own precedent for why no entrypoint is declared here,
+  # not an omission.
+  migration:
+    required_for_update: false
+  backup_before_update:
+    required: true
+    entrypoint: scripts/backup_database.sh
+  recovery:
+    entrypoint: scripts/restore_database.sh
+
+persistent_state:
+  preserve_during_update:
+    - production_configuration
+    - generated_credentials
+    - database_data
+    - docker_volumes
+    - certificates
+    - deployment_history
+  custom_paths:
+    - assets
+    - backups
+    - certs
+
+offline_requirements:
+  public_internet_required: false
+  public_registry_required: false
+  public_cdn_required: false
+  online_model_registry_required: false
+
+models:
+  required: true
+  artifacts:
+    # One artifact entry for the whole models_directory/ tree, matching how
+    # it's actually baked into the image (one COPY instruction in
+    # backend/Dockerfile). This tree includes both models.lock.yaml
+    # entries -- pfms-classification-models and shared-mpnet-embeddings
+    # (the latter nested at
+    # Classification_Models/model_storage/mpnet_embeddings) -- as one real,
+    # single checksum over the actual combined content, not two separately
+    # computed values.
+    - id: pfms-classification-models
+      version: "1.0.0"
+      source_registry: >-
+        huggingface:Abbass-RAH/pfms-feedback-classifier@037d623b8fcd0f5bf6b9a7e8f4951ec5c90126a2
+        (also includes shared-mpnet-embeddings,
+        huggingface:Abbass-RAH/shared-mpnet-embeddings@c01f29a108d614466f35aec753c09a3c43418e55,
+        nested under this tree -- see models.lock.yaml)
+      baked_into_image: backend
+      checksum: "sha256:94b6c264932e09d3fc7e16b3908fd62c5c595baec5715c14865c859a3ede035b"
+    - id: whisper-medium
+      version: "1.0.0"
+      source_registry: "faster-whisper medium (CTranslate2), exported via scripts/export_whisper_model.sh"
+      baked_into_image: backend
+      checksum: "sha256:5899480559d904a05e2f2c7ea3c384bb3f3264482d9dd4d08a34b410924a18a2"
+
+client:
+  preparation_required: true
+  https_required: true
+  secure_browser_capabilities:
+    - getUserMedia
+
+verification:
+  entrypoint: scripts/verify_installation.sh
+  required_checks:
+    - release_identity
+    - container_existence
+    - container_health
+    - image_tags
+    - selected_port
+    - offline_runtime
+    - persistent_configuration
+    - database_connectivity
+    - backend_health
+    - frontend_reachability
+
+documentation:
+  release_notes: documentation/RELEASE_NOTES.md
+  installation: documentation/INSTALL_OFFLINE.md
+  update: documentation/UPDATE_OFFLINE.md
+  recovery: documentation/BACKUP_RESTORE.md
+  known_issues: documentation/TROUBLESHOOTING.md
+
+integrity:
+  checksum_algorithm: sha256
+  checksum_file: checksums/SHA256SUMS
