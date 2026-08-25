@@ -35,6 +35,7 @@ gotchas: complex-script Arabic font (_ar_run) and tblGrid sync
 """
 
 import os
+import re
 from io import BytesIO
 from typing import Any, Dict, List, Optional
 
@@ -93,6 +94,106 @@ def _ltr_run(para, text: str, size: int = 10, bold: bool = False, color: str = N
     rtl_el.set(qn('w:val'), '0')
     run._element.rPr.append(rtl_el)
     return run
+
+
+# ---------------------------------------------------------------------------
+# BIDI-SEGMENTED TEXT  (isolates embedded English/number "islands" inside
+# Arabic narrative text so Word's own bidi resolver stops visually scrambling
+# them relative to the surrounding RTL text)
+# ---------------------------------------------------------------------------
+#
+# Root cause: a paragraph mixing Arabic (RTL) and embedded English words/
+# numbers (LTR) — e.g. '2. ذكر أنه يريد إجراء suction للمريض...' — rendered
+# as ONE Word run carries no per-segment directional hint, so Word's Unicode
+# Bidi Algorithm has to guess how to visually place each LTR "island"
+# relative to the Arabic around it. With several islands close together plus
+# quotes/parentheses/numbers acting as weak/neutral characters, the result is
+# exactly the "fragments end up in the wrong place" scrambling reported —
+# even though the underlying string (DB value, DOCX XML text content) is
+# never touched or reordered by this codebase; confirmed by diffing the raw
+# DB string against the generated document.xml run-by-run.
+#
+# Fix (same mechanism as _ltr_run, generalized from one isolated date string
+# to a whole paragraph with many islands): split the text into alternating
+# RTL/LTR segments and give each its OWN run, with LTR segments carrying the
+# w:rtl="0" override. This never changes the character sequence — joining
+# the emitted runs' text back together in order reproduces the input exactly
+# — it only changes which run each character lives in and that run's bidi
+# property.
+
+# Maximal run of Latin letters/digits, allowed to swallow single interior
+# spaces/hyphens/periods between alphanumeric tokens so multi-word terms
+# ("bottle suction") and numbered-point markers ("2.") stay as ONE isolated
+# run instead of fragmenting into several tiny isolated runs.
+_LTR_ISLAND_RE = re.compile(r'[A-Za-z0-9]+(?:[ \-\.][A-Za-z0-9]+)*\.?')
+
+
+def _styled_ltr_run(para, text: str, color: str = None):
+    """
+    Styled-paragraph counterpart to _ltr_run: no direct font name/size (so
+    Word-style-driven resizing from _styled_ar_run still works), but forces
+    this run left-to-right via w:rtl="0" like _ltr_run does.
+    """
+    run = _styled_ar_run(para, text, color=color)
+    rtl_el = OxmlElement('w:rtl')
+    rtl_el.set(qn('w:val'), '0')
+    run._element.get_or_add_rPr().append(rtl_el)
+    return run
+
+
+def _mark_explicit_rtl(run):
+    """
+    Appends w:rtl="1" to a run that would otherwise inherit its direction
+    from the paragraph. Needed specifically for the RTL/neutral segments in
+    _add_bidi_segmented_text: an override (w:rtl="0") on the LTR islands
+    creates new bidi embedding-level boundaries, and Word's bidi algorithm
+    then reverses word order in the *unmarked* RTL segments sandwiched
+    between two such islands — an "action at a distance" side effect,
+    confirmed against a real corrupted example (Example.docx) and fixed by
+    marking every RTL segment explicitly rtl="1" instead of leaving it
+    ambiguous/inherited. Verified against 3 side-by-side candidates in
+    Word — this one (explicit rtl=1 on RTL segments + rtl=0 override on
+    LTR islands) was the only one that rendered correctly.
+    """
+    rtl_el = OxmlElement('w:rtl')
+    rtl_el.set(qn('w:val'), '1')
+    run._element.get_or_add_rPr().append(rtl_el)
+    return run
+
+
+def _add_bidi_segmented_text(para, text: str, color: str = None,
+                              size: int = 10, style_applies: bool = True):
+    """
+    Splits `text` into alternating RTL(Arabic/neutral) and LTR(Latin/digit)
+    segments per _LTR_ISLAND_RE and adds each as its own run — LTR segments
+    isolated via w:rtl="0" (_ltr_run/_styled_ltr_run), RTL/neutral segments
+    as plain Arabic runs explicitly marked w:rtl="1" (see
+    _mark_explicit_rtl's docstring for why the explicit mark on the RTL side
+    is required, not just the LTR side). `size` is ignored when
+    style_applies=True (the paragraph's Word style controls size instead —
+    see _styled_ar_run).
+    """
+    text = text or ''
+    pos = 0
+    for m in _LTR_ISLAND_RE.finditer(text):
+        if m.start() > pos:
+            segment = text[pos:m.start()]
+            if style_applies:
+                _mark_explicit_rtl(_styled_ar_run(para, segment, color=color))
+            else:
+                _mark_explicit_rtl(_ar_run(para, segment, size=size, color=color))
+        island = m.group()
+        if style_applies:
+            _styled_ltr_run(para, island, color=color)
+        else:
+            _ltr_run(para, island, size=size, color=color)
+        pos = m.end()
+    if pos < len(text):
+        segment = text[pos:]
+        if style_applies:
+            _mark_explicit_rtl(_styled_ar_run(para, segment, color=color))
+        else:
+            _mark_explicit_rtl(_ar_run(para, segment, size=size, color=color))
 
 
 # ---------------------------------------------------------------------------
@@ -642,7 +743,7 @@ def _complaint_data_block(doc: Document, complaint: Dict):
     sp_el.set(qn('w:line'), '265')
     sp_el.set(qn('w:lineRule'), 'auto')
     pPr.append(sp_el)
-    _styled_ar_run(nb, text or 'لا يوجد نص للشكوى', color=DARK_TEXT)
+    _add_bidi_segmented_text(nb, text or 'لا يوجد نص للشكوى', color=DARK_TEXT, style_applies=True)
 
     _vertical_label_cell(label_cell, 'بيانات الشكوى')
 
@@ -696,7 +797,7 @@ def _action_block(doc: Document, complaint: Dict):
         bp.paragraph_format.right_indent = Mm(2)
         bp.paragraph_format.left_indent  = Mm(2)
         bp._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-        _styled_ar_run(bp, body_text or '—', color=DARK_TEXT)
+        _add_bidi_segmented_text(bp, body_text or '—', color=DARK_TEXT, style_applies=True)
 
     _fill(immediate_cell, 'الإجراءات الفورية', 'Immediate Action',
           complaint.get('immediate_action'), STYLE_IMMEDIATE_ACTION)
@@ -790,40 +891,41 @@ def _approval_grid(doc: Document):
     # not the deliberate floor this file's comments describe). Mm() is the
     # correct Length type — same pattern _set_row_col_width already uses
     # correctly for column widths.
-    hdr.height = Mm(12)
+    hdr.height = Mm(8)
     for ci, label in enumerate([''] + _APPROVAL_ROLES):
         c = hdr.cells[ci]
         _set_cell_shading(c, 'F2F2F2')
-        _tighten_cell_margins(c, top_mm=3, bottom_mm=3)
+        _tighten_cell_margins(c, top_mm=1.5, bottom_mm=1.5)
         cp = _cell_para0(c, 'center')
-        _ar_run(cp, label, size=11, bold=True, color=DARK_TEXT)
+        _ar_run(cp, label, size=10, bold=True, color=DARK_TEXT)
         _set_row_col_width(hdr, ci, _APPROVAL_COL_WIDTHS[ci])
     _set_row_cant_split(hdr)
 
     # Field labels: Arabic only (English dropped), centered instead of
     # right-aligned now that there's no bilingual "/" split to anchor.
-    # التوقيع (signature) row is tallest of the three — needs real room for
-    # an actual pen signature, not just a label-height line.
-    field_rows = [('الاسم', 20), ('التاريخ', 20), ('التوقيع', 45)]
+    # التوقيع (signature) row is tallest of the three — enough room for an
+    # actual pen signature, but this table's whole job is "a place to sign",
+    # not a page-filling block — kept modest, not maximized.
+    field_rows = [('الاسم', 9), ('التاريخ', 9), ('التوقيع', 16)]
     for ri, (field_lbl, h) in enumerate(field_rows):
         row = tbl.rows[ri + 1]
         row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
         row.height = Mm(h)  # see Mm(12) note above — same EMU-vs-twips fix
         c0 = row.cells[0]
         _set_cell_shading(c0, 'F8F8F8')
-        _tighten_cell_margins(c0, top_mm=3, bottom_mm=3)
+        _tighten_cell_margins(c0, top_mm=1.5, bottom_mm=1.5)
         p0 = _cell_para0(c0, 'center')
-        _ar_run(p0, field_lbl, size=11, bold=True, color=NAVY)
+        _ar_run(p0, field_lbl, size=10, bold=True, color=NAVY)
         _set_row_col_width(row, 0, _APPROVAL_COL_WIDTHS[0])
         for ci in range(1, 5):
             _set_cell_shading(row.cells[ci], WHITE)
-            _tighten_cell_margins(row.cells[ci], top_mm=3, bottom_mm=3)
+            _tighten_cell_margins(row.cells[ci], top_mm=1.5, bottom_mm=1.5)
             # Blank signature cell: no visible text, but its empty
             # paragraph mark still needs an explicit font size or it
             # silently falls back to Normal's 10pt for line-height purposes.
             # See _set_para_mark_size's docstring.
             bp = _cell_para0(row.cells[ci], 'center')
-            _set_para_mark_size(bp, 11)
+            _set_para_mark_size(bp, 10)
             _set_row_col_width(row, ci, _APPROVAL_COL_WIDTHS[ci])
         _set_row_cant_split(row)
     return tbl
@@ -1011,7 +1113,12 @@ def _render_notices_table(doc: Document, notices: List[Dict],
             p.paragraph_format.space_before = Pt(0)
             p.paragraph_format.space_after = Pt(0)
             p._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-            _ar_run(p, val, size=8.5, color=DARK_TEXT)
+            if ci == 5:
+                # تفصيل الملاحظة — free-text notice narrative, same mixed
+                # Arabic/English scrambling risk as the complaint narrative.
+                _add_bidi_segmented_text(p, val, color=DARK_TEXT, size=8.5, style_applies=False)
+            else:
+                _ar_run(p, val, size=8.5, color=DARK_TEXT)
             _set_row_col_width(row, ci, w)
         row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
         row.height = _mm_to_dxa(9)

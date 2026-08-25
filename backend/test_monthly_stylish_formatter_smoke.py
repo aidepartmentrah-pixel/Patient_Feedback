@@ -311,6 +311,74 @@ def run():
             check(f"Hospital-wide fixture (type={_type_label}): complaint content still present",
                   "قسم أ" in full_text_e and "قسم ب" in full_text_e)
 
+    # (f) Mixed Arabic/English bidi isolation — the exact reported bug: Word's
+    # own bidi resolver visually scrambles embedded English words/numbers
+    # relative to surrounding Arabic when they all share one unmarked run.
+    # Verifies the fix at the OOXML level: each LTR "island" (suction, tubes,
+    # 2.) must land in its OWN run carrying an explicit w:rtl val="0"
+    # override, and reconstructing the paragraph's runs in order must
+    # reproduce the source text exactly (segmentation must be lossless).
+    mixed_text = "2. ذكر أنه يريد إجراء suction للمريض، فطلب من التمريض إحضار tubes لسحب البلغم."
+    report_data_bidi = {
+        "complaints": [_complaint_fixture(id=5001, incident_id=5001, complaint_text=mixed_text)],
+        "notices": [],
+        "period": _period_fixture(),
+        "intent_counts": {},
+    }
+    content_f = generate_monthly_stylish_docx(
+        report_data_bidi, filename="test_bidi.docx",
+        report_entity_name="قسم الطوارئ", report_entity_type="section",
+    )
+    doc_f = _open_and_basic_checks("Bidi-isolation fixture", content_f)
+    if doc_f is not None:
+        _check_geometry("Bidi-isolation fixture", doc_f)
+
+        RTL_TAG = qn("w:rtl")
+
+        def rtl_val(run):
+            rPr = run._element.rPr
+            el = rPr.find(RTL_TAG) if rPr is not None else None
+            return el.get(qn("w:val")) if el is not None else None
+
+        found_paragraph = False
+        found_isolated_island = False
+        found_marked_rtl_segment = False
+        for table in doc_f.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for p in cell.paragraphs:
+                        joined = "".join(r.text for r in p.runs)
+                        if joined != mixed_text:
+                            continue
+                        found_paragraph = True
+                        for r in p.runs:
+                            if r.text in ("suction", "tubes", "2."):
+                                is_isolated = rtl_val(r) == "0"
+                                if r.text in ("suction", "tubes") and is_isolated:
+                                    found_isolated_island = True
+                                check(f"Bidi-isolation fixture: run {r.text!r} carries w:rtl=0",
+                                      is_isolated)
+                            elif r.text.strip():
+                                # Every non-empty RTL/neutral segment must be
+                                # EXPLICITLY marked rtl=1, not left to inherit
+                                # from the paragraph -- an unmarked segment
+                                # sandwiched between two w:rtl=0 overrides is
+                                # exactly what Word's bidi algorithm reverses
+                                # (confirmed against a real corrupted
+                                # example). Leaving this implicit is the bug,
+                                # not a style choice.
+                                if rtl_val(r) == "1":
+                                    found_marked_rtl_segment = True
+                                check(f"Bidi-isolation fixture: RTL segment {r.text!r} carries explicit w:rtl=1",
+                                      rtl_val(r) == "1")
+
+        check("Bidi-isolation fixture: paragraph found with lossless run reconstruction",
+              found_paragraph)
+        check("Bidi-isolation fixture: at least one English island actually isolated",
+              found_isolated_island)
+        check("Bidi-isolation fixture: at least one RTL segment explicitly marked",
+              found_marked_rtl_segment)
+
     print("=" * 70)
     if FAILURES:
         print(f"RESULT: {len(FAILURES)} check(s) FAILED")

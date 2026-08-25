@@ -83,6 +83,16 @@ services:
       PASSWORD_EXPORT_ENCRYPTION_KEY: ${PASSWORD_EXPORT_ENCRYPTION_KEY}
     volumes:
       - backend_config:/app/backend/config
+    # The Hospital Directory API's real server ("malin") is only resolvable
+    # by hostname on the hospital's internal DNS -- this container's own
+    # /etc/hosts (managed by Docker, not editable in-place at runtime) has no
+    # entry for it otherwise. Confirmed via live testing: the host machine
+    # could resolve/reach malin once its own /etc/hosts had this entry, but
+    # this container -- a separate network namespace -- still could not,
+    # until this was added here. See database/sqlserver/... or
+    # backend/core/hospital_directory_client.py for the consumer of this.
+    extra_hosts:
+      - "malin:150.50.1.34"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8100/api/status"]
