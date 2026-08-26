@@ -176,17 +176,28 @@ class SeasonalReportGenerator:
         # -----------------------------
         # STEP 6.5: API V2 ADAPTER HOOK (SAFE / NON-BLOCKING)
         # Automatically create subcases for this seasonal report
+        #
+        # Skipped when the unit has zero cases this season: a 0-case report
+        # is always is_compliant=True (every rule in _evaluate_compliance
+        # either multiplies by total_cases or is gated on total_cases > 0),
+        # so there is never anything for the unit to explain — creating a
+        # subcase here would only produce a no-op inbox notification telling
+        # them they have 0 cases. If real cases appear later in the same
+        # season, the next regeneration will see total_cases > 0 and create
+        # the subcase then (create_subcases_for_seasonal_report is itself
+        # idempotent per report, so this can't double-create).
         # -----------------------------
-        try:
-            from backend.api_v2.services.case_creation_service import create_subcases_for_seasonal_report
-            # Note: current_user is not available in this legacy code context
-            # We'll pass None and the service will handle it gracefully
-            create_subcases_for_seasonal_report(seasonal_report_id, current_user=None)
-        except Exception as e:
-            # Log only — never interrupt main flow
-            print(f"[API V2 ADAPTER WARNING] Failed to create subcases for seasonal report {seasonal_report_id}: {str(e)}")
-            import traceback
-            traceback.print_exc()
+        if domain_totals['total_cases'] > 0:
+            try:
+                from backend.api_v2.services.case_creation_service import create_subcases_for_seasonal_report
+                # Note: current_user is not available in this legacy code context
+                # We'll pass None and the service will handle it gracefully
+                create_subcases_for_seasonal_report(seasonal_report_id, current_user=None)
+            except Exception as e:
+                # Log only — never interrupt main flow
+                print(f"[API V2 ADAPTER WARNING] Failed to create subcases for seasonal report {seasonal_report_id}: {str(e)}")
+                import traceback
+                traceback.print_exc()
         
         # -----------------------------
         # STEP 7: Return Summary

@@ -390,9 +390,14 @@ def get_red_flags_statistics(
         total_never_events = cursor.fetchone()[0]
         
         # Calculate overlaps
-        red_flags_also_never_events = totals_row.never_event_overlap
+        # SUM() over zero matching rows returns NULL in T-SQL (unlike
+        # COUNT(*), which returns 0) -- guard every SUM-derived field before
+        # doing arithmetic on it, or a zero-match date/scope filter throws
+        # TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'.
+        total_never_events = total_never_events or 0
+        red_flags_also_never_events = totals_row.never_event_overlap or 0
         never_events_only = total_never_events - red_flags_also_never_events
-        red_flags_only = totals_row.total_red_flags - red_flags_also_never_events
+        red_flags_only = (totals_row.total_red_flags or 0) - red_flags_also_never_events
         
         # Get current month name
         current_date = datetime.now()
@@ -402,22 +407,22 @@ def get_red_flags_statistics(
         
         # Map to UI-expected field names with nested structure
         return {
-            "total_red_flags": totals_row.total_red_flags,
-            "unfinished": totals_row.unfinished_count,
-            "finished": totals_row.finished_count,
-            
+            "total_red_flags": totals_row.total_red_flags or 0,
+            "unfinished": totals_row.unfinished_count or 0,
+            "finished": totals_row.finished_count or 0,
+
             "by_severity": {
                 "CRITICAL": by_severity.get('CRITICAL', 0),
                 "HIGH": by_severity.get('HIGH', 0),
                 "MEDIUM": by_severity.get('MEDIUM', 0),
                 "LOW": by_severity.get('LOW', 0)
             },
-            
+
             "by_status": {
-                "OPEN": totals_row.open_count,
-                "IN_PROGRESS": totals_row.in_progress_count,
-                "RESOLVED": totals_row.resolved_count,
-                "CLOSED": totals_row.closed_count
+                "OPEN": totals_row.open_count or 0,
+                "IN_PROGRESS": totals_row.in_progress_count or 0,
+                "RESOLVED": totals_row.resolved_count or 0,
+                "CLOSED": totals_row.closed_count or 0
             },
             
             "current_month": {

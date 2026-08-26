@@ -238,7 +238,7 @@ def get_subcases_by_incident(incident_id: int) -> List[Dict[str, Any]]:
     
     try:
         query = """
-            SELECT 
+            SELECT
                 SubcaseID,
                 CaseType,
                 IncidentRequestCaseID,
@@ -251,6 +251,7 @@ def get_subcases_by_incident(incident_id: int) -> List[Dict[str, Any]]:
                 DepartmentRejectionText,
                 AdministrationExplanationText,
                 AdministrationRejectionText,
+                PatientServicesDecisionText,
                 CreatedAt,
                 CreatedByUserID,
                 UpdatedAt,
@@ -259,10 +260,10 @@ def get_subcases_by_incident(incident_id: int) -> List[Dict[str, Any]]:
             WHERE IncidentRequestCaseID = ?
             ORDER BY CreatedAt ASC
         """
-        
+
         cursor.execute(query, (incident_id,))
         rows = cursor.fetchall()
-        
+
         return [
             {
                 "subcase_id": row.SubcaseID,
@@ -277,6 +278,7 @@ def get_subcases_by_incident(incident_id: int) -> List[Dict[str, Any]]:
                 "department_rejection_text": row.DepartmentRejectionText,
                 "administration_explanation_text": row.AdministrationExplanationText,
                 "administration_rejection_text": row.AdministrationRejectionText,
+                "patient_services_decision_text": row.PatientServicesDecisionText,
                 "created_at": row.CreatedAt,
                 "created_by_user_id": row.CreatedByUserID,
                 "updated_at": row.UpdatedAt,
@@ -878,7 +880,116 @@ def update_subcase_status(
         
         conn.commit()
         return cursor.rowcount > 0
-    
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def retarget_subcase(
+    case_id: int,
+    new_target_org_unit_id: int,
+    new_status: str,
+    updated_by_user_id: int,
+    section_deadline_at=None,
+    department_deadline_at=None,
+    administration_deadline_at=None,
+) -> bool:
+    """
+    Redirect this case's existing subcase to a new target unit, resetting it
+    to a blank slate: new TargetOrgUnitID, new Status (the new target's
+    initial pending status), every explanation/rejection text field cleared
+    so the new target sees empty space, not the old target's answer.
+
+    Updates the SAME row rather than retiring-and-recreating a second one —
+    UQ_APP_AdministrativeSubcase_CaseID enforces at most one subcase row per
+    case, and a published case already has one.
+
+    Deadline fields are reset to match the new target's level: only the
+    relevant one of Section/Department/AdministrationDeadlineAt should be
+    passed non-None by the caller, mirroring how a freshly-created subcase
+    only ever sets one; the other two are cleared here. ForceClosedAt/
+    LateReply/ExtraTimeGrantedAt are deliberately left untouched — those are
+    documented elsewhere as permanent historical flags that are never
+    cleared, and that's unrelated to what's being reset here.
+
+    Returns True if a row was updated, False if this case has no subcase yet
+    (shouldn't normally happen for an already-published case — the caller
+    should fall back to creating one fresh in that case).
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            UPDATE dbo.APP_AdministrativeSubcase
+            SET TargetOrgUnitID = ?,
+                Status = ?,
+                SectionExplanationText = NULL,
+                SectionRejectionText = NULL,
+                DepartmentExplanationText = NULL,
+                DepartmentRejectionText = NULL,
+                AdministrationExplanationText = NULL,
+                AdministrationRejectionText = NULL,
+                SectionDeadlineAt = ?,
+                DepartmentDeadlineAt = ?,
+                AdministrationDeadlineAt = ?,
+                UpdatedAt = ?,
+                UpdatedByUserID = ?
+            WHERE IncidentRequestCaseID = ?
+            """,
+            (
+                new_target_org_unit_id, new_status,
+                section_deadline_at, department_deadline_at, administration_deadline_at,
+                datetime.now(), updated_by_user_id, case_id
+            )
+        )
+
+        conn.commit()
+        return cursor.rowcount > 0
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def retire_subcases_for_case(
+    case_id: int,
+    new_status: str,
+    updated_by_user_id: int
+) -> int:
+    """
+    Mark every subcase currently attached to this case with a terminal
+    status (e.g. 'CASE_DELETED', used when the case itself is deleted)
+    instead of deleting the row(s). Every inbox/pending query in this
+    module (get_subcases_by_status
+    and its callers like get_subcases_pending_for_section) filters on an
+    explicit whitelist of known status strings, never NOT IN — so any status
+    value not on that whitelist is automatically invisible everywhere
+    without needing to touch those queries. The row and its
+    explanation/rejection text stay in the database for audit history.
+
+    Returns the number of subcase rows updated.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            UPDATE dbo.APP_AdministrativeSubcase
+            SET Status = ?,
+                UpdatedAt = ?,
+                UpdatedByUserID = ?
+            WHERE IncidentRequestCaseID = ?
+            """,
+            (new_status, datetime.now(), updated_by_user_id, case_id)
+        )
+
+        conn.commit()
+        return cursor.rowcount
+
     finally:
         cursor.close()
         conn.close()

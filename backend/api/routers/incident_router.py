@@ -8,8 +8,9 @@ from typing import Optional
 
 from ..dependencies.user_context import get_current_user
 from ..schemas.auth_models import CurrentUser
-from ..utils.guards import require_logged_in
-from ..db_layer.incident_parent import get_incident_parent, list_incidents, add_case_to_incident
+from ..utils.guards import require_logged_in, require_role
+from ..db_layer.incident_parent import get_incident_parent, list_incidents, add_case_to_incident, delete_case_from_incident
+from core.constants.roles import SOFTWARE_ADMIN, WORKER, COMPLAINT_SUPERVISOR
 from ..services.table_view_service import get_cases_for_incident
 
 
@@ -70,11 +71,35 @@ async def create_case_for_incident(
     Returns the new case_id.
     """
     require_logged_in(current_user)
+    require_role(current_user, [SOFTWARE_ADMIN, WORKER, COMPLAINT_SUPERVISOR])
     try:
         new_case_id = add_case_to_incident(incident_id, current_user.user_id)
         return {"success": True, "case_id": new_case_id}
     except ValueError as e:
         raise HTTPException(status_code=404, detail={"error": "NOT_FOUND", "message": str(e)})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": "INTERNAL_ERROR", "message": str(e)})
+
+
+@router.delete("/{incident_id}/cases/{case_id}")
+async def delete_case(
+    incident_id: int = Path(..., gt=0),
+    case_id: int = Path(..., gt=0),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Delete one case from an incident. Always rejected if it's the
+    incident's only case. Draft/Ready to Send cases are hard-deleted;
+    already-published cases are soft-deleted (kept, closed, subcase(s)
+    retired) instead — see delete_case_from_incident() for details.
+    """
+    require_logged_in(current_user)
+    require_role(current_user, [SOFTWARE_ADMIN, WORKER, COMPLAINT_SUPERVISOR])
+    try:
+        result = delete_case_from_incident(incident_id, case_id, current_user.user_id)
+        return {"success": True, **result}
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail={"error": "CANNOT_DELETE", "message": str(e)})
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": "INTERNAL_ERROR", "message": str(e)})
 

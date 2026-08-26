@@ -1,7 +1,10 @@
 -- Non-primary-key indexes, generated from live schema.
 
+-- Filtered: IncidentRequestCaseID is NULL for every seasonal-report subcase
+-- (see CK_AdministrativeSubcase_ParentLink), and a non-filtered unique index
+-- treats all NULLs as duplicates of each other in SQL Server.
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_APP_AdministrativeSubcase_CaseID')
-CREATE UNIQUE NONCLUSTERED INDEX [UQ_APP_AdministrativeSubcase_CaseID] ON [dbo].[APP_AdministrativeSubcase] ([IncidentRequestCaseID] ASC);
+CREATE UNIQUE NONCLUSTERED INDEX [UQ_APP_AdministrativeSubcase_CaseID] ON [dbo].[APP_AdministrativeSubcase] ([IncidentRequestCaseID] ASC) WHERE [IncidentRequestCaseID] IS NOT NULL;
 GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UQ_APP_DataMigration_Map_LegacyCase')

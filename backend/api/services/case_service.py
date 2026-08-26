@@ -34,7 +34,7 @@ from backend.api.services.staff_directory_service import materialize_doctor_id, 
 from backend.api.db_layer.incident_parent import create_incident_parent, assign_case_to_incident
 from backend.api.db_layer import ml_embedding_job_db
 from backend.api.db_layer import ml_case_training_db
-from backend.api.constants.case_statuses import DRAFT_STATUS_ID, READY_TO_SEND_STATUS_ID, CLOSED_STATUS_ID
+from backend.api.constants.case_statuses import DRAFT_STATUS_ID, READY_TO_SEND_STATUS_ID, CLOSED_STATUS_ID, PREPARATION_STATUSES
 
 # Maps insert/update payload keys -> ml.CaseTrainingRecord columns. Kept in
 # one place since both create_case() and update_case() need the same mapping.
@@ -618,6 +618,24 @@ def update_case(record_id: int, data: Dict[str, Any], context: str = 'ManualInse
         current_immediate_action = row.ImmediateAction
         current_taken_action = row.TakenAction
 
+        # Parent incident + current target departments — needed below to
+        # decide (a) whether a still-Draft case should auto-publish because
+        # its incident already has a published sibling, and (b) whether an
+        # edit to a published case actually changed its target (which
+        # triggers the retarget-and-refresh-subcase mechanism).
+        cursor.execute(
+            "SELECT incident_id FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID = ?",
+            (record_id,)
+        )
+        incident_id_row = cursor.fetchone()
+        case_incident_id = incident_id_row.incident_id if incident_id_row else None
+
+        cursor.execute(
+            "SELECT DepartmentID FROM dbo.APP_IncidentCaseTargetDepartment WHERE IncidentRequestCaseID = ?",
+            (record_id,)
+        )
+        current_target_department_ids = {r.DepartmentID for r in cursor.fetchall()}
+
         # --- Draft: skip all validation ---
         if save_mode == 'draft':
             pass  # fall through to update
@@ -693,6 +711,7 @@ def update_case(record_id: int, data: Dict[str, Any], context: str = 'ManualInse
         # -----------------------------
         # Status override for draft/complete save modes
         # -----------------------------
+        should_auto_publish = False  # only ever set True in the 'workflow' branch below
         if save_mode == 'draft':
             new_case_status_id = DRAFT_STATUS_ID
             new_explanation_status_id = current_explanation_status_id
@@ -705,6 +724,53 @@ def update_case(record_id: int, data: Dict[str, Any], context: str = 'ManualInse
             new_case_status_id = current_case_status_id
             new_explanation_status_id = current_explanation_status_id
             command = data.get("fsm_command")  # "submit_explanation" | "complete_actions" | "force_close"
+
+            # Auto-publish: a case added via "Add Case" to an incident that
+            # already has a published sibling should go live on save rather
+            # than sit as an orphaned Draft — Edit's "Update" never
+            # otherwise runs the subcase-creation step (publishing is
+            # normally a separate, deliberate Table View action), so
+            # without this a case added here would stay invisibly in Draft
+            # forever. A case added to an incident that's still entirely
+            # Draft/Ready-to-Send is unaffected — it stays Draft, published
+            # later as a batch, same as today.
+            should_auto_publish = False
+            if current_case_status_id == DRAFT_STATUS_ID and case_incident_id:
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) FROM dbo.APP_IncidentCase
+                    WHERE incident_id = ? AND IncidentRequestCaseID != ?
+                      AND CaseStatusID NOT IN (?, ?)
+                    """,
+                    (case_incident_id, record_id, DRAFT_STATUS_ID, READY_TO_SEND_STATUS_ID)
+                )
+                should_auto_publish = cursor.fetchone()[0] > 0
+
+            if should_auto_publish:
+                # Same FSM formula create_case() uses for a normal publish.
+                # clinical_risk_type_id can't actually differ from what the
+                # case was created with (see the IMMUTABLE_FIELD check
+                # above), so in practice only requires_explanation_bit can
+                # route this to Open+Waiting today — kept in this shape
+                # anyway so both auto-publish paths stay identical.
+                is_red_flag = data.get('clinical_risk_type_id') == 2
+                is_never_event = data.get('clinical_risk_type_id') == 3
+                requires_explanation = data.get('requires_explanation')
+                if isinstance(requires_explanation, bool):
+                    requires_explanation_bit = 1 if requires_explanation else 0
+                elif isinstance(requires_explanation, str):
+                    requires_explanation_bit = 1 if requires_explanation.lower() in ('true', '1', 'yes') else 0
+                elif isinstance(requires_explanation, int):
+                    requires_explanation_bit = 1 if requires_explanation == 1 else 0
+                else:
+                    requires_explanation_bit = 0
+
+                if is_red_flag or is_never_event or requires_explanation_bit:
+                    new_case_status_id = 1  # Open
+                    new_explanation_status_id = 1  # Waiting
+                else:
+                    new_case_status_id = 3  # Closed
+                    new_explanation_status_id = 4  # No Explanation Needed
 
         # Protect terminal states - block FSM transitions on closed cases
         if current_case_status_id == 3 and command:  # CaseStatusID = 3 is Closed
@@ -924,10 +990,21 @@ def update_case(record_id: int, data: Dict[str, Any], context: str = 'ManualInse
         ))
 
         # Fix: Handle Target Departments update (NO nested connection calls!)
+        # Track whether the target set actually changed on an already-
+        # published case — that's the retarget-and-refresh-subcase trigger,
+        # checked further below once this transaction has committed.
+        should_retarget = False
         if 'target_department_ids' in data:
             if not data['target_department_ids'] or len(data['target_department_ids']) == 0:
                 pass  # preserve existing departments
             else:
+                new_target_department_ids = set(data['target_department_ids'])
+                if (
+                    current_case_status_id not in PREPARATION_STATUSES
+                    and new_target_department_ids != current_target_department_ids
+                ):
+                    should_retarget = True
+
                 cursor.execute(
                     "DELETE FROM dbo.APP_IncidentCaseTargetDepartment WHERE IncidentRequestCaseID = ?",
                     (record_id,)
@@ -1063,6 +1140,32 @@ def update_case(record_id: int, data: Dict[str, Any], context: str = 'ManualInse
             ml_embedding_job_db.insert_embedding_job(cursor, record_id, job_type)
 
         conn.commit()
+
+        # -----------------------------------------------------------
+        # API V2 ADAPTER HOOKS — subcase creation/refresh (SAFE / NON-
+        # BLOCKING). Run after commit, each opening its own connection —
+        # same pattern create_case() uses for its subcase-creation hook.
+        # should_auto_publish and should_retarget are mutually exclusive by
+        # construction (a case can't be both still-Draft and already-
+        # published at once), so at most one of these runs.
+        # -----------------------------------------------------------
+        if should_auto_publish:
+            try:
+                from backend.api_v2.services.case_creation_service import create_subcases_for_incident
+                create_subcases_for_incident(record_id, current_user=None)
+            except Exception as e:
+                print(f"[API V2 ADAPTER WARNING] Failed to auto-publish case {record_id}: {str(e)}")
+                import traceback
+                traceback.print_exc()
+
+        if should_retarget:
+            try:
+                from backend.api_v2.services.case_creation_service import retarget_case_subcase
+                retarget_case_subcase(record_id, user_id=1)
+            except Exception as e:
+                print(f"[API V2 ADAPTER WARNING] Failed to refresh subcases after retarget for case {record_id}: {str(e)}")
+                import traceback
+                traceback.print_exc()
 
         return {
             "success": True,

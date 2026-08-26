@@ -209,6 +209,10 @@ database/sqlserver/seed/ml_training_data.v1.json.sha256
 backend/data/import_staging/
 backend/data/import_reports/
 
+# Ad-hoc local test output from bidi/RTL formatter debugging -- generated
+# docx/xlsx artifacts, not source.
+scratch_bidi_test_output/
+
 ENV/
 env.bak/
 venv.bak/

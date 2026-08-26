@@ -41,9 +41,11 @@ class WorkerIdentityBlock(BaseModel):
     employee_id: Union[int, str] = Field(..., description="Unique employee identifier (int for reserve, opaque string for external/unmaterialized)")
     full_name: str = Field(..., description="Employee's full name")
     job_title: Optional[str] = Field(None, description="Current job title or position")
-    department_id: Optional[int] = Field(None, description="Assigned department ID")
-    section_id: Optional[int] = Field(None, description="Assigned section ID")
-    administration_id: Optional[int] = Field(None, description="Assigned administration ID")
+    # str, not int: these are nvarchar org codes, not surrogate ints -- see
+    # the matching fix in workers_router.WorkerSearchItem.
+    department_id: Optional[str] = Field(None, description="Assigned department ID")
+    section_id: Optional[str] = Field(None, description="Assigned section ID")
+    administration_id: Optional[str] = Field(None, description="Assigned administration ID")
     is_active: Optional[bool] = Field(None, description="Whether employee is active")
 
     class Config:

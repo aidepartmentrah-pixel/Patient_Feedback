@@ -139,23 +139,29 @@ def get_dashboard_date_bounds_for_units(unit_ids: list[int]) -> dict:
     conn = get_connection()
     cursor = conn.cursor()
     
-    # Build WHERE clause
+    # Build WHERE clause — scoped by TargetOrgUnitID (see _fetch_incidents_in_scope)
     where_parts = []
     params = []
-    
+
     if unit_ids:
         placeholders = ','.join('?' * len(unit_ids))
-        where_parts.append(f"IssuingOrgUnitID IN ({placeholders})")
+        where_parts.append(
+            f"""EXISTS (
+                SELECT 1 FROM dbo.APP_IncidentCaseTargetDepartment td
+                WHERE td.IncidentRequestCaseID = c.IncidentRequestCaseID
+                  AND td.DepartmentID IN ({placeholders})
+            )"""
+        )
         params.extend(unit_ids)
-    
+
     where_clause = " AND ".join(where_parts) if where_parts else "1=1"
-    
+
     # Query MIN/MAX dates using DATE cast
     query = f"""
-        SELECT 
-            MIN(CAST(CreatedAt AS DATE)) AS min_date,
-            MAX(CAST(CreatedAt AS DATE)) AS max_date
-        FROM dbo.APP_IncidentCase 
+        SELECT
+            MIN(CAST(c.CreatedAt AS DATE)) AS min_date,
+            MAX(CAST(c.CreatedAt AS DATE)) AS max_date
+        FROM dbo.APP_IncidentCase c
         WHERE {where_clause}
     """
     
@@ -191,7 +197,9 @@ def get_operational_summary(scope_unit_ids: list[int]) -> dict:
 
     Sources:
     - open_cases / closed_cases: APP_IncidentCase.CaseStatusID, scoped by
-      IssuingOrgUnitID (same scoping field used by list_incident_cases_filtered).
+      TargetOrgUnitID via APP_IncidentCaseTargetDepartment (same scoping used
+      by _fetch_incidents_in_scope / table_view_service — "cases targeted at
+      this unit", not "cases this unit filed").
     - force_closed_cases: APP_AdministrativeSubcase rows where any of
       Section/Department/AdministrationForceClosedAt IS NOT NULL. These
       columns are set once (idempotency-guarded) and never cleared, so this
@@ -206,7 +214,7 @@ def get_operational_summary(scope_unit_ids: list[int]) -> dict:
       level's deadline has passed while that level is still pending, using
       the same per-level pending-status sets as the Automatic Force Close
       engine. Excludes Notice cases, Morbidity cases, and Closed cases.
-    Both APP_AdministrativeSubcase-based counts are scoped by TargetOrgUnitID
+    All counts in this summary are now consistently scoped by TargetOrgUnitID
     (same scoping field used by _count_force_closed_subcases).
     """
     empty_result = {
@@ -235,15 +243,20 @@ def get_operational_summary(scope_unit_ids: list[int]) -> dict:
     placeholders = ','.join('?' * len(scope_unit_ids))
 
     # -------------------------
-    # Open / Closed cases (APP_IncidentCase, scoped by IssuingOrgUnitID)
+    # Open / Closed cases (APP_IncidentCase, scoped by TargetOrgUnitID via
+    # APP_IncidentCaseTargetDepartment)
     # -------------------------
     cursor.execute(
         f"""
         SELECT
-            SUM(CASE WHEN CaseStatusID IN (?, ?) THEN 1 ELSE 0 END) AS open_cases,
-            SUM(CASE WHEN CaseStatusID = ? THEN 1 ELSE 0 END) AS closed_cases
-        FROM dbo.APP_IncidentCase
-        WHERE IssuingOrgUnitID IN ({placeholders})
+            SUM(CASE WHEN c.CaseStatusID IN (?, ?) THEN 1 ELSE 0 END) AS open_cases,
+            SUM(CASE WHEN c.CaseStatusID = ? THEN 1 ELSE 0 END) AS closed_cases
+        FROM dbo.APP_IncidentCase c
+        WHERE EXISTS (
+            SELECT 1 FROM dbo.APP_IncidentCaseTargetDepartment td
+            WHERE td.IncidentRequestCaseID = c.IncidentRequestCaseID
+              AND td.DepartmentID IN ({placeholders})
+        )
         """,
         [OPEN_STATUS_ID, IN_PROGRESS_STATUS_ID, CLOSED_STATUS_ID, *scope_unit_ids],
     )
@@ -427,10 +440,14 @@ def get_dashboard_hierarchy(current_user: CurrentUser) -> dict:
 def _fetch_incidents_in_scope(unit_ids, start_date, end_date):
     """
     Fetch incidents filtered by organizational scope and date range.
-    
-    Uses database-level filtering for performance (no in-memory filtering).
+
+    Scoped by TargetOrgUnitID (who the complaint is against / must respond),
+    matching the RBAC scoping table_view_service uses — a section/department/
+    administration viewer sees cases that concern their unit, not just cases
+    their unit happened to file. Uses database-level filtering for performance
+    (no in-memory filtering).
     """
-    return incident_case.list_incident_cases_filtered(
+    return incident_case.list_incident_cases_filtered_by_target(
         unit_ids=unit_ids,
         start_date=start_date,
         end_date=end_date

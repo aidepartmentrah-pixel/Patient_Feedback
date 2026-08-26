@@ -10,7 +10,8 @@ from datetime import date, datetime
 
 from ..dependencies.user_context import get_current_user
 from ..schemas.auth_models import CurrentUser
-from ..utils.guards import require_logged_in
+from ..utils.guards import require_logged_in, require_role
+from core.constants.roles import SOFTWARE_ADMIN, WORKER, COMPLAINT_SUPERVISOR
 from ..services.insert_service import create_record, create_incident_with_cases
 from ..services.table_view_service import get_complaint_by_id
 from ..services.search_service import (
@@ -450,7 +451,8 @@ async def update_record(
     - updated_at: Update timestamp
     """
     require_logged_in(current_user)
-    
+    require_role(current_user, [SOFTWARE_ADMIN, WORKER, COMPLAINT_SUPERVISOR])
+
     try:
         # Get existing record first
         existing_record = get_complaint_by_id(record_id)

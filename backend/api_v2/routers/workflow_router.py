@@ -878,30 +878,58 @@ def get_incident_responses(
     current_user: CurrentUser = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
-    Return all subcases for an incident, each with their submitted
-    explanation texts and action items. Used by Table View's "View Responses" feature.
+    Return every case in this incident with its base fields plus — for
+    whichever cases have been published — their submitted responses,
+    HCAT/Patient Services decision, and action items. Backs Table View's
+    "Inspect" feature: one incident-wide, read-only picture spanning every
+    case tab, the same scope EditRecord edits but nothing here is mutable.
 
-    Authorization: scope check — user must have at least one subcase's org unit in scope,
-    OR be COMPLAINT_SUPERVISOR / SOFTWARE_ADMIN.
+    Previously this endpoint queried administrative_subcase_db.get_subcases_
+    by_incident(incident_id) directly — misleading name aside, that function
+    actually filters by IncidentRequestCaseID (a *case* id, not the parent
+    APP_Incident.incident_id), so despite its name and this endpoint's own
+    "incident-wide" framing, it only ever returned the one case whose ID
+    happened to match the path param. Table View's original "View
+    Responses" button only ever passed a case id here anyway, so it worked
+    by coincidence. This version genuinely resolves every case under the
+    real incident_id first (get_cases_for_incident), then looks up each
+    case's own (at most one, per UQ_APP_AdministrativeSubcase_CaseID)
+    subcase individually — the misleadingly-named function itself is left
+    untouched since other callers still rely on its current (case-id)
+    behavior.
+
+    Authorization: per-case — a case is only included if the caller is
+    COMPLAINT_SUPERVISOR/SOFTWARE_ADMIN/WORKER, or the case's target org
+    unit is in their allowed scope. A viewer with scope to only one case in
+    a multi-case incident sees just that case, not its siblings. A case
+    that hasn't been published yet (no subcase, e.g. still Draft) is only
+    visible to privileged roles.
 
     Response:
     {
         "incident_id": 123,
-        "subcases": [
+        "cases": [
             {
-                "subcase_id": 1,
-                "target_org_unit_id": 10,
-                "target_org_unit_name": "...",
-                "status": "ADMIN_APPROVED",
+                "case_id": 456,
+                "complaint_text": "...", "immediate_action": "...", "taken_action": "...",
+                "patient_name": "...", "domain_name": "...", "category_name": "...",
+                "subcategory_name": "...", "classification_name": "...", "severity_name": "...",
+                "case_status_name": "...", "incident_date": "...", "feedback_received_date": "...",
+                "subcase_id": 1 | null,
+                "target_org_unit_id": 10 | null,
+                "target_org_unit_name": "..." | null,
+                "status": "ADMIN_APPROVED" | null,
                 "section_explanation": "..." | null,
                 "department_explanation": "..." | null,
                 "administration_explanation": "..." | null,
+                "patient_services_decision": "..." | null,
                 "action_items": [{"title", "description", "due_date", "status"}]
             }
         ]
     }
     """
     from backend.api_v2.db_layer import administrative_subcase_db, action_item_subcase_db
+    from backend.api.services.table_view_service import get_cases_for_incident
     from backend.core.database import get_connection
 
     role_code = (
@@ -912,12 +940,22 @@ def get_incident_responses(
     privileged = role_code in ('COMPLAINT_SUPERVISOR', 'SOFTWARE_ADMIN', 'WORKER')
     allowed_unit_ids = getattr(current_user, 'allowed_unit_ids', None) or set()
 
-    subcases = administrative_subcase_db.get_subcases_by_incident(incident_id)
-    if not subcases:
-        return {"incident_id": incident_id, "subcases": []}
+    cases = get_cases_for_incident(incident_id)
+    if not cases:
+        return {"incident_id": incident_id, "cases": []}
+
+    # One subcase lookup per case (at most one row each) — small incidents,
+    # a handful of cases, no need to batch this into a single query.
+    subcase_by_case_id = {
+        case['id']: (administrative_subcase_db.get_subcases_by_incident(case['id']) or [None])[0]
+        for case in cases
+    }
 
     # Resolve org unit names in one query
-    unit_ids = list({sc.get('target_org_unit_id') for sc in subcases if sc.get('target_org_unit_id')})
+    unit_ids = list({
+        sc.get('target_org_unit_id')
+        for sc in subcase_by_case_id.values() if sc and sc.get('target_org_unit_id')
+    })
     unit_names: dict = {}
     if unit_ids:
         conn = get_connection()
@@ -933,33 +971,53 @@ def get_incident_responses(
             conn.close()
 
     result = []
-    for sc in subcases:
-        sc_unit = sc.get('target_org_unit_id')
-        if not privileged and sc_unit not in allowed_unit_ids:
+    for case in cases:
+        case_id = case['id']
+        sc = subcase_by_case_id.get(case_id)
+        sc_unit = sc.get('target_org_unit_id') if sc else None
+
+        if not privileged and (sc_unit is None or sc_unit not in allowed_unit_ids):
             continue
 
-        raw_items = action_item_subcase_db.get_action_items_by_subcase(sc['subcase_id'])
-        action_items = [
-            {
-                "title": item.get('title'),
-                "description": item.get('description'),
-                "due_date": item['due_date'].isoformat() if item.get('due_date') else None,
-                "status": item.get('status'),
-            }
-            for item in raw_items
-        ]
+        action_items = []
+        if sc:
+            raw_items = action_item_subcase_db.get_action_items_by_subcase(sc['subcase_id'])
+            action_items = [
+                {
+                    "title": item.get('title'),
+                    "description": item.get('description'),
+                    "due_date": item['due_date'].isoformat() if item.get('due_date') else None,
+                    "status": item.get('status'),
+                }
+                for item in raw_items
+            ]
+
         result.append({
-            "subcase_id": sc['subcase_id'],
+            "case_id": case_id,
+            "complaint_text": case.get('complaint_text'),
+            "immediate_action": case.get('immediate_action'),
+            "taken_action": case.get('taken_action'),
+            "patient_name": case.get('patient_name'),
+            "domain_name": case.get('domain_name'),
+            "category_name": case.get('category_name'),
+            "subcategory_name": case.get('subcategory_name'),
+            "classification_name": case.get('classification_name'),
+            "severity_name": case.get('severity_name'),
+            "case_status_name": case.get('status_name'),
+            "incident_date": case.get('incident_date'),
+            "feedback_received_date": case.get('received_date'),
+            "subcase_id": sc['subcase_id'] if sc else None,
             "target_org_unit_id": sc_unit,
-            "target_org_unit_name": unit_names.get(sc_unit) or f"Unit {sc_unit}",
-            "status": sc.get('status'),
-            "section_explanation": sc.get('section_explanation_text') or None,
-            "department_explanation": sc.get('department_explanation_text') or None,
-            "administration_explanation": sc.get('administration_explanation_text') or None,
+            "target_org_unit_name": unit_names.get(sc_unit) if sc_unit else None,
+            "status": sc.get('status') if sc else None,
+            "section_explanation": (sc.get('section_explanation_text') or None) if sc else None,
+            "department_explanation": (sc.get('department_explanation_text') or None) if sc else None,
+            "administration_explanation": (sc.get('administration_explanation_text') or None) if sc else None,
+            "patient_services_decision": (sc.get('patient_services_decision_text') or None) if sc else None,
             "action_items": action_items,
         })
 
-    return {"incident_id": incident_id, "subcases": result}
+    return {"incident_id": incident_id, "cases": result}
 
 
 # ============================================================

@@ -197,12 +197,72 @@ def list_incident_cases_filtered(
     query = f"SELECT * FROM dbo.APP_IncidentCase WHERE {where_clause} ORDER BY CreatedAt DESC"
     
     cursor.execute(query, params)
-    
+
     rows = cursor.fetchall()
     columns = [col[0] for col in cursor.description]
-    
+
     conn.close()
-    
+
+    return [dict(zip(columns, row)) for row in rows]
+
+
+def list_incident_cases_filtered_by_target(
+    unit_ids: list[int] | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None
+) -> list[dict]:
+    """
+    List incident cases with optional scope and date filtering.
+
+    Scopes by TargetOrgUnitID (via APP_IncidentCaseTargetDepartment) rather
+    than IssuingOrgUnitID — i.e. "cases targeted at this unit", matching the
+    RBAC scoping table_view_service already uses. See
+    list_incident_cases_filtered() for the (still-used-elsewhere) issuing-side
+    equivalent.
+
+    Args:
+        unit_ids: List of org unit IDs to filter by (TargetOrgUnitID)
+        start_date: Filter incidents created on or after this date
+        end_date: Filter incidents created on or before this date
+
+    Returns:
+        List of incident case dictionaries matching the filters
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    where_parts = []
+    params = []
+
+    if unit_ids:
+        placeholders = ','.join('?' * len(unit_ids))
+        where_parts.append(
+            f"""EXISTS (
+                SELECT 1 FROM dbo.APP_IncidentCaseTargetDepartment td
+                WHERE td.IncidentRequestCaseID = c.IncidentRequestCaseID
+                  AND td.DepartmentID IN ({placeholders})
+            )"""
+        )
+        params.extend(unit_ids)
+
+    if start_date:
+        where_parts.append("CAST(c.CreatedAt AS DATE) >= ?")
+        params.append(start_date)
+
+    if end_date:
+        where_parts.append("CAST(c.CreatedAt AS DATE) <= ?")
+        params.append(end_date)
+
+    where_clause = " AND ".join(where_parts) if where_parts else "1=1"
+    query = f"SELECT c.* FROM dbo.APP_IncidentCase c WHERE {where_clause} ORDER BY c.CreatedAt DESC"
+
+    cursor.execute(query, params)
+
+    rows = cursor.fetchall()
+    columns = [col[0] for col in cursor.description]
+
+    conn.close()
+
     return [dict(zip(columns, row)) for row in rows]
 
 

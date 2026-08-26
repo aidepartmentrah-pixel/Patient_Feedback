@@ -1,5 +1,6 @@
 from typing import Optional, List
 from core.database import get_connection
+from backend.api.constants.case_statuses import PREPARATION_STATUSES, CLOSED_STATUS_ID
 
 
 def create_incident_parent(data: dict) -> int:
@@ -191,6 +192,9 @@ def add_case_to_incident(incident_id: int, created_by_user_id: int) -> int:
                 incident_id,
                 CaseStatusID,
                 RecordTypeID,
+                ComplaintText,
+                ImmediateAction,
+                TakenAction,
                 PatientName,
                 IssuingOrgUnitID,
                 BuildingID,
@@ -199,10 +203,11 @@ def add_case_to_incident(incident_id: int, created_by_user_id: int) -> int:
                 FeedbackRecievedDate,
                 IncidentDate,
                 ClinicalRiskTypeID,
+                ExplanationStatusID,
                 CreatedByUserID
             )
             OUTPUT INSERTED.IncidentRequestCaseID
-            VALUES (?, 4, 1, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+            VALUES (?, 4, 1, '', '', '', ?, ?, ?, ?, ?, ?, ?, 1, 4, ?)
             """,
             (
                 incident_id,
@@ -221,6 +226,77 @@ def add_case_to_incident(incident_id: int, created_by_user_id: int) -> int:
         return new_case_id
     finally:
         conn.close()
+
+
+def delete_case_from_incident(incident_id: int, case_id: int, deleted_by_user_id: int) -> dict:
+    """
+    Delete one case from a multi-case incident. Never allowed to remove an
+    incident's last remaining case — there must always be at least one case
+    left to trace the incident by.
+
+    - Draft / Ready to Send cases (never published): hard-deleted outright,
+      along with their doctor/target-department/employee/feedback/action-item
+      rows, mirroring incident_case.hard_delete_incident_case()'s per-row
+      cleanup but scoped to just this one case. Nothing has ever been sent
+      anywhere, so there's no history to lose.
+    - Any other status (already published): soft-deleted instead. The case
+      row is kept (CaseStatusID set to Closed) and its subcase(s) are
+      retired via administrative_subcase_db.retire_subcases_for_case (the
+      same "excluded from every inbox query, row kept for audit" mechanism
+      used when a published case's target unit changes), so it disappears
+      from active workflow/reporting without destroying its history.
+
+    Returns: {"deleted": True, "mode": "hard" | "soft"}
+    Raises: ValueError if the case doesn't belong to this incident, or if
+    it's the incident's only case.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT CaseStatusID FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID = ? AND incident_id = ?",
+            (case_id, incident_id),
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise ValueError(f"Case {case_id} does not belong to incident {incident_id}")
+        case_status_id = row.CaseStatusID
+
+        cursor.execute(
+            "SELECT COUNT(*) FROM dbo.APP_IncidentCase WHERE incident_id = ?",
+            (incident_id,),
+        )
+        total_cases = cursor.fetchone()[0]
+        if total_cases <= 1:
+            raise ValueError("Cannot delete the only case in an incident")
+
+        is_unpublished = case_status_id in PREPARATION_STATUSES
+
+        if is_unpublished:
+            cursor.execute("DELETE FROM dbo.APP_IncidentCaseDoctor WHERE IncidentRequestCaseID = ?", (case_id,))
+            cursor.execute("DELETE FROM dbo.APP_IncidentCaseTargetDepartment WHERE IncidentRequestCaseID = ?", (case_id,))
+            cursor.execute("DELETE FROM dbo.APP_IncidentCaseEmployee WHERE IncidentRequestCaseID = ?", (case_id,))
+            cursor.execute("DELETE FROM dbo.APP_IncidentCaseFeedback WHERE IncidentRequestCaseID = ?", (case_id,))
+            cursor.execute("DELETE FROM dbo.APP_ActionItem WHERE IncidentRequestCaseID = ?", (case_id,))
+            cursor.execute("DELETE FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID = ?", (case_id,))
+        else:
+            cursor.execute(
+                "UPDATE dbo.APP_IncidentCase SET CaseStatusID = ?, UpdatedAt = GETDATE() WHERE IncidentRequestCaseID = ?",
+                (CLOSED_STATUS_ID, case_id),
+            )
+
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+    if not is_unpublished:
+        # Own connection, run after the case-row transaction commits — same
+        # pattern as the retarget/auto-publish hooks in case_service.py.
+        from backend.api_v2.db_layer import administrative_subcase_db
+        administrative_subcase_db.retire_subcases_for_case(case_id, "CASE_DELETED", deleted_by_user_id)
+
+    return {"deleted": True, "mode": "hard" if is_unpublished else "soft"}
 
 
 def list_incidents(page: int = 1, page_size: int = 50, search: Optional[str] = None) -> dict:

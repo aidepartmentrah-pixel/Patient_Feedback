@@ -116,6 +116,98 @@ def _create_subcase(
     )
 
 
+def _create_subcases_for_case_targets(case_id: int, user_id: int) -> List[Dict[str, Any]]:
+    """
+    Create one subcase per current row in APP_IncidentCaseTargetDepartment
+    for this case. Pure creation only — no idempotency check, no
+    notification. Used by create_subcases_for_incident() (first-time
+    publish, guarded by the caller) and as retarget_case_subcase()'s
+    fallback for the edge case where a published case somehow has no
+    subcase yet to redirect. Callers are responsible for deciding it's safe
+    to call — i.e. that no active subcase already exists for whichever
+    target(s) are about
+    to be created here.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Determine deadline-exclusion flags for this case:
+        # Notice records (RecordTypeID=2) and Morbidity-related cases
+        # (IsMorbidity=1) never receive workflow deadlines.
+        cursor.execute(
+            "SELECT RecordTypeID, IsMorbidity FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID = ?",
+            (case_id,)
+        )
+        case_row = cursor.fetchone()
+        is_notice = bool(case_row and case_row.RecordTypeID == _RECORD_TYPE_NOTICE)
+        is_morbidity = bool(case_row and case_row.IsMorbidity)
+        excluded_from_deadlines = is_notice or is_morbidity
+
+        deadline_days = None
+        publish_time = None
+        if not excluded_from_deadlines:
+            deadline_days = _get_deadline_days_settings(cursor)
+            publish_time = datetime.now()
+
+        query = """
+            SELECT td.DepartmentID, au.Type AS OrgUnitType, au.Name AS OrgUnitName
+            FROM dbo.APP_IncidentCaseTargetDepartment td
+            LEFT JOIN dbo.AdminsrationUnit au ON td.DepartmentID = au.UniqueID
+            WHERE td.IncidentRequestCaseID = ?
+        """
+
+        cursor.execute(query, (case_id,))
+        rows = cursor.fetchall()
+
+        created_subcases: List[Dict[str, Any]] = []
+
+        for row in rows:
+            org_type = row.OrgUnitType
+            org_name = row.OrgUnitName
+            dept_id = row.DepartmentID
+
+            initial_status = get_initial_subcase_status_for_target_org_type(org_type)
+            logger.info(
+                "[ROUTING] case_id=%d → OrgUnit %d '%s' (Type=%d) → initial_status=%s",
+                case_id, dept_id, org_name or '?', org_type, initial_status
+            )
+
+            # Initialize ONLY the deadline for the starting workflow level,
+            # and only for non-Notice, non-Morbidity cases.
+            section_deadline_at = None
+            department_deadline_at = None
+            administration_deadline_at = None
+
+            if not excluded_from_deadlines:
+                if org_type == _ORG_TYPE_SECTION:
+                    section_deadline_at = publish_time + timedelta(days=deadline_days["section"])
+                elif org_type == _ORG_TYPE_DEPARTMENT:
+                    department_deadline_at = publish_time + timedelta(days=deadline_days["department"])
+                elif org_type == _ORG_TYPE_ADMINISTRATION:
+                    administration_deadline_at = publish_time + timedelta(days=deadline_days["administration"])
+
+            subcase_id = _create_subcase(
+                case_type='INCIDENT_RESPONSE',
+                incident_id=case_id,
+                seasonal_report_id=None,
+                target_org_unit_id=dept_id,
+                created_by_user_id=user_id,
+                initial_status=initial_status,
+                section_deadline_at=section_deadline_at,
+                department_deadline_at=department_deadline_at,
+                administration_deadline_at=administration_deadline_at
+            )
+
+            created_subcases.append({"subcase_id": subcase_id, "target_org_unit_id": dept_id})
+
+        return created_subcases
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def create_subcases_for_incident(incident_id: int, current_user) -> List[Dict[str, Any]]:
     """
     Create subcases for an incident.
@@ -137,16 +229,42 @@ def create_subcases_for_incident(incident_id: int, current_user) -> List[Dict[st
     # Handle None current_user (legacy adapter calls)
     user_id = current_user.user_id if current_user else 1  # Default to system user
 
+    created_subcases = _create_subcases_for_case_targets(incident_id, user_id)
+
+    # One summary email per admin after the full batch is created
+    try:
+        send_publication_summary_notifications(created_subcases)
+    except Exception as e:
+        logger.warning(f"PUBLICATION NOTIFY: failed to send summary notifications: {str(e)}")
+
+    return created_subcases
+
+
+def retarget_case_subcase(case_id: int, user_id: int) -> List[Dict[str, Any]]:
+    """
+    Redirect this case's subcase to its current (just-changed) target
+    department, resetting it to a blank slate for the new target.
+
+    Called from case_service.update_case() when an editor changes the
+    Target Unit on an already-published case. Updates the case's existing
+    subcase row in place (new TargetOrgUnitID, new initial status, every
+    explanation/rejection field cleared) rather than retiring-and-recreating
+    a second row — UQ_APP_AdministrativeSubcase_CaseID enforces at most one
+    subcase row per case, and a published case already has one. If this
+    case somehow has no subcase yet, falls back to creating one fresh.
+    """
+    cursor_query = """
+        SELECT td.DepartmentID, au.Type AS OrgUnitType
+        FROM dbo.APP_IncidentCaseTargetDepartment td
+        LEFT JOIN dbo.AdminsrationUnit au ON td.DepartmentID = au.UniqueID
+        WHERE td.IncidentRequestCaseID = ?
+    """
     conn = get_connection()
     cursor = conn.cursor()
-
     try:
-        # Determine deadline-exclusion flags for this incident:
-        # Notice records (RecordTypeID=2) and Morbidity-related cases
-        # (IsMorbidity=1) never receive workflow deadlines.
         cursor.execute(
             "SELECT RecordTypeID, IsMorbidity FROM dbo.APP_IncidentCase WHERE IncidentRequestCaseID = ?",
-            (incident_id,)
+            (case_id,)
         )
         case_row = cursor.fetchone()
         is_notice = bool(case_row and case_row.RecordTypeID == _RECORD_TYPE_NOTICE)
@@ -159,68 +277,61 @@ def create_subcases_for_incident(incident_id: int, current_user) -> List[Dict[st
             deadline_days = _get_deadline_days_settings(cursor)
             publish_time = datetime.now()
 
-        query = """
-            SELECT td.DepartmentID, au.Type AS OrgUnitType, au.Name AS OrgUnitName
-            FROM dbo.APP_IncidentCaseTargetDepartment td
-            LEFT JOIN dbo.AdminsrationUnit au ON td.DepartmentID = au.UniqueID
-            WHERE td.IncidentRequestCaseID = ?
-        """
-
-        cursor.execute(query, (incident_id,))
-        rows = cursor.fetchall()
-
-        created_subcases: List[Dict[str, Any]] = []
-
-        for row in rows:
-            org_type = row.OrgUnitType
-            org_name = row.OrgUnitName
-            dept_id = row.DepartmentID
-
-            initial_status = get_initial_subcase_status_for_target_org_type(org_type)
-            logger.info(
-                "[ROUTING] incident_id=%d → OrgUnit %d '%s' (Type=%d) → initial_status=%s",
-                incident_id, dept_id, org_name or '?', org_type, initial_status
-            )
-
-            # Initialize ONLY the deadline for the starting workflow level,
-            # and only for non-Notice, non-Morbidity cases.
-            section_deadline_at = None
-            department_deadline_at = None
-            administration_deadline_at = None
-
-            if not excluded_from_deadlines:
-                if org_type == _ORG_TYPE_SECTION:
-                    section_deadline_at = publish_time + timedelta(days=deadline_days["section"])
-                elif org_type == _ORG_TYPE_DEPARTMENT:
-                    department_deadline_at = publish_time + timedelta(days=deadline_days["department"])
-                elif org_type == _ORG_TYPE_ADMINISTRATION:
-                    administration_deadline_at = publish_time + timedelta(days=deadline_days["administration"])
-
-            subcase_id = _create_subcase(
-                case_type='INCIDENT_RESPONSE',
-                incident_id=incident_id,
-                seasonal_report_id=None,
-                target_org_unit_id=dept_id,
-                created_by_user_id=user_id,
-                initial_status=initial_status,
-                section_deadline_at=section_deadline_at,
-                department_deadline_at=department_deadline_at,
-                administration_deadline_at=administration_deadline_at
-            )
-
-            created_subcases.append({"subcase_id": subcase_id, "target_org_unit_id": dept_id})
-
-        # One summary email per admin after the full batch is created
-        try:
-            send_publication_summary_notifications(created_subcases)
-        except Exception as e:
-            logger.warning(f"PUBLICATION NOTIFY: failed to send summary notifications: {str(e)}")
-
-        return created_subcases
-
+        cursor.execute(cursor_query, (case_id,))
+        target_row = cursor.fetchone()
     finally:
         cursor.close()
         conn.close()
+
+    if not target_row:
+        logger.warning(f"[RETARGET] case_id={case_id} has no current target department — nothing to retarget to")
+        return []
+
+    dept_id = target_row.DepartmentID
+    org_type = target_row.OrgUnitType
+    new_status = get_initial_subcase_status_for_target_org_type(org_type)
+
+    section_deadline_at = None
+    department_deadline_at = None
+    administration_deadline_at = None
+    if not excluded_from_deadlines:
+        if org_type == _ORG_TYPE_SECTION:
+            section_deadline_at = publish_time + timedelta(days=deadline_days["section"])
+        elif org_type == _ORG_TYPE_DEPARTMENT:
+            department_deadline_at = publish_time + timedelta(days=deadline_days["department"])
+        elif org_type == _ORG_TYPE_ADMINISTRATION:
+            administration_deadline_at = publish_time + timedelta(days=deadline_days["administration"])
+
+    updated = administrative_subcase_db.retarget_subcase(
+        case_id=case_id,
+        new_target_org_unit_id=dept_id,
+        new_status=new_status,
+        updated_by_user_id=user_id,
+        section_deadline_at=section_deadline_at,
+        department_deadline_at=department_deadline_at,
+        administration_deadline_at=administration_deadline_at,
+    )
+
+    if not updated:
+        # No subcase existed for this case yet — create one fresh instead.
+        created_subcases = _create_subcases_for_case_targets(case_id, user_id)
+    else:
+        logger.info(
+            "[ROUTING] case_id=%d retargeted → OrgUnit %d (Type=%d) → status=%s",
+            case_id, dept_id, org_type, new_status
+        )
+        existing = administrative_subcase_db.get_subcases_by_incident(case_id)
+        created_subcases = [
+            {"subcase_id": r["subcase_id"], "target_org_unit_id": dept_id}
+            for r in existing
+        ]
+
+    try:
+        send_publication_summary_notifications(created_subcases)
+    except Exception as e:
+        logger.warning(f"RETARGET NOTIFY: failed to send summary notifications: {str(e)}")
+
+    return created_subcases
 
 
 def create_subcases_for_seasonal_report(seasonal_report_id: int, current_user) -> None:

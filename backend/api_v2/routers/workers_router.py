@@ -61,9 +61,13 @@ class WorkerSearchItem(BaseModel):
     full_name: str = Field(..., description="Employee full name")
     name: str = Field(..., description="Employee name (alias)")
     job_title: Optional[str] = Field(None, description="Job title/position")
-    department_id: Optional[int] = Field(None, description="Department ID")
-    section_id: Optional[int] = Field(None, description="Section ID")
-    administration_id: Optional[int] = Field(None, description="Administration ID")
+    # str, not int: APP_RESERVE_WORKER.DepartmentID/SectionID/AdministrationID
+    # are nvarchar org codes (same shape from the Hospital Directory API),
+    # not surrogate ints -- Optional[int] here rejected every real worker
+    # row with a non-null value and turned it into a 500.
+    department_id: Optional[str] = Field(None, description="Department ID")
+    section_id: Optional[str] = Field(None, description="Section ID")
+    administration_id: Optional[str] = Field(None, description="Administration ID")
     is_manager: bool = Field(False, description="Whether employee is a manager")
     is_active: bool = Field(True, description="Whether employee is active")
 
