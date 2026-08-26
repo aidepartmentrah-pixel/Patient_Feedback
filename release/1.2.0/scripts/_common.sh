@@ -41,7 +41,17 @@ IMAGE_VERSION="$(cat "$RELEASE_ROOT/IMAGE_VERSION" 2>/dev/null || echo "$RELEASE
 # where /opt/ isn't writable (e.g. Windows dev boxes) -- the real offline
 # server always uses the default, since this variable is never set there.
 LIVE_ROOT="${PFMS_LIVE_ROOT:-/opt/rah/apps/${APP_SLUG}}"
-ENV_FILE="$LIVE_ROOT/.env"
+# Both under compose/, matching where the RAH Offline Installation
+# Platform actually renders configuration (RAH Packager & Platform
+# Integration Guide, "Lifecycle Scripts Must Read the Configuration
+# Template From Where the RAH Packaging Engine Actually Puts It" -- the
+# same real pattern already found on Indicator: Platform renders one
+# level deeper than a script's own convenient top-level default. Found
+# live during Pass 5 (HCAT) Phase 2, 2026-08-25: a real install failed
+# because ENV_FILE pointed at $LIVE_ROOT/.env (never written by Platform)
+# while Platform's own render_configuration() wrote the real values to
+# $LIVE_ROOT/compose/.env the whole time.
+ENV_FILE="$LIVE_ROOT/compose/.env"
 COMPOSE_FILE="$LIVE_ROOT/compose/docker-compose.yml"
 # Written only after a fully successful, verified install or update -- see
 # live_deployment_exists() below.
@@ -86,10 +96,21 @@ load_env() {
 
 # Copies this release's version-owned resources (Compose definition, DB
 # seed/provisioning data) into the live deployment, overwriting whatever the
-# previous release left there. Deliberately never touches LIVE_ROOT/.env,
-# LIVE_ROOT/assets, or LIVE_ROOT/backups -- those are deployment-owned
-# persistent state, not release contents (see "Replace what belongs to the
-# software version. Preserve what belongs to the deployment.").
+# previous release left there. Deliberately never touches
+# LIVE_ROOT/compose/.env, LIVE_ROOT/assets, or LIVE_ROOT/backups -- those are
+# deployment-owned persistent state, not release contents (see "Replace what
+# belongs to the software version. Preserve what belongs to the
+# deployment.").
+#
+# Only docker-compose.yml is replaced inside compose/, not the whole
+# directory -- a real bug, found and fixed live during Pass 5 (HCAT)
+# Phase 2, 2026-08-25: this used to `rm -rf "$LIVE_ROOT/compose"` wholesale,
+# which was safe back when ENV_FILE lived directly at LIVE_ROOT/.env, but
+# became a real regression the moment ENV_FILE moved to
+# LIVE_ROOT/compose/.env (matching where the Platform actually renders
+# configuration) -- it would have deleted the Platform-rendered .env before
+# `docker compose up` ever read it, an install-destroying bug this
+# function's own long-standing comment already promised couldn't happen.
 #
 # The whole database/sqlserver/ tree is copied, not just seed/ -- install and
 # migration SQL are baked into the db-init image and aren't read from disk at
@@ -98,9 +119,8 @@ load_env() {
 # must keep working even after the release folder is gone (release-folder
 # independence). Cheap: these are small text files.
 sync_version_owned_resources() {
-    mkdir -p "$LIVE_ROOT"
-    rm -rf "$LIVE_ROOT/compose"
-    cp -r "$RELEASE_ROOT/compose" "$LIVE_ROOT/compose"
+    mkdir -p "$LIVE_ROOT/compose"
+    cp "$RELEASE_ROOT/compose/docker-compose.yml" "$LIVE_ROOT/compose/docker-compose.yml"
     rm -rf "$LIVE_ROOT/database"
     mkdir -p "$LIVE_ROOT/database"
     cp -r "$RELEASE_ROOT/database/sqlserver" "$LIVE_ROOT/database/sqlserver"

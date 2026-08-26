@@ -59,9 +59,9 @@ fi
 
 if [ ! -f "$ENV_FILE" ]; then
     echo "No .env file found at $ENV_FILE"
-    echo "Creating one from .env.offline.template ..."
+    echo "Creating one from configuration/.env.offline.template ..."
     mkdir -p "$LIVE_ROOT"
-    cp "$RELEASE_ROOT/.env.offline.template" "$ENV_FILE"
+    cp "$RELEASE_ROOT/configuration/.env.offline.template" "$ENV_FILE"
 
     echo "Auto-generating credentials ..."
     # MSSQL_SA_PASSWORD is a fixed, deliberately-chosen value (not random) --
