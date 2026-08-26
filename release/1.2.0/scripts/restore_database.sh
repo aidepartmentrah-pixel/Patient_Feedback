@@ -70,8 +70,12 @@ compose exec -T -u root sqlserver chown -R 10001:0 /var/opt/mssql/backup
 # Ensure the container actually has the file at the path it expects --
 # under a Platform-driven restore, the source lives wherever
 # RAH_BACKUP_SOURCE_PATH pointed, not necessarily already inside the
-# container's own bind-mounted backup directory.
+# container's own bind-mounted backup directory. mkdir -p first -- same
+# real gap found in backup_database.sh during Pass 5 (HCAT) Phase 5,
+# 2026-08-26: a fresh deployment that's never run a local backup yet
+# won't have $LIVE_ROOT/backups created at all.
 if [ ! -f "$LIVE_ROOT/backups/$BACKUP_FILE" ]; then
+    mkdir -p "$LIVE_ROOT/backups"
     cp "$SOURCE_PATH" "$LIVE_ROOT/backups/$BACKUP_FILE"
 fi
 

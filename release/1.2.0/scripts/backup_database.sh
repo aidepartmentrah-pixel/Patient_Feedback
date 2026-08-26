@@ -63,6 +63,13 @@ fi
 if [ -n "${RAH_BACKUP_OUTPUT_PATH:-}" ]; then
     echo ""
     echo "Copying backup to Platform's declared output path ..."
+    # docker compose cp requires the destination directory to already exist
+    # on the host -- it does not create parent directories itself. Found
+    # live during Pass 5 (HCAT) Phase 5, 2026-08-26: PLT-BACKUP-003,
+    # "invalid output path: directory ... does not exist" -- confirmed
+    # against HCopilot's own already-proven backup_database.sh, which
+    # already does this same mkdir -p first.
+    mkdir -p "$(dirname "$RAH_BACKUP_OUTPUT_PATH")"
     compose cp "sqlserver:/var/opt/mssql/backup/${BACKUP_FILE}" "$RAH_BACKUP_OUTPUT_PATH"
     echo "  Copied to $RAH_BACKUP_OUTPUT_PATH"
 fi
