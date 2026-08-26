@@ -205,13 +205,24 @@ def run():
         # Both fixture complaints (and both fixture notices) share the same
         # primary target unit, so grouping collapses each into exactly one
         # batch -> exactly one signature grid each (2 total), not one per
-        # record (which would have given 3+ before this change). Role label
-        # unique to the approval grid (unlike "مسؤول العملية", which also
-        # appears inside the RCA instruction note on every complaint page).
+        # record (which would have given 3+ before this change).
         check("Full fixture: exactly one signature grid per batch (2 total)",
               full_text_a.count("خاص خدمات المرضى") == 2)
         check("Full fixture: batch signature page caption present",
-              "توقيع الدفعة" in full_text_a)
+              "جدول التوقيع" in full_text_a)
+        # Round 4 checks: yellow RCA box removed, scope strip is Arabic-only,
+        # date columns dropped from the classification table.
+        check("Full fixture: no leftover RCA instruction box text",
+              "يلزم ملء استمارة تحليل السبب الجذري" not in full_text_a)
+        check("Full fixture: scope strip has no English label text",
+              "Administration" not in full_text_a and "Circle" not in full_text_a
+              and "Section" not in full_text_a and "Month" not in full_text_a)
+        check("Full fixture: no date-column headers in classification table",
+              "الاستلام" not in full_text_a and "الحادثة" not in full_text_a
+              and "النشر" not in full_text_a)
+        check("Full fixture: relabeled classification headers are English-only",
+              "Problem Domain" in full_text_a and "المجال" not in full_text_a
+              and "Complaint Field Type" in full_text_a and "نوع السجل" not in full_text_a)
 
     # (b) Empty complaints + empty notices
     report_data_empty = {

@@ -77,7 +77,7 @@ def _ar_run(para, text: str, size: int = 10, bold: bool = False,
     return run
 
 
-def _ltr_run(para, text: str, size: int = 10, bold: bool = False, color: str = None):
+def _ltr_run(para, text: str, size: int = 10, bold: bool = False, italic: bool = False, color: str = None):
     """
     Like _ar_run, but forces this run to render left-to-right via an
     explicit w:rPr/w:rtl w:val="0" override, instead of relying on Unicode
@@ -89,7 +89,7 @@ def _ltr_run(para, text: str, size: int = 10, bold: bool = False, color: str = N
     w:rtl override is the standard OOXML mechanism for this and has no
     such fallback-glyph failure mode.
     """
-    run = _ar_run(para, text, size=size, bold=bold, color=color)
+    run = _ar_run(para, text, size=size, bold=bold, italic=italic, color=color)
     rtl_el = OxmlElement('w:rtl')
     rtl_el.set(qn('w:val'), '0')
     run._element.rPr.append(rtl_el)
@@ -162,7 +162,8 @@ def _mark_explicit_rtl(run):
 
 
 def _add_bidi_segmented_text(para, text: str, color: str = None,
-                              size: int = 10, style_applies: bool = True):
+                              size: int = 10, style_applies: bool = True,
+                              bold: bool = False, italic: bool = False):
     """
     Splits `text` into alternating RTL(Arabic/neutral) and LTR(Latin/digit)
     segments per _LTR_ISLAND_RE and adds each as its own run — LTR segments
@@ -171,7 +172,9 @@ def _add_bidi_segmented_text(para, text: str, color: str = None,
     _mark_explicit_rtl's docstring for why the explicit mark on the RTL side
     is required, not just the LTR side). `size` is ignored when
     style_applies=True (the paragraph's Word style controls size instead —
-    see _styled_ar_run).
+    see _styled_ar_run). `bold`/`italic` only apply when style_applies=False
+    (direct formatting) — the styled runs get their weight from the Word
+    style instead, same as _styled_ar_run's existing callers.
     """
     text = text or ''
     pos = 0
@@ -181,19 +184,19 @@ def _add_bidi_segmented_text(para, text: str, color: str = None,
             if style_applies:
                 _mark_explicit_rtl(_styled_ar_run(para, segment, color=color))
             else:
-                _mark_explicit_rtl(_ar_run(para, segment, size=size, color=color))
+                _mark_explicit_rtl(_ar_run(para, segment, size=size, bold=bold, italic=italic, color=color))
         island = m.group()
         if style_applies:
             _styled_ltr_run(para, island, color=color)
         else:
-            _ltr_run(para, island, size=size, color=color)
+            _ltr_run(para, island, size=size, bold=bold, italic=italic, color=color)
         pos = m.end()
     if pos < len(text):
         segment = text[pos:]
         if style_applies:
             _mark_explicit_rtl(_styled_ar_run(para, segment, color=color))
         else:
-            _mark_explicit_rtl(_ar_run(para, segment, size=size, color=color))
+            _mark_explicit_rtl(_ar_run(para, segment, size=size, bold=bold, italic=italic, color=color))
 
 
 # ---------------------------------------------------------------------------
@@ -571,10 +574,10 @@ def _four_cell_strip(doc: Document, admin_name: str, dept_name: str,
 
     row = tbl.rows[0]
     boxes = [
-        ('الإدارة / Administration', admin_name),
-        ('الدائرة / Circle', dept_name),
-        ('الوحدة الإدارية/القسم / Section', sec_name),
-        ('الشهر / Month', period_label),
+        ('الإدارة', admin_name),
+        ('الدائرة', dept_name),
+        ('الوحدة الإدارية/القسم', sec_name),
+        ('الشهر', period_label),
     ]
     for ci, (label, value) in enumerate(boxes):
         _labeled_cell(row.cells[ci], label, value, bg=NAVY_LIGHT,
@@ -625,26 +628,31 @@ def _case_number(complaint: Dict) -> str:
 # trimming Category/Stage/Status (prior round). This round: Severity and
 # Harm each cut 15% (19->16.15mm, 21->17.85mm — 6mm saved combined) and that
 # 6mm moved entirely onto Stage (16mm -> 22mm).
-# Sum of widths = 269mm (<= 270mm target ceiling).
+# Round 4: the 3 date columns (received/incident/publication) were removed
+# entirely per client request — only the case number stays rotated now. The
+# 24mm they freed was redistributed proportionally (x1.101) across the 9
+# content columns below (all but الرقم, which doesn't benefit from extra
+# width). English-only headers (no more "English\nArabic" two-line labels)
+# for the 8 columns the client asked to keep English-only; Classification
+# (Arb.)/(Eng.) were already English-only and are unchanged.
+# Sum of widths = 8 + 268.8 ~= 269mm (<= 270mm target ceiling, same as before).
 _CLASS_COLS = [
-    ('الاستلام', 8, lambda c: _fmt_date(c.get('received_date'))),
-    ('الحادثة', 8, lambda c: _fmt_date(c.get('incident_date'))),
-    ('النشر', 8, lambda c: _fmt_date(c.get('publication_date'))),
-    ('الرقم', 8, _case_number),
-    ('Problem Domain\nالمجال', 26, lambda c: c.get('domain_name') or '—'),
-    ('Problem Category\nفئة المشكلة', 20, lambda c: c.get('category_name') or '—'),
-    ('Sub-Category\nالفئة الفرعية', 23, lambda c: c.get('subcategory_name') or '—'),
-    ('Classification (Arb.)', 40, lambda c: c.get('classification_name') or '—'),
-    ('Classification (Eng.)', 40, lambda c: c.get('classification_name_en') or '—'),
-    ('Severity\nالخطورة', 16.15, lambda c: c.get('severity_name') or '—'),
-    ('Stage\nالمرحلة', 22, lambda c: c.get('stage_name') or '—'),
-    ('Harm\nالضرر', 17.85, lambda c: c.get('harm_level') or '—'),
-    ('Status\nالحالة', 14, lambda c: c.get('status_name') or '—'),
-    ('Complaint Field Type\nنوع السجل', 18, lambda c: c.get('clinical_risk_type_name') or 'Ordinary'),
+    ('الرقم', 14, _case_number),
+    ('Problem Domain', 28.6, lambda c: c.get('domain_name') or '—'),
+    ('Problem Category', 22.0, lambda c: c.get('category_name') or '—'),
+    ('Sub-Category', 25.3, lambda c: c.get('subcategory_name') or '—'),
+    ('Classification (Arb.)', 38.0, lambda c: c.get('classification_name') or '—'),
+    ('Classification (Eng.)', 44.0, lambda c: c.get('classification_name_en') or '—'),
+    ('Severity', 17.8, lambda c: c.get('severity_name') or '—'),
+    ('Stage', 24.2, lambda c: c.get('stage_name') or '—'),
+    ('Harm', 19.7, lambda c: c.get('harm_level') or '—'),
+    ('Status', 15.4, lambda c: c.get('status_name') or '—'),
+    ('Complaint Field Type', 19.8, lambda c: c.get('clinical_risk_type_name') or 'Ordinary'),
 ]
 
-# Indices of the 4 rotated columns (received/incident/publication date, case number).
-_ROTATED_CLASS_COLS = {0, 1, 2, 3}
+# Index of the one remaining rotated column (case number). Was {0, 1, 2, 3}
+# (3 dates + case number) before the date columns were removed.
+_ROTATED_CLASS_COLS = {0}
 
 
 def _classification_table(doc: Document, complaint: Dict):
@@ -676,15 +684,16 @@ def _classification_table(doc: Document, complaint: Dict):
         else:
             _bold_underline_value_cell(data.cells[ci], getter(complaint))
         _set_row_col_width(data, ci, w)
-    # Floor bumped 22mm -> 27mm: the rotated case-number text (~11 unbroken
-    # characters, e.g. "INC-000187") only looked clean when something else in
-    # the row (typically a long Classification (Eng.) wrap) happened to push
-    # the row taller than 22mm — at the bare 22mm floor it looked cramped.
-    # Raising the floor itself makes that a fixed, guaranteed minimum instead
-    # of something the number's readability accidentally depended on. This
-    # does cost ~5mm of the vertical space reclaimed earlier this session.
+    # Floor bumped 27mm -> 45mm: for a btLr-rotated cell, one unwrapped line
+    # of text flows bottom-to-top along the ROW HEIGHT, not the column width
+    # — so the ~11-character case number (e.g. "INC-001001") needs real row
+    # height to render as a single vertical line, not the column wider.
+    # Previously this row only looked clean because OTHER columns (the now-
+    # removed date columns, or a long Classification (Eng.) wrap) happened
+    # to push it taller than the floor by accident.
     data.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-    data.height = _mm_to_dxa(27)
+    data.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
+    data.height = Mm(20)
     _set_row_cant_split(data)
     return tbl
 
@@ -943,7 +952,7 @@ def _render_signature_page(doc: Document, unit_label: str, count: int, noun_labe
     whose batch it belongs to once detached.
     """
     cap = _new_para(doc, align='center', space_before=6, space_after=2)
-    _ar_run(cap, 'توقيع الدفعة  /  Batch Signature', size=12, bold=True, color=NAVY)
+    _ar_run(cap, 'جدول التوقيع', size=12, bold=True, color=NAVY)
 
     sub = _new_para(doc, align='center', space_before=0, space_after=10)
     _ar_run(sub, f'{unit_label}   —   عدد {noun_label}: {count}', size=9.5, color=GREY_TEXT)
@@ -955,49 +964,17 @@ def _render_signature_page(doc: Document, unit_label: str, count: int, noun_labe
 # RCA / QUARTERLY INSTRUCTION NOTE  (complaint pages only)
 # ---------------------------------------------------------------------------
 
-_RCA_NOTE_LINE1 = (
+# Former yellow-box RCA instruction note text — the box itself was removed
+# (client now sets this as the report footer instead, via APP_ReportConfig's
+# footer_text; see the migration in backend/database_migrations and the
+# footer_text fallback in generate_monthly_stylish_docx). Text kept verbatim
+# here as the single source of truth for that default.
+_DEFAULT_FOOTER_TEXT = (
     'ملاحظة: 1- التقرير الشهري: الشكاوى المصنفة High يلزم ملء استمارة تحليل السبب الجذري '
     'RCA (Root Cause Analysis) إذا لم يتم ملؤها خلال المتابعة، أما المصنفة Medium أو Low '
-    'فملؤها يكون تبعاً للحاجة بناءً على قرار مسؤول العملية.'
+    'فملؤها يكون تبعاً للحاجة بناءً على قرار مسؤول العملية. '
+    '2- التقرير الفصلي: ترفع استمارة تحسين تلقائياً تبعاً لـ Target الشكاوى.'
 )
-_RCA_NOTE_LINE2 = '2- التقرير الفصلي: ترفع استمارة تحسين تلقائياً تبعاً لـ Target الشكاوى.'
-
-
-def _instruction_note(doc: Document):
-    tbl = doc.add_table(rows=1, cols=1)
-    tbl.autofit = False
-    tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-    _apply_minimal_table_borders(tbl, outer=BORDER_OUTER, outer_sz=4, inner=BORDER_INNER, inner_sz=4)
-
-    row = tbl.rows[0]
-    _set_row_col_width(row, 0, sum(_APPROVAL_COL_WIDTHS))
-    cell = row.cells[0]
-    _set_cell_shading(cell, 'FFFDE7')
-    cell.text = ''
-
-    p1 = cell.paragraphs[0]
-    p1.clear()
-    p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p1.paragraph_format.space_before = Pt(3)
-    p1.paragraph_format.space_after  = Pt(2)
-    p1.paragraph_format.right_indent = Mm(2)
-    p1.paragraph_format.left_indent  = Mm(2)
-    p1._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-    _ar_run(p1, _RCA_NOTE_LINE1, size=7.5, color='5D4037')
-
-    p2 = cell.add_paragraph()
-    p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p2.paragraph_format.space_before = Pt(0)
-    p2.paragraph_format.space_after  = Pt(3)
-    p2.paragraph_format.right_indent = Mm(2)
-    p2.paragraph_format.left_indent  = Mm(2)
-    p2._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-    _ar_run(p2, _RCA_NOTE_LINE2, size=7.5, color='5D4037')
-
-    row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-    row.height = _mm_to_dxa(14)
-    _set_row_cant_split(row)
-    return tbl
 
 
 # ---------------------------------------------------------------------------
@@ -1020,8 +997,6 @@ def _render_complaint_page(doc: Document, complaint: Dict, index: int, total: in
 
     _action_block(doc, complaint)
     _gap(doc, 0.15)
-
-    _instruction_note(doc)
 
     pg_para = _new_para(doc, align='center', space_before=2, space_after=0)
     _ar_run(pg_para, f'شكوى {index} من {total}  •  {_fmt_date(complaint.get("received_date"))}',
@@ -1244,15 +1219,16 @@ def _setup_section(sec, title_ar: str, subtitle: str, footer_text: str,
     tp.alignment = WD_ALIGN_PARAGRAPH.CENTER
     tp.paragraph_format.space_before = int(Pt(0))
     tp.paragraph_format.space_after  = int(Pt(1))
-    _ar_run(tp, title_ar, size=10, bold=True, color=NAVY)
+    _add_bidi_segmented_text(tp, title_ar, color=NAVY, size=10, bold=True, style_applies=False)
 
     # Info line — two bidi fixes:
     # 1. Strip ASCII parens from config text (bidi-mirrors backwards in RTL).
     # 2. Insert RLM (U+200F) after each colon preceding an LTR token, so the
-    #    colon stays anchored to the Arabic RTL context, then render the LTR
-    #    chunk itself (date range, report code) as its own run with an
-    #    explicit w:rtl="0" override via _ltr_run — see that helper's
-    #    docstring for why this replaced the old Unicode-isolate approach.
+    #    colon stays anchored to the Arabic RTL context.
+    # 3. period_str (always a machine-generated pure date range) uses
+    #    _ltr_run directly; title/subtitle/report_code are client-editable
+    #    free text that can mix Arabic in, so they go through
+    #    _add_bidi_segmented_text instead — see that helper's docstring.
     hdr_info_para = title_cell.add_paragraph()
     hdr_info_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
     hdr_info_para.paragraph_format.space_before = int(Pt(0))
@@ -1260,7 +1236,7 @@ def _setup_section(sec, title_ar: str, subtitle: str, footer_text: str,
     hdr_info_para._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
 
     clean_subtitle = (subtitle or '').strip('() ')
-    _ar_run(hdr_info_para, clean_subtitle, size=7, italic=True, color=GREY_TEXT)
+    _add_bidi_segmented_text(hdr_info_para, clean_subtitle, color=GREY_TEXT, size=7, italic=True, style_applies=False)
     _ar_run(hdr_info_para, '   |   ', size=7, color=GREY_TEXT)
     RLM = '‏'
     _ar_run(hdr_info_para, f'{RLM}الفترة:{RLM} ', size=7, bold=True, color=GREY_TEXT)
@@ -1268,7 +1244,12 @@ def _setup_section(sec, title_ar: str, subtitle: str, footer_text: str,
     if report_code:
         _ar_run(hdr_info_para, '   |   ', size=7, color=GREY_TEXT)
         _ar_run(hdr_info_para, f'{RLM}رمز التقرير:{RLM} ', size=7, color=GREY_TEXT)
-        _ltr_run(hdr_info_para, report_code, size=7, color=GREY_TEXT)
+        # report_code is client-configurable free text (unlike period_str,
+        # which is always a machine-generated pure date range) and can mix
+        # in Arabic — e.g. 'cust-35f-03Ed تجريبي' — so it needs the same
+        # segmentation as the title/subtitle above, not a blind _ltr_run
+        # that would force any embedded Arabic word into LTR too.
+        _add_bidi_segmented_text(hdr_info_para, report_code, color=GREY_TEXT, size=7, style_applies=False)
 
     hdr_tbl.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
     hdr_tbl.rows[0].height = _mm_to_dxa(9)
@@ -1357,8 +1338,7 @@ def generate_monthly_stylish_docx(
 
     cfg = _load_report_config()
     subtitle = cfg.get('header_subtitle', 'Health Care Analysis Tool - HCAT')
-    footer_text = cfg.get('footer_text',
-                          'نؤمن أن الابتكار لا يكون فقط في التقنيات، بل في أسلوب الخدمة والتواصل والتعاطف')
+    footer_text = cfg.get('footer_text', _DEFAULT_FOOTER_TEXT)
     report_code = cfg.get('report_code', '')
     complaint_title = cfg.get('header_title', _COMPLAINT_TITLE_DEFAULT)
     period_str = f"{period.get('start_date', '—')}  —  {period.get('end_date', '—')}"

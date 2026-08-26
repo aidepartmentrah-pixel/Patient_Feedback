@@ -656,3 +656,17 @@ BEGIN
     UPDATE dbo.APP_RCASuggestion SET PairedSuggestionID = @ActionID WHERE SuggestionID = @CauseID;
 END
 GO
+
+-- dbo.APP_ReportConfig: default footer text for the Stylish Monthly Report.
+-- Replaces the yellow RCA/quarterly-instruction box that used to appear on
+-- every complaint page — same text, now the report footer instead. Insert-
+-- if-missing only, so it never overwrites a value an install already set.
+IF NOT EXISTS (SELECT 1 FROM dbo.APP_ReportConfig WHERE ConfigKey = 'footer_text')
+    INSERT INTO dbo.APP_ReportConfig (ConfigKey, ConfigValue, UpdatedAt, UpdatedBy)
+    VALUES (
+        'footer_text',
+        N'ملاحظة: 1- التقرير الشهري: الشكاوى المصنفة High يلزم ملء استمارة تحليل السبب الجذري RCA (Root Cause Analysis) إذا لم يتم ملؤها خلال المتابعة، أما المصنفة Medium أو Low فملؤها يكون تبعاً للحاجة بناءً على قرار مسؤول العملية. 2- التقرير الفصلي: ترفع استمارة تحسين تلقائياً تبعاً لـ Target الشكاوى.',
+        GETDATE(),
+        NULL
+    );
+GO
