@@ -76,6 +76,9 @@ from api.routers.migration_router import router as migration_router
 from api.routers.org_unit_router import router as org_unit_router
 # Bootstrap Configuration Router (password-protected, no DB auth needed)
 from api.routers.config_router import router as config_router
+# Middle-Name Assist: candidate-name-set CRUD (password-protected) + the
+# search-time read endpoint the patient-search chip UI calls (no password)
+from api.routers.middle_name_sets_router import router as middle_name_sets_router
 # Import Pipeline Router (template download + Excel upload)
 from api.routers.import_router import router as import_router
 # Policy Metrics Refactor: 4-card org-unit policy management + classification-aware evaluator
@@ -216,6 +219,7 @@ app.include_router(migration_router)
 app.include_router(org_unit_router)
 # Bootstrap Configuration Router (password-protected, no DB auth needed)
 app.include_router(config_router)
+app.include_router(middle_name_sets_router)
 app.include_router(import_router)
 app.include_router(policy_router)
 app.include_router(rca_settings_router)

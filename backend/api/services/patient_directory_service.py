@@ -31,6 +31,7 @@ external_message pair so callers can render "external search unavailable"
 distinctly from "zero results".
 """
 
+import time
 from typing import Any, Dict, List, Optional
 
 from api.db_layer import patients_db
@@ -198,6 +199,81 @@ def search_patients_insert_flow(search_text: str, limit: int = 20) -> Dict[str, 
         "count": len(combined),
         "external_status": external_status,
         "external_message": result.get("message"),
+    }
+
+
+_MIDDLE_NAME_SEARCH_DELAY_SECONDS = 0.4
+
+
+def search_patients_missing_middle_name(first_name: str, last_name: str, limit: int = 20) -> Dict[str, Any]:
+    """
+    First name + last name known, middle/father's name unknown: tries names
+    from the active middle-name candidate set (see middle_name_sets_service),
+    in the set's own stored order (curated most-common-first, e.g. محمد/علي
+    lead thirty_names.json), as real, throttled calls to
+    search_patients_insert_flow — see HCAT-Middle-Name-Search-Assist-Plan.md.
+
+    Stops at the FIRST candidate that returns a match and returns
+    immediately. Originally this ran through all candidates and combined
+    every match, on the theory that the same first+last pair could belong
+    to more than one real patient with different middle names — correct in
+    principle, but in real testing it meant waiting through up to all
+    ~30 throttled real calls even for a common name found on the first or
+    second try. Given the candidate list is already ordered by how common
+    each name actually is, stopping at the first hit makes the common case
+    fast and only costs the (already rare) chance of missing a second real
+    patient sharing the same first+last name — an accepted trade-off since
+    that person can still be found via a manual full-name search.
+
+    This is real load against the live Hospital Directory API — one
+    explicit user action (a single "find possible matches" request from the
+    frontend), sequential and throttled, never fired automatically per
+    keystroke. Backend-owned (not client-side looping) so the throttling/
+    sequencing/early-stop is enforced in one place regardless of what UI
+    calls it.
+    """
+    from api.services import middle_name_sets_service
+
+    first_name = (first_name or "").strip()
+    last_name = (last_name or "").strip()
+    if not first_name or not last_name:
+        return {"success": True, "patients": [], "count": 0, "tried": 0, "external_status": "not_searched", "external_message": None}
+
+    try:
+        candidates = middle_name_sets_service.get_active_set()["names"]
+    except middle_name_sets_service.MiddleNameSetsError:
+        candidates = []
+
+    seen_ids = set()
+    combined_patients: List[Dict[str, Any]] = []
+    any_ok = False
+    last_message = None
+    tried = 0
+
+    for candidate in candidates:
+        tried += 1
+        result = search_patients_insert_flow(f"{first_name} {candidate} {last_name}", limit=limit)
+        if result.get("success") and result.get("external_status") == "ok":
+            any_ok = True
+        if result.get("external_message"):
+            last_message = result["external_message"]
+        for p in result.get("patients", []):
+            pid = p.get("patient_admission_id")
+            if pid not in seen_ids:
+                seen_ids.add(pid)
+                combined_patients.append(p)
+        if combined_patients:
+            break
+        if tried < len(candidates):
+            time.sleep(_MIDDLE_NAME_SEARCH_DELAY_SECONDS)
+
+    return {
+        "success": True,
+        "patients": combined_patients,
+        "count": len(combined_patients),
+        "tried": tried,
+        "external_status": "ok" if any_ok else "not_searched",
+        "external_message": last_message,
     }
 
 

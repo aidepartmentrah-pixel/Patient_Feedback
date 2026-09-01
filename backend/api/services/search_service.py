@@ -21,6 +21,16 @@ def search_patients(search_text: str, limit: int = 20) -> Dict[str, Any]:
     return patient_directory_service.search_patients_insert_flow(search_text, limit)
 
 
+def search_patients_missing_middle_name(first_name: str, last_name: str, limit: int = 20) -> Dict[str, Any]:
+    """
+    First+last known, middle name unknown — tries every name in the active
+    middle-name candidate set as a real search and returns everything found
+    combined into one list. See patient_directory_service for the real
+    logic; this is just the same thin pass-through as search_patients above.
+    """
+    return patient_directory_service.search_patients_missing_middle_name(first_name, last_name, limit)
+
+
 def search_doctors(search_text: str, limit: int = 20) -> Dict[str, Any]:
     """
     Search for doctors by name (free-text) — behind the incident-creation

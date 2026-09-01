@@ -16,6 +16,7 @@ from ..services.insert_service import create_record, create_incident_with_cases
 from ..services.table_view_service import get_complaint_by_id
 from ..services.search_service import (
     search_patients,
+    search_patients_missing_middle_name,
     search_doctors,
     search_employees,
     get_patient_by_id,
@@ -586,6 +587,47 @@ async def search_patients_endpoint(
             }
         )
     
+    return result
+
+
+@router.get("/search/patients/missing-middle-name")
+async def search_patients_missing_middle_name_endpoint(
+    first_name: str = Query(..., min_length=1, description="Patient's first name"),
+    last_name: str = Query(..., min_length=1, description="Patient's last name"),
+    limit: int = Query(20, ge=1, le=100, description="Maximum number of results (1-100)"),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """
+    First name + last name known, middle/father's name unknown. Tries every
+    name in the active middle-name candidate set (see
+    /api/patient-search/middle-name-candidates and
+    HCAT-Middle-Name-Search-Assist-Plan.md) as its own real, throttled
+    search, and returns every match found across all of them combined into
+    ONE list — the caller never sees the individual per-candidate attempts,
+    only the final combined result.
+
+    This is one deliberate user action on the frontend (a single "find
+    possible matches" click), not something fired automatically per
+    keystroke — real load against the live Hospital Directory API, kept
+    bounded and throttled server-side regardless of what UI calls it.
+
+    **Returns:** same `{success, patients, count, external_status,
+    external_message}` shape as `/search/patients`, plus `tried` (how many
+    candidate names were actually attempted).
+    """
+    require_logged_in(current_user)
+
+    result = search_patients_missing_middle_name(first_name, last_name, limit)
+
+    if not result.get("success", False):
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "SEARCH_FAILED",
+                "message": result.get("error", "Failed to search patients"),
+            },
+        )
+
     return result
 
 
