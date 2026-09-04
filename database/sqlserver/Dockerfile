@@ -51,8 +51,12 @@ COPY backend/core/ backend/core/
 COPY backend/config/ backend/config/
 COPY database/sqlserver/ database/sqlserver/
 
-# Fail-hard sequence: schema/static-config install, then org-unit/user
-# provisioning. Either step failing must stop the container with a non-zero
-# exit so docker-compose's `service_completed_successfully` never triggers
-# for a partial or failed install.
+# Fail-hard sequence: schema/static-config install (which now also
+# creates PFMS's own dedicated SQL Server login partway through -- see
+# ensure_login_exists.py, imported and called directly from
+# install_database.py's own __main__, strictly between database creation
+# and schema install), then org-unit/user provisioning. Any step failing
+# must stop the container with a non-zero exit so docker-compose's
+# `service_completed_successfully` never triggers for a partial or failed
+# install.
 CMD ["sh", "-c", "python database/sqlserver/scripts/install_database.py && python database/sqlserver/seed/provision.py"]

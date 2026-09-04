@@ -73,10 +73,11 @@ else
 fi
 
 CONNECTION_JSON=$(jq -n \
-    --arg name "PFMS - ${DB_DATABASE:-IncidentManager} (${PROJECT_NAME:-pfms})" \
+    --arg name "PFMS - ${DATABASE_NAME} (${PROJECT_NAME:-pfms})" \
     --arg host "localhost" \
     --arg port "${SQLSERVER_HOST_PORT:-1433}" \
-    --arg database "${DB_DATABASE:-IncidentManager}" \
+    --arg database "${DATABASE_NAME}" \
+    --arg username "${DATABASE_USER}" \
     '{
         "provider": "sqlserver",
         "driver": "sqlserver",
@@ -94,7 +95,7 @@ CONNECTION_JSON=$(jq -n \
                 "sqlserver.trustServerCertificate": "true"
             },
             "credentials": {
-                "user-name": "sa"
+                "user-name": $username
             }
         }
     }')
@@ -105,7 +106,7 @@ if jq --argjson conn "$CONNECTION_JSON" --arg id "$CONNECTION_ID" \
     && jq empty "$DBEAVER_DATA_SOURCES.tmp" >/dev/null 2>&1; then
     mv "$DBEAVER_DATA_SOURCES.tmp" "$DBEAVER_DATA_SOURCES"
     echo "  Connection '$CONNECTION_ID' written to $DBEAVER_DATA_SOURCES"
-    echo "  (no password stored -- enter the SA password from .env once per"
+    echo "  (no password stored -- enter DATABASE_PASSWORD from .env once per"
     echo "  DBeaver session). Restart DBeaver if it's currently running."
 else
     rm -f "$DBEAVER_DATA_SOURCES.tmp"

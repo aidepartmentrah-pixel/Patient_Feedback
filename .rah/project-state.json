@@ -1,0 +1,23 @@
+{
+  "application": {
+    "name": "PatientFeedbackSystem",
+    "slug": "pfms"
+  },
+  "release_history": [
+    {
+      "created_at": "2026-09-02T18:25:54Z",
+      "source": {
+        "git_commit": "e6ecd4d2868b13d1b8f55e568b181a6f7c3a6c51",
+        "git_tag": null
+      },
+      "summary": "PatientFeedbackSystem 1.2.0",
+      "version": "1.2.0"
+    }
+  ],
+  "schema_version": "1.0",
+  "versioning": {
+    "current_release": "1.2.0",
+    "next_version": "1.2.0",
+    "strategy": "semantic"
+  }
+}

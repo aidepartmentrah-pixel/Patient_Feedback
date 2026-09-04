@@ -46,7 +46,7 @@ fi
 load_env
 
 CONTAINER="${PROJECT_NAME:-pfms}-sqlserver"
-DB_NAME="${DB_DATABASE:-IncidentManager}"
+DB_NAME="${DATABASE_NAME}"
 
 echo "=== RESTORE ${DB_NAME} from ${BACKUP_FILE} ==="
 echo "WARNING: this REPLACES all current data in ${DB_NAME}. This cannot be"

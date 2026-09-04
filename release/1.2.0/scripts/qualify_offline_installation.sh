@@ -26,7 +26,7 @@ CREDS_FILE="$LIVE_ROOT/database/sqlserver/seed/installation_test_credentials.loc
 
 BACKEND_URL="http://localhost:${BACKEND_HOST_PORT:-8100}"
 CONTAINER="${PROJECT_NAME:-pfms}-sqlserver"
-DB_NAME="${DB_DATABASE:-IncidentManager}"
+DB_NAME="${DATABASE_NAME}"
 
 sqlcmd_exec() {
     # Scoped MSYS_NO_PATHCONV=1 (no-op on the real Debian target): prevents

@@ -23,7 +23,7 @@ source "$SCRIPT_DIR/_common.sh"
 load_env
 
 CONTAINER="${PROJECT_NAME:-pfms}-sqlserver"
-DB_NAME="${DB_DATABASE:-IncidentManager}"
+DB_NAME="${DATABASE_NAME}"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 BACKUP_FILE="${DB_NAME}_${TIMESTAMP}.bak"
 

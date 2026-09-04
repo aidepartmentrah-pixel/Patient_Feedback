@@ -1,0 +1,206 @@
+{
+  "application": {
+    "description": "Patient Feedback Management System (PFMS) \u2014 a hospital patient feedback / incident management application with SQL Server backend, FastAPI backend service, and a web frontend, including ML-based classification of feedback records."
+  },
+  "based_on": {
+    "git_commit": "e6ecd4d2868b13d1b8f55e568b181a6f7c3a6c51",
+    "inspection_fingerprint": "ae3ea970171304798bcbe12b31849013a6fdaa9e21d48d40321976802e9bd788"
+  },
+  "client": {
+    "https_required": false,
+    "preparation_required": false,
+    "secure_browser_capabilities": []
+  },
+  "compatibility": {
+    "minimum_rah_oip_version": "1.0.0",
+    "supported_architectures": [
+      "amd64"
+    ]
+  },
+  "configuration": {
+    "inputs": [
+      {
+        "default": "1.2.0",
+        "key": "APP_VERSION",
+        "label": "Application Version",
+        "required": true,
+        "source": "fixed",
+        "type": "string"
+      },
+      {
+        "default": "pfms",
+        "key": "PROJECT_NAME",
+        "label": "Project Name",
+        "required": true,
+        "source": "fixed",
+        "type": "string"
+      },
+      {
+        "key": "SERVER_HOSTNAME_OR_IP",
+        "label": "Server Hostname or IP",
+        "required": true,
+        "source": "operator",
+        "type": "hostname"
+      },
+      {
+        "key": "MSSQL_SA_PASSWORD",
+        "label": "SQL Server SA Password",
+        "required": true,
+        "secret": true,
+        "source": "generated",
+        "type": "password"
+      },
+      {
+        "key": "DATABASE_PASSWORD",
+        "label": "Database Password",
+        "required": true,
+        "secret": true,
+        "source": "generated",
+        "type": "password"
+      },
+      {
+        "default": "Developer",
+        "key": "MSSQL_PID",
+        "label": "SQL Server Product ID / Edition",
+        "required": false,
+        "source": "fixed",
+        "type": "string"
+      },
+      {
+        "default": 1433,
+        "key": "DATABASE_PORT",
+        "label": "Database Port",
+        "required": true,
+        "source": "operator",
+        "type": "port"
+      },
+      {
+        "default": 8000,
+        "key": "BACKEND_PORT",
+        "label": "Backend API Port",
+        "required": true,
+        "source": "operator",
+        "type": "port"
+      },
+      {
+        "default": 3000,
+        "key": "FRONTEND_PORT",
+        "label": "Frontend HTTP Port",
+        "required": true,
+        "source": "operator",
+        "type": "port"
+      },
+      {
+        "key": "FRONTEND_HTTPS_PORT",
+        "label": "Frontend HTTPS Port",
+        "required": false,
+        "source": "operator",
+        "type": "port"
+      },
+      {
+        "key": "SETTINGS_ENCRYPTION_KEY",
+        "label": "Settings Encryption Key",
+        "required": true,
+        "secret": true,
+        "source": "generated",
+        "type": "password"
+      },
+      {
+        "key": "PASSWORD_EXPORT_ENCRYPTION_KEY",
+        "label": "Password Export Encryption Key",
+        "required": true,
+        "secret": true,
+        "source": "generated",
+        "type": "password"
+      }
+    ],
+    "template": ".env.offline.template"
+  },
+  "database": {
+    "additional_resources": [],
+    "backup_before_update": {
+      "entrypoint": "release/1.2.0/scripts/backup_database.sh",
+      "required": true
+    },
+    "deployment_mode": "application_managed",
+    "initialization": {
+      "entrypoint": "database/sqlserver/scripts/install_database.py"
+    },
+    "migration": {
+      "required_for_update": false
+    },
+    "platform": "sqlserver",
+    "recovery": {
+      "entrypoint": "release/1.2.0/scripts/restore_database.sh"
+    },
+    "required": true,
+    "target_schema_version": "1.2.0"
+  },
+  "deployment": {
+    "compose_project_name": "pfms",
+    "entrypoints": {
+      "backup": "release/1.2.0/scripts/backup_database.sh",
+      "install": "release/1.2.0/scripts/install_offline.sh",
+      "restore": "release/1.2.0/scripts/restore_database.sh",
+      "update": "release/1.2.0/scripts/update_offline.sh",
+      "verify": "release/1.2.0/scripts/verify_installation.sh"
+    },
+    "supported_operations": {
+      "downgrade": false,
+      "fresh_install": true,
+      "reinstall": false,
+      "update": true
+    },
+    "transition": {
+      "accepted_installed_versions": [
+        "1.0.0",
+        "1.1.0",
+        "1.1.1"
+      ],
+      "requires_existing_deployment_for_update": true
+    }
+  },
+  "documentation": {
+    "installation": "release/1.2.0/documentation/INSTALL_OFFLINE.md",
+    "known_issues": "release/1.2.0/documentation/TROUBLESHOOTING.md",
+    "recovery": "database/docs/DATABASE_RESTORE_GUIDE.md",
+    "release_notes": "release/1.2.0/documentation/RELEASE_NOTES.md",
+    "update": "release/1.2.0/documentation/UPDATE_OFFLINE.md"
+  },
+  "models": {
+    "required": false
+  },
+  "offline_requirements": {
+    "online_model_registry_required": false,
+    "public_cdn_required": false,
+    "public_internet_required": false,
+    "public_registry_required": false
+  },
+  "persistent_state": {
+    "custom_paths": [
+      "models_directory/patient_feedback_ml.db",
+      "backend/data/training_metadata.db"
+    ],
+    "preserve_during_update": [
+      "production_configuration",
+      "generated_credentials",
+      "database_data",
+      "docker_volumes",
+      "uploaded_files",
+      "certificates",
+      "deployment_history"
+    ]
+  },
+  "schema_version": "1.0",
+  "verification": {
+    "entrypoint": "release/1.2.0/scripts/verify_installation.sh",
+    "required_checks": [
+      "backend_hospital_views_present",
+      "database_schema_version_matches",
+      "database_tables_present",
+      "database_constraints_valid",
+      "database_lookup_data_present",
+      "database_users_configured"
+    ]
+  }
+}

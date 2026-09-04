@@ -32,9 +32,20 @@ services:
         condition: service_healthy
     environment:
       DB_SERVER: sqlserver
-      DB_DATABASE: ${DB_DATABASE:-IncidentManager}
-      DB_USERNAME: sa
-      DB_PASSWORD: ${MSSQL_SA_PASSWORD}
+      DB_DATABASE: ${DATABASE_NAME}
+      DB_USERNAME: ${DATABASE_USER}
+      # A real, distinct credential from the sa account below -- the
+      # dedicated login's own independently-generated password, never
+      # aliased to MSSQL_SA_PASSWORD (that would only ever be correct
+      # while DB_USERNAME was literally "sa" -- see HCopilot's own
+      # Bug 30 for the same real gap shape).
+      DB_PASSWORD: ${DATABASE_PASSWORD}
+      # Needed only by install_database.py's ensure_database_exists()/
+      # ensure_login_exists() steps, which must connect as sa (the only
+      # login that can CREATE DATABASE/CREATE LOGIN) for their own
+      # one-time bootstrap, before the rest of this container's steps
+      # switch to the dedicated login above.
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
       USE_WINDOWS_AUTH: "false"
       TRUST_SERVER_CERTIFICATE: "true"
     volumes:
@@ -60,9 +71,9 @@ services:
       - "${BACKEND_HOST_PORT:-8100}:8100"
     environment:
       DB_SERVER: sqlserver
-      DB_DATABASE: ${DB_DATABASE:-IncidentManager}
-      DB_USERNAME: sa
-      DB_PASSWORD: ${MSSQL_SA_PASSWORD}
+      DB_DATABASE: ${DATABASE_NAME}
+      DB_USERNAME: ${DATABASE_USER}
+      DB_PASSWORD: ${DATABASE_PASSWORD}
       USE_WINDOWS_AUTH: "false"
       TRUST_SERVER_CERTIFICATE: "true"
       # Baked into the backend image at build time (see backend/Dockerfile) --

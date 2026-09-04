@@ -12,6 +12,7 @@ Server (e.g. a local Docker container) before running this.
 Idempotent: every generated install script uses IF NOT EXISTS / IF OBJECT_ID
 IS NULL guards, so re-running after a partial failure is safe.
 """
+import os
 import sys
 import re
 from pathlib import Path
@@ -29,20 +30,29 @@ from core.deployment_port import (  # noqa: E402
 import pyodbc  # noqa: E402
 
 
-def _conn_string(database: str) -> str:
+def _conn_string(database: str, *, username: str = None, password: str = None) -> str:
     parts = [f"DRIVER={{{DB_DRIVER}}};", f"SERVER={DB_SERVER};", f"DATABASE={database};"]
     if USE_WINDOWS_AUTH:
         parts.append("Trusted_Connection=yes;")
     else:
-        parts.append(f"UID={DB_USERNAME};PWD={DB_PASSWORD};")
+        parts.append(f"UID={username if username is not None else DB_USERNAME};")
+        parts.append(f"PWD={password if password is not None else DB_PASSWORD};")
     if TRUST_SERVER_CERTIFICATE:
         parts.append("TrustServerCertificate=yes;")
     return "".join(parts)
 
 
 def ensure_database_exists():
+    # Deliberately not DB_USERNAME/DB_PASSWORD: CREATE DATABASE is a
+    # server-level operation only `sa` can perform, regardless of which
+    # login this app's own runtime code otherwise connects as (see
+    # ensure_login_exists.py, which creates that dedicated,
+    # database-scoped login right after this function runs).
     print(f"[1/2] Connecting to 'master' on {DB_SERVER} to ensure database '{DB_DATABASE}' exists...")
-    conn = pyodbc.connect(_conn_string("master"), timeout=15, autocommit=True)
+    conn = pyodbc.connect(
+        _conn_string("master", username="sa", password=os.environ.get("MSSQL_SA_PASSWORD", "")),
+        timeout=15, autocommit=True,
+    )
     cur = conn.cursor()
     cur.execute("SELECT 1 FROM sys.databases WHERE name = ?", DB_DATABASE)
     if cur.fetchone():
@@ -140,4 +150,12 @@ def run_install_scripts():
 if __name__ == "__main__":
     print(f"Target: {DB_SERVER} / {DB_DATABASE} (driver: {DB_DRIVER})\n")
     ensure_database_exists()
+    # PFMS's own dedicated SQL Server login (db_owner on its own database
+    # only) must exist before run_install_scripts() connects as
+    # DB_USERNAME/DB_PASSWORD below -- see ensure_login_exists.py's own
+    # docstring. Imported rather than shelled out to as a separate process
+    # step so it runs strictly between database creation and schema
+    # install, sharing this script's own sys.path setup.
+    import ensure_login_exists
+    ensure_login_exists.main()
     run_install_scripts()

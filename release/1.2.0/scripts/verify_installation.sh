@@ -60,7 +60,7 @@ echo ""
 echo "=== 5. Database validation ==="
 CONTAINER="${PROJECT_NAME:-pfms}-sqlserver"
 CONTAINER_BACKEND="${PROJECT_NAME:-pfms}-backend"
-DB_NAME="${DB_DATABASE:-IncidentManager}"
+DB_NAME="${DATABASE_NAME}"
 for sql_file in "$LIVE_ROOT"/database/sqlserver/validation/*.sql; do
     name="$(basename "$sql_file")"
     sqlcmd_exec -i "$CONTAINER" /opt/mssql-tools18/bin/sqlcmd \

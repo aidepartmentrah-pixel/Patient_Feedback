@@ -156,7 +156,7 @@ update_operational_docs() {
 - **Release version:** ${IMAGE_VERSION}
 - **Compose project name:** ${PROJECT_NAME:-pfms}
 - **Live deployment path:** $LIVE_ROOT
-- **Database:** ${DB_DATABASE:-IncidentManager}
+- **Database:** ${DATABASE_NAME}
 - **SQL Server edition (MSSQL_PID):** ${MSSQL_PID:-unset}
 - **Ports:** backend=${BACKEND_HOST_PORT:-8100} frontend=${FRONTEND_HOST_PORT:-8101} sqlserver=${SQLSERVER_HOST_PORT:-1433}
 - **Application URL:** http://<server-ip>:${FRONTEND_HOST_PORT:-8101}
@@ -185,7 +185,7 @@ EOF
         echo "## $now -- $action version ${IMAGE_VERSION}"
         echo ""
         echo "- Compose project name: ${PROJECT_NAME:-pfms}"
-        echo "- Database: ${DB_DATABASE:-IncidentManager}"
+        echo "- Database: ${DATABASE_NAME}"
         echo "- SQL Server edition: ${MSSQL_PID:-unset}"
         echo "- Ports: backend=${BACKEND_HOST_PORT:-8100} frontend=${FRONTEND_HOST_PORT:-8101} sqlserver=${SQLSERVER_HOST_PORT:-1433}"
         echo ""
