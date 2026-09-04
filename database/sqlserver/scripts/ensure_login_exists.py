@@ -54,7 +54,21 @@ def main():
         cur.execute("SELECT name FROM sys.server_principals WHERE name = ?", _NEW_LOGIN)
         if cur.fetchone() is None:
             print(f"Creating SQL Server login '{_NEW_LOGIN}'...")
-            cur.execute(f"CREATE LOGIN [{_NEW_LOGIN}] WITH PASSWORD = ?", _NEW_LOGIN_PASSWORD)
+            # Real, live-found bug (confirmed against HCopilot's identical
+            # script): CREATE LOGIN's WITH PASSWORD clause does not accept
+            # a parameterized value at all -- SQL Server rejects a
+            # `?`/sp_executesql placeholder here with "Incorrect syntax
+            # near '@P1'" (102), unlike an ordinary DML statement. The
+            # password must be a literal in the SQL text; single quotes are
+            # doubled (T-SQL's own literal-escaping convention) rather than
+            # trusted as injection-safe just because this password is
+            # always alphanumeric today. CHECK_POLICY = OFF: a service
+            # login never interactively changes its password, so Windows
+            # password-expiration policy would eventually lock it out for
+            # no real reason -- same real fleet precedent as Voice
+            # Project's own 001_create_database.sql.
+            escaped_password = _NEW_LOGIN_PASSWORD.replace("'", "''")
+            cur.execute(f"CREATE LOGIN [{_NEW_LOGIN}] WITH PASSWORD = '{escaped_password}', CHECK_POLICY = OFF")
             print(f"Login '{_NEW_LOGIN}' created.")
         else:
             print(f"Login '{_NEW_LOGIN}' already exists, skipping.")
