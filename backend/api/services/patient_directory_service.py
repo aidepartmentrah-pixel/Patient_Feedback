@@ -202,6 +202,66 @@ def search_patients_insert_flow(search_text: str, limit: int = 20) -> Dict[str, 
     }
 
 
+def search_patients_structured(first_name: str, middle_name: str, last_name: str, limit: int = 20) -> Dict[str, Any]:
+    """
+    Merged search for the Insert page's 3-field patient search
+    (backs search_service.search_patients_structured / GET
+    /api/records/search/patients?first_name=&middle_name=&last_name=), used
+    when the user has actually typed a middle name — i.e. all three fields
+    are known, unlike search_patients_missing_middle_name below.
+
+    Matches each field against its own column (both here, via
+    patients_db.search_patients's first_name/middle_name/last_name params,
+    and externally via directory_client.search_patients's structured
+    fields) instead of joining everything into one free-text string first.
+
+    Returns the same {success, patients, count, external_status,
+    external_message} shape as search_patients_insert_flow.
+    """
+    first_name = (first_name or "").strip()
+    middle_name = (middle_name or "").strip()
+    last_name = (last_name or "").strip()
+
+    try:
+        reserve_rows = patients_db.search_patients(
+            first_name=first_name, middle_name=middle_name or None, last_name=last_name, limit=limit
+        )
+        reserve_items = [
+            {
+                "patient_admission_id": row["patient_id"],
+                "full_name": row["full_name"],
+                "first_name": row["first_name"],
+                "last_name": row["last_name"],
+                "document_number": None,  # not selected by patients_db.search_patients's reserve query
+                "phone_number": row["phone"],
+                "birth_date": row["date_of_birth"],
+                "sex": None,
+                "medical_file_number": row["mrn"],
+                "admission_date": None,
+                "source": "reserve",
+            }
+            for row in reserve_rows
+        ]
+    except Exception as e:
+        return {"success": False, "patients": [], "count": 0, "error": f"Failed to search reserve patients: {str(e)}"}
+
+    # HCAT's own term is "middle name" (matches the reserve DB column and
+    # the UI label) -- the vendor's v1.1 contract calls the same concept
+    # "father_name". Translate at this one boundary only.
+    result = directory_client.search_patients(first_name=first_name, father_name=middle_name, last_name=last_name, limit=limit)
+    external_status = result["status"]
+    external_items = [_patient_to_insert_shape(v) for v in result["items"]] if result["status"] == "ok" else []
+
+    combined = reserve_items + external_items
+    return {
+        "success": True,
+        "patients": combined,
+        "count": len(combined),
+        "external_status": external_status,
+        "external_message": result.get("message"),
+    }
+
+
 _MIDDLE_NAME_SEARCH_DELAY_SECONDS = 0.4
 
 
@@ -211,7 +271,7 @@ def search_patients_missing_middle_name(first_name: str, last_name: str, limit: 
     from the active middle-name candidate set (see middle_name_sets_service),
     in the set's own stored order (curated most-common-first, e.g. محمد/علي
     lead thirty_names.json), as real, throttled calls to
-    search_patients_insert_flow — see HCAT-Middle-Name-Search-Assist-Plan.md.
+    search_patients_structured — see HCAT-Middle-Name-Search-Assist-Plan.md.
 
     Stops at the FIRST candidate that returns a match and returns
     immediately. Originally this ran through all candidates and combined
@@ -252,7 +312,7 @@ def search_patients_missing_middle_name(first_name: str, last_name: str, limit: 
 
     for candidate in candidates:
         tried += 1
-        result = search_patients_insert_flow(f"{first_name} {candidate} {last_name}", limit=limit)
+        result = search_patients_structured(first_name, candidate, last_name, limit=limit)
         if result.get("success") and result.get("external_status") == "ok":
             any_ok = True
         if result.get("external_message"):

@@ -334,6 +334,9 @@ def get_all_reserve_patients(
 
 def search_patients(
     query: Optional[str] = None,
+    first_name: Optional[str] = None,
+    middle_name: Optional[str] = None,
+    last_name: Optional[str] = None,
     mrn: Optional[str] = None,
     phone: Optional[str] = None,
     date_of_birth: Optional[str] = None,
@@ -349,11 +352,19 @@ def search_patients(
     for the external half.
 
     Args:
-        query: Partial match on patient name
+        query: Partial match on FullName/FirstName/LastName combined (free text)
+        first_name: Partial match on FirstName only
+        middle_name: Partial match on MiddleName only (HCAT's own term for
+            what the external Hospital Directory API v1.1 calls "father_name")
+        last_name: Partial match on LastName only
         mrn: Match on MedicalFileNumber
         phone: Partial match on phone number
         date_of_birth: Exact match on date of birth (YYYY-MM-DD)
         limit: Max results to return
+
+    query and first_name/middle_name/last_name are independent, both-
+    optional filter groups — combine freely like every other param here,
+    though callers typically use one or the other, not both.
 
     Returns:
         List of patient search results with lightweight fields, source='reserve'
@@ -368,6 +379,18 @@ def search_patients(
         if query:
             conditions.append("(FullName LIKE ? OR FirstName LIKE ? OR LastName LIKE ?)")
             params.extend([f"%{query}%", f"%{query}%", f"%{query}%"])
+
+        if first_name:
+            conditions.append("FirstName LIKE ?")
+            params.append(f"%{first_name}%")
+
+        if middle_name:
+            conditions.append("MiddleName LIKE ?")
+            params.append(f"%{middle_name}%")
+
+        if last_name:
+            conditions.append("LastName LIKE ?")
+            params.append(f"%{last_name}%")
 
         if mrn:
             conditions.append("MedicalFileNumber LIKE ?")
@@ -389,6 +412,7 @@ def search_patients(
                 MedicalFileNumber as mrn,
                 FullName as full_name,
                 FirstName as first_name,
+                MiddleName as middle_name,
                 LastName as last_name,
                 CONVERT(VARCHAR(10), BirthDate, 23) as date_of_birth,
                 DATEDIFF(YEAR, BirthDate, GETDATE()) as age,

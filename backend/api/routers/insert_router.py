@@ -16,6 +16,7 @@ from ..services.insert_service import create_record, create_incident_with_cases
 from ..services.table_view_service import get_complaint_by_id
 from ..services.search_service import (
     search_patients,
+    search_patients_structured,
     search_patients_missing_middle_name,
     search_doctors,
     search_employees,
@@ -536,22 +537,29 @@ async def test_records_endpoint(
 
 @router.get("/search/patients")
 async def search_patients_endpoint(
-    q: str = Query(..., min_length=1, description="Search query (patient name, document number, or medical file number)"),
+    q: Optional[str] = Query(None, min_length=1, description="Free-text search query (patient name, document number, or medical file number)"),
+    first_name: Optional[str] = Query(None, min_length=1, description="Patient's first name — must be combined with middle_name and last_name"),
+    middle_name: Optional[str] = Query(None, min_length=1, description="Patient's middle name — must be combined with first_name and last_name"),
+    last_name: Optional[str] = Query(None, min_length=1, description="Patient's last name — must be combined with first_name and middle_name"),
     limit: int = Query(20, ge=1, le=100, description="Maximum number of results (1-100)"),
     current_user: CurrentUser = Depends(get_current_user)
 ):
     """
-    Search for patients by name, document number, or medical file number.
-    Only patients found in the database can be selected for incident records.
-    
-    **Query Parameters:**
-    - `q`: Search text (required, min 1 character)
+    Search for patients either by free text, or by first/middle/last name
+    matched against their own columns. Only patients found in the database
+    can be selected for incident records.
+
+    **Query Parameters (one of the two modes below):**
+    - `q`: Free-text search (name, document number, or medical file number)
+    - `first_name` + `middle_name` + `last_name`: matched independently
+      against their own columns instead of one joined string
     - `limit`: Maximum results to return (default: 20, max: 100)
-    
+
     **Examples:**
     - `/api/records/search/patients?q=أحمد` - Search for patients named أحمد
     - `/api/records/search/patients?q=123456&limit=10` - Search by document number
-    
+    - `/api/records/search/patients?first_name=أحمد&middle_name=محمد&last_name=علي`
+
     **Returns:**
     ```json
     {
@@ -575,9 +583,20 @@ async def search_patients_endpoint(
     ```
     """
     require_logged_in(current_user)
-    
-    result = search_patients(q, limit)
-    
+
+    if first_name and middle_name and last_name:
+        result = search_patients_structured(first_name, middle_name, last_name, limit)
+    elif q:
+        result = search_patients(q, limit)
+    else:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "VALIDATION_ERROR",
+                "message": "Provide 'q', or all three of 'first_name', 'middle_name' and 'last_name'",
+            },
+        )
+
     if not result.get("success", False):
         raise HTTPException(
             status_code=500,
@@ -586,7 +605,7 @@ async def search_patients_endpoint(
                 "message": result.get("error", "Failed to search patients")
             }
         )
-    
+
     return result
 
 

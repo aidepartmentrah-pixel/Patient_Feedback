@@ -21,6 +21,16 @@ def search_patients(search_text: str, limit: int = 20) -> Dict[str, Any]:
     return patient_directory_service.search_patients_insert_flow(search_text, limit)
 
 
+def search_patients_structured(first_name: str, middle_name: str, last_name: str, limit: int = 20) -> Dict[str, Any]:
+    """
+    First+middle+last all known — matches each field against its own
+    column instead of joining into one free-text string. See
+    patient_directory_service for the real logic; this is just the same
+    thin pass-through as search_patients above.
+    """
+    return patient_directory_service.search_patients_structured(first_name, middle_name, last_name, limit)
+
+
 def search_patients_missing_middle_name(first_name: str, last_name: str, limit: int = 20) -> Dict[str, Any]:
     """
     First+last known, middle name unknown — tries every name in the active
