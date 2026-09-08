@@ -422,6 +422,18 @@ def _get_client_config():
     return cfg, None
 
 
+def _parse_error_message(resp) -> Optional[str]:
+    """
+    Extract the "message" field from a non-2xx JSON body. The v1.1 contract
+    guarantees {"error": "<CODE>", "message": "<text>"} on every non-2xx
+    response, so this is safe to try for any status code, not just 400/422.
+    """
+    try:
+        return resp.json().get("message")
+    except Exception:
+        return None
+
+
 def _get(path: str, params: dict) -> dict:
     """
     Shared GET helper for authenticated patient resource endpoints. Never
@@ -452,17 +464,13 @@ def _get(path: str, params: dict) -> dict:
         return {"status": "http_error", "message": f"Unexpected error: {str(e)[:300]}"}
 
     if resp.status_code == 401:
-        return {"status": "unauthorized", "message": "Hospital Directory API rejected the configured API key (401 Unauthorized)."}
+        return {"status": "unauthorized", "message": _parse_error_message(resp) or "Hospital Directory API rejected the configured API key (401 Unauthorized)."}
     if resp.status_code == 404:
-        return {"status": "not_found", "message": "Not found."}
+        return {"status": "not_found", "message": _parse_error_message(resp) or "Not found."}
     if resp.status_code in (400, 422):
-        try:
-            detail = resp.json().get("message", resp.text[:300])
-        except Exception:
-            detail = resp.text[:300]
-        return {"status": "bad_request", "message": detail}
+        return {"status": "bad_request", "message": _parse_error_message(resp) or resp.text[:300]}
     if resp.status_code >= 400:
-        return {"status": "http_error", "message": f"Hospital Directory API returned HTTP {resp.status_code}."}
+        return {"status": "http_error", "message": _parse_error_message(resp) or f"Hospital Directory API returned HTTP {resp.status_code}."}
 
     try:
         data = resp.json()
@@ -475,21 +483,33 @@ def _get(path: str, params: dict) -> dict:
 def search_patients(
     q: Optional[str] = None,
     patient_id: Optional[str] = None,
+    first_name: Optional[str] = None,
+    father_name: Optional[str] = None,
+    last_name: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
 ) -> dict:
     """
-    GET {base_url}/patients?q=&patient_id=&limit=&offset=
+    GET {base_url}/patients?q=&patient_id=&first_name=&father_name=&last_name=&limit=&offset=
 
-    At least one of q/patient_id must be given (matches the API's own
-    MISSING_SEARCH_CRITERIA validation) — callers should check before
-    calling to avoid an avoidable "bad_request" result.
+    v1.1 contract: exactly one search mode per call — patient_id alone, OR
+    first_name+father_name+last_name together as separate params (each
+    matched as a case-insensitive substring against only its own column,
+    Arabic or English variant; father_name is search-only and never
+    returned in results). Any other combination -> 422 VALIDATION_ERROR
+    from the API itself.
+
+    q is kept for existing free-text callers (matches the real production
+    server's only proven behavior today) but is NOT part of the v1.1
+    contract's documented patient search shape — do not combine q with the
+    structured fields in the same call.
 
     Returns {"status", "message", "items": [...], "total": int} on "ok";
     "items"/"total" are omitted for non-"ok" statuses.
     """
     params = {k: v for k, v in {
         "q": q, "patient_id": patient_id,
+        "first_name": first_name, "father_name": father_name, "last_name": last_name,
         "limit": max(1, min(limit, 500)), "offset": max(0, offset),
     }.items() if v is not None}
 
@@ -595,17 +615,17 @@ def get_doctor(doctor_id: str) -> dict:
     return {"status": "ok", "message": None, "doctor": result["data"]}
 
 
-def search_workers(
-    q: Optional[str] = None,
-    active_only: bool = True,
-    limit: int = 100,
-    offset: int = 0,
-) -> dict:
-    """GET {base_url}/workers?q=&active_only=&limit=&offset="""
-    params = {k: v for k, v in {
-        "q": q, "active_only": active_only,
-        "limit": max(1, min(limit, 500)), "offset": max(0, offset),
-    }.items() if v is not None}
+def search_workers(limit: int = 10, offset: int = 0) -> dict:
+    """
+    GET {base_url}/workers?limit=&offset=
+
+    No q/active_only — confirmed both via live testing against the real
+    server and the v1.1 contract that this endpoint doesn't accept them;
+    it always returns active-only workers. Callers needing filtered
+    results must fetch and filter client-side (see
+    staff_directory_service._fetch_all_external_workers).
+    """
+    params = {"limit": max(1, min(limit, 500)), "offset": max(0, offset)}
 
     result = _get("/workers", params)
     if result["status"] != "ok":
