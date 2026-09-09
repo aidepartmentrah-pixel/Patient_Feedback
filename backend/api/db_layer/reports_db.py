@@ -318,10 +318,16 @@ def get_filtered_complaints(
         NULL as target_department_id,
         NULL as target_department_name,
         
-        -- Issuing organizational hierarchy (Section -> Department -> Administration)
+        -- Issuing organizational hierarchy (Section -> Department -> Administration).
+        -- Some sections sit directly under an Administration with no Department
+        -- in between (Type 323 parenting a Type 324 directly) -- in that case
+        -- issuing_dept (joined via ParentID one level up) is actually the
+        -- Administration itself, not a real Department. Relabel it correctly
+        -- instead of shifting the Administration's name into the
+        -- department_name slot and leaving administration_name NULL.
         issuing_section.Name as section_name,
-        issuing_dept.Name as department_name,
-        issuing_admin.Name as administration_name,
+        CASE WHEN issuing_dept.Type = 323 THEN NULL ELSE issuing_dept.Name END as department_name,
+        CASE WHEN issuing_dept.Type = 323 THEN issuing_dept.Name ELSE issuing_admin.Name END as administration_name,
         
         -- Domain
         ic.DomainID as domain_id,
@@ -580,10 +586,12 @@ def get_filtered_notices(
         ic.FeedbackRecievedDate as received_date,
         ic.PatientName as patient_name,
 
-        -- Issuing hierarchy
+        -- Issuing hierarchy. Same department-less-section fix as
+        -- get_filtered_complaints above: issuing_dept can actually be the
+        -- Administration itself when the section has no real Department.
         issuing_section.Name as section_name,
-        issuing_dept.Name as department_name,
-        issuing_admin.Name as administration_name,
+        CASE WHEN issuing_dept.Type = 323 THEN NULL ELSE issuing_dept.Name END as department_name,
+        CASE WHEN issuing_dept.Type = 323 THEN issuing_dept.Name ELSE issuing_admin.Name END as administration_name,
 
         -- Source
         ic.SourceID as source_id,

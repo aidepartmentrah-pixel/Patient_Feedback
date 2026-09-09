@@ -68,6 +68,11 @@ from api.routers.admin_section_admin_recreate_router import router as admin_sect
 from api.routers.settings_users_router import router as settings_users_router
 # Classification Management Router (Settings — add/rename/freeze classifications)
 from api.routers.classification_mgmt_router import router as classification_mgmt_router
+# Category / Sub-Category Management Routers (Settings — same add/rename/freeze pattern, one/two levels up)
+from api.routers.category_mgmt_router import router as category_mgmt_router
+from api.routers.subcategory_mgmt_router import router as subcategory_mgmt_router
+# Source Management Router (Settings — same pattern, flat lookup)
+from api.routers.source_mgmt_router import router as source_mgmt_router
 # Report Config Router (institutional header/footer/report-code metadata)
 from api.routers.report_config_router import router as report_config_router
 # Phase K: Migration Router (legacy case migration endpoints)
@@ -212,6 +217,11 @@ app.include_router(admin_section_admin_recreate_router)
 app.include_router(settings_users_router)
 # Classification Management Router (Settings)
 app.include_router(classification_mgmt_router)
+# Category / Sub-Category Management Routers (Settings)
+app.include_router(category_mgmt_router)
+app.include_router(subcategory_mgmt_router)
+# Source Management Router (Settings)
+app.include_router(source_mgmt_router)
 app.include_router(report_config_router)
 # Phase K: Migration Router (legacy case migration endpoints)
 app.include_router(migration_router)

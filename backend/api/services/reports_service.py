@@ -1362,9 +1362,14 @@ class ReportsService:
             if rows:
                 try:
                     first_record = rows[0]
-                    Administration = first_record.get("administration_name", "—")
-                    Department = first_record.get("department_name", "—")
-                    Section = first_record.get("section_name", "—")
+                    # .get(key, "—") only falls back when the key is MISSING —
+                    # a genuinely NULL value (e.g. department_name for a
+                    # section with no department) still comes back as None,
+                    # not "—", and would print literally as "None". `or "—"`
+                    # catches that case too.
+                    Administration = first_record.get("administration_name") or "—"
+                    Department = first_record.get("department_name") or "—"
+                    Section = first_record.get("section_name") or "—"
                 except:
                     pass
 

@@ -215,6 +215,13 @@ STYLE_IMMEDIATE_ACTION    = 'نص الإجراءات الفورية'
 STYLE_ACTIONS_TAKEN       = 'نص الإجراءات المتخذة'
 STYLE_COMPLAINT_DATA      = 'نص بيانات الشكوى'  # قسم الصادر / المصدر / P.Name values
 
+# One shared style for the header info line AND the footer note — previously
+# direct-formatted (and light-blue GREY_TEXT, illegible when printed
+# black & white). Same one-style-many-paragraphs mechanism as the narrative
+# styles above: edit it once in Word and both the header and the footer
+# update together, on every page.
+STYLE_HEADER_FOOTER_INFO = 'نص معلومات الترويسة والتذييل'
+
 # Bumped up from the previous hardcoded run sizes (11 / 10 / 10) per the
 # "make it bigger" request — these are now just the starting point; the
 # whole reason they're styles is so the user can go further from here.
@@ -223,6 +230,7 @@ _NARRATIVE_STYLE_SIZES = {
     STYLE_IMMEDIATE_ACTION: 12,
     STYLE_ACTIONS_TAKEN: 12,
     STYLE_COMPLAINT_DATA: 12,
+    STYLE_HEADER_FOOTER_INFO: 7,
 }
 
 
@@ -1015,14 +1023,17 @@ def _render_complaint_page(doc: Document, complaint: Dict, index: int, total: in
 # ---------------------------------------------------------------------------
 
 # RTL reading order (index 0 = rightmost). Sum of widths = 270mm.
+# الوحدة المنوّه بها (target unit) column removed per client request — the
+# freed 30mm redistributed proportionally (x1.125) across the remaining 6
+# columns, same approach already used elsewhere in this file when a column
+# is dropped (see _CLASS_COLS Round 4 comment above).
 _NOTICE_COLS = [
-    ('تاريخ تلقي الملاحظة', 20),
-    ('الرقم', 20),
-    ('قسم الصادر', 26),
-    ('المصدر', 20),
-    ('P.Name', 26),
-    ('تفصيل الملاحظة', 128),
-    ('الوحدة المنوّه بها', 30),
+    ('تاريخ تلقي الملاحظة', 22.5),
+    ('الرقم', 22.5),
+    ('قسم الصادر', 29.25),
+    ('المصدر', 22.5),
+    ('P.Name', 29.25),
+    ('تفصيل الملاحظة', 144.0),
 ]
 
 
@@ -1076,7 +1087,6 @@ def _render_notices_table(doc: Document, notices: List[Dict],
             notice.get('source_name') or '—',
             notice.get('patient_name') or '—',
             _truncate_for_fit(notice.get('notice_text') or '', NOTICE_MAX_CHARS) or '—',
-            _target_display(notice),
         ]
         for ci, (val, (_label, w)) in enumerate(zip(vals, _NOTICE_COLS)):
             c = row.cells[ci]
@@ -1161,7 +1171,7 @@ def _render_notices_section(doc: Document, notices: List[Dict],
 # SECTION SETUP + REPEATING HEADER/FOOTER
 # ---------------------------------------------------------------------------
 
-def _setup_section(sec, title_ar: str, subtitle: str, footer_text: str,
+def _setup_section(doc: Document, sec, title_ar: str, subtitle: str, footer_text: str,
                     report_code: str, period_str: str):
     """
     Configures page geometry and a compact repeating header/footer for one
@@ -1221,35 +1231,39 @@ def _setup_section(sec, title_ar: str, subtitle: str, footer_text: str,
     tp.paragraph_format.space_after  = int(Pt(1))
     _add_bidi_segmented_text(tp, title_ar, color=NAVY, size=10, bold=True, style_applies=False)
 
-    # Info line — two bidi fixes:
-    # 1. Strip ASCII parens from config text (bidi-mirrors backwards in RTL).
-    # 2. Insert RLM (U+200F) after each colon preceding an LTR token, so the
-    #    colon stays anchored to the Arabic RTL context.
-    # 3. period_str (always a machine-generated pure date range) uses
-    #    _ltr_run directly; title/subtitle/report_code are client-editable
-    #    free text that can mix Arabic in, so they go through
-    #    _add_bidi_segmented_text instead — see that helper's docstring.
+    # Info line — one shared, user-editable style (STYLE_HEADER_FOOTER_INFO)
+    # instead of the previous direct-formatted, light-blue (GREY_TEXT) runs.
+    # Every piece — including the static separators/labels that used to go
+    # through raw _ar_run/_ltr_run — now goes through _add_bidi_segmented_text
+    # so each segment's direction is explicitly marked. Mixing marked
+    # (segmented) and unmarked (raw _ar_run/_ltr_run) runs in the same
+    # paragraph is exactly what scrambled this line before: an LTR override
+    # anywhere creates a bidi boundary, and Word's bidi algorithm then
+    # reverses word order in neighboring *unmarked* runs — see
+    # _mark_explicit_rtl's docstring. period_str (a machine-generated date
+    # range with an em-dash separator) also goes through this path now
+    # rather than a blind _ltr_run — _LTR_ISLAND_RE still isolates each date
+    # as its own LTR run either way.
     hdr_info_para = title_cell.add_paragraph()
+    hdr_info_para.style = doc.styles[STYLE_HEADER_FOOTER_INFO]
     hdr_info_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
     hdr_info_para.paragraph_format.space_before = int(Pt(0))
     hdr_info_para.paragraph_format.space_after = int(Pt(1))
     hdr_info_para._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
 
     clean_subtitle = (subtitle or '').strip('() ')
-    _add_bidi_segmented_text(hdr_info_para, clean_subtitle, color=GREY_TEXT, size=7, italic=True, style_applies=False)
-    _ar_run(hdr_info_para, '   |   ', size=7, color=GREY_TEXT)
     RLM = '‏'
-    _ar_run(hdr_info_para, f'{RLM}الفترة:{RLM} ', size=7, bold=True, color=GREY_TEXT)
-    _ltr_run(hdr_info_para, period_str, size=7, bold=True, color=GREY_TEXT)
+    _add_bidi_segmented_text(hdr_info_para, clean_subtitle, color=DARK_TEXT, style_applies=True)
+    _add_bidi_segmented_text(hdr_info_para, '   |   ', color=DARK_TEXT, style_applies=True)
+    _add_bidi_segmented_text(hdr_info_para, f'{RLM}الفترة:{RLM} ', color=DARK_TEXT, style_applies=True)
+    _add_bidi_segmented_text(hdr_info_para, period_str, color=DARK_TEXT, style_applies=True)
     if report_code:
-        _ar_run(hdr_info_para, '   |   ', size=7, color=GREY_TEXT)
-        _ar_run(hdr_info_para, f'{RLM}رمز التقرير:{RLM} ', size=7, color=GREY_TEXT)
-        # report_code is client-configurable free text (unlike period_str,
-        # which is always a machine-generated pure date range) and can mix
-        # in Arabic — e.g. 'cust-35f-03Ed تجريبي' — so it needs the same
-        # segmentation as the title/subtitle above, not a blind _ltr_run
-        # that would force any embedded Arabic word into LTR too.
-        _add_bidi_segmented_text(hdr_info_para, report_code, color=GREY_TEXT, size=7, style_applies=False)
+        _add_bidi_segmented_text(hdr_info_para, '   |   ', color=DARK_TEXT, style_applies=True)
+        _add_bidi_segmented_text(hdr_info_para, f'{RLM}رمز التقرير:{RLM} ', color=DARK_TEXT, style_applies=True)
+        # report_code is client-configurable free text and can mix in
+        # Arabic — e.g. 'cust-35f-03Ed تجريبي' — same segmentation need as
+        # everything else on this line.
+        _add_bidi_segmented_text(hdr_info_para, report_code, color=DARK_TEXT, style_applies=True)
 
     hdr_tbl.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
     hdr_tbl.rows[0].height = _mm_to_dxa(9)
@@ -1271,15 +1285,22 @@ def _setup_section(sec, title_ar: str, subtitle: str, footer_text: str,
     pBdr.append(bot)
     pPr.append(pBdr)
 
-    # Footer — compact single line
+    # Footer — compact single line. Same shared style + segmentation fix as
+    # the header info line above: footer_text is client-editable free text
+    # that routinely mixes Arabic and English (e.g. the default footer's
+    # "RCA (Root Cause Analysis)"), and was previously a single unmarked
+    # _ar_run — the exact one-run-mixed-directions failure mode Complaint
+    # Details had before it was fixed there.
     ftr = sec.footer
     fp = ftr.paragraphs[0]
     fp.clear()
+    fp.style = doc.styles[STYLE_HEADER_FOOTER_INFO]
     fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
     fp.paragraph_format.space_before = Pt(0)
     fp.paragraph_format.space_after  = Pt(0)
+    fp._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
     _set_para_bottom_border(fp, color=GREY_LINE, sz=4)
-    _ar_run(fp, footer_text, size=6, italic=True, color=GREY_TEXT)
+    _add_bidi_segmented_text(fp, footer_text, color=DARK_TEXT, style_applies=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1372,7 +1393,7 @@ def generate_monthly_stylish_docx(
     for kind in plan:
         sec = doc.sections[0] if first else doc.add_section(WD_SECTION.NEW_PAGE)
         first = False
-        _setup_section(sec, titles[kind], subtitle, footer_text, report_code, period_str)
+        _setup_section(doc, sec, titles[kind], subtitle, footer_text, report_code, period_str)
 
         if kind == 'complaints':
             total_c = len(complaints)

@@ -122,37 +122,42 @@ def get_domains() -> Dict[str, Any]:
 
 
 def get_categories(domain_id: Optional[int] = None) -> Dict[str, Any]:
-    """Get categories, optionally filtered by domain."""
+    """Get categories, optionally filtered by domain. Frozen (IsActive=0)
+    excluded, same convention as get_classifications. name_ar falls back to
+    the English name when a category hasn't had its Arabic name filled in
+    yet through Settings > Class Management (CategoryNameAr started NULL on
+    every existing row when that column was added)."""
     conn = None
     cursor = None
-    
+
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        
+
         if domain_id:
             cursor.execute("""
-                SELECT CategoryID, DomainID, CategoryName
+                SELECT CategoryID, DomainID, CategoryName, CategoryNameAr
                 FROM APP_LOOKUP_CATEGORY
-                WHERE DomainID = ?
+                WHERE DomainID = ? AND IsActive = 1
                 ORDER BY CategoryOrder
             """, (domain_id,))
         else:
             cursor.execute("""
-                SELECT CategoryID, DomainID, CategoryName
+                SELECT CategoryID, DomainID, CategoryName, CategoryNameAr
                 FROM APP_LOOKUP_CATEGORY
+                WHERE IsActive = 1
                 ORDER BY CategoryOrder
             """)
-        
+
         categories = []
         for row in cursor.fetchall():
             categories.append({
                 "id": row.CategoryID,
                 "domain_id": row.DomainID,
                 "name_en": row.CategoryName,
-                "name_ar": row.CategoryName
+                "name_ar": row.CategoryNameAr or row.CategoryName
             })
-        
+
         return {"categories": categories}
         
     except Exception as e:
@@ -168,37 +173,39 @@ def get_categories(domain_id: Optional[int] = None) -> Dict[str, Any]:
 
 
 def get_subcategories(category_id: Optional[int] = None) -> Dict[str, Any]:
-    """Get subcategories, optionally filtered by category."""
+    """Get subcategories, optionally filtered by category. Same
+    frozen-exclusion / Arabic-name-fallback convention as get_categories."""
     conn = None
     cursor = None
-    
+
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        
+
         if category_id:
             cursor.execute("""
-                SELECT SubCategoryID, CategoryID, SubCategoryName
+                SELECT SubCategoryID, CategoryID, SubCategoryName, SubCategoryNameAr
                 FROM APP_LOOKUP_SUBCATEGORY
-                WHERE CategoryID = ?
+                WHERE CategoryID = ? AND IsActive = 1
                 ORDER BY SubCategoryName
             """, (category_id,))
         else:
             cursor.execute("""
-                SELECT SubCategoryID, CategoryID, SubCategoryName
+                SELECT SubCategoryID, CategoryID, SubCategoryName, SubCategoryNameAr
                 FROM APP_LOOKUP_SUBCATEGORY
+                WHERE IsActive = 1
                 ORDER BY SubCategoryName
             """)
-        
+
         subcategories = []
         for row in cursor.fetchall():
             subcategories.append({
                 "id": row.SubCategoryID,
                 "category_id": row.CategoryID,
                 "name_en": row.SubCategoryName,
-                "name_ar": row.SubCategoryName
+                "name_ar": row.SubCategoryNameAr or row.SubCategoryName
             })
-        
+
         return {"subcategories": subcategories}
         
     except Exception as e:

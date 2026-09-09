@@ -455,7 +455,9 @@ CREATE TABLE [dbo].[APP_LOOKUP_CATEGORY] (
     [CategoryID] int IDENTITY(1,1) NOT NULL,
     [DomainID] int NOT NULL,
     [CategoryName] nvarchar(100) NOT NULL,
-    [CategoryOrder] int NOT NULL
+    [CategoryNameAr] nvarchar(100) NULL,
+    [CategoryOrder] int NOT NULL,
+    [IsActive] bit NOT NULL DEFAULT ((1))
 );
 GO
 
@@ -605,7 +607,9 @@ IF OBJECT_ID('dbo.APP_LOOKUP_SUBCATEGORY', 'U') IS NULL
 CREATE TABLE [dbo].[APP_LOOKUP_SUBCATEGORY] (
     [SubCategoryID] int IDENTITY(1,1) NOT NULL,
     [CategoryID] int NOT NULL,
-    [SubCategoryName] nvarchar(150) NOT NULL
+    [SubCategoryName] nvarchar(150) NOT NULL,
+    [SubCategoryNameAr] nvarchar(150) NULL,
+    [IsActive] bit NOT NULL DEFAULT ((1))
 );
 GO
 

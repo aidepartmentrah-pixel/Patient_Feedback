@@ -28,6 +28,8 @@ from docx.shared import Mm
 from backend.api.services.monthly_stylish_word_formatter import (
     generate_monthly_stylish_docx,
     MAX_TABLE_WIDTH_MM,
+    STYLE_HEADER_FOOTER_INFO,
+    DARK_TEXT,
 )
 
 FAILURES = []
@@ -389,6 +391,54 @@ def run():
               found_isolated_island)
         check("Bidi-isolation fixture: at least one RTL segment explicitly marked",
               found_marked_rtl_segment)
+
+    # (g) Header/footer: one shared, black Word style (STYLE_HEADER_FOOTER_INFO)
+    # instead of direct light-blue (GREY_TEXT) formatting -- the client
+    # rejected the light-blue color specifically because this report prints
+    # in black & white. Also covers the الوحدة المنوّه بها notices column
+    # being dropped per a later client request in the same round.
+    report_data_g = {
+        "complaints": [_complaint_fixture(id=6001, incident_id=6001)],
+        "notices": [_notice_fixture(id=6002, incident_id=6002)],
+        "period": _period_fixture(),
+        "intent_counts": {},
+    }
+    content_g = generate_monthly_stylish_docx(
+        report_data_g, filename="test_header_footer_style.docx",
+        report_entity_name="قسم الطوارئ", report_entity_type="section",
+    )
+    doc_g = _open_and_basic_checks("Header/footer style fixture", content_g)
+    if doc_g is not None:
+        sec0 = doc_g.sections[0]
+        hdr_info_paras = [
+            p for p in sec0.header.tables[0].rows[0].cells[1].paragraphs
+            if p.style.name == STYLE_HEADER_FOOTER_INFO
+        ]
+        check("Header/footer style fixture: header info paragraph uses shared style",
+              len(hdr_info_paras) == 1)
+        if hdr_info_paras:
+            hdr_colors = {str(r.font.color.rgb) for r in hdr_info_paras[0].runs if r.font.color and r.font.color.rgb}
+            check("Header/footer style fixture: header info text is black (DARK_TEXT), not light blue",
+                  hdr_colors == {DARK_TEXT})
+
+        ftr_para = sec0.footer.paragraphs[0]
+        check("Header/footer style fixture: footer paragraph uses shared style",
+              ftr_para.style.name == STYLE_HEADER_FOOTER_INFO)
+        ftr_colors = {str(r.font.color.rgb) for r in ftr_para.runs if r.font.color and r.font.color.rgb}
+        check("Header/footer style fixture: footer text is black (DARK_TEXT), not light blue",
+              ftr_colors == {DARK_TEXT})
+
+        notice_header_rows = [
+            [c.text for c in t.rows[0].cells]
+            for t in doc_g.tables
+            if any("تفصيل الملاحظة" in c.text for c in t.rows[0].cells)
+        ]
+        check("Header/footer style fixture: notices table found", len(notice_header_rows) == 1)
+        if notice_header_rows:
+            check("Header/footer style fixture: notices table has 6 columns (target-unit column removed)",
+                  len(notice_header_rows[0]) == 6)
+            check("Header/footer style fixture: notices table no longer has الوحدة المنوّه بها column",
+                  not any("المنوّه" in h for h in notice_header_rows[0]))
 
     print("=" * 70)
     if FAILURES:
