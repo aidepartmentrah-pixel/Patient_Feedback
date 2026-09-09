@@ -69,6 +69,34 @@ def test_search_patients_structured_where_builds_per_field_conditions(monkeypatc
     assert "%Ali%" in cursor.executed_params
 
 
+def test_search_patients_dedupes_repeat_admissions_before_the_limit(monkeypatch):
+    """
+    APP_RESERVE_PATIENT is admission-centric -- the same real patient with
+    N past admissions produces N identical-looking rows. The dedup must
+    happen inside the SQL (before TOP (?)), not after in Python, or real
+    distinct patients would already have been dropped to make room for the
+    duplicates.
+    """
+    created = {}
+
+    def fake_get_connection():
+        conn = _FakeConnection()
+        created["conn"] = conn
+        return conn
+
+    monkeypatch.setattr(patients_db, "get_connection", fake_get_connection)
+
+    patients_db.search_patients(last_name="Zahreddine", limit=10)
+
+    cursor = created["conn"].cursor_obj
+    assert "ROW_NUMBER()" in cursor.executed_sql
+    assert "PARTITION BY COALESCE(NULLIF(LTRIM(RTRIM(DocumentNumber)), ''), FullName)" in cursor.executed_sql
+    assert "WHERE rn = 1" in cursor.executed_sql
+    # The limit is still the last param -- TOP (?) is in the outer query,
+    # after the CTE's own WHERE-clause params.
+    assert cursor.executed_params[-1] == 10
+
+
 def test_search_patients_structured_omits_middle_condition_when_blank(monkeypatch):
     created = {}
 
@@ -102,9 +130,10 @@ def test_search_patients_structured_free_text_query_unchanged(monkeypatch):
 
     cursor = created["conn"].cursor_obj
     assert "(FullName LIKE ? OR FirstName LIKE ? OR LastName LIKE ?)" in cursor.executed_sql
-    # No standalone structured conditions were added -- just the limit plus
-    # the three OR-matched params from the free-text condition.
-    assert cursor.executed_params == [10, "%ahmed ali%", "%ahmed ali%", "%ahmed ali%"]
+    # No standalone structured conditions were added -- just the three
+    # OR-matched params from the free-text condition, followed by the
+    # limit (TOP (?) is now in the outer query, after the CTE's own ?'s).
+    assert cursor.executed_params == ["%ahmed ali%", "%ahmed ali%", "%ahmed ali%", 10]
 
 
 def test_service_search_patients_structured_maps_middle_name_to_father_name(monkeypatch):

@@ -406,29 +406,54 @@ def search_patients(
 
         where_clause = " AND ".join(conditions) if conditions else "1=1"
 
+        # APP_RESERVE_PATIENT is admission-centric, not person-centric --
+        # PatientAdmissionID is a new row per hospital admission, so the
+        # same real patient with N past admissions produces N identical-
+        # looking rows here. Deduplicate BEFORE the TOP (?) cap (not after,
+        # in Python) -- deduping post-limit would already have silently
+        # dropped other real, distinct patients to make room for the
+        # duplicates. Partition by DocumentNumber when present (a real
+        # document number essentially never collides between two different
+        # people, unlike a name) and fall back to FullName only when a row
+        # has no document number on file; keep the most recent admission
+        # per group as the representative row.
         query_str = f"""
-            SELECT TOP (?)
-                PatientAdmissionID as patient_id,
-                MedicalFileNumber as mrn,
-                FullName as full_name,
-                FirstName as first_name,
-                MiddleName as middle_name,
-                LastName as last_name,
-                CONVERT(VARCHAR(10), BirthDate, 23) as date_of_birth,
-                DATEDIFF(YEAR, BirthDate, GETDATE()) as age,
-                CASE
-                    WHEN SEX = 'M' THEN 'Male'
-                    WHEN SEX = 'F' THEN 'Female'
-                    ELSE SEX
-                END as gender,
-                PhoneNumber1 as phone,
-                'reserve' as source
-            FROM dbo.APP_RESERVE_PATIENT
-            WHERE {where_clause}
+            WITH ranked AS (
+                SELECT
+                    PatientAdmissionID as patient_id,
+                    MedicalFileNumber as mrn,
+                    FullName as full_name,
+                    FirstName as first_name,
+                    MiddleName as middle_name,
+                    LastName as last_name,
+                    CONVERT(VARCHAR(10), BirthDate, 23) as date_of_birth,
+                    DATEDIFF(YEAR, BirthDate, GETDATE()) as age,
+                    CASE
+                        WHEN SEX = 'M' THEN 'Male'
+                        WHEN SEX = 'F' THEN 'Female'
+                        ELSE SEX
+                    END as gender,
+                    PhoneNumber1 as phone,
+                    'reserve' as source,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY COALESCE(NULLIF(LTRIM(RTRIM(DocumentNumber)), ''), FullName)
+                        ORDER BY PatientAdmissionID DESC
+                    ) as rn
+                FROM dbo.APP_RESERVE_PATIENT
+                WHERE {where_clause}
+            )
+            SELECT TOP (?) patient_id, mrn, full_name, first_name, middle_name, last_name,
+                   date_of_birth, age, gender, phone, source
+            FROM ranked
+            WHERE rn = 1
             ORDER BY full_name ASC
         """
 
-        cursor.execute(query_str, [limit] + params)
+        # Param order must match the ?'s left-to-right in query_str: the
+        # WHERE-clause params (inside the CTE) now come BEFORE the TOP (?)
+        # placeholder, which moved to the outer query -- reversed from
+        # before this function deduplicated rows.
+        cursor.execute(query_str, params + [limit])
         columns = [col[0] for col in cursor.description]
         rows = cursor.fetchall()
 
