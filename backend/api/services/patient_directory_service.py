@@ -31,7 +31,7 @@ external_message pair so callers can render "external search unavailable"
 distinctly from "zero results".
 """
 
-import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional
 
 from api.db_layer import patients_db
@@ -285,7 +285,103 @@ def search_patients_structured(first_name: str, middle_name: str, last_name: str
     }
 
 
-_MIDDLE_NAME_SEARCH_DELAY_SECONDS = 0.4
+_MIDDLE_NAME_SEARCH_MAX_CONCURRENCY = 8
+
+
+def _iter_missing_middle_name_candidates(first_name: str, last_name: str, limit: int = 20):
+    """
+    Shared step-by-step engine behind search_patients_missing_middle_name
+    (see that function's docstring for the full rationale: try every
+    candidate unconditionally, dedupe combined results by full_name alone).
+    A generator so both the plain synchronous function below and the SSE
+    streaming endpoint (insert_router.py) can drive the exact same
+    never-stop-early loop from one place.
+
+    All candidates are dispatched at once to a small thread pool (capped at
+    _MIDDLE_NAME_SEARCH_MAX_CONCURRENCY, not all 32 simultaneously -- a
+    deliberately conservative default since the vendor's real tolerance for
+    concurrent requests has never been tested) instead of one at a time.
+    This used to be sequential with a 0.4s throttle between each real call
+    -- ~13s worst case, by construction, for all 32. That got worse (not
+    better) once the loop stopped exiting early to avoid silently hiding a
+    second real patient (see search_patients_missing_middle_name's
+    docstring): every fix to correctness cost more of that same fixed
+    latency. Running candidates concurrently cuts wall-clock time to
+    roughly one round trip's worth instead of 32 of them, without touching
+    coverage. Dedup logic (seen_names) is untouched -- it runs here in the
+    main thread as each future's result comes back, never inside a worker
+    thread, so there's no new thread-safety concern.
+
+    Yields one dict per lifecycle event, discriminated by "type":
+      {"type": "match",  "index": int, "total": int, "patient": dict}   -- one per newly-seen full_name
+      {"type": "candidate_done", "index": int, "total": int, "candidate": str,
+       "new_match_count": int, "external_status": str, "external_message": str|None}
+      {"type": "done", "combined_patients": list[dict], "count": int, "tried": int,
+       "external_status": str, "external_message": str|None}
+
+    "index" is now a running completed-so-far count, not a fixed candidate
+    position -- candidates finish in whatever order their real network
+    calls happen to complete, not list order, since they all run at once.
+    There is no more "trying" event (there's no meaningful "about to try
+    index N" moment once everything is submitted up front).
+
+    "done" is always yielded exactly once, last -- including the
+    first_name/last_name-blank and empty-candidates-list cases.
+    """
+    from api.services import middle_name_sets_service
+
+    first_name = (first_name or "").strip()
+    last_name = (last_name or "").strip()
+    if not first_name or not last_name:
+        yield {"type": "done", "combined_patients": [], "count": 0, "tried": 0,
+               "external_status": "not_searched", "external_message": None}
+        return
+
+    try:
+        candidates = middle_name_sets_service.get_active_set()["names"]
+    except middle_name_sets_service.MiddleNameSetsError:
+        candidates = []
+
+    total = len(candidates)
+    seen_names = set()
+    combined_patients: List[Dict[str, Any]] = []
+    any_ok = False
+    last_message = None
+    tried = 0
+
+    with ThreadPoolExecutor(max_workers=_MIDDLE_NAME_SEARCH_MAX_CONCURRENCY) as executor:
+        future_to_candidate = {
+            executor.submit(search_patients_structured, first_name, candidate, last_name, limit=limit): candidate
+            for candidate in candidates
+        }
+
+        for future in as_completed(future_to_candidate):
+            candidate = future_to_candidate[future]
+            tried += 1
+            result = future.result()
+
+            if result.get("success") and result.get("external_status") == "ok":
+                any_ok = True
+            if result.get("external_message"):
+                last_message = result["external_message"]
+
+            new_count = 0
+            for p in result.get("patients", []):
+                name_key = (p.get("full_name") or "").strip()
+                if name_key not in seen_names:
+                    seen_names.add(name_key)
+                    combined_patients.append(p)
+                    new_count += 1
+                    yield {"type": "match", "index": tried, "total": total, "patient": p}
+
+            yield {"type": "candidate_done", "index": tried, "total": total, "candidate": candidate,
+                   "new_match_count": new_count,
+                   "external_status": result.get("external_status"),
+                   "external_message": result.get("external_message")}
+
+    yield {"type": "done", "combined_patients": combined_patients, "count": len(combined_patients),
+           "tried": tried, "external_status": "ok" if any_ok else "not_searched",
+           "external_message": last_message}
 
 
 def search_patients_missing_middle_name(first_name: str, last_name: str, limit: int = 20) -> Dict[str, Any]:
@@ -317,47 +413,41 @@ def search_patients_missing_middle_name(first_name: str, last_name: str, limit: 
     keystroke. Backend-owned (not client-side looping) so the throttling/
     sequencing/early-stop is enforced in one place regardless of what UI
     calls it.
+
+    Combined results are deduplicated by full_name alone (not per-record
+    id, not birth_date). The live Hospital Directory API tracks visits, not
+    persons: the same real person can carry several external records under
+    one full name (repeat admissions, each with its own birth_date-entry
+    quirk), and search_patients_structured's own external dedup only
+    collapses same-name+same-birth_date pairs, so those still arrive here
+    as separate rows per candidate. That's fine at this stage because the
+    frontend's selection handler (PatientNameSearch.jsx handleSelect) only
+    ever commits the clicked row's full_name string -- it never reads
+    patient_admission_id, document_number, or birth_date -- so every row
+    sharing a full name is an identical choice from the user's point of
+    view. Showing 20 of them for one guessed middle name is pure noise, not
+    20 real options. One row per distinct full_name is what the guess
+    picker should show; each candidate that matches a genuinely different
+    father's name still produces its own distinct full_name and its own row.
+
+    Thin wrapper: drains _iter_missing_middle_name_candidates and returns
+    its final "done" event reshaped into this function's long-standing
+    return contract. See that generator for the actual loop -- it's also
+    what the SSE streaming endpoint (insert_router.py) drives directly to
+    report per-candidate progress instead of blocking until completion.
     """
-    from api.services import middle_name_sets_service
-
-    first_name = (first_name or "").strip()
-    last_name = (last_name or "").strip()
-    if not first_name or not last_name:
-        return {"success": True, "patients": [], "count": 0, "tried": 0, "external_status": "not_searched", "external_message": None}
-
-    try:
-        candidates = middle_name_sets_service.get_active_set()["names"]
-    except middle_name_sets_service.MiddleNameSetsError:
-        candidates = []
-
-    seen_ids = set()
-    combined_patients: List[Dict[str, Any]] = []
-    any_ok = False
-    last_message = None
-    tried = 0
-
-    for candidate in candidates:
-        tried += 1
-        result = search_patients_structured(first_name, candidate, last_name, limit=limit)
-        if result.get("success") and result.get("external_status") == "ok":
-            any_ok = True
-        if result.get("external_message"):
-            last_message = result["external_message"]
-        for p in result.get("patients", []):
-            pid = p.get("patient_admission_id")
-            if pid not in seen_ids:
-                seen_ids.add(pid)
-                combined_patients.append(p)
-        if tried < len(candidates):
-            time.sleep(_MIDDLE_NAME_SEARCH_DELAY_SECONDS)
+    final = None
+    for event in _iter_missing_middle_name_candidates(first_name, last_name, limit):
+        if event["type"] == "done":
+            final = event
 
     return {
         "success": True,
-        "patients": combined_patients,
-        "count": len(combined_patients),
-        "tried": tried,
-        "external_status": "ok" if any_ok else "not_searched",
-        "external_message": last_message,
+        "patients": final["combined_patients"],
+        "count": final["count"],
+        "tried": final["tried"],
+        "external_status": final["external_status"],
+        "external_message": final["external_message"],
     }
 
 

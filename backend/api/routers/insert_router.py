@@ -3,7 +3,9 @@ Insert Router
 API endpoints for creating new incident/feedback records.
 """
 
+import json
 from fastapi import APIRouter, HTTPException, Body, Query, Path, Depends
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Optional, Any, List
 from datetime import date, datetime
@@ -18,6 +20,7 @@ from ..services.search_service import (
     search_patients,
     search_patients_structured,
     search_patients_missing_middle_name,
+    iter_missing_middle_name_candidates,
     search_doctors,
     search_employees,
     get_patient_by_id,
@@ -648,6 +651,69 @@ async def search_patients_missing_middle_name_endpoint(
         )
 
     return result
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+@router.get("/search/patients/missing-middle-name/stream")
+async def search_patients_missing_middle_name_stream_endpoint(
+    first_name: str = Query(..., min_length=1, description="Patient's first name"),
+    last_name: str = Query(..., min_length=1, description="Patient's last name"),
+    limit: int = Query(20, ge=1, le=100, description="Maximum number of results (1-100)"),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """
+    Streaming counterpart to /search/patients/missing-middle-name: same
+    candidate loop (every candidate still tried, unconditionally -- see
+    search_patients_missing_middle_name's docstring), but reported as
+    Server-Sent Events as it runs instead of one blocking response.
+    Candidates now run concurrently (see _iter_missing_middle_name_
+    candidates), so this typically finishes in roughly one round trip
+    instead of the ~13+ seconds a fully sequential pass used to take. The
+    non-streaming endpoint above is unchanged and stays available as a
+    fallback.
+
+    Event stream (each frame is `event: <type>\\ndata: <json>\\n\\n`):
+      match          {index, total, patient}   -- a newly-seen distinct patient
+      candidate_done {index, total, candidate, new_match_count,
+                      external_status, external_message}
+      done           {count, tried, external_status, external_message} -- always last
+      error          {message} -- only on an unexpected exception mid-stream
+
+    "index" is a running completed-so-far count, not a fixed candidate
+    position -- candidates finish in whatever order their real network
+    calls happen to complete, since they all run concurrently. There is no
+    "trying" event (no meaningful "about to try index N" moment once
+    everything is dispatched up front).
+
+    Auth is the same session-cookie dependency as every other endpoint
+    here (get_current_user/require_logged_in) -- a browser's native
+    EventSource sends the session cookie automatically on same-origin
+    requests, no extra handling needed.
+    """
+    require_logged_in(current_user)
+
+    def event_stream():
+        try:
+            for step in iter_missing_middle_name_candidates(first_name, last_name, limit):
+                if step["type"] == "match":
+                    yield _sse("match", {"index": step["index"], "total": step["total"], "patient": step["patient"]})
+                elif step["type"] == "candidate_done":
+                    yield _sse("candidate_done", {k: step[k] for k in ("index", "total", "candidate", "new_match_count", "external_status", "external_message")})
+                elif step["type"] == "done":
+                    yield _sse("done", {"count": step["count"], "tried": step["tried"],
+                                         "external_status": step["external_status"],
+                                         "external_message": step["external_message"]})
+        except Exception as e:
+            yield _sse("error", {"message": str(e)})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
 
 
 @router.get("/search/doctors")

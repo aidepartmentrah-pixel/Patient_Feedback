@@ -291,6 +291,87 @@ def test_missing_middle_name_finds_two_distinct_people_with_different_father_nam
     assert ids == {"1", "2"}
 
 
+def test_missing_middle_name_runs_candidates_concurrently(monkeypatch):
+    """
+    Regression test for the latency fix: 32 candidates used to run
+    sequentially with a 0.4s throttle between each (~13s worst case). They
+    now run concurrently, so a full pass through N slow candidates takes
+    roughly one candidate's delay, not N of them -- proves the speedup
+    without needing a real external API in the test.
+    """
+    import time as time_module
+
+    names = [f"Candidate{i}" for i in range(16)]
+    monkeypatch.setattr(
+        middle_name_sets_service, "get_active_set",
+        lambda: {"id": "test", "display_name": "test", "names": names},
+    )
+
+    per_call_delay = 0.05
+
+    def fake_structured(first_name, middle_name, last_name, limit=20):
+        time_module.sleep(per_call_delay)
+        if middle_name == "Candidate0":
+            return {
+                "success": True,
+                "patients": [{"patient_admission_id": "1", "full_name": "Abbas Mohamed Zahreddine"}],
+                "count": 1, "external_status": "ok", "external_message": None,
+            }
+        return {"success": True, "patients": [], "count": 0, "external_status": "ok", "external_message": None}
+
+    monkeypatch.setattr(patient_directory_service, "search_patients_structured", fake_structured)
+
+    started = time_module.monotonic()
+    result = patient_directory_service.search_patients_missing_middle_name("Abbas", "Zahreddine", limit=10)
+    elapsed = time_module.monotonic() - started
+
+    # Fully sequential would take len(names) * per_call_delay (~0.8s here).
+    # Concurrent (capped at _MIDDLE_NAME_SEARCH_MAX_CONCURRENCY) should take
+    # a small number of delay-sized batches, not one per candidate.
+    sequential_worst_case = len(names) * per_call_delay
+    assert elapsed < sequential_worst_case / 2
+    assert result["tried"] == len(names)
+    assert result["count"] == 1
+
+
+def test_missing_middle_name_collapses_same_full_name_across_records(monkeypatch):
+    """
+    Regression test for live-testing finding: the Hospital Directory API
+    tracks visits, not persons, so one candidate can return many records
+    that share the same full_name but differ only in birth_date (repeat
+    admissions of the same real person, or same-name data-entry noise).
+    The frontend's selection handler only ever commits the full_name
+    string (never patient_admission_id/birth_date), so those rows are
+    identical choices and must collapse to one -- unlike two candidates
+    that produce genuinely different full_names (different father's
+    names), which must still both appear (see the two-distinct-people
+    test above).
+    """
+    monkeypatch.setattr(
+        middle_name_sets_service, "get_active_set",
+        lambda: {"id": "test", "display_name": "test", "names": ["Mohamed", "Hassan"]},
+    )
+
+    def fake_structured(first_name, middle_name, last_name, limit=20):
+        if middle_name == "Mohamed":
+            return {
+                "success": True,
+                "patients": [
+                    {"patient_admission_id": f"ext__{i}", "full_name": "Abbas Mohamed Zahreddine", "birth_date": f"19{60 + i}-01-01"}
+                    for i in range(20)
+                ],
+                "count": 20, "external_status": "ok", "external_message": None,
+            }
+        return {"success": True, "patients": [], "count": 0, "external_status": "ok", "external_message": None}
+
+    monkeypatch.setattr(patient_directory_service, "search_patients_structured", fake_structured)
+
+    result = patient_directory_service.search_patients_missing_middle_name("Abbas", "Zahreddine", limit=20)
+
+    assert result["count"] == 1
+    assert result["patients"][0]["full_name"] == "Abbas Mohamed Zahreddine"
+
+
 def test_missing_middle_name_tries_all_candidates_when_none_match(monkeypatch):
     monkeypatch.setattr(
         middle_name_sets_service, "get_active_set",
@@ -302,8 +383,6 @@ def test_missing_middle_name_tries_all_candidates_when_none_match(monkeypatch):
             "success": True, "patients": [], "count": 0, "external_status": "ok", "external_message": None,
         },
     )
-    monkeypatch.setattr(patient_directory_service.time, "sleep", lambda s: None)
-
     result = patient_directory_service.search_patients_missing_middle_name("Ahmed", "Ali", limit=10)
 
     assert result["count"] == 0

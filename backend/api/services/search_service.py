@@ -41,6 +41,17 @@ def search_patients_missing_middle_name(first_name: str, last_name: str, limit: 
     return patient_directory_service.search_patients_missing_middle_name(first_name, last_name, limit)
 
 
+def iter_missing_middle_name_candidates(first_name: str, last_name: str, limit: int = 20):
+    """
+    Streaming counterpart to search_patients_missing_middle_name above —
+    yields per-candidate progress/match events instead of blocking until
+    all candidates are tried. See patient_directory_service for the real
+    generator; this is the same thin pass-through pattern as the rest of
+    this file.
+    """
+    return patient_directory_service._iter_missing_middle_name_candidates(first_name, last_name, limit)
+
+
 def search_doctors(search_text: str, limit: int = 20) -> Dict[str, Any]:
     """
     Search for doctors by name (free-text) — behind the incident-creation

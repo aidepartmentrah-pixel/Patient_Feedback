@@ -40,6 +40,11 @@ services:
       # while DB_USERNAME was literally "sa" -- see HCopilot's own
       # Bug 30 for the same real gap shape).
       DB_PASSWORD: ${DATABASE_PASSWORD}
+      # ensure_login_exists.py reads these two under their own literal
+      # names (not DB_USERNAME/DB_PASSWORD above) -- a separate script
+      # with its own env-var convention, not a typo to collapse into one.
+      DATABASE_USER: ${DATABASE_USER}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
       # Needed only by install_database.py's ensure_database_exists()/
       # ensure_login_exists() steps, which must connect as sa (the only
       # login that can CREATE DATABASE/CREATE LOGIN) for their own
