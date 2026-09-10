@@ -202,6 +202,26 @@ def search_patients_insert_flow(search_text: str, limit: int = 20) -> Dict[str, 
     }
 
 
+def _dedupe_external_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Collapse external results representing the same real person recorded
+    more than once under separate patient_ids. Identical name AND birth
+    date is the signal used to tell "one real person entered twice" apart
+    from "two different real people who happen to share a name" -- the
+    vendor's own v1.1 contract deliberately tests the latter case and
+    requires both to be returned, never merged (fixtures 90016/90017,
+    same name, different birth_date). Keeps the first occurrence per key.
+    """
+    seen = set()
+    deduped = []
+    for item in items:
+        key = ((item.get("full_name") or "").strip(), item.get("birth_date"))
+        if key not in seen:
+            seen.add(key)
+            deduped.append(item)
+    return deduped
+
+
 def search_patients_structured(first_name: str, middle_name: str, last_name: str, limit: int = 20) -> Dict[str, Any]:
     """
     Merged search for the Insert page's 3-field patient search
@@ -250,7 +270,10 @@ def search_patients_structured(first_name: str, middle_name: str, last_name: str
     # "father_name". Translate at this one boundary only.
     result = directory_client.search_patients(first_name=first_name, father_name=middle_name, last_name=last_name, limit=limit)
     external_status = result["status"]
-    external_items = [_patient_to_insert_shape(v) for v in result["items"]] if result["status"] == "ok" else []
+    external_items = (
+        _dedupe_external_items([_patient_to_insert_shape(v) for v in result["items"]])
+        if result["status"] == "ok" else []
+    )
 
     combined = reserve_items + external_items
     return {
@@ -273,17 +296,20 @@ def search_patients_missing_middle_name(first_name: str, last_name: str, limit: 
     lead thirty_names.json), as real, throttled calls to
     search_patients_structured — see HCAT-Middle-Name-Search-Assist-Plan.md.
 
-    Stops at the FIRST candidate that returns a match and returns
-    immediately. Originally this ran through all candidates and combined
-    every match, on the theory that the same first+last pair could belong
-    to more than one real patient with different middle names — correct in
-    principle, but in real testing it meant waiting through up to all
-    ~30 throttled real calls even for a common name found on the first or
-    second try. Given the candidate list is already ordered by how common
-    each name actually is, stopping at the first hit makes the common case
-    fast and only costs the (already rare) chance of missing a second real
-    patient sharing the same first+last name — an accepted trade-off since
-    that person can still be found via a manual full-name search.
+    Tries every candidate and combines every match (does NOT stop at the
+    first candidate that returns something). This used to stop early as a
+    latency optimization, on the theory that a second real patient sharing
+    the same first+last name but a different father's name was rare enough
+    to accept missing. Real testing showed that's false: a first+last pair
+    can legitimately match multiple different real people who differ only
+    in father's name, and stopping early meant the loop never even tried
+    the candidate that would have found the second person -- silently
+    hiding them, not just costing an extra manual search. Each candidate's
+    own result is already deduplicated (both the reserve query and
+    search_patients_structured's external dedup collapse repeat-admission-
+    style duplicates of the SAME person down to one row), so combining
+    every candidate's match gives one row per distinct real person, not
+    per admission or per throttled call.
 
     This is real load against the live Hospital Directory API — one
     explicit user action (a single "find possible matches" request from the
@@ -322,8 +348,6 @@ def search_patients_missing_middle_name(first_name: str, last_name: str, limit: 
             if pid not in seen_ids:
                 seen_ids.add(pid)
                 combined_patients.append(p)
-        if combined_patients:
-            break
         if tried < len(candidates):
             time.sleep(_MIDDLE_NAME_SEARCH_DELAY_SECONDS)
 

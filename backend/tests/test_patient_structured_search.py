@@ -164,6 +164,40 @@ def test_service_search_patients_structured_maps_middle_name_to_father_name(monk
     assert result["external_status"] == "ok"
 
 
+def test_search_patients_structured_dedupes_external_repeat_admissions(monkeypatch):
+    """
+    20 external rows for the same real person (identical name + birth date,
+    just different patient_ids -- e.g. re-entered on every admission) must
+    collapse to one. A row with the same name but a DIFFERENT birth date
+    (a genuinely different real person, per the vendor's own 90016/90017
+    contract fixtures) must NOT be collapsed away.
+    """
+    monkeypatch.setattr(patient_directory_service.patients_db, "search_patients", lambda **kwargs: [])
+
+    same_person_repeats = [
+        {"patient_id": str(i), "full_name": "Abbas Mohamed Zahreddine", "first_name": "Abbas",
+         "last_name": "Zahreddine", "birth_date": "1990-01-01", "sex": "Male"}
+        for i in range(20)
+    ]
+    different_real_person = {
+        "patient_id": "999", "full_name": "Abbas Mohamed Zahreddine", "first_name": "Abbas",
+        "last_name": "Zahreddine", "birth_date": "1985-05-05", "sex": "Male",
+    }
+
+    monkeypatch.setattr(
+        patient_directory_service.directory_client, "search_patients",
+        lambda **kwargs: {
+            "status": "ok", "message": None,
+            "items": same_person_repeats + [different_real_person],
+            "total": 21,
+        },
+    )
+
+    result = patient_directory_service.search_patients_structured("Abbas", "Mohamed", "Zahreddine", limit=50)
+
+    assert result["count"] == 2  # 20 repeats collapsed to 1, plus the genuinely different person
+
+
 def test_service_search_patients_structured_reserve_failure_reported(monkeypatch):
     def fake_reserve_search(**kwargs):
         raise RuntimeError("db down")
@@ -214,7 +248,47 @@ def test_missing_middle_name_uses_structured_search_not_free_text(monkeypatch):
     assert captured_calls[0] == ("Ahmed", "Mohamed", "Ali")
     assert result["success"] is True
     assert result["count"] == 1
-    assert result["tried"] == 1  # stops at the first candidate that matches
+    # Tries every candidate, even after finding a match -- a first+last
+    # pair can legitimately match more than one real person who differ
+    # only in father's name (see test_missing_middle_name_finds_two_
+    # distinct_people_with_different_father_names below).
+    assert result["tried"] == 2
+
+
+def test_missing_middle_name_finds_two_distinct_people_with_different_father_names(monkeypatch):
+    """
+    Regression test: stopping at the first matching candidate used to
+    silently hide a second real person sharing the same first+last name
+    but a different father's name. Both must now be found and combined.
+    """
+    monkeypatch.setattr(
+        middle_name_sets_service, "get_active_set",
+        lambda: {"id": "test", "display_name": "test", "names": ["Mohamed", "Khaled", "Hassan"]},
+    )
+
+    def fake_structured(first_name, middle_name, last_name, limit=20):
+        if middle_name == "Mohamed":
+            return {
+                "success": True,
+                "patients": [{"patient_admission_id": "1", "full_name": "Abbas Mohamed Zahreddine"}],
+                "count": 1, "external_status": "ok", "external_message": None,
+            }
+        if middle_name == "Hassan":
+            return {
+                "success": True,
+                "patients": [{"patient_admission_id": "2", "full_name": "Abbas Hassan Zahreddine"}],
+                "count": 1, "external_status": "ok", "external_message": None,
+            }
+        return {"success": True, "patients": [], "count": 0, "external_status": "ok", "external_message": None}
+
+    monkeypatch.setattr(patient_directory_service, "search_patients_structured", fake_structured)
+
+    result = patient_directory_service.search_patients_missing_middle_name("Abbas", "Zahreddine", limit=10)
+
+    assert result["tried"] == 3
+    assert result["count"] == 2
+    ids = {p["patient_admission_id"] for p in result["patients"]}
+    assert ids == {"1", "2"}
 
 
 def test_missing_middle_name_tries_all_candidates_when_none_match(monkeypatch):
