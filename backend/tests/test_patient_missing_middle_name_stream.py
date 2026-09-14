@@ -3,6 +3,12 @@ Tests for the streaming counterpart of search_patients_missing_middle_name
 (see test_patient_structured_search.py for the non-streaming function's own
 contract tests -- this file leaves that one untouched).
 
+Candidates now run concurrently (ThreadPoolExecutor, see
+_iter_missing_middle_name_candidates's docstring) instead of one at a time
+with a throttle, so there's no "trying" event and no time.sleep to mock --
+candidates complete in whatever order their (fake, here) calls return in,
+not list order, so assertions below are order-independent.
+
 Run: pytest backend/tests/test_patient_missing_middle_name_stream.py -v
 """
 
@@ -19,8 +25,8 @@ from api.services import middle_name_sets_service
 def test_stream_tries_all_candidates_unconditionally(monkeypatch):
     """
     Generator form of the "never stop early" guarantee: every candidate
-    gets its own "trying" event and the final "done" event's tried count
-    equals the full candidate list length, even when nothing matches.
+    gets its own "candidate_done" event and the final "done" event's tried
+    count equals the full candidate list length, even when nothing matches.
     """
     monkeypatch.setattr(
         middle_name_sets_service, "get_active_set",
@@ -32,14 +38,12 @@ def test_stream_tries_all_candidates_unconditionally(monkeypatch):
             "success": True, "patients": [], "count": 0, "external_status": "ok", "external_message": None,
         },
     )
-    monkeypatch.setattr(patient_directory_service.time, "sleep", lambda s: None)
 
     events = list(patient_directory_service._iter_missing_middle_name_candidates("Ahmed", "Ali", limit=10))
 
-    trying_events = [e for e in events if e["type"] == "trying"]
-    assert [e["candidate"] for e in trying_events] == ["Mohamed", "Khaled", "Ali"]
-    assert [e["index"] for e in trying_events] == [1, 2, 3]
-    assert all(e["total"] == 3 for e in trying_events)
+    candidate_done_events = [e for e in events if e["type"] == "candidate_done"]
+    assert {e["candidate"] for e in candidate_done_events} == {"Mohamed", "Khaled", "Ali"}
+    assert all(e["total"] == 3 for e in candidate_done_events)
 
     done_events = [e for e in events if e["type"] == "done"]
     assert len(done_events) == 1
@@ -71,7 +75,6 @@ def test_stream_emits_match_event_per_new_distinct_full_name(monkeypatch):
         return {"success": True, "patients": [], "count": 0, "external_status": "ok", "external_message": None}
 
     monkeypatch.setattr(patient_directory_service, "search_patients_structured", fake_structured)
-    monkeypatch.setattr(patient_directory_service.time, "sleep", lambda s: None)
 
     events = list(patient_directory_service._iter_missing_middle_name_candidates("Abbas", "Zahreddine", limit=10))
 
@@ -108,7 +111,6 @@ def test_stream_collapses_same_full_name_across_records(monkeypatch):
         }
 
     monkeypatch.setattr(patient_directory_service, "search_patients_structured", fake_structured)
-    monkeypatch.setattr(patient_directory_service.time, "sleep", lambda s: None)
 
     events = list(patient_directory_service._iter_missing_middle_name_candidates("Abbas", "Zahreddine", limit=20))
 
@@ -139,7 +141,6 @@ def test_stream_final_done_event_matches_legacy_function_return(monkeypatch):
         return {"success": True, "patients": [], "count": 0, "external_status": "ok", "external_message": None}
 
     monkeypatch.setattr(patient_directory_service, "search_patients_structured", fake_structured)
-    monkeypatch.setattr(patient_directory_service.time, "sleep", lambda s: None)
 
     legacy = patient_directory_service.search_patients_missing_middle_name("Ahmed", "Ali", limit=10)
 
@@ -166,7 +167,6 @@ def test_legacy_function_still_returns_same_shape(monkeypatch):
             "success": True, "patients": [], "count": 0, "external_status": "ok", "external_message": None,
         },
     )
-    monkeypatch.setattr(patient_directory_service.time, "sleep", lambda s: None)
 
     result = patient_directory_service.search_patients_missing_middle_name("Ahmed", "Ali", limit=10)
 
@@ -197,7 +197,6 @@ def test_stream_endpoint_returns_sse_media_type_and_all_events(monkeypatch):
             "success": True, "patients": [], "count": 0, "external_status": "ok", "external_message": None,
         },
     )
-    monkeypatch.setattr(patient_directory_service.time, "sleep", lambda s: None)
 
     fake_user = CurrentUser(user_id=1, username="test_user", is_active=True, scopes=[])
     app.dependency_overrides[get_current_user] = lambda: fake_user

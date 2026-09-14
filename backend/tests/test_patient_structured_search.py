@@ -164,13 +164,18 @@ def test_service_search_patients_structured_maps_middle_name_to_father_name(monk
     assert result["external_status"] == "ok"
 
 
-def test_search_patients_structured_dedupes_external_repeat_admissions(monkeypatch):
+def test_search_patients_structured_dedupes_external_by_full_name_alone(monkeypatch):
     """
-    20 external rows for the same real person (identical name + birth date,
-    just different patient_ids -- e.g. re-entered on every admission) must
-    collapse to one. A row with the same name but a DIFFERENT birth date
-    (a genuinely different real person, per the vendor's own 90016/90017
-    contract fixtures) must NOT be collapsed away.
+    All external rows sharing one full_name collapse to a single row,
+    including a row with the same name but a DIFFERENT birth date (which
+    used to be kept as a second, genuinely-distinct-person row -- see the
+    vendor's 90016/90017 contract fixtures). Product decision: the
+    birth_date that supposedly distinguished such rows was never shown in
+    the UI, so they were visually identical, indistinguishable choices;
+    collapsing to one row matches the policy
+    search_patients_missing_middle_name's own candidate-combining step
+    already used. See _dedupe_external_items's docstring for the full
+    rationale and the accepted tradeoff.
     """
     monkeypatch.setattr(patient_directory_service.patients_db, "search_patients", lambda **kwargs: [])
 
@@ -195,7 +200,7 @@ def test_search_patients_structured_dedupes_external_repeat_admissions(monkeypat
 
     result = patient_directory_service.search_patients_structured("Abbas", "Mohamed", "Zahreddine", limit=50)
 
-    assert result["count"] == 2  # 20 repeats collapsed to 1, plus the genuinely different person
+    assert result["count"] == 1  # all 21 rows share one full_name -> collapsed to one
 
 
 def test_service_search_patients_structured_reserve_failure_reported(monkeypatch):

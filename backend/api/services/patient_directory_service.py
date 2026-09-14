@@ -204,18 +204,35 @@ def search_patients_insert_flow(search_text: str, limit: int = 20) -> Dict[str, 
 
 def _dedupe_external_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Collapse external results representing the same real person recorded
-    more than once under separate patient_ids. Identical name AND birth
-    date is the signal used to tell "one real person entered twice" apart
-    from "two different real people who happen to share a name" -- the
-    vendor's own v1.1 contract deliberately tests the latter case and
-    requires both to be returned, never merged (fixtures 90016/90017,
-    same name, different birth_date). Keeps the first occurrence per key.
+    Collapse external results down to one row per distinct full_name.
+
+    This used to key on (full_name, birth_date) instead, deliberately
+    keeping a same-name-different-birth_date pair as two rows -- on the
+    theory that they're genuinely two different real people (the vendor's
+    v1.1 contract even ships a fixture pair, 90016/90017, built to test
+    exactly that). Live testing surfaced the practical cost of that
+    caution: some names in the mock/real data legitimately return a large
+    group of same-name people with different birth dates (a fixture group
+    of 20, in one case), and every one of them showed up as a visually
+    identical row -- the birth_date that supposedly distinguished them was
+    never rendered anywhere in the UI. The frontend's selection handler
+    only ever commits the clicked row's full_name string (never
+    patient_admission_id/birth_date), so those rows were already
+    indistinguishable choices from the user's point of view; showing 20 of
+    them was pure noise, not 20 real options. This matches the policy
+    search_patients_missing_middle_name's own candidate-combining step
+    already used (dedupe by full_name alone) -- collapsing here too makes
+    both search paths behave consistently instead of only one of them.
+
+    Explicit accepted tradeoff: two genuinely different real people who
+    happen to share an identical first+middle+last name now collapse to
+    one row (the first one seen), same as the missing-middle-name path
+    already did. Keeps the first occurrence per key.
     """
     seen = set()
     deduped = []
     for item in items:
-        key = ((item.get("full_name") or "").strip(), item.get("birth_date"))
+        key = (item.get("full_name") or "").strip()
         if key not in seen:
             seen.add(key)
             deduped.append(item)
