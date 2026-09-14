@@ -34,12 +34,17 @@ def get_subcategory_by_id(subcategory_id: int) -> dict | None:
 
 
 def get_classifications_for_management() -> list[dict]:
-    """Return all classifications with their full hierarchy path, all active states."""
+    """Return all subcategories with their classifications (if any), all active states.
+
+    LEFT JOINed from APP_LOOKUP_SUBCATEGORY (not INNER JOINed from
+    APP_LOOKUP_CLASSIFICATION) so subcategories with zero classifications still
+    produce a row and remain visible/selectable in the UI.
+    """
     return _fetch_all(
         """
         SELECT
             c.ClassificationID,
-            c.SubCategoryID,
+            sc.SubCategoryID,
             c.Classification_AR,
             c.Classification_EN,
             c.IsActive,
@@ -48,10 +53,10 @@ def get_classifications_for_management() -> list[dict]:
             cat.CategoryName,
             cat.DomainID,
             d.DomainName
-        FROM dbo.APP_LOOKUP_CLASSIFICATION c
-        JOIN dbo.APP_LOOKUP_SUBCATEGORY sc ON sc.SubCategoryID = c.SubCategoryID
+        FROM dbo.APP_LOOKUP_SUBCATEGORY sc
         JOIN dbo.APP_LOOKUP_CATEGORY cat ON cat.CategoryID = sc.CategoryID
         JOIN dbo.APP_LOOKUP_DOMAIN d ON d.DomainID = cat.DomainID
+        LEFT JOIN dbo.APP_LOOKUP_CLASSIFICATION c ON c.SubCategoryID = sc.SubCategoryID
         ORDER BY d.DomainName, cat.CategoryName, sc.SubCategoryName, c.Classification_AR
         """
     )

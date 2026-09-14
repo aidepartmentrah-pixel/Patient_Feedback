@@ -28,12 +28,13 @@ def _group_by_subcategory(rows: list[dict]) -> list[dict]:
                 "domain_name": row["DomainName"],
                 "classifications": [],
             }
-        subcats[sid]["classifications"].append({
-            "id": row["ClassificationID"],
-            "name_ar": row["Classification_AR"],
-            "name_en": row["Classification_EN"],
-            "is_active": bool(row["IsActive"]),
-        })
+        if row["ClassificationID"] is not None:
+            subcats[sid]["classifications"].append({
+                "id": row["ClassificationID"],
+                "name_ar": row["Classification_AR"],
+                "name_en": row["Classification_EN"],
+                "is_active": bool(row["IsActive"]),
+            })
     return list(subcats.values())
 
 
