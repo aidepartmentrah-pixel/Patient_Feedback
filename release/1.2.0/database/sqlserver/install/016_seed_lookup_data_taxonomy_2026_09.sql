@@ -48,22 +48,54 @@ GO
 
 -- ---------------- New subcategories ----------------
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_SUBCATEGORY] ON;
-IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_SUBCATEGORY] WHERE [SubCategoryID] = 29)
-    INSERT INTO [dbo].[APP_LOOKUP_SUBCATEGORY] ([SubCategoryID], [CategoryID], [SubCategoryName], [IsActive]) VALUES (29, 6, N'Making & following care plans', 1); -- excel incident count at export time: 78
-IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_SUBCATEGORY] WHERE [SubCategoryID] = 30)
-    INSERT INTO [dbo].[APP_LOOKUP_SUBCATEGORY] ([SubCategoryID], [CategoryID], [SubCategoryName], [IsActive]) VALUES (30, 6, N'Neglect -Nourishment & Hydration', 1); -- excel incident count at export time: 6
-IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_SUBCATEGORY] WHERE [SubCategoryID] = 31)
-    INSERT INTO [dbo].[APP_LOOKUP_SUBCATEGORY] ([SubCategoryID], [CategoryID], [SubCategoryName], [IsActive]) VALUES (31, 6, N'Outcomes & Side Effects', 1); -- excel incident count at export time: 4
-IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_SUBCATEGORY] WHERE [SubCategoryID] = 32)
-    INSERT INTO [dbo].[APP_LOOKUP_SUBCATEGORY] ([SubCategoryID], [CategoryID], [SubCategoryName], [IsActive]) VALUES (32, 6, N'Rough Handling & Discomfort', 1); -- excel incident count at export time: 2
-IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_SUBCATEGORY] WHERE [SubCategoryID] = 33)
-    INSERT INTO [dbo].[APP_LOOKUP_SUBCATEGORY] ([SubCategoryID], [CategoryID], [SubCategoryName], [IsActive]) VALUES (33, 3, N'Privacy & Dignity', 1); -- excel incident count at export time: 13
-IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_SUBCATEGORY] WHERE [SubCategoryID] = 34)
-    INSERT INTO [dbo].[APP_LOOKUP_SUBCATEGORY] ([SubCategoryID], [CategoryID], [SubCategoryName], [IsActive]) VALUES (34, 3, N'Consent', 1); -- excel incident count at export time: 5
-IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_SUBCATEGORY] WHERE [SubCategoryID] = 35)
-    INSERT INTO [dbo].[APP_LOOKUP_SUBCATEGORY] ([SubCategoryID], [CategoryID], [SubCategoryName], [IsActive]) VALUES (35, 3, N'Confidentially', 1); -- excel incident count at export time: 3
-IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_SUBCATEGORY] WHERE [SubCategoryID] = 36)
-    INSERT INTO [dbo].[APP_LOOKUP_SUBCATEGORY] ([SubCategoryID], [CategoryID], [SubCategoryName], [IsActive]) VALUES (36, 2, N'Token Listening', 1); -- excel incident count at export time: 1
+IF NOT EXISTS (
+        SELECT 1 FROM [dbo].[APP_LOOKUP_SUBCATEGORY]
+        WHERE [SubCategoryID] = 29
+           OR ([CategoryID] = 6 AND [SubCategoryName] = N'Making & following care plans')
+    )
+    INSERT INTO [dbo].[APP_LOOKUP_SUBCATEGORY] ([SubCategoryID], [CategoryID], [SubCategoryName], [IsActive]) VALUES (29, 6, N'Making & following care plans', 1);
+IF NOT EXISTS (
+        SELECT 1 FROM [dbo].[APP_LOOKUP_SUBCATEGORY]
+        WHERE [SubCategoryID] = 30
+           OR ([CategoryID] = 6 AND [SubCategoryName] = N'Neglect -Nourishment & Hydration')
+    )
+    INSERT INTO [dbo].[APP_LOOKUP_SUBCATEGORY] ([SubCategoryID], [CategoryID], [SubCategoryName], [IsActive]) VALUES (30, 6, N'Neglect -Nourishment & Hydration', 1);
+IF NOT EXISTS (
+        SELECT 1 FROM [dbo].[APP_LOOKUP_SUBCATEGORY]
+        WHERE [SubCategoryID] = 31
+           OR ([CategoryID] = 6 AND [SubCategoryName] = N'Outcomes & Side Effects')
+    )
+    INSERT INTO [dbo].[APP_LOOKUP_SUBCATEGORY] ([SubCategoryID], [CategoryID], [SubCategoryName], [IsActive]) VALUES (31, 6, N'Outcomes & Side Effects', 1);
+IF NOT EXISTS (
+        SELECT 1 FROM [dbo].[APP_LOOKUP_SUBCATEGORY]
+        WHERE [SubCategoryID] = 32
+           OR ([CategoryID] = 6 AND [SubCategoryName] = N'Rough Handling & Discomfort')
+    )
+    INSERT INTO [dbo].[APP_LOOKUP_SUBCATEGORY] ([SubCategoryID], [CategoryID], [SubCategoryName], [IsActive]) VALUES (32, 6, N'Rough Handling & Discomfort', 1);
+IF NOT EXISTS (
+        SELECT 1 FROM [dbo].[APP_LOOKUP_SUBCATEGORY]
+        WHERE [SubCategoryID] = 33
+           OR ([CategoryID] = 3 AND [SubCategoryName] = N'Privacy & Dignity')
+    )
+    INSERT INTO [dbo].[APP_LOOKUP_SUBCATEGORY] ([SubCategoryID], [CategoryID], [SubCategoryName], [IsActive]) VALUES (33, 3, N'Privacy & Dignity', 1);
+IF NOT EXISTS (
+        SELECT 1 FROM [dbo].[APP_LOOKUP_SUBCATEGORY]
+        WHERE [SubCategoryID] = 34
+           OR ([CategoryID] = 3 AND [SubCategoryName] = N'Consent')
+    )
+    INSERT INTO [dbo].[APP_LOOKUP_SUBCATEGORY] ([SubCategoryID], [CategoryID], [SubCategoryName], [IsActive]) VALUES (34, 3, N'Consent', 1);
+IF NOT EXISTS (
+        SELECT 1 FROM [dbo].[APP_LOOKUP_SUBCATEGORY]
+        WHERE [SubCategoryID] = 35
+           OR ([CategoryID] = 3 AND [SubCategoryName] = N'Confidentially')
+    )
+    INSERT INTO [dbo].[APP_LOOKUP_SUBCATEGORY] ([SubCategoryID], [CategoryID], [SubCategoryName], [IsActive]) VALUES (35, 3, N'Confidentially', 1);
+IF NOT EXISTS (
+        SELECT 1 FROM [dbo].[APP_LOOKUP_SUBCATEGORY]
+        WHERE [SubCategoryID] = 36
+           OR ([CategoryID] = 2 AND [SubCategoryName] = N'Token Listening')
+    )
+    INSERT INTO [dbo].[APP_LOOKUP_SUBCATEGORY] ([SubCategoryID], [CategoryID], [SubCategoryName], [IsActive]) VALUES (36, 2, N'Token Listening', 1);
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_SUBCATEGORY] OFF;
 GO
 
@@ -74,39 +106,84 @@ IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [Classifica
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 157)
     INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (157, 19, N'خلل في المتابعة والمراقبة(العلامات الحياتية,الحرارة..)', N'Clinical Evaluation/Monitoring(Vital Signs,Fever..)', 1);
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 158)
-    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (158, 29, N'اعتراض حول الخطة العلاجية(عدم المتابعة بعد العملية)', N'Care Plan Problem(Post-OP..)', 1);
+    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive])
+    SELECT 158, sc.[SubCategoryID], N'اعتراض حول الخطة العلاجية(عدم المتابعة بعد العملية)', N'Care Plan Problem(Post-OP..)', 1
+    FROM [dbo].[APP_LOOKUP_SUBCATEGORY] sc
+    WHERE sc.[CategoryID] = 6 AND sc.[SubCategoryName] = N'Making & following care plans';
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 159)
-    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (159, 29, N'اعتراض-قرار المغادرة', N'Care Plan Problems(Discharge Decision Maintained..)', 1);
+    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive])
+    SELECT 159, sc.[SubCategoryID], N'اعتراض-قرار المغادرة', N'Care Plan Problems(Discharge Decision Maintained..)', 1
+    FROM [dbo].[APP_LOOKUP_SUBCATEGORY] sc
+    WHERE sc.[CategoryID] = 6 AND sc.[SubCategoryName] = N'Making & following care plans';
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 160)
-    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (160, 29, N'الخطة العلاجية(تعارض في التشخيص-بين الأطباء)', N'Care Plan Problem(Conflicting Diagnostic-Between Physicians..)', 1);
+    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive])
+    SELECT 160, sc.[SubCategoryID], N'الخطة العلاجية(تعارض في التشخيص-بين الأطباء)', N'Care Plan Problem(Conflicting Diagnostic-Between Physicians..)', 1
+    FROM [dbo].[APP_LOOKUP_SUBCATEGORY] sc
+    WHERE sc.[CategoryID] = 6 AND sc.[SubCategoryName] = N'Making & following care plans';
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 161)
-    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (161, 29, N'الزيارة اليومية(المعالج,الإستشاري,الفيزيائي..)', N'Daily Doctor Visits(Attending/Consulting Physician,Physiotherapist)', 1);
+    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive])
+    SELECT 161, sc.[SubCategoryID], N'الزيارة اليومية(المعالج,الإستشاري,الفيزيائي..)', N'Daily Doctor Visits(Attending/Consulting Physician,Physiotherapist)', 1
+    FROM [dbo].[APP_LOOKUP_SUBCATEGORY] sc
+    WHERE sc.[CategoryID] = 6 AND sc.[SubCategoryName] = N'Making & following care plans';
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 162)
-    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (162, 29, N'العقر السريري', N'Bed Sore Problems(Nursing Care..)', 1);
+    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive])
+    SELECT 162, sc.[SubCategoryID], N'العقر السريري', N'Bed Sore Problems(Nursing Care..)', 1
+    FROM [dbo].[APP_LOOKUP_SUBCATEGORY] sc
+    WHERE sc.[CategoryID] = 6 AND sc.[SubCategoryName] = N'Making & following care plans';
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 163)
-    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (163, 29, N'تأخر-إعطاء مسكن', N'Delayed Pain Management', 1);
+    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive])
+    SELECT 163, sc.[SubCategoryID], N'تأخر-إعطاء مسكن', N'Delayed Pain Management', 1
+    FROM [dbo].[APP_LOOKUP_SUBCATEGORY] sc
+    WHERE sc.[CategoryID] = 6 AND sc.[SubCategoryName] = N'Making & following care plans';
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 164)
-    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (164, 29, N'خلل في الخطة العلاجية(العلاج,الدواء..)', N'Care Plan(Clinical Assessment/Following Care..)', 1);
+    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive])
+    SELECT 164, sc.[SubCategoryID], N'خلل في الخطة العلاجية(العلاج,الدواء..)', N'Care Plan(Clinical Assessment/Following Care..)', 1
+    FROM [dbo].[APP_LOOKUP_SUBCATEGORY] sc
+    WHERE sc.[CategoryID] = 6 AND sc.[SubCategoryName] = N'Making & following care plans';
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 165)
-    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (165, 29, N'خلل في المتابعة(حجز العملية..)', N'Care Plan(Failure to Book Operation..)', 1);
+    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive])
+    SELECT 165, sc.[SubCategoryID], N'خلل في المتابعة(حجز العملية..)', N'Care Plan(Failure to Book Operation..)', 1
+    FROM [dbo].[APP_LOOKUP_SUBCATEGORY] sc
+    WHERE sc.[CategoryID] = 6 AND sc.[SubCategoryName] = N'Making & following care plans';
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 166)
-    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (166, 29, N'خلل في تنفيذ واتباع الخطة العلاجية(العلاج, الدواء..)', N'Care Plan Problems(Treatment,Medication..)', 1);
+    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive])
+    SELECT 166, sc.[SubCategoryID], N'خلل في تنفيذ واتباع الخطة العلاجية(العلاج, الدواء..)', N'Care Plan Problems(Treatment,Medication..)', 1
+    FROM [dbo].[APP_LOOKUP_SUBCATEGORY] sc
+    WHERE sc.[CategoryID] = 6 AND sc.[SubCategoryName] = N'Making & following care plans';
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 167)
-    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (167, 29, N'خلل/تأخر في المتابعة الطبية(الFolley/الDrain..)', N'Care Plan Problem/Delayed(Folley,Drain,Dressing Change..)', 1);
+    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive])
+    SELECT 167, sc.[SubCategoryID], N'خلل/تأخر في المتابعة الطبية(الFolley/الDrain..)', N'Care Plan Problem/Delayed(Folley,Drain,Dressing Change..)', 1
+    FROM [dbo].[APP_LOOKUP_SUBCATEGORY] sc
+    WHERE sc.[CategoryID] = 6 AND sc.[SubCategoryName] = N'Making & following care plans';
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 168)
     INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (168, 20, N'إهمال-عام(التأخر في الإستجابة للمريض,ترك المريض دون متابعة..)', N'Neglect -General(Delayed response to patient calls,Lack of patient follow up..)', 1);
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 169)
     INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (169, 21, N'خلل في العناية التمريضية(الحفاض,إجراء الحمام..)', N'Nursing Care Problems(Diapper,bath..)', 1);
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 170)
-    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (170, 30, N'إهمال-تغذية(إهمال/حساسية طعام..)', N'Neglect-Nourishment(Malnutrition/Allergic Food..)', 1);
+    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive])
+    SELECT 170, sc.[SubCategoryID], N'إهمال-تغذية(إهمال/حساسية طعام..)', N'Neglect-Nourishment(Malnutrition/Allergic Food..)', 1
+    FROM [dbo].[APP_LOOKUP_SUBCATEGORY] sc
+    WHERE sc.[CategoryID] = 6 AND sc.[SubCategoryName] = N'Neglect -Nourishment & Hydration';
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 171)
-    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (171, 30, N'إهمال-تغذية(طعام غير مناسب(النوعية))', N'Neglect-Nourishment(Wrong Food Provided..)', 1);
+    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive])
+    SELECT 171, sc.[SubCategoryID], N'إهمال-تغذية(طعام غير مناسب(النوعية))', N'Neglect-Nourishment(Wrong Food Provided..)', 1
+    FROM [dbo].[APP_LOOKUP_SUBCATEGORY] sc
+    WHERE sc.[CategoryID] = 6 AND sc.[SubCategoryName] = N'Neglect -Nourishment & Hydration';
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 172)
-    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (172, 30, N'خلل-متابعة(وجبة الطعام)', N'Neglect-Nourishment(Meal Not Requested)', 1);
+    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive])
+    SELECT 172, sc.[SubCategoryID], N'خلل-متابعة(وجبة الطعام)', N'Neglect-Nourishment(Meal Not Requested)', 1
+    FROM [dbo].[APP_LOOKUP_SUBCATEGORY] sc
+    WHERE sc.[CategoryID] = 6 AND sc.[SubCategoryName] = N'Neglect -Nourishment & Hydration';
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 173)
-    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (173, 31, N'نتائج/آثار جانبية(دواء,علاج..)', N'Outcomes(Treatment,Medication..)', 1);
+    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive])
+    SELECT 173, sc.[SubCategoryID], N'نتائج/آثار جانبية(دواء,علاج..)', N'Outcomes(Treatment,Medication..)', 1
+    FROM [dbo].[APP_LOOKUP_SUBCATEGORY] sc
+    WHERE sc.[CategoryID] = 6 AND sc.[SubCategoryName] = N'Outcomes & Side Effects';
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 174)
-    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (174, 32, N'خلل في أسلوب تقديم الرعاية(أسلوب خشن..)', N'Rough Handling(Physical/Procedural Distress..)', 1);
+    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive])
+    SELECT 174, sc.[SubCategoryID], N'خلل في أسلوب تقديم الرعاية(أسلوب خشن..)', N'Rough Handling(Physical/Procedural Distress..)', 1
+    FROM [dbo].[APP_LOOKUP_SUBCATEGORY] sc
+    WHERE sc.[CategoryID] = 6 AND sc.[SubCategoryName] = N'Rough Handling & Discomfort';
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 175)
     INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (175, 22, N'خلل في مهارة التمريض(المصل..)', N'Clinician Skills(IV Problem-Nursing Skills..)', 1);
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 176)
@@ -308,11 +385,20 @@ IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [Classifica
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 274)
     INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (274, 5, N'رفض/تجاهل(عدم الإصغاء..)', N'Ignoring Patients(Distress Ignored..)', 1);
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 275)
-    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (275, 36, N'معاينة شكلية/سطحية', N'Ignored Mild Patinet Pain', 1);
+    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive])
+    SELECT 275, sc.[SubCategoryID], N'معاينة شكلية/سطحية', N'Ignored Mild Patinet Pain', 1
+    FROM [dbo].[APP_LOOKUP_SUBCATEGORY] sc
+    WHERE sc.[CategoryID] = 2 AND sc.[SubCategoryName] = N'Token Listening';
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 276)
-    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (276, 35, N'سريّة المعلومات(عدم خصوصية المعلومات..)', N'Confidentially(Lack of Patient Information..)', 1);
+    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive])
+    SELECT 276, sc.[SubCategoryID], N'سريّة المعلومات(عدم خصوصية المعلومات..)', N'Confidentially(Lack of Patient Information..)', 1
+    FROM [dbo].[APP_LOOKUP_SUBCATEGORY] sc
+    WHERE sc.[CategoryID] = 3 AND sc.[SubCategoryName] = N'Confidentially';
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 277)
-    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (277, 34, N'عدم الموافقة(خلل في الإبلاغ عن تبديل طبيب..)', N'Consent(Failure to Inform Staffing/Clinician change..)', 1);
+    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive])
+    SELECT 277, sc.[SubCategoryID], N'عدم الموافقة(خلل في الإبلاغ عن تبديل طبيب..)', N'Consent(Failure to Inform Staffing/Clinician change..)', 1
+    FROM [dbo].[APP_LOOKUP_SUBCATEGORY] sc
+    WHERE sc.[CategoryID] = 3 AND sc.[SubCategoryName] = N'Consent';
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 278)
     INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (278, 7, N'أسلوب جاف/حاد/تنفّر', N'Rude Behavior(Sharp, Cold Manner..)', 1);
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 279)
@@ -322,8 +408,14 @@ IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [Classifica
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 281)
     INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (281, 7, N'سلوك فادح (تضارب..)', N'Gross Patient Humiliation', 1);
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 282)
-    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (282, 33, N'خلل-المعتقدات الدينية(ذكور-إناث)', N'Privacy(Patient''s Religious(Male/Female)..)', 1);
+    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive])
+    SELECT 282, sc.[SubCategoryID], N'خلل-المعتقدات الدينية(ذكور-إناث)', N'Privacy(Patient''s Religious(Male/Female)..)', 1
+    FROM [dbo].[APP_LOOKUP_SUBCATEGORY] sc
+    WHERE sc.[CategoryID] = 3 AND sc.[SubCategoryName] = N'Privacy & Dignity';
 IF NOT EXISTS (SELECT 1 FROM [dbo].[APP_LOOKUP_CLASSIFICATION] WHERE [ClassificationID] = 283)
-    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive]) VALUES (283, 33, N'خلل-خصوصية(احترام الخصوصية..)', N'Privacy(Lack of Patient Privacy..)', 1);
+    INSERT INTO [dbo].[APP_LOOKUP_CLASSIFICATION] ([ClassificationID], [SubCategoryID], [Classification_AR], [Classification_EN], [IsActive])
+    SELECT 283, sc.[SubCategoryID], N'خلل-خصوصية(احترام الخصوصية..)', N'Privacy(Lack of Patient Privacy..)', 1
+    FROM [dbo].[APP_LOOKUP_SUBCATEGORY] sc
+    WHERE sc.[CategoryID] = 3 AND sc.[SubCategoryName] = N'Privacy & Dignity';
 SET IDENTITY_INSERT [dbo].[APP_LOOKUP_CLASSIFICATION] OFF;
 GO
