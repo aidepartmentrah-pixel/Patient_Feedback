@@ -1544,14 +1544,17 @@ def _validate_group(group_key: str, rows: List[Dict], maps: Dict) -> Dict[str, A
             ),
         }
 
-        # --- Severity / Stage / Harm Level / Feedback Risk Type / Building
-        # (all mandatory now -- was warn-and-continue, per explicit decision
-        # to require every field with no exceptions) ---
+        # --- Severity / Stage / Harm Level / Feedback Risk Type
+        # (mandatory for Complaint rows; Notice rows don't require them,
+        # mirroring the Classification exception above and case_service's
+        # own Notice-required-fields list. Building stays mandatory for
+        # every record type -- not exempted here.) ---
         severity_name = _get(row, COL_SEVERITY)
         severity_id, severity_warning = _lookup_fuzzy(maps, "severities", severity_name)
         note_fuzzy(severity_warning)
         if not severity_name:
-            add_error("Severity", "Severity is missing")
+            if record_type_id != RECORD_TYPE_IDS["notice"]:
+                add_error("Severity", "Severity is missing")
         elif severity_id is None:
             add_error("Severity", f"Severity '{severity_name}' not found — reject")
 
@@ -1559,7 +1562,8 @@ def _validate_group(group_key: str, rows: List[Dict], maps: Dict) -> Dict[str, A
         stage_id, stage_warning = _lookup_fuzzy(maps, "stages", stage_name)
         note_fuzzy(stage_warning)
         if not stage_name:
-            add_error("Stage", "Stage is missing")
+            if record_type_id != RECORD_TYPE_IDS["notice"]:
+                add_error("Stage", "Stage is missing")
         elif stage_id is None:
             add_error("Stage", f"Stage '{stage_name}' not found — reject")
 
@@ -1567,7 +1571,8 @@ def _validate_group(group_key: str, rows: List[Dict], maps: Dict) -> Dict[str, A
         harm_id, harm_warning = _lookup_fuzzy(maps, "harm_levels", harm_name)
         note_fuzzy(harm_warning)
         if not harm_name:
-            add_error("Harm Level", "Harm Level is missing")
+            if record_type_id != RECORD_TYPE_IDS["notice"]:
+                add_error("Harm Level", "Harm Level is missing")
         elif harm_id is None:
             add_error("Harm Level", f"Harm Level '{harm_name}' not found — reject")
 
@@ -1575,7 +1580,8 @@ def _validate_group(group_key: str, rows: List[Dict], maps: Dict) -> Dict[str, A
         risk_id, risk_warning = _lookup_fuzzy(maps, "risk_types", risk_name)
         note_fuzzy(risk_warning)
         if not risk_name:
-            add_error("Feedback Risk Type", "Feedback Risk Type is missing")
+            if record_type_id != RECORD_TYPE_IDS["notice"]:
+                add_error("Feedback Risk Type", "Feedback Risk Type is missing")
         elif risk_id is None:
             add_error("Feedback Risk Type", f"Risk Type '{risk_name}' not found — reject")
 
