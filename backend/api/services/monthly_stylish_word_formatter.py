@@ -15,11 +15,12 @@ Two independent page templates:
   - Notice / Commendation form (one flowing table per unit): scope strip,
     then a 7-column table of that unit's notices.
 
-Records are grouped by primary target org unit (see _group_by_unit), and
-each unit's batch of complaint/notice pages is followed by its own
-standalone signature page (_render_signature_page) — the paper form's
-approval grid is physically handed to one person per batch, so it can
-appear at most once per unit, not once per record. See Complaint Details /
+Records are grouped by primary target org unit (see _group_units), and each
+unit's complaint pages and notice table are rendered physically adjacent
+(see _render_report_body), followed by one shared signature page
+(_render_signature_page) covering both — the paper form's approval grid is
+physically handed to one person per unit's whole packet, so it can appear
+at most once per unit, not once per record or per record kind. See Complaint Details /
 Immediate Action / Actions Taken sizing via the 3 registered narrative
 styles (_register_narrative_styles) for the one piece of user-adjustable
 formatting in the document.
@@ -122,10 +123,15 @@ def _ltr_run(para, text: str, size: int = 10, bold: bool = False, italic: bool =
 # property.
 
 # Maximal run of Latin letters/digits, allowed to swallow single interior
-# spaces/hyphens/periods between alphanumeric tokens so multi-word terms
-# ("bottle suction") and numbered-point markers ("2.") stay as ONE isolated
-# run instead of fragmenting into several tiny isolated runs.
-_LTR_ISLAND_RE = re.compile(r'[A-Za-z0-9]+(?:[ \-\.][A-Za-z0-9]+)*\.?')
+# spaces/hyphens/periods/slashes between alphanumeric tokens so multi-word
+# terms ("bottle suction"), numbered-point markers ("2."), and slash-
+# separated dates/codes ("01/06/2026") stay as ONE isolated run instead of
+# fragmenting into several tiny isolated runs. Without "/" here, a date like
+# "01/06/2026" split into 3 separate islands ("01", "06", "2026") with
+# unmarked slashes between them, and Word's bidi resolver then reordered
+# those fragments inside the surrounding RTL text (e.g. report_code
+# rendering as "2026/06/...01" instead of "01/06/2026").
+_LTR_ISLAND_RE = re.compile(r'[A-Za-z0-9]+(?:[ \-\./][A-Za-z0-9]+)*\.?')
 
 
 def _styled_ltr_run(para, text: str, color: str = None):
@@ -306,6 +312,15 @@ DARK_TEXT   = '1A1A2E'
 
 BORDER_OUTER = '2B2B2B'  # near-black, thin — formal paper-form look
 BORDER_INNER = '999999'
+
+# w:sz on w:tblBorders is in eighths of a point. Outer kept at the original
+# 6 (0.75pt) — client wants the outside frame left as it was. Inner (the
+# dividers between cells/rows) bolded to 12 (1.5pt, double the original 3)
+# per "make the lines between things bold, leave the outside intact"
+# request — one place to change since every _apply_minimal_table_borders
+# call in this file passes these same two values.
+BORDER_OUTER_SZ = 6
+BORDER_INNER_SZ = 12
 
 # Usable width: A4 landscape 297mm - 12mm left - 12mm right = 273mm.
 # Every table below targets <=270mm (3mm safety margin).
@@ -524,19 +539,6 @@ def _target_display(record: Dict) -> str:
             p.get('administration_name') or '—')
 
 
-def _scope_labels(report_entity_name: Optional[str], report_entity_type: Optional[str]):
-    """Maps the report-level scope (single name+type) onto the 3-way strip."""
-    name = report_entity_name or '—'
-    t = (report_entity_type or '').lower()
-    if 'administration' in t:
-        return name, '—', '—'
-    if 'department' in t:
-        return '—', name, '—'
-    if 'section' in t:
-        return '—', '—', name
-    return '—', '—', '—'
-
-
 def _unit_key(record: Dict):
     """
     Identity key for a record's primary target unit — prefers IDs over
@@ -551,18 +553,37 @@ def _unit_key(record: Dict):
     )
 
 
-def _group_by_unit(records: List[Dict]):
+def _group_units(complaints: List[Dict], notices: List[Dict]):
     """
-    Stable group-by primary target unit: preserves each group's first-seen
-    order and keeps every record belonging to that unit contiguous, even if
-    the incoming list interleaves units — needed so a single signature page
-    can immediately follow each unit's complete, uninterrupted batch of
-    records. Returns [(unit_display_label, [records...]), ...].
+    Merges complaints and notices into one ordered sequence of per-unit
+    batches: [(unit_display_label, [unit_complaints...], [unit_notices...]),
+    ...]. A unit's position is fixed the first time its key is seen —
+    scanning complaints first, then notices — so a notices-only unit (never
+    appearing in complaints) still surfaces, appended after every
+    complaint-bearing unit. This lets one unit's complaint pages and notice
+    table be rendered physically adjacent, ending in ONE shared signature
+    page, instead of the two separate signature pages (one per kind) the
+    previous per-kind-only grouping produced for a unit with both.
     """
-    groups: Dict[Any, List[Dict]] = {}
-    for record in records:
-        groups.setdefault(_unit_key(record), []).append(record)
-    return [(_target_display(recs[0]), recs) for recs in groups.values()]
+    order: List[Any] = []
+    c_by_unit: Dict[Any, List[Dict]] = {}
+    n_by_unit: Dict[Any, List[Dict]] = {}
+    labels: Dict[Any, str] = {}
+
+    for c in complaints:
+        k = _unit_key(c)
+        if k not in labels:
+            order.append(k)
+            labels[k] = _target_display(c)
+        c_by_unit.setdefault(k, []).append(c)
+    for n in notices:
+        k = _unit_key(n)
+        if k not in labels:
+            order.append(k)
+            labels[k] = _target_display(n)
+        n_by_unit.setdefault(k, []).append(n)
+
+    return [(labels[k], c_by_unit.get(k, []), n_by_unit.get(k, [])) for k in order]
 
 
 # ---------------------------------------------------------------------------
@@ -577,7 +598,7 @@ def _four_cell_strip(doc: Document, admin_name: str, dept_name: str,
     tbl = doc.add_table(rows=1, cols=4)
     tbl.autofit = False
     tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-    _apply_minimal_table_borders(tbl, outer=BORDER_OUTER, outer_sz=6, inner=BORDER_INNER, inner_sz=3)
+    _apply_minimal_table_borders(tbl, outer=BORDER_OUTER, outer_sz=BORDER_OUTER_SZ, inner=BORDER_INNER, inner_sz=BORDER_INNER_SZ)
     _set_rtl_table(tbl)
 
     row = tbl.rows[0]
@@ -643,24 +664,35 @@ def _case_number(complaint: Dict) -> str:
 # width). English-only headers (no more "English\nArabic" two-line labels)
 # for the 8 columns the client asked to keep English-only; Classification
 # (Arb.)/(Eng.) were already English-only and are unchanged.
-# Sum of widths = 8 + 268.8 ~= 269mm (<= 270mm target ceiling, same as before).
+# Round 5: received date is back, client asked for it specifically (not
+# incident/publication), positioned directly after الرقم. Rotated, matching
+# الرقم's style — the client asked for it vertical too, and a short
+# YYYY-MM-DD string (~10 chars, same length as the case number) fits the
+# same row height as a single bottom-to-top line just like the case number
+# does. Narrowed to 14mm (matching الرقم's rotated width) since a rotated
+# column only needs enough width for one line's worth of vertical text.
+# The other 10 columns (all but الرقم) were scaled down by 0.942 to make
+# room for it within the same 270mm ceiling.
+# Sum of widths = 14 + 14 + 239.9 = 267.9mm (<= 270mm target ceiling).
 _CLASS_COLS = [
     ('الرقم', 14, _case_number),
-    ('Problem Domain', 28.6, lambda c: c.get('domain_name') or '—'),
-    ('Problem Category', 22.0, lambda c: c.get('category_name') or '—'),
-    ('Sub-Category', 25.3, lambda c: c.get('subcategory_name') or '—'),
-    ('Classification (Arb.)', 38.0, lambda c: c.get('classification_name') or '—'),
-    ('Classification (Eng.)', 44.0, lambda c: c.get('classification_name_en') or '—'),
-    ('Severity', 17.8, lambda c: c.get('severity_name') or '—'),
-    ('Stage', 24.2, lambda c: c.get('stage_name') or '—'),
-    ('Harm', 19.7, lambda c: c.get('harm_level') or '—'),
-    ('Status', 15.4, lambda c: c.get('status_name') or '—'),
-    ('Complaint Field Type', 19.8, lambda c: c.get('clinical_risk_type_name') or 'Ordinary'),
+    ('تاريخ تلقي الملاحظة', 14, lambda c: _fmt_date(c.get('received_date'))),
+    ('Problem Domain', 26.9, lambda c: c.get('domain_name') or '—'),
+    ('Problem Category', 20.7, lambda c: c.get('category_name') or '—'),
+    ('Sub-Category', 23.8, lambda c: c.get('subcategory_name') or '—'),
+    ('Classification (Arb.)', 35.8, lambda c: c.get('classification_name') or '—'),
+    ('Classification (Eng.)', 41.4, lambda c: c.get('classification_name_en') or '—'),
+    ('Severity', 16.8, lambda c: c.get('severity_name') or '—'),
+    ('Stage', 22.8, lambda c: c.get('stage_name') or '—'),
+    ('Harm', 18.6, lambda c: c.get('harm_level') or '—'),
+    ('Status', 14.5, lambda c: c.get('status_name') or '—'),
+    ('Complaint Field Type', 18.6, lambda c: c.get('clinical_risk_type_name') or 'Ordinary'),
 ]
 
-# Index of the one remaining rotated column (case number). Was {0, 1, 2, 3}
-# (3 dates + case number) before the date columns were removed.
-_ROTATED_CLASS_COLS = {0}
+# Rotated columns: case number and, as of Round 5, the received date next to
+# it. Was {0, 1, 2, 3} (3 dates + case number) before the date columns were
+# removed in Round 4; now {0, 1} again with just the one date column back.
+_ROTATED_CLASS_COLS = {0, 1}
 
 
 def _classification_table(doc: Document, complaint: Dict):
@@ -668,7 +700,7 @@ def _classification_table(doc: Document, complaint: Dict):
     tbl = doc.add_table(rows=2, cols=n)
     tbl.autofit = False
     tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-    _apply_minimal_table_borders(tbl, outer=BORDER_OUTER, outer_sz=6, inner=BORDER_INNER, inner_sz=3)
+    _apply_minimal_table_borders(tbl, outer=BORDER_OUTER, outer_sz=BORDER_OUTER_SZ, inner=BORDER_INNER, inner_sz=BORDER_INNER_SZ)
     _set_rtl_table(tbl)
 
     hdr = tbl.rows[0]
@@ -723,7 +755,7 @@ def _complaint_data_block(doc: Document, complaint: Dict):
     tbl = doc.add_table(rows=1, cols=5)
     tbl.autofit = False
     tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-    _apply_minimal_table_borders(tbl, outer=BORDER_OUTER, outer_sz=6, inner=BORDER_INNER, inner_sz=3)
+    _apply_minimal_table_borders(tbl, outer=BORDER_OUTER, outer_sz=BORDER_OUTER_SZ, inner=BORDER_INNER, inner_sz=BORDER_INNER_SZ)
     _set_rtl_table(tbl)
 
     row = tbl.rows[0]
@@ -744,7 +776,7 @@ def _complaint_data_block(doc: Document, complaint: Dict):
     nh.paragraph_format.space_before = Pt(2)
     nh.paragraph_format.space_after  = Pt(2)
     nh._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-    _ar_run(nh, 'محتوى الشكوى  /  Complaint Details', size=8, bold=True, color=NAVY)
+    _ar_run(nh, 'Complaint Details', size=8, bold=True, color=NAVY)
 
     text = _truncate_for_fit(complaint.get('complaint_text') or '', NARRATIVE_MAX_CHARS)
     nb = narrative_cell.add_paragraph()
@@ -787,13 +819,13 @@ def _action_block(doc: Document, complaint: Dict):
     tbl = doc.add_table(rows=1, cols=3)
     tbl.autofit = False
     tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-    _apply_minimal_table_borders(tbl, outer=BORDER_OUTER, outer_sz=6, inner=BORDER_INNER, inner_sz=3)
+    _apply_minimal_table_borders(tbl, outer=BORDER_OUTER, outer_sz=BORDER_OUTER_SZ, inner=BORDER_INNER, inner_sz=BORDER_INNER_SZ)
     _set_rtl_table(tbl)
 
     row = tbl.rows[0]
     label_cell, immediate_cell, taken_cell = row.cells
 
-    def _fill(cell, header_ar, header_en, text, style_name):
+    def _fill(cell, header_en, text, style_name):
         _set_cell_shading(cell, WHITE)
         cell.text = ''
         hp = cell.paragraphs[0]
@@ -803,7 +835,7 @@ def _action_block(doc: Document, complaint: Dict):
         hp.paragraph_format.space_before = Pt(2)
         hp.paragraph_format.space_after  = Pt(2)
         hp._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
-        _ar_run(hp, f'{header_ar}  /  {header_en}', size=8, bold=True, color=NAVY)
+        _ar_run(hp, header_en, size=8, bold=True, color=NAVY)
 
         body_text = _truncate_for_fit(text or '', ACTION_MAX_CHARS)
         bp = cell.add_paragraph()
@@ -816,9 +848,9 @@ def _action_block(doc: Document, complaint: Dict):
         bp._p.get_or_add_pPr().append(OxmlElement('w:bidi'))
         _add_bidi_segmented_text(bp, body_text or '—', color=DARK_TEXT, style_applies=True)
 
-    _fill(immediate_cell, 'الإجراءات الفورية', 'Immediate Action',
+    _fill(immediate_cell, 'Immediate Action',
           complaint.get('immediate_action'), STYLE_IMMEDIATE_ACTION)
-    _fill(taken_cell, 'الإجراءات المتخذة', 'Actions Taken',
+    _fill(taken_cell, 'Actions Taken',
           complaint.get('taken_action'), STYLE_ACTIONS_TAKEN)
     _vertical_label_cell(label_cell, 'المتابعة')
 
@@ -895,7 +927,7 @@ def _approval_grid(doc: Document):
     tbl = doc.add_table(rows=4, cols=5)
     tbl.autofit = False
     tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-    _apply_minimal_table_borders(tbl, outer=BORDER_OUTER, outer_sz=6, inner=BORDER_INNER, inner_sz=3)
+    _apply_minimal_table_borders(tbl, outer=BORDER_OUTER, outer_sz=BORDER_OUTER_SZ, inner=BORDER_INNER, inner_sz=BORDER_INNER_SZ)
     _set_rtl_table(tbl)
 
     hdr = tbl.rows[0]
@@ -948,22 +980,30 @@ def _approval_grid(doc: Document):
     return tbl
 
 
-def _render_signature_page(doc: Document, unit_label: str, count: int, noun_label: str):
+def _render_signature_page(doc: Document, unit_label: str,
+                            complaint_count: int = 0, notice_count: int = 0):
     """
-    Standalone page carrying just one batch's approval/signature grid.
-    Physically, complaints/notices for one org unit get sent by hand to one
-    person for one signature — so the grid can't repeat per record (that
-    forces multiple signatures for a single batch) and can't be shared
-    across units in the same file either. Captioned with the unit name and
-    record count since this page is meant to be separated from the rest and
+    Standalone page carrying just one unit's approval/signature grid.
+    Physically, a unit's whole packet — its complaint pages AND its notice
+    table — gets sent by hand to one person for one signature, so this page
+    covers BOTH record kinds at once: the grid can't repeat per record or
+    per kind (that would force more than one signature for what's handed
+    over as a single stapled bundle), and can't be shared across units
+    either. Captioned with the unit name and both counts (whichever are
+    non-zero) since this page is meant to be separated from the rest and
     handed off on its own — without the caption there'd be no way to tell
     whose batch it belongs to once detached.
     """
     cap = _new_para(doc, align='center', space_before=6, space_after=2)
     _ar_run(cap, 'جدول التوقيع', size=12, bold=True, color=NAVY)
 
+    clauses = []
+    if complaint_count > 0:
+        clauses.append(f'عدد الشكاوى: {complaint_count}')
+    if notice_count > 0:
+        clauses.append(f'عدد التنويهات: {notice_count}')
     sub = _new_para(doc, align='center', space_before=0, space_after=10)
-    _ar_run(sub, f'{unit_label}   —   عدد {noun_label}: {count}', size=9.5, color=GREY_TEXT)
+    _ar_run(sub, f'{unit_label}   —   ' + '   +   '.join(clauses), size=9.5, color=GREY_TEXT)
 
     _approval_grid(doc)
 
@@ -1007,8 +1047,7 @@ def _render_complaint_page(doc: Document, complaint: Dict, index: int, total: in
     _gap(doc, 0.15)
 
     pg_para = _new_para(doc, align='center', space_before=2, space_after=0)
-    _ar_run(pg_para, f'شكوى {index} من {total}  •  {_fmt_date(complaint.get("received_date"))}',
-            size=7, color=GREY_TEXT)
+    _ar_run(pg_para, f'شكوى {index} من {total}', size=7, color=GREY_TEXT)
 
     # No page break here — the caller inserts one only BETWEEN complaints.
     # Adding one unconditionally after every complaint (including the last)
@@ -1019,7 +1058,7 @@ def _render_complaint_page(doc: Document, complaint: Dict, index: int, total: in
 
 
 # ---------------------------------------------------------------------------
-# NOTICES SECTION  (flowing table, multiple per page)
+# NOTICES TABLE + REPORT BODY  (per-unit complaint/notice/signature layout)
 # ---------------------------------------------------------------------------
 
 # RTL reading order (index 0 = rightmost). Sum of widths = 270mm.
@@ -1053,8 +1092,9 @@ def _render_notices_table(doc: Document, notices: List[Dict],
     """
     Scope strip + notices table for ONE unit's batch (or, when notices is
     empty, a single empty-state table for the whole report). No signature
-    grid here — see _render_notices_section, which appends one standalone
-    _render_signature_page per batch instead.
+    grid here — see _render_report_body, which appends one shared
+    _render_signature_page per unit (covering both complaints and notices)
+    instead.
     """
     _four_cell_strip(doc, admin_name, dept_name, sec_name, period_label)
     _gap(doc, 3)
@@ -1063,7 +1103,7 @@ def _render_notices_table(doc: Document, notices: List[Dict],
     tbl = doc.add_table(rows=1, cols=n)
     tbl.autofit = False
     tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-    _apply_minimal_table_borders(tbl, outer=BORDER_OUTER, outer_sz=6, inner=BORDER_INNER, inner_sz=3)
+    _apply_minimal_table_borders(tbl, outer=BORDER_OUTER, outer_sz=BORDER_OUTER_SZ, inner=BORDER_INNER, inner_sz=BORDER_INNER_SZ)
     _set_rtl_table(tbl)
 
     hdr = tbl.rows[0]
@@ -1118,53 +1158,86 @@ def _render_notices_table(doc: Document, notices: List[Dict],
         row.height = _mm_to_dxa(9)
 
 
-def _render_notices_section(doc: Document, notices: List[Dict],
-                             report_entity_name: Optional[str],
-                             report_entity_type: Optional[str],
-                             period: Dict,
-                             skip_signature: bool = False):
+def _render_report_body(doc: Document, complaints: List[Dict], notices: List[Dict],
+                         skip_signature: bool, period: Dict, complaint_title: str,
+                         subtitle: str, footer_text: str, report_code: str, period_str: str):
     """
-    Groups notices by primary target unit — same rationale as the
-    complaints path (see the 'complaints' branch in
-    generate_monthly_stylish_docx): one physical batch, one signature page,
-    on its own, immediately after that batch's table.
+    Renders every org unit's batch — its complaint pages, then its notice
+    table, then ONE shared signature page — physically adjacent, so a
+    unit's whole printed packet (both record kinds) is a single contiguous,
+    staple-ready block ending in one signature. Replaces the previous
+    design, where ALL complaints (every unit) formed one Word section
+    followed entirely by ALL notices (every unit) as a second section, each
+    with its own separate per-unit signature page — a unit with both kinds
+    got two signature pages, physically far apart in the document.
+
+    Word-section bookkeeping: a new section (its own title/repeating
+    header, via _setup_section) is opened only when switching from
+    complaint pages to a notice table or back, or for the very first
+    content in the document (which reuses doc.sections[0]) —
+    add_section(NEW_PAGE) already forces a fresh page, so no extra break is
+    needed there. Staying within the same kind across a unit boundary (e.g.
+    two consecutive notice-only units) just inserts a plain page break
+    instead. The signature page never triggers a section switch — it
+    always renders inside whichever section the unit's last content left
+    open. Total section count therefore scales with how often the kind
+    toggles across units, not a fixed 2 — the direct, accepted cost of true
+    per-unit adjacency.
 
     skip_signature=True (whole-hospital/unfiltered exports — see the
-    _NO_SINGLE_UNIT_TYPES check in generate_monthly_stylish_docx) omits every
-    signature page: that export isn't routed to one physical unit to sign.
+    _NO_SINGLE_UNIT_TYPES check in generate_monthly_stylish_docx) omits
+    every signature page but still processes units in this same grouped,
+    adjacent order.
     """
+    groups = _group_units(complaints, notices)
+    total_c = len(complaints)
     period_label = period.get('label_ar') or period.get('label') or '—'
+    idx = 0
+    current_kind: Optional[str] = None
+    first = True
 
-    if not notices:
-        admin_name, dept_name, sec_name = _scope_labels(report_entity_name, report_entity_type)
-        _render_notices_table(doc, [], admin_name, dept_name, sec_name, period_label)
+    def _switch(kind: str, title: str):
+        nonlocal current_kind, first
+        if first:
+            sec = doc.sections[0]
+            first = False
+            _setup_section(doc, sec, title, subtitle, footer_text, report_code, period_str)
+        elif kind != current_kind:
+            sec = doc.add_section(WD_SECTION.NEW_PAGE)
+            _setup_section(doc, sec, title, subtitle, footer_text, report_code, period_str)
+        else:
+            _page_break(doc)
+        current_kind = kind
+
+    for unit_label, unit_complaints, unit_notices in groups:
+        if unit_complaints:
+            _switch('complaints', complaint_title)
+            for ci, complaint in enumerate(unit_complaints):
+                idx += 1
+                try:
+                    _render_complaint_page(doc, complaint, idx, total_c, period)
+                except Exception as e:
+                    print(f'[STYLISH] Warning: failed to render complaint (unit={unit_label}, idx={idx}): {e}')
+                if ci < len(unit_complaints) - 1:
+                    _page_break(doc)
+
+        if unit_notices:
+            _switch('notices', _NOTICE_TITLE)
+            p = _primary_target(unit_notices[0])
+            admin_name = p.get('administration_name') or '—'
+            dept_name = p.get('department_name') or '—'
+            sec_name = p.get('section_name') or '—'
+            try:
+                _render_notices_table(doc, unit_notices, admin_name, dept_name, sec_name, period_label)
+            except Exception as e:
+                print(f'[STYLISH] Warning: failed to render notices table (unit={unit_label}): {e}')
+
         if not skip_signature:
             _page_break(doc)
-            _render_signature_page(doc, report_entity_name or '—', 0, 'التنويهات')
-        return
-
-    groups = _group_by_unit(notices)
-    items: List[tuple] = []
-    for unit_label, group_notices in groups:
-        items.append(('table', unit_label, group_notices))
-        if not skip_signature:
-            items.append(('signature', unit_label, len(group_notices)))
-
-    for i, item in enumerate(items):
-        tag, unit_label, payload = item
-        try:
-            if tag == 'table':
-                p = _primary_target(payload[0])
-                admin_name = p.get('administration_name') or '—'
-                dept_name = p.get('department_name') or '—'
-                sec_name = p.get('section_name') or '—'
-                _render_notices_table(doc, payload, admin_name, dept_name, sec_name, period_label)
-            else:
-                _render_signature_page(doc, unit_label, payload, 'التنويهات')
-        except Exception as e:
-            print(f'[STYLISH] Warning: failed to render notices item #{i} ({unit_label}): {e}')
-        if i < len(items) - 1:
-            _page_break(doc)
+            try:
+                _render_signature_page(doc, unit_label, len(unit_complaints), len(unit_notices))
+            except Exception as e:
+                print(f'[STYLISH] Warning: failed to render signature page (unit={unit_label}): {e}')
 
 
 # ---------------------------------------------------------------------------
@@ -1378,65 +1451,15 @@ def generate_monthly_stylish_docx(
     _NO_SINGLE_UNIT_TYPES = {None, 'hospital', 'all_administrations', 'all_departments', 'all_sections'}
     skip_signature = report_entity_type in _NO_SINGLE_UNIT_TYPES
 
-    plan: List[str] = []
-    if complaints: plan.append('complaints')
-    if notices:    plan.append('notices')
-    if not plan: plan = ['empty']
-
-    titles = {
-        'complaints': complaint_title,
-        'notices': _NOTICE_TITLE,
-        'empty': complaint_title,
-    }
-
-    first = True
-    for kind in plan:
-        sec = doc.sections[0] if first else doc.add_section(WD_SECTION.NEW_PAGE)
-        first = False
-        _setup_section(doc, sec, titles[kind], subtitle, footer_text, report_code, period_str)
-
-        if kind == 'complaints':
-            total_c = len(complaints)
-            # Group complaints by primary target unit so each unit's batch
-            # gets exactly one signature page, immediately after its own
-            # complaint pages (see _group_by_unit / _render_signature_page).
-            # Flattened into one (tag, payload) item list so the existing
-            # "break BETWEEN items only, never after the last one" pattern
-            # — which avoids a blank trailing page — applies uniformly to
-            # both complaint pages and the signature pages interleaved
-            # between batches.
-            groups = _group_by_unit(complaints)
-            items: List[tuple] = []
-            idx = 0
-            for unit_label, group_complaints in groups:
-                for complaint in group_complaints:
-                    idx += 1
-                    items.append(('complaint', complaint, idx))
-                if not skip_signature:
-                    items.append(('signature', unit_label, len(group_complaints)))
-
-            for i, item in enumerate(items):
-                try:
-                    if item[0] == 'complaint':
-                        _, complaint, cidx = item
-                        _render_complaint_page(doc, complaint, cidx, total_c, period)
-                    else:
-                        _, unit_label, count = item
-                        _render_signature_page(doc, unit_label, count, 'الشكاوى')
-                except Exception as e:
-                    print(f'[STYLISH] Warning: failed to render complaints item #{i}: {e}')
-                if i < len(items) - 1:
-                    _page_break(doc)
-        elif kind == 'notices':
-            try:
-                _render_notices_section(doc, notices, report_entity_name, report_entity_type, period,
-                                         skip_signature=skip_signature)
-            except Exception as e:
-                print(f'[STYLISH] Warning: failed to render notices section: {e}')
-        elif kind == 'empty':
-            ep = _new_para(doc, align='center', space_before=20, space_after=0)
-            _ar_run(ep, 'لا توجد سجلات لهذه الفترة — No records for this period.',
-                    size=13, italic=True, color=GREY_TEXT)
+    if complaints or notices:
+        _render_report_body(doc, complaints, notices, skip_signature, period,
+                             complaint_title, subtitle, footer_text, report_code, period_str)
+    else:
+        sec = doc.sections[0]
+        _setup_section(doc, sec, complaint_title, subtitle, footer_text, report_code, period_str)
+        ep = _new_para(doc, align='center', space_before=20, space_after=0)
+        _ar_run(ep, 'لا توجد سجلات لهذه الفترة — No records for this period.',
+                size=13, italic=True, color=GREY_TEXT)
 
     buf = BytesIO()
     doc.save(buf)

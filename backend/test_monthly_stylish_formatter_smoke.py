@@ -197,19 +197,23 @@ def run():
     doc_a = _open_and_basic_checks("Full fixture", content_a)
     if doc_a is not None:
         _check_geometry("Full fixture", doc_a)
-        # Appendix page was removed entirely — only complaints + notices
-        # sections remain (each a distinct page-geometry section).
+        # Appendix page was removed entirely. A section switch now happens
+        # per kind-transition (complaints -> notices) rather than once
+        # globally per kind, but this single-unit fixture still produces
+        # exactly 2 sections: one complaints-titled, one notices-titled.
         check("Full fixture: has >= 2 sections (complaints+notices)",
               len(doc_a.sections) >= 2)
         full_text_a = _full_text(doc_a)
         check("Full fixture: no leftover appendix title text",
               "ملحق: توزيع السجلات" not in full_text_a)
-        # Both fixture complaints (and both fixture notices) share the same
-        # primary target unit, so grouping collapses each into exactly one
-        # batch -> exactly one signature grid each (2 total), not one per
-        # record (which would have given 3+ before this change).
-        check("Full fixture: exactly one signature grid per batch (2 total)",
-              full_text_a.count("خاص خدمات المرضى") == 2)
+        # Both fixture complaints and both fixture notices share the same
+        # primary target unit, so they collapse into ONE shared signature
+        # page covering both record kinds (not one per kind -> 2, and not
+        # one per record -> 4+).
+        check("Full fixture: exactly one shared signature grid (complaints+notices combined)",
+              full_text_a.count("خاص خدمات المرضى") == 1)
+        check("Full fixture: shared signature caption shows both counts",
+              "عدد الشكاوى" in full_text_a and "عدد التنويهات" in full_text_a)
         check("Full fixture: batch signature page caption present",
               "جدول التوقيع" in full_text_a)
         # Round 4 checks: yellow RCA box removed, scope strip is Arabic-only,
