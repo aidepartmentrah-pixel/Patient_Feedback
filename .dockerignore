@@ -9,8 +9,6 @@ model_training
 tools
 api
 DEPLOYMENT_CHECKLIST.txt
-ML_ARCHITECTURE_DECISION_RECORD.md
-LEGION_HANDOFF.md
 Setup-NewServer.ps1
 Start-Backend.ps1
 models.lock.yaml

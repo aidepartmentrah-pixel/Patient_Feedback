@@ -333,7 +333,7 @@ async def startup_ml_warmup():
 async def startup_ml_embedding_worker():
     """
     Stage 6 of the ML architecture consolidation (see
-    ML_ARCHITECTURE_DECISION_RECORD.md): start the background worker that
+    docs/AI_ENGINE_ARCHITECTURE.md): start the background worker that
     processes ml.EmbeddingProcessingJob rows (registered by case creation/
     import/edit — see case_service.py) asynchronously and in batches.
     Runs as a daemon thread inside this process, reusing whatever embedding

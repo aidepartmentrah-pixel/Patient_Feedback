@@ -1,3 +1,0 @@
--- APP_Roles (role definitions) is now seeded as part of 009_seed_configuration.sql.
--- No user accounts, credentials, or role ASSIGNMENTS are ever seeded by this package --
--- APP_Users / Users / APP_UserRoleScope / UserRole must be populated per-deployment.

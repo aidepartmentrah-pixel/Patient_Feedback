@@ -48,7 +48,7 @@ flowchart TD
 ## 3. Where the ML data lives
 
 ### 3.1 Today (current architecture)
-All ML data lives **inside the same SQL Server database as the operational data** (`IncidentManager`), in a dedicated `ml` schema — not a separate database, not a file on disk. This was a deliberate architectural decision, recorded in full in [`ML_ARCHITECTURE_DECISION_RECORD.md`](../ML_ARCHITECTURE_DECISION_RECORD.md) at the repo root.
+All ML data lives **inside the same SQL Server database as the operational data** (`IncidentManager`), in a dedicated `ml` schema — not a separate database, not a file on disk. This was a deliberate architectural decision, documented in this file.
 
 Key tables:
 - **`ml.CaseTrainingRecord`** — one current row per operationally-sourced case. Holds the complaint/immediate-action/taken-action text, all label columns, both active embeddings, `ProcessingStatus` (`Pending`/`Processing`/`Completed`/`Failed`/`RetryPending`), and a link to the embedding model version that produced its vectors. Editing a case's text re-queues a job and **updates this same row** — it never appends a duplicate.
@@ -280,7 +280,6 @@ Because this system deploys into air-gapped hospital environments, model artifac
 
 | Concern | File |
 |---|---|
-| ADR / full design rationale | `ML_ARCHITECTURE_DECISION_RECORD.md` |
 | Embedding model load + batch inference | `models_directory/Classification_Models/Stage/modular_functions.py` |
 | Background embedding worker | `backend/ml_mapping/embedding_worker.py` |
 | Train/test split + SQL Server source query | `models_directory/split_data.py` |

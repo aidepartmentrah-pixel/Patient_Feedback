@@ -13,7 +13,7 @@
 # the basename of the directory containing this file, so two sessions that
 # each omit `-p` (or use a different one) can silently collide on the same
 # containers/network. Same fix already used in
-# release/1.2.0/compose/docker-compose.yml.
+# the offline release compose file.
 name: ${PROJECT_NAME:-pfms}
 
 services:

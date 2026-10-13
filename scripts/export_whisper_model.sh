@@ -11,7 +11,7 @@
 set -euo pipefail
 
 MODEL_SIZE="${1:-medium}"
-RELEASE_VERSION="${2:-1.2.0}"
+RELEASE_VERSION="${2:-1.3.2}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="$REPO_ROOT/assets/whisper-model-${MODEL_SIZE}"
 RELEASE_DIR="$REPO_ROOT/release/${RELEASE_VERSION}"
