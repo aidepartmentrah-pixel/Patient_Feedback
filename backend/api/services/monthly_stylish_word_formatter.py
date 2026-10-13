@@ -608,7 +608,7 @@ def _group_units(complaints: List[Dict], notices: List[Dict]):
 
 
 # ---------------------------------------------------------------------------
-# SCOPE STRIP  (الإدارة / الدائرة / الوحدة الإدارية-القسم / الشهر)
+# SCOPE STRIP  (الإدارة / الدائرة / القسم / الشهر)
 # ---------------------------------------------------------------------------
 
 _STRIP_WIDTHS = [68, 68, 68, 66]  # sum = 270mm
@@ -626,7 +626,7 @@ def _four_cell_strip(doc: Document, admin_name: str, dept_name: str,
     boxes = [
         ('الإدارة', admin_name),
         ('الدائرة', dept_name),
-        ('الوحدة الإدارية/القسم', sec_name),
+        ('القسم', sec_name),
         ('الشهر', period_label),
     ]
     for ci, (label, value) in enumerate(boxes):

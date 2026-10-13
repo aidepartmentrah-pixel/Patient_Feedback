@@ -191,51 +191,8 @@ def get_available_seasons() -> dict:
     
     today = dt_date.today()
     
-    # =============================================
-    # AUTO-GENERATE MISSING SEASONS
-    # =============================================
-    QUARTER_DATE_RANGES = {
-        1: {"start_month": 1, "start_day": 1, "end_month": 3, "end_day": 31},
-        2: {"start_month": 4, "start_day": 1, "end_month": 6, "end_day": 30},
-        3: {"start_month": 7, "start_day": 1, "end_month": 9, "end_day": 30},
-        4: {"start_month": 10, "start_day": 1, "end_month": 12, "end_day": 31},
-    }
-    
-    current_year = today.year
-    years_ahead = 2
-    
-    # Get the current max UniqueID
-    cursor.execute("SELECT ISNULL(MAX(UniqueID), 0) FROM dbo.Season")
-    next_id = cursor.fetchone()[0] + 1
-    
-    for year in range(current_year, current_year + years_ahead + 1):
-        for quarter in range(1, 5):
-            season_name = f"Q{quarter}-{year}"
-            
-            # Check if exists
-            cursor.execute(
-                "SELECT UniqueID FROM dbo.Season WHERE SeasonName = ?",
-                (season_name,)
-            )
-            
-            if cursor.fetchone() is not None:
-                continue
-            
-            # Create it
-            q = QUARTER_DATE_RANGES[quarter]
-            start_date = dt_date(year, q["start_month"], q["start_day"])
-            end_date = dt_date(year, q["end_month"], q["end_day"])
-            
-            cursor.execute(
-                """
-                INSERT INTO dbo.Season (UniqueID, SeasonName, StartDate, EndDate, IsDone, Frozen)
-                VALUES (?, ?, ?, ?, 0, 0)
-                """,
-                (next_id, season_name, start_date, end_date)
-            )
-            next_id += 1
-            print(f"[Investigation] Auto-created season: {season_name}")
-    
+    from backend.api.db_layer.seasonal_report import ensure_seasons_exist
+    ensure_seasons_exist(cursor)
     conn.commit()
     
     # =============================================
@@ -250,9 +207,10 @@ def get_available_seasons() -> dict:
             EndDate,
             IsDone
         FROM dbo.Season
-        WHERE Frozen = 0
+        WHERE Frozen = 0 AND StartDate <= ?
         ORDER BY StartDate DESC
-        """
+        """,
+        (today,)  # only quarters that have started - never offer future ones
     )
     
     rows = cursor.fetchall()

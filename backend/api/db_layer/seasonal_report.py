@@ -977,7 +977,8 @@ def get_full_seasonal_report(
             'created_by_user_id': header_row.CreatedByUserID,
             'created_at': header_row.CreatedAt.isoformat() if header_row.CreatedAt else None,
             'period': header_row.SeasonPeriod,
-            'orgunit_name': header_row.OrgUnitName
+            # Hospital scope (type 0) has no AdminsrationUnit row, so the join yields NULL
+            'orgunit_name': header_row.OrgUnitName or ('المستشفى' if header_row.OrgUnitType == 0 else None)
         }
         
         seasonal_report_id = header_row.SeasonalReportID
@@ -1275,6 +1276,54 @@ def get_season_metadata(season_id: int) -> Optional[Dict[str, Any]]:
             conn.close()
 
 
+def ensure_seasons_exist(cursor) -> None:
+    """
+    Create any missing quarterly rows in dbo.Season (caller commits).
+
+    Covers every year from the EARLIEST case year (not just the current year - otherwise past
+    quarters of imported history never exist as seasons) through 2 years ahead. The future
+    rows are pre-created for autonomous operation; the UI lists must NOT offer them -
+    filter by StartDate <= today when listing (see get_all_seasons / investigation_service).
+    Single source of truth: previously duplicated in investigation_service.get_available_seasons.
+    """
+    from datetime import date as dt_date
+
+    QUARTER_DATE_RANGES = {
+        1: {"start_month": 1, "start_day": 1, "end_month": 3, "end_day": 31},
+        2: {"start_month": 4, "start_day": 1, "end_month": 6, "end_day": 30},
+        3: {"start_month": 7, "start_day": 1, "end_month": 9, "end_day": 30},
+        4: {"start_month": 10, "start_day": 1, "end_month": 12, "end_day": 31},
+    }
+    years_ahead = 2
+    current_year = dt_date.today().year
+
+    cursor.execute("SELECT MIN(YEAR(FeedbackRecievedDate)) FROM dbo.APP_IncidentCase")
+    earliest_case_year = cursor.fetchone()[0]
+    first_year = min(current_year, earliest_case_year) if earliest_case_year else current_year
+
+    cursor.execute("SELECT ISNULL(MAX(UniqueID), 0) FROM dbo.Season")
+    next_id = cursor.fetchone()[0] + 1
+
+    for year in range(first_year, current_year + years_ahead + 1):
+        for quarter in range(1, 5):
+            season_name = f"Q{quarter}-{year}"
+            cursor.execute("SELECT UniqueID FROM dbo.Season WHERE SeasonName = ?", (season_name,))
+            if cursor.fetchone() is not None:
+                continue
+            q = QUARTER_DATE_RANGES[quarter]
+            cursor.execute(
+                """
+                INSERT INTO dbo.Season (UniqueID, SeasonName, StartDate, EndDate, IsDone, Frozen)
+                VALUES (?, ?, ?, ?, 0, 0)
+                """,
+                (next_id, season_name,
+                 dt_date(year, q["start_month"], q["start_day"]),
+                 dt_date(year, q["end_month"], q["end_day"]))
+            )
+            next_id += 1
+            print(f"[SeasonalReport] Auto-created season: {season_name}")
+
+
 def get_all_seasons() -> List[Dict[str, Any]]:
     """
     Get all available seasons from the database.
@@ -1298,55 +1347,11 @@ def get_all_seasons() -> List[Dict[str, Any]]:
     conn = None
     cursor = None
     
-    # Quarter date ranges (fixed pattern)
-    QUARTER_DATE_RANGES = {
-        1: {"start_month": 1, "start_day": 1, "end_month": 3, "end_day": 31},
-        2: {"start_month": 4, "start_day": 1, "end_month": 6, "end_day": 30},
-        3: {"start_month": 7, "start_day": 1, "end_month": 9, "end_day": 30},
-        4: {"start_month": 10, "start_day": 1, "end_month": 12, "end_day": 31},
-    }
-    
     try:
         conn = get_connection()
         cursor = conn.cursor()
         
-        # =============================================
-        # AUTO-GENERATE MISSING SEASONS
-        # =============================================
-        today = dt_date.today()
-        current_year = today.year
-        years_ahead = 2
-        
-        # Get the current max UniqueID
-        cursor.execute("SELECT ISNULL(MAX(UniqueID), 0) FROM dbo.Season")
-        next_id = cursor.fetchone()[0] + 1
-        
-        for year in range(current_year, current_year + years_ahead + 1):
-            for quarter in range(1, 5):
-                season_name = f"Q{quarter}-{year}"
-                
-                cursor.execute(
-                    "SELECT UniqueID FROM dbo.Season WHERE SeasonName = ?",
-                    (season_name,)
-                )
-                
-                if cursor.fetchone() is not None:
-                    continue
-                
-                q = QUARTER_DATE_RANGES[quarter]
-                start_date = dt_date(year, q["start_month"], q["start_day"])
-                end_date = dt_date(year, q["end_month"], q["end_day"])
-                
-                cursor.execute(
-                    """
-                    INSERT INTO dbo.Season (UniqueID, SeasonName, StartDate, EndDate, IsDone, Frozen)
-                    VALUES (?, ?, ?, ?, 0, 0)
-                    """,
-                    (next_id, season_name, start_date, end_date)
-                )
-                next_id += 1
-                print(f"[SeasonalReport] Auto-created season: {season_name}")
-        
+        ensure_seasons_exist(cursor)
         conn.commit()
         
         # =============================================

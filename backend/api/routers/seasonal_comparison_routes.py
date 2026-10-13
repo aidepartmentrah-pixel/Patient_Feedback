@@ -13,7 +13,7 @@ from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, HTTPException, Query, Body
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from datetime import datetime
+from datetime import datetime, date
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
 import io
@@ -37,7 +37,7 @@ _comparison_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="com
 class TwoQuarterComparisonRequest(BaseModel):
     """Request body for 2-quarter comparison"""
     season_ids: List[int] = Field(..., min_items=2, max_items=2, description="Exactly 2 season IDs (e.g., [4, 5] for Q4-2025 and Q1-2026)")
-    orgunit_id: int = Field(..., ge=1, description="Organization unit ID")
+    orgunit_id: int = Field(..., ge=0, description="Organization unit ID (0 = whole hospital, only valid with orgunit_type=0)")
     orgunit_type: int = Field(..., ge=0, le=3, description="Organization unit type (0=Hospital, 1=Administration, 2=Department, 3=Section)")
     user_id: int = Field(default=1, description="User ID requesting the report")
     format: str = Field(default="json", pattern="^(json|docx)$", description="Response format: 'json' for data, 'docx' for Word document download")
@@ -46,7 +46,7 @@ class TwoQuarterComparisonRequest(BaseModel):
 class ThreeQuarterComparisonRequest(BaseModel):
     """Request body for 3-quarter comparison"""
     season_ids: List[int] = Field(..., min_items=3, max_items=3, description="Exactly 3 consecutive season IDs")
-    orgunit_id: int = Field(..., ge=1, description="Organization unit ID")
+    orgunit_id: int = Field(..., ge=0, description="Organization unit ID (0 = whole hospital, only valid with orgunit_type=0)")
     orgunit_type: int = Field(..., ge=0, le=3, description="Organization unit type (0=Hospital, 1=Administration, 2=Department, 3=Section)")
     user_id: int = Field(default=1, description="User ID requesting the report")
     format: str = Field(default="json", pattern="^(json|docx)$", description="Response format: 'json' or 'docx'")
@@ -55,10 +55,22 @@ class ThreeQuarterComparisonRequest(BaseModel):
 class FourQuarterComparisonRequest(BaseModel):
     """Request body for 4-quarter comparison (full year)"""
     season_ids: List[int] = Field(..., min_items=4, max_items=4, description="Exactly 4 consecutive season IDs (full year)")
-    orgunit_id: int = Field(..., ge=1, description="Organization unit ID")
+    orgunit_id: int = Field(..., ge=0, description="Organization unit ID (0 = whole hospital, only valid with orgunit_type=0)")
     orgunit_type: int = Field(..., ge=0, le=3, description="Organization unit type (0=Hospital, 1=Administration, 2=Department, 3=Section)")
     user_id: int = Field(default=1, description="User ID requesting the report")
     format: str = Field(default="json", pattern="^(json|docx)$", description="Response format: 'json' or 'docx'")
+
+
+def _require_unit_for_level(orgunit_id: int, orgunit_type: int) -> None:
+    """Hospital scope (type 0) needs no unit (id 0 = whole hospital); every other level needs a real unit.
+    Without this check a missing selection used to surface as a bare 422 from request validation."""
+    if orgunit_type > 0 and orgunit_id < 1:
+        level_ar = {1: "الإدارة", 2: "الدائرة", 3: "القسم"}.get(orgunit_type, "الوحدة")
+        level_en = {1: "administration", 2: "department", 3: "section"}.get(orgunit_type, "unit")
+        raise HTTPException(
+            status_code=400,
+            detail=f"الرجاء اختيار {level_ar} / Please select the {level_en} before generating the report."
+        )
 
 
 # ============================================================
@@ -76,6 +88,7 @@ async def generate_two_quarter_comparison(
     request: TwoQuarterComparisonRequest
 ):
     """Generate a comparative report for 2 consecutive quarters."""
+    _require_unit_for_level(request.orgunit_id, request.orgunit_type)
     try:
         loop = asyncio.get_event_loop()
 
@@ -196,6 +209,7 @@ async def generate_three_quarter_comparison(
     }
     ```
     """
+    _require_unit_for_level(request.orgunit_id, request.orgunit_type)
     try:
         loop = asyncio.get_event_loop()
 
@@ -294,6 +308,7 @@ async def generate_four_quarter_comparison(
     }
     ```
     """
+    _require_unit_for_level(request.orgunit_id, request.orgunit_type)
     try:
         loop = asyncio.get_event_loop()
 
@@ -368,8 +383,14 @@ def get_available_quarters(
     try:
         from backend.api.db_layer.seasonal_report import get_all_seasons
         
-        seasons = get_all_seasons()
-        
+        # Only seasons that have already started: get_all_seasons() also pre-creates the next
+        # 2 years of quarters, which must not be offered as report choices.
+        today = date.today()
+        seasons = [
+            s for s in get_all_seasons()
+            if s['StartDate'] and (s['StartDate'].date() if isinstance(s['StartDate'], datetime) else s['StartDate']) <= today
+        ]
+
         return {
             "success": True,
             "orgunit_id": orgunit_id,
