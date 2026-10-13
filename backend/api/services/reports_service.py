@@ -884,7 +884,7 @@ class ReportsService:
         
         if by_department:
             dept_heading = doc.add_paragraph()
-            dept_heading_run = dept_heading.add_run("التوزيع حسب الأقسام")
+            dept_heading_run = dept_heading.add_run("التوزيع حسب الوحدات التنظيمية")
             dept_heading_run.font.size = Pt(14)
             dept_heading_run.font.bold = True
             dept_heading_run.font.name = 'Traditional Arabic'
@@ -904,8 +904,12 @@ class ReportsService:
             dept_table.columns[1].width = _safe(Cm(11))  # Department name
             
             # Header row
+            # Level-neutral label: rows can be a mix of Administration/Department/
+            # Section when this table isn't showing a single-level rollup (see
+            # org_unit_type_label_ar handling below, which appends the actual
+            # level per row whenever it's known).
             header_cells = dept_table.rows[0].cells
-            headers = ["العدد", "القسم"]
+            headers = ["العدد", "الوحدة التنظيمية"]
             
             for idx, header_text in enumerate(headers):
                 header_cells[idx].text = header_text
@@ -932,8 +936,13 @@ class ReportsService:
                 row_cells[0].text = str(count)
                 center_cell_content(row_cells[0])
                 
-                # Department name
+                # Unit name, with its actual level appended when known (rows in
+                # the ungrouped/default breakdown can be a mix of Administration/
+                # Department/Section -- see org_unit_type_label_ar in reports_db.py).
                 dept_name = dept.get("dayra_name_ar", dept.get("dayra_name", "—"))
+                unit_level_ar = dept.get("org_unit_type_label_ar")
+                if unit_level_ar:
+                    dept_name = f"{dept_name} ({unit_level_ar})"
                 row_cells[1].text = dept_name
                 for paragraph in row_cells[1].paragraphs:
                     paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
@@ -949,7 +958,7 @@ class ReportsService:
             # Add note if there are more departments
             if len(by_department) > 15:
                 note_para = doc.add_paragraph()
-                note_run = note_para.add_run(f"ملاحظة: تم عرض أعلى 15 قسماً من أصل {len(by_department)} قسماً")
+                note_run = note_para.add_run(f"ملاحظة: تم عرض أعلى 15 وحدة من أصل {len(by_department)} وحدة")
                 note_run.font.size = Pt(10)
                 note_run.font.italic = True
                 note_run.font.name = 'Traditional Arabic'

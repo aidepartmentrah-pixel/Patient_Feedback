@@ -8,9 +8,15 @@ domain entirely -- third-party integration keys). A dedicated key here means
 rotating or, worst case, leaking one key doesn't expose the other secret
 domain.
 
-The encryption key itself is supplied ONLY via the
-PASSWORD_EXPORT_ENCRYPTION_KEY process environment variable -- it is never
-written to db_settings.json, the database, or any log.
+Where the key comes from:
+  1. PASSWORD_EXPORT_ENCRYPTION_KEY environment variable, when set.
+  2. Otherwise config/password_export.key, generated automatically on first
+     use. config/ is the persistent backend_config volume in Docker, so the
+     key survives image rebuilds -- the export works without anyone having
+     to configure anything.
+Both keys are tried when decrypting, so rows saved under either one stay
+readable if the env var is later added or removed. The key is never written
+to db_settings.json, the database, or any log.
 
 Usage:
     from core.password_export_encryption import encrypt_password, decrypt_password
@@ -21,36 +27,68 @@ Usage:
 
 import os
 import logging
+from pathlib import Path
+from typing import List, Optional
 
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 
 logger = logging.getLogger(__name__)
 
 _ENV_VAR_NAME = "PASSWORD_EXPORT_ENCRYPTION_KEY"
+_KEY_FILE = Path(__file__).resolve().parent.parent / "config" / "password_export.key"
 
 
-def _get_fernet() -> Fernet:
-    """
-    Build a Fernet cipher from the PASSWORD_EXPORT_ENCRYPTION_KEY env var.
-
-    Looked up lazily (not at import time) so the app doesn't crash on
-    startup just because nobody has configured this feature yet -- the
-    error only surfaces when someone actually tries to encrypt or decrypt
-    an exportable password.
-    """
-    key = os.environ.get(_ENV_VAR_NAME)
-    if not key:
-        raise RuntimeError(
-            f"{_ENV_VAR_NAME} environment variable is not set. Generate one with "
-            f"`python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"` "
-            f"and set it as a service environment variable before saving or reading "
-            f"any exportable password."
-        )
+def _load_or_create_key_file() -> Optional[bytes]:
+    """Read config/password_export.key, creating it (owner-only) on first use."""
     try:
-        return Fernet(key.encode("utf-8"))
+        if not _KEY_FILE.exists():
+            _KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                fd = os.open(str(_KEY_FILE), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            except FileExistsError:
+                pass  # another worker created it first -- read theirs below
+            else:
+                with os.fdopen(fd, "wb") as f:
+                    f.write(Fernet.generate_key())
+                logger.info("Generated password export key file %s", _KEY_FILE)
+        key = _KEY_FILE.read_bytes().strip()
+        Fernet(key)  # validate
+        return key
     except Exception as e:
-        # Never log the key value itself, even on a malformed-key error.
-        raise RuntimeError(f"{_ENV_VAR_NAME} is not a valid Fernet key: {type(e).__name__}") from e
+        logger.error("Password export key file %s unusable: %s", _KEY_FILE, type(e).__name__)
+        return None
+
+
+def _keys() -> List[bytes]:
+    """Keys in priority order: env var (if set and valid), then the key file."""
+    keys = []
+    env_key = os.environ.get(_ENV_VAR_NAME, "").strip()
+    if env_key:
+        try:
+            Fernet(env_key.encode("utf-8"))
+            keys.append(env_key.encode("utf-8"))
+        except Exception as e:
+            # Never log the key value itself, even on a malformed-key error.
+            logger.error("%s is not a valid Fernet key (%s) -- using the key file instead", _ENV_VAR_NAME, type(e).__name__)
+    file_key = _load_or_create_key_file()
+    if file_key and file_key not in keys:
+        keys.append(file_key)
+    return keys
+
+
+def _get_fernet() -> MultiFernet:
+    """
+    Encrypts with the first available key, decrypts with any of them.
+    Looked up lazily (not at import time) so the app never fails to start
+    because of this feature.
+    """
+    keys = _keys()
+    if not keys:
+        raise RuntimeError(
+            f"No usable password export key: {_ENV_VAR_NAME} is unset/invalid and "
+            f"{_KEY_FILE} could not be created or read."
+        )
+    return MultiFernet([Fernet(k) for k in keys])
 
 
 def encrypt_password(plaintext: str) -> str:
@@ -66,21 +104,22 @@ def decrypt_password(ciphertext: str) -> str:
     Decrypt a stored exportable password. Empty input returns empty output.
 
     Raises ValueError (not the raw cryptography exception) if the stored
-    value can't be decrypted with the current key -- most commonly because
-    PASSWORD_EXPORT_ENCRYPTION_KEY was rotated/changed without re-saving.
+    value can't be decrypted with any available key -- e.g. it was saved
+    under a key that no longer exists. Re-importing or resetting that
+    user's password stores it again under the current key.
     """
     if not ciphertext:
         return ""
     try:
         return _get_fernet().decrypt(ciphertext.encode("utf-8")).decode("utf-8")
-    except InvalidToken:
-        logger.error("Failed to decrypt a stored exportable password -- PASSWORD_EXPORT_ENCRYPTION_KEY may have changed.")
+    except (InvalidToken, RuntimeError):
+        logger.error("Failed to decrypt a stored exportable password -- it was saved under a key that is no longer available.")
         raise ValueError(
-            "Stored password could not be decrypted with the current PASSWORD_EXPORT_ENCRYPTION_KEY. "
-            "It may have been encrypted with a different key -- re-save it again."
+            "Stored password could not be decrypted with the available keys. "
+            "Re-import or reset this user's password to store it again."
         )
 
 
 def has_encryption_key() -> bool:
-    """Non-raising check for whether PASSWORD_EXPORT_ENCRYPTION_KEY is configured at all."""
-    return bool(os.environ.get(_ENV_VAR_NAME))
+    """Non-raising check for whether any usable key (env var or key file) is available."""
+    return bool(_keys())

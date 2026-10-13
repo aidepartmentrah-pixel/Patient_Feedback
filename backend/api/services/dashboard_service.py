@@ -3,7 +3,7 @@ from collections import Counter, defaultdict
 from ..db_layer import incident_case, admin_units, lookups
 from ..schemas.auth_models import CurrentUser
 from ..constants.case_statuses import OPEN_STATUS_ID, IN_PROGRESS_STATUS_ID, CLOSED_STATUS_ID
-from ..constants.org_unit_types import ORG_TYPE_ADMINISTRATION
+from ..constants.org_unit_types import ORG_TYPE_ADMINISTRATION, ORG_TYPE_DEPARTMENT, ORG_TYPE_SECTION
 from . import org_tree_service
 
 # =========================================================
@@ -122,7 +122,9 @@ def get_dashboard_stats(
 
 def get_dashboard_date_bounds_for_units(unit_ids: list[int]) -> dict:
     """
-    Get minimum and maximum incident CreatedAt dates for given unit IDs.
+    Get minimum and maximum incident received dates (FeedbackRecievedDate,
+    falling back to CreatedAt) for given unit IDs -- must match the column
+    list_incident_cases_filtered_by_target filters on.
     
     Supports frontend timeline slider date range selector.
     
@@ -159,8 +161,8 @@ def get_dashboard_date_bounds_for_units(unit_ids: list[int]) -> dict:
     # Query MIN/MAX dates using DATE cast
     query = f"""
         SELECT
-            MIN(CAST(c.CreatedAt AS DATE)) AS min_date,
-            MAX(CAST(c.CreatedAt AS DATE)) AS max_date
+            MIN(CAST(COALESCE(c.FeedbackRecievedDate, c.CreatedAt) AS DATE)) AS min_date,
+            MAX(CAST(COALESCE(c.FeedbackRecievedDate, c.CreatedAt) AS DATE)) AS max_date
         FROM dbo.APP_IncidentCase c
         WHERE {where_clause}
     """
@@ -345,9 +347,13 @@ def get_dashboard_hierarchy(current_user: CurrentUser) -> dict:
     Phase 2.5: Only returns org units within current_user.allowed_unit_ids.
 
     Hierarchy rules (as implemented in DB):
-    - Administration: ParentID == UniqueID
-    - Department: ParentID == Administration.UniqueID AND UniqueID != ParentID
-    - Section: ParentID == Department.UniqueID
+    - Administration: Type == ORG_TYPE_ADMINISTRATION (323)
+    - Department: ParentID == Administration.UniqueID AND Type == ORG_TYPE_DEPARTMENT (325)
+    - Section: ParentID == Department.UniqueID AND Type == ORG_TYPE_SECTION (324),
+      OR ParentID == Administration.UniqueID directly AND Type == ORG_TYPE_SECTION
+      (a section can skip the department level and attach straight to an
+      administration -- keyed here under that administration's id rather
+      than under any department, since it has none)
     """
 
     raw_units = admin_units.get_admin_unit_tree()
@@ -399,20 +405,26 @@ def get_dashboard_hierarchy(current_user: CurrentUser) -> dict:
 
     # -----------------------------
     # Step 2: Departments
-    # Rule: ParentID == admin_id AND UniqueID != ParentID
+    # Rule: ParentID == admin_id AND Type == ORG_TYPE_DEPARTMENT.
+    # A unit parented directly under an Administration is only a Department
+    # if its own Type says so -- some units attach the same way but are
+    # genuinely Sections (Type == ORG_TYPE_SECTION) that skip the Department
+    # level entirely. Those are bucketed into Section below (Step 3b)
+    # instead of being swept in here just because of where they sit in the
+    # ParentID chain.
     # -----------------------------
     for admin in Administration:
         admin_id = admin["id"]
         Department[admin_id] = []
 
         for u in units:
-            if u["ParentID"] == admin_id and u["UniqueID"] != admin_id:
+            if u["ParentID"] == admin_id and u["Type"] == ORG_TYPE_DEPARTMENT:
                 if u["Name"] and u["Name"].strip().upper() != "NULL":
                     Department[admin_id].append(_unit_payload(u))
 
     # -----------------------------
-    # Step 3: Sections
-    # Rule: ParentID == department_id
+    # Step 3a: Sections under a real Department
+    # Rule: ParentID == department_id AND Type == ORG_TYPE_SECTION
     # -----------------------------
     for dept_list in Department.values():
         for dept in dept_list:
@@ -420,9 +432,23 @@ def get_dashboard_hierarchy(current_user: CurrentUser) -> dict:
             Section[dept_id] = []
 
             for u in units:
-                if u["ParentID"] == dept_id:
+                if u["ParentID"] == dept_id and u["Type"] == ORG_TYPE_SECTION:
                     if u["Name"] and u["Name"].strip().upper() != "NULL":
                         Section[dept_id].append(_unit_payload(u))
+
+    # -----------------------------
+    # Step 3b: Sections parented directly under an Administration (no
+    # Department in between). Keyed by admin_id so they aren't silently
+    # dropped now that Step 2 no longer sweeps them into Department.
+    # -----------------------------
+    for admin in Administration:
+        admin_id = admin["id"]
+        Section.setdefault(admin_id, [])
+
+        for u in units:
+            if u["ParentID"] == admin_id and u["Type"] == ORG_TYPE_SECTION:
+                if u["Name"] and u["Name"].strip().upper() != "NULL":
+                    Section[admin_id].append(_unit_payload(u))
 
     return {
         "Administration": Administration,
@@ -460,8 +486,9 @@ def _count_force_closed_subcases(unit_ids: list[int], start_date, end_date) -> i
     
     Filters by:
     - TargetOrgUnitID in unit_ids (organization scope)
-    - CreatedAt date range from the linked incident case
-    
+    - Received-date range (FeedbackRecievedDate, falling back to CreatedAt)
+      from the linked incident case
+
     Returns:
         Count of force-closed subcases
     """
@@ -481,8 +508,8 @@ def _count_force_closed_subcases(unit_ids: list[int], start_date, end_date) -> i
         INNER JOIN dbo.APP_IncidentCase ic ON s.IncidentRequestCaseID = ic.IncidentRequestCaseID
         WHERE s.Status = 'FORCE_CLOSED'
           AND s.TargetOrgUnitID IN ({placeholders})
-          AND CAST(ic.CreatedAt AS DATE) >= ?
-          AND CAST(ic.CreatedAt AS DATE) <= ?
+          AND CAST(COALESCE(ic.FeedbackRecievedDate, ic.CreatedAt) AS DATE) >= ?
+          AND CAST(COALESCE(ic.FeedbackRecievedDate, ic.CreatedAt) AS DATE) <= ?
     """
     
     params = list(unit_ids) + [start_date, end_date]

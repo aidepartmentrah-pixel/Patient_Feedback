@@ -871,30 +871,48 @@ def get_monthly_statistics(
         ORDER BY count DESC
         """
     else:
-        # Default: group by section (target department directly)
+        # Default: group by target directly, no rollup. The target isn't
+        # guaranteed to be a Section -- a complaint can be targeted straight
+        # at a Department or an Administration -- so ou.Type is selected
+        # too and surfaced below rather than assuming every row is a Section.
         dept_query = f"""
         SELECT
             td.DepartmentID,
             COALESCE(ou.Name, 'Unknown') as dept_name,
+            ou.Type as group_type,
             COUNT(DISTINCT ic.IncidentRequestCaseID) as count
         FROM dbo.APP_IncidentCase ic
         INNER JOIN dbo.APP_IncidentCaseTargetDepartment td ON ic.IncidentRequestCaseID = td.IncidentRequestCaseID
         LEFT JOIN dbo.AdminsrationUnit ou ON td.DepartmentID = ou.UniqueID
         {date_filter}
-        GROUP BY td.DepartmentID, ou.Name
+        GROUP BY td.DepartmentID, ou.Name, ou.Type
         ORDER BY count DESC
         """
-    
+
     cursor.execute(dept_query)
     dept_rows = cursor.fetchall()
+    # Type codes from AdminsrationUnit.Type (see backend/api/constants/org_unit_types.py).
+    # Only populated for the ungrouped "section"/default branch above, whose rows can be
+    # a mix of levels -- the "department"/"administration" rollup branches already
+    # guarantee every row is that single level, so no per-row label is needed there.
+    org_unit_type_labels = {323: "Administration", 325: "Department", 324: "Section"}
+    org_unit_type_labels_ar = {323: "إدارة", 325: "دائرة", 324: "قسم"}
     by_department = []
     for row in dept_rows:
-        by_department.append({
+        entry = {
             "dayra_id": row[0],
             "dayra_name": row[1] or "Unknown",
             "dayra_name_ar": row[1] or "غير معروف",
-            "count": row[2]
-        })
+        }
+        if group_by not in ("administration", "department"):
+            group_type = row[2]
+            entry["org_unit_type"] = group_type
+            entry["org_unit_type_label"] = org_unit_type_labels.get(group_type)
+            entry["org_unit_type_label_ar"] = org_unit_type_labels_ar.get(group_type)
+            entry["count"] = row[3]
+        else:
+            entry["count"] = row[2]
+        by_department.append(entry)
     
     conn.close()
 
@@ -1266,11 +1284,16 @@ def get_bulk_summary(
 
     where_clause = " AND ".join(filter_parts)
 
-    # Department summaries (based on target departments - count records, not distinct complaints)
+    # Department summaries (based on target departments - count records, not distinct complaints).
+    # td.DepartmentID is really just "whatever org unit was targeted" -- it can
+    # point at an Administration, a Department, or a Section directly, so
+    # ou.Type is selected too and used below to label each row by its actual
+    # level instead of assuming every target is a Department.
     dept_query = f"""
-    SELECT 
+    SELECT
         td.DepartmentID as dayra_id,
         COALESCE(ou.Name, 'Unknown') as dayra_name,
+        ou.Type as org_unit_type,
         COUNT(td.IncidentRequestCaseID) as total_complaints,
         SUM(CASE WHEN ic.CaseStatusID != 3 THEN 1 ELSE 0 END) as open_complaints,
         SUM(CASE WHEN ic.CaseStatusID = 3 THEN 1 ELSE 0 END) as closed_complaints,
@@ -1281,28 +1304,39 @@ def get_bulk_summary(
     INNER JOIN dbo.APP_IncidentCaseTargetDepartment td ON ic.IncidentRequestCaseID = td.IncidentRequestCaseID
     LEFT JOIN dbo.AdminsrationUnit ou ON td.DepartmentID = ou.UniqueID
     WHERE {where_clause}
-    GROUP BY td.DepartmentID, ou.Name
+    GROUP BY td.DepartmentID, ou.Name, ou.Type
     ORDER BY total_complaints DESC
     """
-    
+
     cursor.execute(dept_query)
     dept_rows = cursor.fetchall()
-    
+
+    # Type codes from AdminsrationUnit.Type (see backend/api/constants/org_unit_types.py)
+    org_unit_type_labels = {
+        323: ("Administration", "الإدارة"),
+        325: ("Department", "الدائرة"),
+        324: ("Section", "القسم"),
+    }
+
     departments = []
     for row in dept_rows:
+        unit_type_en, unit_type_ar = org_unit_type_labels.get(row[2], ("Department", "الدائرة"))
         departments.append({
             "dayra_id": row[0],
             "dayra_name": row[1] or "Unknown",
             "dayra_name_ar": row[1] or "غير معروف",
-            "total_complaints": row[2],
-            "open_complaints": row[3] or 0,
-            "closed_complaints": row[4] or 0,
-            "red_flags_count": row[5] or 0,
-            "never_events_count": row[6] or 0,
-            "top_domain": f"Domain {row[7] or 'Unknown'}",
-            "top_domain_ar": f"المجال {row[7] or 'غير معروف'}",
+            "org_unit_type": row[2],
+            "org_unit_type_label": unit_type_en,
+            "org_unit_type_label_ar": unit_type_ar,
+            "total_complaints": row[3],
+            "open_complaints": row[4] or 0,
+            "closed_complaints": row[5] or 0,
+            "red_flags_count": row[6] or 0,
+            "never_events_count": row[7] or 0,
+            "top_domain": f"Domain {row[8] or 'Unknown'}",
+            "top_domain_ar": f"المجال {row[8] or 'غير معروف'}",
             "top_domain_count": 0
         })
-    
+
     conn.close()
     return departments

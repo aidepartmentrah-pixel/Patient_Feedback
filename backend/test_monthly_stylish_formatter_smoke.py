@@ -29,7 +29,10 @@ from backend.api.services.monthly_stylish_word_formatter import (
     generate_monthly_stylish_docx,
     MAX_TABLE_WIDTH_MM,
     STYLE_HEADER_FOOTER_INFO,
+    STYLE_COMPLAINT_NARRATIVE,
+    STYLE_IMMEDIATE_ACTION,
     DARK_TEXT,
+    REPORT_FONT,
 )
 
 FAILURES = []
@@ -443,6 +446,37 @@ def run():
                   len(notice_header_rows[0]) == 6)
             check("Header/footer style fixture: notices table no longer has الوحدة المنوّه بها column",
                   not any("المنوّه" in h for h in notice_header_rows[0]))
+
+    # (h) Report font: every run/style uses REPORT_FONT on every script slot,
+    #     Traditional Arabic is gone, and text sizes are scaled down.
+    import re
+    import zipfile
+    with zipfile.ZipFile(BytesIO(content_a)) as z:
+        xml = {name: z.read(name).decode("utf-8") for name in z.namelist()
+               if re.fullmatch(r"word/(document|styles|header\d*|footer\d*)\.xml", name)}
+    # Visible content only: body + headers + footers (styles.xml also carries
+    # the template's unused built-in styles, e.g. 26pt "Title").
+    content_xml = "".join(v for k, v in xml.items() if k != "word/styles.xml")
+    check("Font: no Traditional Arabic left in document/styles",
+          all("Traditional Arabic" not in v for v in xml.values()))
+    rfonts = re.findall(r"<w:rFonts ([^>]*)/>", content_xml)
+    slot_values = {
+        (attr, val)
+        for tag in rfonts
+        for attr, val in re.findall(r'w:(ascii|hAnsi|cs|eastAsia)="([^"]*)"', tag)
+    }
+    check(f"Font: all run fonts are {REPORT_FONT}", rfonts and {v for _, v in slot_values} == {REPORT_FONT})
+    check("Font: runs set Latin, Arabic (cs) and East Asian slots",
+          {a for a, _ in slot_values} == {"ascii", "hAnsi", "cs", "eastAsia"})
+    check(f"Font: narrative styles use {REPORT_FONT}",
+          all(REPORT_FONT in xml["word/styles.xml"] and name in xml["word/styles.xml"]
+              for name in (STYLE_COMPLAINT_NARRATIVE, STYLE_IMMEDIATE_ACTION)))
+    sizes_half_pt = [int(v) for v in re.findall(r'<w:sz w:val="(\d+)"', content_xml)]
+    check(f"Font: largest direct text size <= 11.5pt (got {max(sizes_half_pt) / 2}pt)", max(sizes_half_pt) <= 23)
+    doc_styles = Document(BytesIO(content_a)).styles
+    check("Font: Complaint narrative style scaled 13pt -> 11.5pt",
+          doc_styles[STYLE_COMPLAINT_NARRATIVE].font.size.pt == 11.5)
+    check("Font: Normal style scaled 10pt -> 9pt", doc_styles["Normal"].font.size.pt == 9)
 
     print("=" * 70)
     if FAILURES:

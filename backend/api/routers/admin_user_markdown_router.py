@@ -8,7 +8,7 @@ This router exports user credentials as Markdown or Word for testing documentati
 Reuses existing credential service from MODULE 5.4.
 """
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from io import BytesIO
 from datetime import datetime
 
@@ -19,6 +19,7 @@ from core.constants.roles import SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR
 
 # Reuse existing credential service from MODULE 5.4
 from ..services.user_credentials_service import get_all_user_credentials_service
+from ..services.password_import_service import import_passwords_from_docx
 
 
 # Create router
@@ -114,6 +115,26 @@ def export_user_credentials_as_markdown(
     )
 
 
+@router.post("/user-credentials/import")
+async def import_user_credentials(
+    file: UploadFile = File(...),
+    current_user: CurrentUser = Depends(get_current_user)
+) -> dict:
+    """
+    Import known passwords from a credentials Word document (.docx with
+    Username and Password columns, e.g. an earlier Export Credentials file)
+    so Export Credentials can print them. Each password is verified against
+    the account's login hash first; only working passwords are stored.
+    """
+    require_role(current_user, [SOFTWARE_ADMIN, COMPLAINT_SUPERVISOR])
+    if not (file.filename or "").lower().endswith(".docx"):
+        raise HTTPException(status_code=400, detail="Please upload a Word (.docx) credentials document.")
+    try:
+        return import_passwords_from_docx(await file.read(), admin_user_id=current_user.user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/user-credentials-word")
 def export_user_credentials_as_word(
     current_user: CurrentUser = Depends(get_current_user)
@@ -187,8 +208,10 @@ def export_user_credentials_as_word(
 
     date_para = rc.add_paragraph()
     date_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    available = sum(1 for c in credentials if c.get('test_password'))
     d_run = date_para.add_run(
         f'Issued: {datetime.now().strftime("%d %B %Y")}    |    Total Accounts: {len(credentials)}'
+        f'    |    Passwords Available: {available}'
     )
     d_run.font.size  = Pt(9)
     d_run.font.color.rgb = RGBColor(0xCC, 0xDD, 0xEE)
@@ -240,7 +263,9 @@ def export_user_credentials_as_word(
     # Data rows
     for idx, user in enumerate(credentials, start=1):
         row_cells = table.add_row().cells
-        password  = user.get('test_password') or '[secured]'
+        # No stored password: the admin can import it (Import Passwords)
+        # or reset it, after which it appears here.
+        password  = user.get('test_password') or 'not available - reset'
         values    = [
             str(idx),
             user.get('username', '') or '',

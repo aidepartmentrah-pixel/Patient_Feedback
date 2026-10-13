@@ -902,8 +902,9 @@ def get_incident_responses(
     COMPLAINT_SUPERVISOR/SOFTWARE_ADMIN/WORKER, or the case's target org
     unit is in their allowed scope. A viewer with scope to only one case in
     a multi-case incident sees just that case, not its siblings. A case
-    that hasn't been published yet (no subcase, e.g. still Draft) is only
-    visible to privileged roles.
+    with no subcase (bulk-imported, or closed on entry) is scoped by its
+    APP_IncidentCaseTargetDepartment rows instead — the same rule Table
+    View uses — and comes back with has_workflow = false and no responses.
 
     Response:
     {
@@ -916,6 +917,7 @@ def get_incident_responses(
                 "subcategory_name": "...", "classification_name": "...", "severity_name": "...",
                 "case_status_name": "...", "incident_date": "...", "feedback_received_date": "...",
                 "subcase_id": 1 | null,
+                "has_workflow": true | false,
                 "target_org_unit_id": 10 | null,
                 "target_org_unit_name": "..." | null,
                 "status": "ADMIN_APPROVED" | null,
@@ -932,12 +934,9 @@ def get_incident_responses(
     from backend.api.services.table_view_service import get_cases_for_incident
     from backend.core.database import get_connection
 
-    role_code = (
-        current_user.scopes[0].role_code
-        if current_user and current_user.scopes
-        else None
-    )
-    privileged = role_code in ('COMPLAINT_SUPERVISOR', 'SOFTWARE_ADMIN', 'WORKER')
+    # Same full-access rule as Table View (table_view_router._FULL_ACCESS_ROLES):
+    # any of the user's roles, not just the first scope's.
+    privileged = bool(set(getattr(current_user, 'roles', None) or []) & {'COMPLAINT_SUPERVISOR', 'SOFTWARE_ADMIN', 'WORKER'})
     allowed_unit_ids = getattr(current_user, 'allowed_unit_ids', None) or set()
 
     cases = get_cases_for_incident(incident_id)
@@ -951,32 +950,47 @@ def get_incident_responses(
         for case in cases
     }
 
-    # Resolve org unit names in one query
-    unit_ids = list({
-        sc.get('target_org_unit_id')
-        for sc in subcase_by_case_id.values() if sc and sc.get('target_org_unit_id')
-    })
-    unit_names: dict = {}
-    if unit_ids:
-        conn = get_connection()
-        try:
-            cursor = conn.cursor()
-            placeholders = ','.join('?' * len(unit_ids))
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+
+        # Cases that never entered the workflow (bulk-imported / closed on
+        # entry) have no subcase, so fall back to their target departments —
+        # the same table Table View scopes by — for both scope and target unit.
+        case_ids = [case['id'] for case in cases]
+        cursor.execute(
+            f"SELECT IncidentRequestCaseID, DepartmentID FROM dbo.APP_IncidentCaseTargetDepartment "
+            f"WHERE IncidentRequestCaseID IN ({','.join('?' * len(case_ids))}) "
+            f"ORDER BY IsPrimary DESC, DepartmentID",
+            case_ids
+        )
+        target_units_by_case_id: dict = {}
+        for row in cursor.fetchall():
+            target_units_by_case_id.setdefault(row.IncidentRequestCaseID, []).append(row.DepartmentID)
+
+        # Resolve org unit names in one query
+        unit_ids = list({
+            sc.get('target_org_unit_id')
+            for sc in subcase_by_case_id.values() if sc and sc.get('target_org_unit_id')
+        } | {u for units in target_units_by_case_id.values() for u in units})
+        unit_names: dict = {}
+        if unit_ids:
             cursor.execute(
-                f"SELECT UniqueID, Name FROM dbo.AdminsrationUnit WHERE UniqueID IN ({placeholders})",
+                f"SELECT UniqueID, Name FROM dbo.AdminsrationUnit WHERE UniqueID IN ({','.join('?' * len(unit_ids))})",
                 unit_ids
             )
             unit_names = {row.UniqueID: row.Name for row in cursor.fetchall()}
-        finally:
-            conn.close()
+    finally:
+        conn.close()
 
     result = []
     for case in cases:
         case_id = case['id']
         sc = subcase_by_case_id.get(case_id)
-        sc_unit = sc.get('target_org_unit_id') if sc else None
+        case_units = [sc['target_org_unit_id']] if sc and sc.get('target_org_unit_id') else target_units_by_case_id.get(case_id, [])
+        sc_unit = case_units[0] if case_units else None
 
-        if not privileged and (sc_unit is None or sc_unit not in allowed_unit_ids):
+        if not privileged and not any(u in allowed_unit_ids for u in case_units):
             continue
 
         action_items = []
@@ -1007,6 +1021,7 @@ def get_incident_responses(
             "incident_date": case.get('incident_date'),
             "feedback_received_date": case.get('received_date'),
             "subcase_id": sc['subcase_id'] if sc else None,
+            "has_workflow": sc is not None,
             "target_org_unit_id": sc_unit,
             "target_org_unit_name": unit_names.get(sc_unit) if sc_unit else None,
             "status": sc.get('status') if sc else None,
@@ -1069,9 +1084,17 @@ def get_subcase_fill_state(
             detail="Only COMPLAINT_SUPERVISOR or WORKER can access the manual fill state."
         )
     from backend.api_v2.db_layer import administrative_subcase_db
+    from backend.api_v2.services import case_creation_service
     state = administrative_subcase_db.get_subcase_fill_state(subcase_id)
     if state is None:
         raise HTTPException(status_code=404, detail=f"Subcase {subcase_id} not found.")
+    # Which of section/department/administration actually apply to this
+    # subcase's target org unit -- a section with no real Department above
+    # it (attaches directly to an Administration) has no 'department' stage
+    # at all. Drives ManualFillPage.jsx hiding that card entirely instead of
+    # always showing a Department step nobody can complete.
+    applicable = case_creation_service.get_applicable_workflow_levels(state['target_org_unit_id'])
+    state['applicable_levels'] = [lvl for lvl in ('section', 'department', 'administration') if lvl in applicable]
     return state
 
 

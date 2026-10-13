@@ -109,11 +109,14 @@ def delete_user(conn, user_id: int) -> None:
     cursor = conn.cursor()
     
     try:
+        # Exportable password copy first (FK_APP_UserPasswordExport_User)
+        cursor.execute("DELETE FROM dbo.APP_UserPasswordExport WHERE UserID = ?", (user_id,))
+
         query = """
             DELETE FROM dbo.APP_Users
             WHERE UserID = ?
         """
-        
+
         cursor.execute(query, (user_id,))
         
     finally:

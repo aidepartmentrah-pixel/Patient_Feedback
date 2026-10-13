@@ -7,7 +7,7 @@ Handles password derivation from TEMP_HASH format.
 
 from typing import List, Dict, Any, Optional
 from core.database import get_connection
-from core.password_export_encryption import decrypt_password, has_encryption_key
+from core.password_export_encryption import decrypt_password
 from ..db_layer.user_credentials_db import get_all_user_credentials
 
 
@@ -45,21 +45,19 @@ def get_all_user_credentials_service() -> List[Dict[str, Any]]:
             test_password: Optional[str] = None
             
             if password_hash and password_hash.startswith("TEMP_HASH_"):
-                # Strip TEMP_HASH_ prefix to get actual test password
-                test_password = password_hash.replace("TEMP_HASH_", "")
-
-            # Real, working password for this account, if an admin has
-            # explicitly made it exportable (dbo.APP_UserPasswordExport).
-            # Takes priority over the TEMP_HASH_ test-account convention
-            # above -- this is real data, not a test-only derivation.
-            encrypted_password = getattr(row, "EncryptedPassword", None)
-            if encrypted_password and has_encryption_key():
-                try:
-                    test_password = decrypt_password(encrypted_password)
-                except ValueError:
-                    # Key rotated/changed since this password was saved --
-                    # fall back to whatever test_password already resolved to.
-                    pass
+                # TEMP_HASH_<password> IS the login password -- always current.
+                test_password = password_hash[len("TEMP_HASH_"):]
+            else:
+                # bcrypt login hash: use the reversible copy saved whenever the
+                # password was set or imported (dbo.APP_UserPasswordExport).
+                encrypted_password = getattr(row, "EncryptedPassword", None)
+                if encrypted_password:
+                    try:
+                        test_password = decrypt_password(encrypted_password) or None
+                    except ValueError:
+                        # Saved under a key that's no longer available --
+                        # shown as not available until re-imported/reset.
+                        pass
 
             # Build credential dictionary
             credential = {

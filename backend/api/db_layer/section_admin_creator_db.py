@@ -25,11 +25,18 @@ def insert_section(conn, name: str, parent_department_id: int) -> int:
     cursor = conn.cursor()
     
     try:
-        # Insert section with Type = 324 and get the new ID using OUTPUT
+        # AdminsrationUnit.UniqueID is a plain int PK (no IDENTITY/default), so the
+        # next ID is computed here. UPDLOCK+HOLDLOCK keeps concurrent creates from
+        # picking the same ID until the caller commits.
         insert_query = f"""
-            INSERT INTO dbo.AdminsrationUnit (Name, ParentID, Type, Frozen, CreateDate)
+            SET NOCOUNT ON;
+            DECLARE @NewID int = (
+                SELECT ISNULL(MAX(UniqueID), 0) + 1
+                FROM dbo.AdminsrationUnit WITH (UPDLOCK, HOLDLOCK)
+            );
+            INSERT INTO dbo.AdminsrationUnit (UniqueID, Name, ParentID, Type, Frozen, CreateDate)
             OUTPUT INSERTED.UniqueID
-            VALUES (?, ?, {ORG_TYPE_SECTION}, 0, GETDATE())
+            VALUES (@NewID, ?, ?, {ORG_TYPE_SECTION}, 0, GETDATE());
         """
         
         cursor.execute(insert_query, (name, parent_department_id))

@@ -10,7 +10,7 @@ Architecture:
 - Reuses existing Word generation patterns from seasonal_report_formatter.py
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Callable, List, Tuple
 import os
 from docx import Document
 from docx.shared import Pt, Inches, RGBColor, Mm
@@ -18,6 +18,106 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.section import WD_ORIENT
 from docx.oxml.ns import qn
 import io
+
+from .workflow_activity_word_formatter import (
+    _ar_run as _ar_run_base,
+    _set_rtl_table,
+    _set_row_col_width as _set_row_col_width_base,
+    _cell_para,
+)
+
+# Usable content width: A4 portrait 210mm - 20mm left - 20mm right margin =
+# 170mm. Every incidents-table column config below sums to this so the
+# table fills the page instead of being squeezed/cropped by Word's default
+# autofit-to-contents behavior.
+USABLE_WIDTH_MM = 170.0
+
+# Last-resort truncation ceiling. Normal complaint text (even long ones)
+# stays well under this; only pathological outliers get cut. The table
+# column is wide and Word wraps text within cells, so there's no reason to
+# hard-cut at 100/200 characters like the previous implementation did.
+NARRATIVE_MAX_CHARS = 6000
+
+
+def _ar_run(para, text: str, size: int = 10, bold: bool = False,
+            italic: bool = False, color: str = None):
+    """
+    Local wrapper around the shared _ar_run helper that also sets the w:cs
+    (complex-script) font explicitly to 'Traditional Arabic'. The shared
+    helper only sets w:eastAsia, leaving Arabic glyph rendering to the
+    theme's default complex-script font — some renderers substitute a font
+    with incomplete Arabic coverage there, showing missing-glyph boxes for
+    specific words. Forcing w:cs avoids that (same fix already applied in
+    monthly_stylish_word_formatter.py; not touching the shared helper since
+    other reports depend on its current behavior).
+    """
+    run = _ar_run_base(para, text, size=size, bold=bold, italic=italic, color=color)
+    run._element.rPr.rFonts.set(qn('w:cs'), 'Traditional Arabic')
+    return run
+
+
+def _set_row_col_width(row, col_idx: int, mm: float):
+    """
+    Local wrapper that also updates the table's tblGrid column width, not
+    just the cell's w:tcW. Word's fixed-layout rendering uses tblGrid to
+    determine column boundaries — setting only tcW is silently ignored,
+    which is why these tables were getting cropped/auto-squeezed before.
+    """
+    _set_row_col_width_base(row, col_idx, mm)
+    row.table.columns[col_idx].width = Mm(mm)
+
+
+def _truncate_for_fit(text: str, max_chars: int,
+                       marker: str = '… (النص الكامل في النظام)') -> str:
+    """
+    Word-boundary-safe truncation used only as a last-resort safety net for
+    pathological outliers — normal complaint text never reaches this ceiling.
+    """
+    text = (text or '').strip()
+    if len(text) <= max_chars:
+        return text
+    cut = text[:max_chars]
+    last_space = cut.rfind(' ')
+    if last_space > max_chars * 0.7:
+        cut = cut[:last_space]
+    return cut.rstrip(' ,.;:،؛') + ' ' + marker
+
+
+def _build_incidents_table(
+    doc: Document,
+    incidents: List[Dict[str, Any]],
+    columns: List[Tuple[str, float, Callable[[Dict[str, Any]], str]]],
+):
+    """
+    Shared incidents/complaints table builder for the patient, doctor, and
+    worker Word reports, so the three stay structurally parallel and any
+    future fix (RTL, column widths, fonts, truncation) only needs to happen
+    once instead of being re-applied three times (which is exactly how this
+    table ended up broken in only one of the three reports).
+
+    columns: list of (arabic_header, width_mm, getter) — getter(incident)
+    returns the display string for that cell. Widths should sum to
+    USABLE_WIDTH_MM.
+    """
+    table = doc.add_table(rows=len(incidents) + 1, cols=len(columns))
+    table.style = 'Light List Accent 1'
+    table.autofit = False
+    _set_rtl_table(table)
+
+    header_row = table.rows[0]
+    for col_idx, (header_ar, width_mm, _getter) in enumerate(columns):
+        _set_row_col_width(header_row, col_idx, width_mm)
+        para = _cell_para(header_row.cells[col_idx], align="center")
+        _ar_run(para, header_ar, size=10, bold=True)
+
+    for row_idx, incident in enumerate(incidents, start=1):
+        row = table.rows[row_idx]
+        for col_idx, (_header_ar, width_mm, getter) in enumerate(columns):
+            _set_row_col_width(row, col_idx, width_mm)
+            para = _cell_para(row.cells[col_idx], align="right")
+            _ar_run(para, getter(incident), size=9)
+
+    return table
 
 
 class SeasonalWordAdapter:
@@ -176,53 +276,33 @@ class SeasonalWordAdapter:
         doc.add_paragraph()
         
         # ============================================================
-        # DETAILED INCIDENTS TABLE (Always show if incidents exist, now with Complaint Text)
+        # DETAILED INCIDENTS TABLE (Arabic, RTL, fixed widths — shared
+        # layout with the worker/patient reports; see _build_incidents_table)
         # ============================================================
-        doc.add_heading('Incident Details', level=2)
+        incidents_heading = doc.add_heading('سجل الحالات', level=2)
+        for r in incidents_heading.runs:
+            r.font.name = 'Traditional Arabic'
+            r._element.rPr.rFonts.set(qn('w:cs'), 'Traditional Arabic')
         incidents = data.get('incidents', [])
         if incidents:
-            detail_table = doc.add_table(rows=len(incidents) + 1, cols=7)
-            detail_table.style = 'Light List Accent 1'
-            # Header row
-            header_cells = detail_table.rows[0].cells
-            header_cells[0].text = 'Date'
-            header_cells[1].text = 'Patient'
-            header_cells[2].text = 'Category'
-            header_cells[3].text = 'Severity'
-            header_cells[4].text = 'Status'
-            header_cells[5].text = 'Case #'
-            header_cells[6].text = 'Complaint Text'
-            for cell in header_cells:
-                for paragraph in cell.paragraphs:
-                    for run in paragraph.runs:
-                        run.font.bold = True
-                        run.font.size = Pt(10)
-            for idx, incident in enumerate(incidents, start=1):
-                row_cells = detail_table.rows[idx].cells
-                row_cells[0].text = str(incident.get('Date', 'N/A'))
-                row_cells[1].text = str(incident.get('PatientName', 'N/A'))[:30]
-                row_cells[2].text = str(incident.get('Category', 'N/A'))
-                row_cells[3].text = str(incident.get('Severity', 'N/A'))
-                row_cells[4].text = str(incident.get('Status', 'N/A'))
-                row_cells[5].text = str(incident.get('RecordID', 'N/A'))
-                row_cells[6].text = str(incident.get('Description', ''))[:200]
-                for cell in row_cells:
-                    for paragraph in cell.paragraphs:
-                        for run in paragraph.runs:
-                            run.font.size = Pt(9)
+            _build_incidents_table(doc, incidents, [
+                ('التاريخ', 14, lambda inc: str(inc.get('Date') or 'N/A')),
+                ('رقم الحالة', 12, lambda inc: str(inc.get('RecordID') or 'N/A')),
+                ('اسم المريض', 24, lambda inc: str(inc.get('PatientName') or 'N/A')[:40]),
+                ('التصنيف', 18, lambda inc: str(inc.get('Category') or 'غير محدد')),
+                ('الخطورة', 14, lambda inc: str(inc.get('Severity') or 'غير محدد')),
+                ('الحالة', 14, lambda inc: str(inc.get('Status') or 'غير محدد')),
+                ('علم أحمر', 14, lambda inc: 'نعم' if inc.get('RedFlag') == 'Yes' else 'لا'),
+                ('نص الشكوى', 60, lambda inc: _truncate_for_fit(str(inc.get('Description') or 'لا يوجد نص'), NARRATIVE_MAX_CHARS)),
+            ])
         else:
             # Only show the zero-complaint message if no incidents
             zero_para = doc.add_paragraph()
             zero_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            zero_run = zero_para.add_run('No incidents recorded in this period')
-            zero_run.font.size = Pt(12)
-            zero_run.font.color.rgb = RGBColor(0, 128, 0)
-            zero_run.bold = True
+            _ar_run(zero_para, 'لا توجد حالات مسجلة خلال هذه الفترة', size=12, bold=True, color='008000')
             praise_para = doc.add_paragraph()
             praise_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            praise_run = praise_para.add_run('Clean record — Excellent performance')
-            praise_run.font.size = Pt(11)
-            praise_run.font.color.rgb = RGBColor(100, 100, 100)
+            _ar_run(praise_para, 'سجل نظيف — أداء ممتاز', size=11, color='646464')
         doc.add_paragraph()
         
         # ============================================================
@@ -420,62 +500,33 @@ class SeasonalWordAdapter:
         # ============================================================
         # DETAILED INCIDENTS TABLE
         # ============================================================
-        doc.add_heading('Incident Details', level=2)
-        
+        incidents_heading = doc.add_heading('سجل الحالات', level=2)
+        for r in incidents_heading.runs:
+            r.font.name = 'Traditional Arabic'
+            r._element.rPr.rFonts.set(qn('w:cs'), 'Traditional Arabic')
+
         incidents = data.get('incidents_details', [])
         if incidents:
-            incidents_table = doc.add_table(rows=len(incidents) + 1, cols=8)
-            incidents_table.style = 'Light List Accent 1'
-            # Header row
-            header_cells = incidents_table.rows[0].cells
-            header_cells[0].text = 'Date'
-            header_cells[1].text = 'Patient'
-            header_cells[2].text = 'Category'
-            header_cells[3].text = 'Severity'
-            header_cells[4].text = 'Classification'
-            header_cells[5].text = 'Status'
-            header_cells[6].text = 'Case #'
-            header_cells[7].text = 'Complaint Text'
-            # Make header bold
-            for cell in header_cells:
-                for paragraph in cell.paragraphs:
-                    for run in paragraph.runs:
-                        run.font.bold = True
-                        run.font.size = Pt(10)
-            classification_labels = {
-                'good': 'Good ✓',
-                'bad': 'Bad ✗',
-                'neutral': 'Neutral ―'
-            }
-            # Data rows
-            for idx, incident in enumerate(incidents, start=1):
-                row_cells = incidents_table.rows[idx].cells
-                row_cells[0].text = str(incident.get('date', 'N/A'))
-                row_cells[1].text = str(incident.get('patient_name', 'N/A'))[:30]
-                row_cells[2].text = str(incident.get('category', 'N/A'))
-                row_cells[3].text = str(incident.get('severity', 'N/A'))
-                classification = incident.get('classification', 'neutral')
-                row_cells[4].text = classification_labels.get(classification, 'Neutral ―')
-                row_cells[5].text = str(incident.get('status', 'N/A'))
-                row_cells[6].text = str(incident.get('id', 'N/A'))
-                row_cells[7].text = str(incident.get('Description', ''))[:200]
-                for cell in row_cells:
-                    for paragraph in cell.paragraphs:
-                        for run in paragraph.runs:
-                            run.font.size = Pt(9)
+            sentiment_labels = {'good': 'جيد ✓', 'bad': 'سيء ✗', 'neutral': 'محايد ―'}
+            _build_incidents_table(doc, incidents, [
+                ('التاريخ', 13, lambda inc: str(inc.get('date') or 'N/A')),
+                ('رقم الحالة', 11, lambda inc: str(inc.get('id') or 'N/A')),
+                ('اسم المريض', 20, lambda inc: str(inc.get('patient_name') or 'N/A')[:40]),
+                ('التصنيف', 16, lambda inc: str(inc.get('category') or 'غير محدد')),
+                ('الخطورة', 13, lambda inc: str(inc.get('severity') or 'غير محدد')),
+                ('الحالة', 13, lambda inc: str(inc.get('status') or 'غير محدد')),
+                ('علم أحمر', 13, lambda inc: 'نعم' if inc.get('RedFlag') == 'Yes' else 'لا'),
+                ('تصنيف الشعور', 16, lambda inc: sentiment_labels.get(str(inc.get('classification') or '').lower(), 'محايد ―')),
+                ('نص الشكوى', 55, lambda inc: _truncate_for_fit(str(inc.get('Description') or 'لا يوجد نص'), NARRATIVE_MAX_CHARS)),
+            ])
         else:
             # Elegant zero-complaint message
             zero_para = doc.add_paragraph()
             zero_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            zero_run = zero_para.add_run('No incidents recorded in this period')
-            zero_run.font.size = Pt(12)
-            zero_run.font.color.rgb = RGBColor(0, 128, 0)
-            zero_run.bold = True
+            _ar_run(zero_para, 'لا توجد حالات مسجلة خلال هذه الفترة', size=12, bold=True, color='008000')
             praise_para = doc.add_paragraph()
             praise_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            praise_run = praise_para.add_run('Clean record — Excellent performance')
-            praise_run.font.size = Pt(11)
-            praise_run.font.color.rgb = RGBColor(100, 100, 100)
+            _ar_run(praise_para, 'سجل نظيف — أداء ممتاز', size=11, color='646464')
         doc.add_paragraph()
         
         # ============================================================
@@ -549,17 +600,17 @@ class SeasonalWordAdapter:
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
         title_run = title.runs[0]
         title_run.font.size = Pt(16)
-        title_run.font.name = 'Calibri'
+        title_run.font.name = 'Traditional Arabic'
         title_run.bold = True
-        title_run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+        title_run._element.rPr.rFonts.set(qn('w:cs'), 'Traditional Arabic')
 
         # Subtitle
         subtitle = doc.add_paragraph('نظام ملاحظات المرضى')
         subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
         subtitle.runs[0].font.size = Pt(12)
-        subtitle.runs[0].font.name = 'Calibri'
+        subtitle.runs[0].font.name = 'Traditional Arabic'
         subtitle.runs[0].font.color.rgb = RGBColor(100, 100, 100)
-        subtitle.runs[0]._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+        subtitle.runs[0]._element.rPr.rFonts.set(qn('w:cs'), 'Traditional Arabic')
         
         doc.add_paragraph()  # Spacing
         
@@ -570,8 +621,8 @@ class SeasonalWordAdapter:
         
         info_heading = doc.add_heading('معلومات المريض', level=2)
         for r in info_heading.runs:
-            r.font.name = 'Calibri'
-            r._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+            r.font.name = 'Traditional Arabic'
+            r._element.rPr.rFonts.set(qn('w:cs'), 'Traditional Arabic')
 
         patient_table = doc.add_table(rows=4, cols=2)
         patient_table.style = 'Light Grid Accent 1'
@@ -597,57 +648,22 @@ class SeasonalWordAdapter:
         
         complaints_heading = doc.add_heading('سجل الشكاوى', level=2)
         for r in complaints_heading.runs:
-            r.font.name = 'Calibri'
-            r._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
-        
+            r.font.name = 'Traditional Arabic'
+            r._element.rPr.rFonts.set(qn('w:cs'), 'Traditional Arabic')
+
         if incidents:
-            # Create table with header
-            complaints_table = doc.add_table(rows=len(incidents) + 1, cols=6)
-            complaints_table.style = 'Light List Accent 1'
-            
-            # Header row (Arabic)
-            header_cells = complaints_table.rows[0].cells
-            header_cells[0].text = 'التاريخ'
-            header_cells[1].text = 'القسم'
-            header_cells[2].text = 'التصنيف'
-            header_cells[3].text = 'الخطورة'
-            header_cells[4].text = 'الحالة'
-            header_cells[5].text = 'نص الشكوى'
-            
-            # Make header bold
-            for cell in header_cells:
-                for paragraph in cell.paragraphs:
-                    for run in paragraph.runs:
-                        run.font.bold = True
-                        run.font.size = Pt(10)
-                        run.font.name = 'Calibri'
-                        run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
-
-            # Data rows
-            for idx, incident in enumerate(incidents, start=1):
-                row_cells = complaints_table.rows[idx].cells
-
-                row_cells[0].text = str(incident.get('Date', 'N/A'))
-                row_cells[1].text = str(incident.get('Department', 'غير محدد'))
-                row_cells[2].text = str(incident.get('Category', 'غير محدد'))
-                row_cells[3].text = str(incident.get('Severity', 'غير محدد'))
-                row_cells[4].text = str(incident.get('Status', 'مفتوح'))
-
-                complaint_text = str(incident.get('ComplaintText', 'لا يوجد نص'))
-                if len(complaint_text) > 100:
-                    complaint_text = complaint_text[:97] + '...'
-                row_cells[5].text = complaint_text
-
-                for cell in row_cells:
-                    for paragraph in cell.paragraphs:
-                        for run in paragraph.runs:
-                            run.font.size = Pt(9)
-                            run.font.name = 'Calibri'
-                            run._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+            _build_incidents_table(doc, incidents, [
+                ('التاريخ', 16, lambda inc: str(inc.get('Date') or 'N/A')),
+                ('رقم الحالة', 14, lambda inc: str(inc.get('RecordID') or 'N/A')),
+                ('القسم', 20, lambda inc: str(inc.get('Department') or 'غير محدد')),
+                ('التصنيف', 20, lambda inc: str(inc.get('Category') or 'غير محدد')),
+                ('الخطورة', 16, lambda inc: str(inc.get('Severity') or 'غير محدد')),
+                ('الحالة', 16, lambda inc: str(inc.get('Status') or 'مفتوح')),
+                ('نص الشكوى', 68, lambda inc: _truncate_for_fit(str(inc.get('ComplaintText') or 'لا يوجد نص'), NARRATIVE_MAX_CHARS)),
+            ])
         else:
-            no_complaints = doc.add_paragraph('لا توجد شكاوى مسجلة لهذا المريض.')
-            no_complaints.runs[0].font.name = 'Calibri'
-            no_complaints.runs[0]._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+            no_complaints = doc.add_paragraph()
+            _ar_run(no_complaints, 'لا توجد شكاوى مسجلة لهذا المريض.', size=11)
 
         doc.add_paragraph()
 
@@ -659,9 +675,9 @@ class SeasonalWordAdapter:
         metadata_para = doc.add_paragraph(f'{export_date} :تاريخ التصدير')
         metadata_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         metadata_para.runs[0].font.size = Pt(9)
-        metadata_para.runs[0].font.name = 'Calibri'
+        metadata_para.runs[0].font.name = 'Traditional Arabic'
         metadata_para.runs[0].font.color.rgb = RGBColor(128, 128, 128)
-        metadata_para.runs[0]._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+        metadata_para.runs[0]._element.rPr.rFonts.set(qn('w:cs'), 'Traditional Arabic')
 
         # ============================================================
         # FOOTER NOTE
@@ -670,9 +686,9 @@ class SeasonalWordAdapter:
         footer_note = doc.add_paragraph('تم إنشاؤه بواسطة نظام ملاحظات المرضى')
         footer_note.alignment = WD_ALIGN_PARAGRAPH.CENTER
         footer_note.runs[0].font.size = Pt(9)
-        footer_note.runs[0].font.name = 'Calibri'
+        footer_note.runs[0].font.name = 'Traditional Arabic'
         footer_note.runs[0].font.color.rgb = RGBColor(128, 128, 128)
-        footer_note.runs[0]._element.rPr.rFonts.set(qn('w:cs'), 'Calibri')
+        footer_note.runs[0]._element.rPr.rFonts.set(qn('w:cs'), 'Traditional Arabic')
         
         # Save to bytes
         buffer = io.BytesIO()

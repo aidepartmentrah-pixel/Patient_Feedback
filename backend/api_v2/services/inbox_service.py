@@ -563,9 +563,10 @@ def get_complaint_supervisor_archive(current_user) -> List[Dict[str, Any]]:
     # Build archive items
     archive_items = []
     for subcase in filtered_subcases:
-        item = _build_archive_item(subcase)
+        # HCAT (the decision's author) may still edit a completed decision
+        item = _build_archive_item(subcase, can_edit_decision=True)
         archive_items.append(item)
-    
+
     return archive_items
 
 
@@ -989,22 +990,25 @@ def _build_inbox_item(subcase: Dict[str, Any], current_user) -> Dict[str, Any]:
     return inbox_item
 
 
-def _build_archive_item(subcase: Dict[str, Any]) -> Dict[str, Any]:
+def _build_archive_item(subcase: Dict[str, Any], can_edit_decision: bool = False) -> Dict[str, Any]:
     """
     Build an archive item dictionary from a subcase dict.
-    
-    Archive items are READ-ONLY - they only have 'view' action.
-    No workflow actions are allowed on archived items.
-    
+
+    Archive items are READ-ONLY - they only have 'view' action, with one
+    exception: the HCAT decision author (can_edit_decision=True, only the
+    Complaint Supervisor archive) may still edit a completed Patient
+    Services decision. Section/department/administration archives stay
+    view-only -- they only ever read that decision.
+
     Args:
         subcase: Subcase dict from DB layer
-        
+        can_edit_decision: Whether the viewer may edit the HCAT decision
+
     Returns:
-        Dictionary with archive item structure (view-only)
+        Dictionary with archive item structure
     """
-    # Completed patient services decisions remain editable after archiving.
     status = subcase.get('status')
-    if status == 'PATIENT_SERVICES_DECISION_COMPLETED':
+    if can_edit_decision and status == 'PATIENT_SERVICES_DECISION_COMPLETED':
         allowed_actions = ["view", "edit_patient_services_decision"]
     else:
         allowed_actions = ["view"]

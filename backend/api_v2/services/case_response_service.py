@@ -13,7 +13,7 @@ Complete workflow engine with:
 """
 
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import HTTPException
 from core.database import get_connection
 from backend.api_v2.db_layer import administrative_subcase_db
@@ -21,6 +21,7 @@ from backend.api_v2.db_layer import action_item_subcase_db
 from backend.api_v2.db_layer import action_item_change_notice_db
 from backend.api.db_layer import auth_db
 from backend.api.db_layer import incident_case_feedback
+from backend.api_v2.services import case_creation_service
 
 # APP_IncidentCase.RecordTypeID value identifying a "Notice" record (see
 # backend/database_migrations/phase_notice_record_type.sql). Notices must
@@ -34,6 +35,9 @@ _ROLE_TO_LEVEL = {
     'DEPARTMENT_ADMIN': 'department',
     'ADMINISTRATION_ADMIN': 'administration',
 }
+
+# Who may write the Patient Services (HCAT) decision; everyone else only reads it.
+_PATIENT_SERVICES_DECISION_ROLES = {'COMPLAINT_SUPERVISOR', 'SOFTWARE_ADMIN'}
 
 
 # ============================================================
@@ -167,16 +171,74 @@ def _replace_action_items(
 
 def _is_force_close_data_complete(subcase: Dict[str, Any]) -> bool:
     """
-    Return True if all three workflow-level explanations are present.
+    Return True if every explanation for a workflow level that actually
+    APPLIES to this subcase's target org unit is present.
 
     Used at force-close time to decide whether to land on
     FORCE_CLOSED_DRAFT (missing data) or FORCE_CLOSED_COMPLETE (all present).
     Also used by complete_force_closed_draft() to gate the transition.
+
+    Not always all three: a section that attaches directly to an
+    Administration (no Department above it) has no department stage at
+    all, so department_explanation_text can never legitimately be filled --
+    requiring it here would make such a case permanently uncompleteable.
     """
-    return bool(
-        subcase.get('section_explanation_text')
-        and subcase.get('department_explanation_text')
-        and subcase.get('administration_explanation_text')
+    applicable = case_creation_service.get_applicable_workflow_levels(subcase['target_org_unit_id'])
+    field_by_level = {
+        'section': 'section_explanation_text',
+        'department': 'department_explanation_text',
+        'administration': 'administration_explanation_text',
+    }
+    return all(bool(subcase.get(field_by_level[level])) for level in applicable)
+
+
+def _advance_subcase_status_with_deadline(subcase: Dict[str, Any], next_status: str, updated_by_user_id: int) -> None:
+    """
+    Write a subcase's status transition, seeding the NEXT level's deadline
+    in the same update when next_status is 'SECTION_ACCEPTED_PENDING_DEPT'
+    (seeds DepartmentDeadlineAt) or 'DEPT_ACCEPTED_PENDING_ADMIN' (seeds
+    AdministrationDeadlineAt) -- for any other next_status, behaves exactly
+    like a bare administrative_subcase_db.update_subcase_status() call.
+
+    Ordinary status writes never used to seed the next level's deadline
+    (only case creation and explicit "give more time" did), which is why
+    automatic force-close silently never fired past the first level for ANY
+    case -- not just cases that skip the Department level entirely, which is
+    the scenario 'DEPT_ACCEPTED_PENDING_ADMIN' can also arrive from directly
+    via case_creation_service.get_next_status_after_section_response().
+    Notice/Morbidity cases are excluded from deadlines entirely, mirroring
+    case_creation_service.py's own exclusion at case-creation time
+    (record_type_id/is_morbidity are already present on the loaded subcase
+    dict -- see get_subcases_by_status()).
+    """
+    excluded_from_deadlines = bool(
+        subcase.get('record_type_id') == _RECORD_TYPE_NOTICE or subcase.get('is_morbidity')
+    )
+
+    deadline_column = None
+    deadline_at = None
+    if not excluded_from_deadlines:
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            deadline_days = _get_deadline_days_settings(cursor)
+        finally:
+            cursor.close()
+            conn.close()
+
+        if next_status == 'SECTION_ACCEPTED_PENDING_DEPT':
+            deadline_column = 'DepartmentDeadlineAt'
+            deadline_at = datetime.now() + timedelta(days=deadline_days['department'])
+        elif next_status == 'DEPT_ACCEPTED_PENDING_ADMIN':
+            deadline_column = 'AdministrationDeadlineAt'
+            deadline_at = datetime.now() + timedelta(days=deadline_days['administration'])
+
+    administrative_subcase_db.update_subcase_status_with_deadline(
+        subcase_id=subcase['subcase_id'],
+        new_status=next_status,
+        updated_by_user_id=updated_by_user_id,
+        deadline_column=deadline_column,
+        deadline_at=deadline_at,
     )
 
 
@@ -395,16 +457,14 @@ def accept_section_complaint(
         updated_by_user_id=current_user.user_id
     )
 
-    administrative_subcase_db.update_subcase_status(
-        subcase_id=subcase_id,
-        new_status='SECTION_ACCEPTED_PENDING_DEPT',
-        updated_by_user_id=current_user.user_id
-    )
+    next_status = case_creation_service.get_next_status_after_section_response(subcase['target_org_unit_id'])
+    _advance_subcase_status_with_deadline(subcase, next_status, current_user.user_id)
 
     # Transition any DRAFT action items forward (normally zero on this path)
+    next_action_item_status = 'SUBMITTED_TO_DEPT' if next_status == 'SECTION_ACCEPTED_PENDING_DEPT' else 'SUBMITTED_TO_ADMIN'
     action_item_subcase_db.bulk_update_action_items_status_by_subcase(
         subcase_id=subcase_id,
-        to_status='SUBMITTED_TO_DEPT',
+        to_status=next_action_item_status,
         updated_by_user_id=current_user.user_id,
         from_statuses=['DRAFT']
     )
@@ -483,18 +543,20 @@ def submit_section_response(
         updated_by_user_id=current_user.user_id
     )
     
-    # Transition to next workflow stage
-    administrative_subcase_db.update_subcase_status(
-        subcase_id=subcase_id,
-        new_status='SECTION_ACCEPTED_PENDING_DEPT',
-        updated_by_user_id=current_user.user_id
-    )
-    
-    # PARALLEL ACTION ITEM TRANSITION: DRAFT -> SUBMITTED_TO_DEPT
+    # Transition to next workflow stage -- SECTION_ACCEPTED_PENDING_DEPT
+    # normally, or straight to DEPT_ACCEPTED_PENDING_ADMIN if this section
+    # has no real Department above it (attaches directly to an
+    # Administration) -- see case_creation_service.get_next_status_after_section_response.
+    next_status = case_creation_service.get_next_status_after_section_response(subcase['target_org_unit_id'])
+    _advance_subcase_status_with_deadline(subcase, next_status, current_user.user_id)
+
+    # PARALLEL ACTION ITEM TRANSITION: DRAFT -> SUBMITTED_TO_DEPT (or
+    # SUBMITTED_TO_ADMIN for the skip-level case above)
     # Action items follow the subcase through the approval pipeline
+    next_action_item_status = 'SUBMITTED_TO_DEPT' if next_status == 'SECTION_ACCEPTED_PENDING_DEPT' else 'SUBMITTED_TO_ADMIN'
     action_item_subcase_db.bulk_update_action_items_status_by_subcase(
         subcase_id=subcase_id,
-        to_status='SUBMITTED_TO_DEPT',
+        to_status=next_action_item_status,
         updated_by_user_id=current_user.user_id,
         from_statuses=['DRAFT']
     )
@@ -655,11 +717,7 @@ def approve_department(
     )
 
     # Transition to next workflow stage
-    administrative_subcase_db.update_subcase_status(
-        subcase_id=subcase_id,
-        new_status='DEPT_ACCEPTED_PENDING_ADMIN',
-        updated_by_user_id=current_user.user_id
-    )
+    _advance_subcase_status_with_deadline(subcase, 'DEPT_ACCEPTED_PENDING_ADMIN', current_user.user_id)
 
     # PARALLEL ACTION ITEM TRANSITION: SUBMITTED_TO_DEPT -> SUBMITTED_TO_ADMIN
     action_item_subcase_db.bulk_update_action_items_status_by_subcase(
@@ -765,12 +823,8 @@ def override_department(
     )
     
     # Transition to next workflow stage
-    administrative_subcase_db.update_subcase_status(
-        subcase_id=subcase_id,
-        new_status='DEPT_ACCEPTED_PENDING_ADMIN',
-        updated_by_user_id=current_user.user_id
-    )
-    
+    _advance_subcase_status_with_deadline(subcase, 'DEPT_ACCEPTED_PENDING_ADMIN', current_user.user_id)
+
     # PARALLEL ACTION ITEM TRANSITION: DRAFT -> SUBMITTED_TO_ADMIN
     # Dept override creates new items as DRAFT, then forwards directly to admin
     action_item_subcase_db.bulk_update_action_items_status_by_subcase(
@@ -889,6 +943,18 @@ def save_patient_services_decision(
     """
     if current_user is None:
         raise Exception("current_user cannot be None")
+
+    # Only HCAT (Complaint Supervisor) or the software admin may write the
+    # decision -- section/department/administration users only read it.
+    user_roles = set(getattr(current_user, 'roles', None) or []) | {
+        s.role_code for s in (getattr(current_user, 'scopes', None) or [])
+    }
+    if not user_roles & _PATIENT_SERVICES_DECISION_ROLES:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the Complaint Supervisor (HCAT) can record or edit the Patient Services decision."
+        )
+
     if not decision_text or not decision_text.strip():
         raise Exception("decision_text cannot be empty")
 
@@ -968,15 +1034,20 @@ def acknowledge_patient_services_decision(
         subcase_id=subcase_id, level=level, user_id=current_user.user_id
     )
 
-    # Only flip the subcase to DECISION_ACKNOWLEDGED once section, department,
-    # AND administration have all acknowledged — unconditionally, regardless of
-    # whether *EnteredByUserID tracking says a level "touched" the case. Cases
-    # created before that tracking existed left every level as untouched=False,
-    # which meant the old "only touched levels must ack" check finalized on the
-    # very first ack for those cases — closing it for every level before the
-    # others even saw it. Always requiring all three removes that ambiguity.
+    # Only flip the subcase to DECISION_ACKNOWLEDGED once every level that
+    # EXISTS for the target unit has acknowledged. Derived from the unit's real
+    # hierarchy (get_applicable_workflow_levels), not from *EnteredByUserID
+    # "touched" tracking -- cases created before that tracking existed left
+    # every level untouched, which made an older touched-based check finalize
+    # on the first ack. A fixed all-three rule instead never finalized for a
+    # section directly under an Administration: no Department user exists to
+    # acknowledge, so the case stayed "decision completed" forever.
     all_acked = already_acked | {level}
-    if {'section', 'department', 'administration'} <= all_acked:
+    try:
+        required_levels = case_creation_service.get_applicable_workflow_levels(target_org_unit_id)
+    except ValueError:
+        required_levels = {'section', 'department', 'administration'}
+    if required_levels <= all_acked:
         administrative_subcase_db.acknowledge_decision_notification(
             subcase_id=subcase_id,
             user_id=current_user.user_id
@@ -990,25 +1061,33 @@ def reject_administration(
 ) -> None:
     """
     Administration Administrator rejects the case.
-    
+
     WORKFLOW CONTRACT CHANGE: Rejection is NOT terminal - it returns for revision.
-    
+
     Status transition: DEPT_ACCEPTED_PENDING_ADMIN -> RETURNED_TO_DEPT_FOR_REVISION
-    
+
     This creates a rework loop where department must resubmit using OVERRIDE.
     Action items remain untouched (will be replaced on resubmission).
-    
+
+    For a case whose target section has no real Department above it (attaches
+    directly to an Administration), there is no Department to send it back
+    to -- it returns straight to the Section instead
+    (RETURNED_TO_SECTION_FOR_REVISION, the same status
+    submit_section_response's resubmission path already handles), skipping
+    the phantom Department step on the way back down, mirroring the
+    forward-direction skip in get_next_status_after_section_response().
+
     Args:
         subcase_id: Subcase ID
         rejection_text: Administration's rejection explanation
         current_user: Current user object (must have user_id attribute)
-    
+
     Raises:
         Exception: If user is None, subcase not found, or status invalid
     """
     if current_user is None:
         raise Exception("current_user cannot be None")
-    
+
     subcase = _load_subcase_or_fail(subcase_id)
     _assert_status(subcase, ['DEPT_ACCEPTED_PENDING_ADMIN', 'FORCE_CLOSED_AT_DEPARTMENT'])
 
@@ -1018,14 +1097,18 @@ def reject_administration(
         text=rejection_text,
         updated_by_user_id=current_user.user_id
     )
-    
-    # Return to department for revision (NOT terminal)
+
+    applicable_levels = case_creation_service.get_applicable_workflow_levels(subcase['target_org_unit_id'])
+    return_status = 'RETURNED_TO_DEPT_FOR_REVISION' if 'department' in applicable_levels else 'RETURNED_TO_SECTION_FOR_REVISION'
+
+    # Return to department for revision (NOT terminal) -- or straight to
+    # section for a skip-level case, see docstring above
     administrative_subcase_db.update_subcase_status(
         subcase_id=subcase_id,
-        new_status='RETURNED_TO_DEPT_FOR_REVISION',
+        new_status=return_status,
         updated_by_user_id=current_user.user_id
     )
-    
+
     # PARALLEL ACTION ITEM TRANSITION: SUBMITTED_TO_ADMIN -> ADMIN_REJECTED
     # Action items mirror the rejection; will be replaced on resubmission
     action_item_subcase_db.bulk_update_action_items_status_by_subcase(
@@ -1465,23 +1548,38 @@ def fill_explanation_on_behalf(
             )
         )
 
-    # Sequential unlock
-    if level == 'department' and not subcase.get('section_explanation_text'):
+    # Sequential unlock -- data-driven from this subcase's REAL applicable
+    # levels, not a hardcoded section->department->administration sequence.
+    # A section with no real Department above it has no 'department' stage
+    # at all, so filling one for it is rejected outright rather than merely
+    # gated behind "section must be filled first" (which would be
+    # satisfiable and still wrong).
+    applicable_levels = case_creation_service.get_applicable_workflow_levels(subcase['target_org_unit_id'])
+    if level not in applicable_levels:
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Cannot fill department data on subcase {subcase_id}: "
-                "section explanation must be filled first."
+                f"Level '{level}' does not apply to subcase {subcase_id} -- "
+                f"no {level} stage exists for its target organizational unit."
             )
         )
-    if level == 'administration' and not subcase.get('department_explanation_text'):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Cannot fill administration data on subcase {subcase_id}: "
-                "department explanation must be filled first."
+    _level_order = [lvl for lvl in ('section', 'department', 'administration') if lvl in applicable_levels]
+    _level_field = {
+        'section': 'section_explanation_text',
+        'department': 'department_explanation_text',
+        'administration': 'administration_explanation_text',
+    }
+    _idx = _level_order.index(level)
+    if _idx > 0:
+        prev_level = _level_order[_idx - 1]
+        if not subcase.get(_level_field[prev_level]):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Cannot fill {level} data on subcase {subcase_id}: "
+                    f"{prev_level} explanation must be filled first."
+                )
             )
-        )
 
     entry_mode = (
         'FORCE_CLOSE_INTERVENTION'
@@ -1536,17 +1634,15 @@ def fill_explanation_on_behalf(
                         initial_status='DRAFT',
                         assigned_to_user_id=item.get('assigned_to_user_id')
                     )
+            next_status = case_creation_service.get_next_status_after_section_response(subcase['target_org_unit_id'])
+            next_action_item_status = 'SUBMITTED_TO_DEPT' if next_status == 'SECTION_ACCEPTED_PENDING_DEPT' else 'SUBMITTED_TO_ADMIN'
             action_item_subcase_db.bulk_update_action_items_status_by_subcase(
                 subcase_id=subcase_id,
-                to_status='SUBMITTED_TO_DEPT',
+                to_status=next_action_item_status,
                 updated_by_user_id=current_user.user_id,
                 from_statuses=['DRAFT']
             )
-            administrative_subcase_db.update_subcase_status(
-                subcase_id=subcase_id,
-                new_status='SECTION_ACCEPTED_PENDING_DEPT',
-                updated_by_user_id=current_user.user_id
-            )
+            _advance_subcase_status_with_deadline(subcase, next_status, current_user.user_id)
         elif level == 'department' and current_status in (
             'SECTION_ACCEPTED_PENDING_DEPT', 'RETURNED_TO_DEPT_FOR_REVISION'
         ):
@@ -1556,11 +1652,7 @@ def fill_explanation_on_behalf(
                 updated_by_user_id=current_user.user_id,
                 from_statuses=['SUBMITTED_TO_DEPT']
             )
-            administrative_subcase_db.update_subcase_status(
-                subcase_id=subcase_id,
-                new_status='DEPT_ACCEPTED_PENDING_ADMIN',
-                updated_by_user_id=current_user.user_id
-            )
+            _advance_subcase_status_with_deadline(subcase, 'DEPT_ACCEPTED_PENDING_ADMIN', current_user.user_id)
         elif level == 'administration' and current_status == 'DEPT_ACCEPTED_PENDING_ADMIN':
             # Mirror approve_administration()'s complaint-routing rule:
             # ClinicalRiskTypeID == 1 (ordinary complaint) hands off to Patient

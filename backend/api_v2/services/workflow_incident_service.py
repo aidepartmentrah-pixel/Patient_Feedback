@@ -114,6 +114,7 @@ def get_incident_detail(incident_id: int) -> Optional[Dict[str, Any]]:
                 
                 -- Classification
                 classification.Classification_AR as classification_name,
+                classification.Classification_EN as classification_name_en,
                 
                 -- Severity
                 severity.SeverityName as severity_name,

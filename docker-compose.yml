@@ -1,3 +1,21 @@
+# Base stack definition. NOT meant to be run alone for routine local dev --
+# docker-compose.dev.yml layers bind-mounts/reload/HTTPS on top of this and
+# is the one used day to day; see its own header comment for that invocation.
+#
+# This file is for the rare one-off "prod-like local" test only: `cp
+# .env.example .env`, fill in real values, then:
+#   docker compose --env-file .env -f docker-compose.yml -p pfms up -d
+# Don't leave that stack running permanently -- tear it down
+# (`docker compose -p pfms down`) once you're done with it, so it can't
+# drift out of sync with .env.dev's stack the way it did before.
+#
+# Explicit project name -- without this, Compose defaults the project name to
+# the basename of the directory containing this file, so two sessions that
+# each omit `-p` (or use a different one) can silently collide on the same
+# containers/network. Same fix already used in
+# release/1.2.0/compose/docker-compose.yml.
+name: ${PROJECT_NAME:-pfms}
+
 services:
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -98,6 +116,15 @@ services:
       # Deliberately a different key than SETTINGS_ENCRYPTION_KEY above.
       PASSWORD_EXPORT_ENCRYPTION_KEY: ${PASSWORD_EXPORT_ENCRYPTION_KEY}
     volumes:
+      # Once this named volume exists, it SHADOWS the backend/config/ copy
+      # baked into the image -- edits to db_settings.json in git no longer
+      # reach a running deployment past its first start. To fix a live
+      # deployment's DB/settings: use the /config page (works even in
+      # bootstrap mode, when the backend can't reach the database at all),
+      # which writes into this same volume -- do NOT expect a new image load
+      # to update these settings. To force a fresh copy from the image
+      # instead, remove the volume (`docker volume rm <project>_backend_config`)
+      # before the next `up` (this deletes any settings saved via /config).
       - backend_config:/app/backend/config
     # The Hospital Directory API's real server ("malin") is only resolvable
     # by hostname on the hospital's internal DNS -- this container's own

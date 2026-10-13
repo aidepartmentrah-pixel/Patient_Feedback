@@ -890,7 +890,16 @@ async def export_monthly_report(
                 language=language
             )
         )
-        
+
+        # No complaints for this period/scope -- report_export_service
+        # returns this plain dict instead of file content (see its own
+        # comment for why: no exception, so it never lands in the
+        # emergency-fallback except block below). Return it as JSON so the
+        # frontend can show a "no data" message instead of downloading a
+        # file with no actual content.
+        if result.get("no_data"):
+            return result
+
         # Return file directly instead of JSON metadata
         return Response(
             content=result["content"],

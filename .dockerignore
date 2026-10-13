@@ -17,6 +17,7 @@ models.lock.yaml
 .hf_token
 .env
 .envrc
+backend/config/password_export.key
 
 backend/tests
 backend/test_*.py

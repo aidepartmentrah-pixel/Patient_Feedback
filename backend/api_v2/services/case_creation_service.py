@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from core.database import get_connection
 from api_v2.db_layer import administrative_subcase_db
 from api_v2.db_layer import seasonal_report_db
+from api.db_layer import admin_units
 from api.services.notification_service import (
     send_publication_summary_notifications,
 )
@@ -84,6 +85,52 @@ def get_initial_subcase_status_for_target_org_type(org_type: int) -> str:
     if org_type == _ORG_TYPE_ADMINISTRATION:
         return "DEPT_ACCEPTED_PENDING_ADMIN"
     raise ValueError(f"Unsupported TargetOrgUnit type for workflow routing: {org_type}")
+
+
+def get_applicable_workflow_levels(target_org_unit_id: int) -> set:
+    """
+    Return the subset of {'section', 'department', 'administration'} that
+    actually exist as workflow stages for a subcase whose TargetOrgUnitID is
+    target_org_unit_id, based on the target's real Type and -- for a Section
+    target -- its real parent's Type.
+
+    A Section's parent is guaranteed (enforced at section-creation time, see
+    api/services/section_admin_creator_service.py's create_section_core) to
+    be either a Department (325) or an Administration (323) directly, never
+    another Section -- so this is a single parent-type check, not a full
+    ancestor walk.
+
+    This is the single source of truth for "which levels apply to this
+    case," reused by case_response_service.py's escalation transitions, its
+    fill_explanation_on_behalf()/force-close completeness checks, and
+    administrative_subcase_db.py's department/administration pending-queue
+    routing -- so a section that attaches directly to an Administration
+    (skipping Department) is never routed through a phantom Department
+    stage that nobody can act on.
+    """
+    org_type = admin_units.get_admin_unit_type(target_org_unit_id)
+    if org_type == _ORG_TYPE_ADMINISTRATION:
+        return {'administration'}
+    if org_type == _ORG_TYPE_DEPARTMENT:
+        return {'department', 'administration'}
+    if org_type == _ORG_TYPE_SECTION:
+        parent = admin_units.get_admin_unit_parent(target_org_unit_id)
+        if parent is None:
+            raise ValueError(f"Org unit {target_org_unit_id} has no parent -- cannot route workflow.")
+        if parent.Type == _ORG_TYPE_DEPARTMENT:
+            return {'section', 'department', 'administration'}
+        return {'section', 'administration'}
+    raise ValueError(f"Unsupported TargetOrgUnit type for workflow routing: {org_type}")
+
+
+def get_next_status_after_section_response(section_org_unit_id: int) -> str:
+    """
+    Correct next APP_AdministrativeSubcase.Status once a Section finishes
+    its own work (accept/submit/on-behalf fill), based on the section's
+    REAL parent type instead of always assuming a Department exists.
+    """
+    levels = get_applicable_workflow_levels(section_org_unit_id)
+    return 'SECTION_ACCEPTED_PENDING_DEPT' if 'department' in levels else 'DEPT_ACCEPTED_PENDING_ADMIN'
 
 
 def _create_subcase(

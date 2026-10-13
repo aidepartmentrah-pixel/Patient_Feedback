@@ -663,16 +663,26 @@ def get_subcases_pending_for_department() -> List[Dict[str, Any]]:
     Fetch subcases pending department response.
     Status = 'SECTION_ACCEPTED_PENDING_DEPT' OR 'RETURNED_TO_DEPT_FOR_REVISION'
     OR 'FORCE_CLOSED_AT_SECTION' (Section missed its deadline and the case
-    escalated to Department responsibility)
+    escalated to Department responsibility) -- EXCEPT a FORCE_CLOSED_AT_SECTION
+    row whose target section has no real Department above it (attaches
+    directly to an Administration): that one escalates straight to
+    Administration instead (see get_subcases_pending_for_administration),
+    since there is no Department role who could ever act on it.
 
     Returns:
         List of subcase dicts
     """
+    from api_v2.services import case_creation_service
+
     # Get initial submissions, returned-for-revision cases, and cases
     # escalated to Department because Section was automatically force-closed
     initial = get_subcases_by_status("SECTION_ACCEPTED_PENDING_DEPT")
     returned = get_subcases_by_status("RETURNED_TO_DEPT_FOR_REVISION")
-    escalated = get_subcases_by_status("FORCE_CLOSED_AT_SECTION")
+    escalated_raw = get_subcases_by_status("FORCE_CLOSED_AT_SECTION")
+    escalated = [
+        s for s in escalated_raw
+        if 'department' in case_creation_service.get_applicable_workflow_levels(s['target_org_unit_id'])
+    ]
     return initial + returned + escalated
 
 
@@ -681,14 +691,23 @@ def get_subcases_pending_for_administration() -> List[Dict[str, Any]]:
     Fetch subcases pending administration response.
     Status = 'DEPT_ACCEPTED_PENDING_ADMIN' OR 'FORCE_CLOSED_AT_DEPARTMENT'
     (Department missed its deadline and the case escalated to
-    Administration responsibility)
+    Administration responsibility) -- PLUS a 'FORCE_CLOSED_AT_SECTION' row
+    whose target section has no real Department (see
+    get_subcases_pending_for_department's docstring): those skip Department
+    entirely and land here instead.
 
     Returns:
         List of subcase dicts
     """
+    from api_v2.services import case_creation_service
+
     initial = get_subcases_by_status("DEPT_ACCEPTED_PENDING_ADMIN")
-    escalated = get_subcases_by_status("FORCE_CLOSED_AT_DEPARTMENT")
-    return initial + escalated
+    escalated_dept = get_subcases_by_status("FORCE_CLOSED_AT_DEPARTMENT")
+    escalated_skip_level = [
+        s for s in get_subcases_by_status("FORCE_CLOSED_AT_SECTION")
+        if 'department' not in case_creation_service.get_applicable_workflow_levels(s['target_org_unit_id'])
+    ]
+    return initial + escalated_dept + escalated_skip_level
 
 
 def get_subcases_waiting_patient_services_decision() -> List[Dict[str, Any]]:
@@ -878,6 +897,65 @@ def update_subcase_status(
             subcase_id
         ))
         
+        conn.commit()
+        return cursor.rowcount > 0
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def update_subcase_status_with_deadline(
+    subcase_id: int,
+    new_status: str,
+    updated_by_user_id: int,
+    deadline_column: Optional[str] = None,
+    deadline_at: Optional[datetime] = None,
+) -> bool:
+    """
+    Like update_subcase_status(), but also seeds one deadline column in the
+    same UPDATE -- for a subcase advancing to a level whose deadline was
+    never previously seeded (only create_subcase()/retarget_subcase() set
+    the INITIAL level's deadline; ordinary escalation via
+    accept_section_complaint/submit_section_response/approve_department/
+    etc. never seeded the next level's deadline before, which is why
+    auto-force-close silently never fired past the first level).
+
+    deadline_column must be exactly 'DepartmentDeadlineAt' or
+    'AdministrationDeadlineAt' (validated against a fixed allow-list, since
+    it's interpolated into the SQL as a column name, not a bound parameter).
+    Passing None for deadline_column degrades to the exact same SQL as
+    update_subcase_status() -- a safe drop-in.
+
+    Returns:
+        True if updated, False if subcase not found
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        if deadline_column is None:
+            query = """
+                UPDATE dbo.APP_AdministrativeSubcase
+                SET Status = ?,
+                    UpdatedAt = ?,
+                    UpdatedByUserID = ?
+                WHERE SubcaseID = ?
+            """
+            cursor.execute(query, (new_status, datetime.now(), updated_by_user_id, subcase_id))
+        else:
+            if deadline_column not in ('DepartmentDeadlineAt', 'AdministrationDeadlineAt'):
+                raise ValueError(f"Unsupported deadline_column: {deadline_column!r}")
+            query = f"""
+                UPDATE dbo.APP_AdministrativeSubcase
+                SET Status = ?,
+                    UpdatedAt = ?,
+                    UpdatedByUserID = ?,
+                    {deadline_column} = ?
+                WHERE SubcaseID = ?
+            """
+            cursor.execute(query, (new_status, datetime.now(), updated_by_user_id, deadline_at, subcase_id))
+
         conn.commit()
         return cursor.rowcount > 0
 
@@ -2663,6 +2741,7 @@ def get_subcase_fill_state(subcase_id: int) -> Optional[Dict[str, Any]]:
                 sub.SubcaseID,
                 sub.Status,
                 sub.IncidentRequestCaseID,
+                sub.TargetOrgUnitID,
                 sub.ForceCloseReason,
                 sub.ForceClosedAt,
 
@@ -2756,6 +2835,7 @@ def get_subcase_fill_state(subcase_id: int) -> Optional[Dict[str, Any]]:
             "subcase_id": row.SubcaseID,
             "status": row.Status,
             "incident_id": row.IncidentRequestCaseID,
+            "target_org_unit_id": row.TargetOrgUnitID,
             "force_close_reason": row.ForceCloseReason,
             "force_closed_at": _ts(row.ForceClosedAt),
             "force_closed_by": _username(row.ForceClosedByUsername, row.ForceClosedByDisplayName),

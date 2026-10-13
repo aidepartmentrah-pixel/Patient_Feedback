@@ -100,6 +100,24 @@ class ReportExportService:
                     export_data = report_data["complaints"]
                 else:
                     export_data = report_data
+
+                # No complaints for this period/scope -- stop here instead of
+                # handing an empty list to the formatters, which happily
+                # produce a "valid" file with just headers/tables and no
+                # content (the stylish formatter in particular renders a
+                # full page skeleton per complaint, so zero complaints means
+                # zero pages of actual data, not an empty-but-honest doc).
+                # Signalled via a plain dict (not raised as an exception) so
+                # it never reaches the router's per-format except block --
+                # for docx that block's emergency fallback treats ANY
+                # exception as "something broke" and downloads a Word file
+                # explaining the crash, which is worse than this.
+                if display_mode == "detailed" and isinstance(export_data, list) and len(export_data) == 0:
+                    return {
+                        "no_data": True,
+                        "message": "No complaints found for the selected period and scope.",
+                        "message_ar": "لا توجد شكاوى للفترة والنطاق المحددين.",
+                    }
             else:  # seasonal
                 # For seasonal reports with display_mode=None, use orchestrator
                 if display_mode is None:

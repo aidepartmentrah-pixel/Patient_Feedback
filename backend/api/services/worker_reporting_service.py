@@ -497,6 +497,7 @@ def _generate_worker_word_export(export_data: Dict[str, Any], employee_id: int) 
                     'classification': i.get('Classification', ''),
                     'status': i.get('Status', ''),
                     'id': i.get('RecordID', ''),
+                    'RedFlag': i.get('RedFlag', 'No'),
                     'Description': i.get('Description', ''),
                 }
                 for i in incidents

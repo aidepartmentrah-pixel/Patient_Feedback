@@ -100,9 +100,17 @@ def get_red_flags_list(
         where_conditions.append("c.FeedbackRecievedDate <= ?")
         params.append(to_date)
     
-    # Department filter
+    # Target-unit filter: the unit the case concerns (APP_IncidentCaseTargetDepartment),
+    # not the unit that issued it -- same scoping the dashboard and Table View use.
     if department:
-        where_conditions.append("org_unit.Name = ?")
+        where_conditions.append(
+            """EXISTS (
+                SELECT 1 FROM dbo.APP_IncidentCaseTargetDepartment td
+                JOIN dbo.AdminsrationUnit target_unit ON target_unit.UniqueID = td.DepartmentID
+                WHERE td.IncidentRequestCaseID = c.IncidentRequestCaseID
+                  AND target_unit.Name = ?
+            )"""
+        )
         params.append(department)
     
     # Category filter (using Domain as category)

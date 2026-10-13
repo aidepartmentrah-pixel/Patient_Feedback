@@ -222,8 +222,13 @@ def list_incident_cases_filtered_by_target(
 
     Args:
         unit_ids: List of org unit IDs to filter by (TargetOrgUnitID)
-        start_date: Filter incidents created on or after this date
-        end_date: Filter incidents created on or before this date
+        start_date: Filter incidents received on or after this date
+        end_date: Filter incidents received on or before this date
+
+    Dates filter on FeedbackRecievedDate (when the feedback reached the
+    office), same as the reports/investigation pages -- not CreatedAt, which
+    is only when the row was typed into the system. Falls back to CreatedAt
+    for rows with no received date so they don't silently vanish.
 
     Returns:
         List of incident case dictionaries matching the filters
@@ -246,11 +251,11 @@ def list_incident_cases_filtered_by_target(
         params.extend(unit_ids)
 
     if start_date:
-        where_parts.append("CAST(c.CreatedAt AS DATE) >= ?")
+        where_parts.append("CAST(COALESCE(c.FeedbackRecievedDate, c.CreatedAt) AS DATE) >= ?")
         params.append(start_date)
 
     if end_date:
-        where_parts.append("CAST(c.CreatedAt AS DATE) <= ?")
+        where_parts.append("CAST(COALESCE(c.FeedbackRecievedDate, c.CreatedAt) AS DATE) <= ?")
         params.append(end_date)
 
     where_clause = " AND ".join(where_parts) if where_parts else "1=1"

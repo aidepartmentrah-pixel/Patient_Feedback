@@ -139,9 +139,10 @@ def create_user(
             department_display_name=request.department_display_name,
             email=request.email,
             role_id=request.role_id,
-            org_unit_id=request.org_unit_id
+            org_unit_id=request.org_unit_id,
+            created_by_user_id=current_user.user_id
         )
-        
+
         return {
             "user_id": user_id,
             "username": request.username
@@ -262,7 +263,8 @@ def reset_user_password(
     try:
         admin_reset_user_password_service(
             user_id=user_id,
-            new_password=request.new_password
+            new_password=request.new_password,
+            admin_user_id=current_user.user_id
         )
         
         return {"status": "password_updated"}

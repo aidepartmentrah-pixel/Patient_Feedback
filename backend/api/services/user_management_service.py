@@ -23,6 +23,7 @@ from ..db_layer.user_management_db import (
 )
 from ..db_layer.section_admin_recreate_db import username_exists
 from ..db_layer.auth_db import hash_password
+from .password_export_service import save_exportable_password
 from core.config_loader import is_test_password_mode
 
 # Configure logger for user management operations
@@ -328,6 +329,7 @@ def create_user_with_role_scope(
     email: Optional[str] = None,
     role_id: int,
     org_unit_id: int,
+    created_by_user_id: Optional[int] = None,
 ) -> int:
     """
     Create standalone user and assign single role+scope.
@@ -416,10 +418,13 @@ def create_user_with_role_scope(
             role_id=role_id,
             org_unit_id=org_unit_id
         )
-        
+
+        # Capture the real password for the credentials export (any mode).
+        save_exportable_password(conn, user_id, password_plain, updated_by_user_id=created_by_user_id)
+
         # Commit transaction
         conn.commit()
-        
+
         return user_id
         
     except Exception as e:
@@ -605,7 +610,7 @@ def list_users_for_settings_service() -> list[dict]:
             conn.close()
 
 
-def admin_reset_user_password_service(user_id: int, new_password: str) -> None:
+def admin_reset_user_password_service(user_id: int, new_password: str, admin_user_id: Optional[int] = None) -> None:
     """
     Admin password reset for user accounts.
     
@@ -665,10 +670,13 @@ def admin_reset_user_password_service(user_id: int, new_password: str) -> None:
         # Check if user was found
         if rows_affected == 0:
             raise ValueError(f"User with UserID {user_id} not found")
-        
+
+        # Capture the real password for the credentials export (any mode).
+        save_exportable_password(conn, user_id, new_password, updated_by_user_id=admin_user_id)
+
         # Commit transaction
         conn.commit()
-        
+
     except ValueError:
         # Re-raise validation errors
         if conn:
@@ -769,10 +777,11 @@ def update_user_service(
             if len(password) < 8:
                 raise Exception("Password must be at least 8 characters")
             
-            # Hash password
+            # Same storage rule as create/reset: TEMP_HASH_ only in test mode,
+            # bcrypt in production (previously TEMP_HASH_ in every mode).
             password_hash = hash_password(password)
-            test_password = password  # Store plain text for testing
-        
+            test_password = password if is_test_password_mode() else None
+
         # Step 5: Update user credentials
         update_user_credentials(
             conn,
@@ -782,7 +791,11 @@ def update_user_service(
             test_password=test_password,
             display_name=display_name
         )
-        
+
+        # Capture the new password for the credentials export (any mode).
+        if password is not None:
+            save_exportable_password(conn, user_id, password)
+
         # Step 6: Commit transaction
         conn.commit()
         

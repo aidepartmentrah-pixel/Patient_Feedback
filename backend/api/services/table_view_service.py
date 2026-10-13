@@ -252,6 +252,7 @@ def get_complaints_paginated(
         "CategoryName": "category.CategoryName",
         "SubCategoryName": "subcategory.SubCategoryName",
         "ClassificationName": "classification.Classification_AR",
+        "ClassificationNameEn": "classification.Classification_EN",
         "StatusDisplayOrder": "status.DisplayOrder",
         "TargetDepartmentName": "target_depts.target_dept_names",
         "RcaReplies": "rca_replies.rca_replies_text",
@@ -489,6 +490,7 @@ def get_complaints_paginated(
             -- Classification
             c.ClassificationID as classification_id,
             classification.Classification_AR as classification_name,
+            classification.Classification_EN as classification_name_en,
             
             -- Severity
             c.SeverityID as severity_id,
@@ -954,6 +956,7 @@ def get_complaint_by_id(complaint_id: int) -> Optional[Dict[str, Any]]:
             -- Classification
             c.ClassificationID as classification_id,
             classification.Classification_AR as classification_name,
+            classification.Classification_EN as classification_name_en,
             
             -- Severity
             c.SeverityID as severity_id,
@@ -1703,9 +1706,9 @@ def export_complaints_excel(
             'harm_level': 'Harm',
             'status_name': 'Status',
             'feedback_risk_type': 'FeedbackRiskType',
-            'section_answer': 'جواب القسم',
-            'department_answer': 'جواب الدائرة',
-            'administration_answer': 'جواب الإدارة',
+            'section_answer': 'رد القسم',
+            'department_answer': 'رد الدائرة',
+            'administration_answer': 'رد الإدارة',
             'last_edited': 'آخر تعديل',
         }
         

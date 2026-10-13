@@ -332,3 +332,7 @@ models_directory/Classification_Models/model_storage/mpnet_embeddings/model.safe
 # Packager output — fully generated, never hand-authored
 /release_packager/
 .dev-certs-root/
+
+# Auto-generated fallback key for the credentials export
+# (core/password_export_encryption.py) -- a secret, never commit it.
+backend/config/password_export.key

@@ -64,17 +64,38 @@ from .workflow_activity_word_formatter import (
 )
 
 
+# The hospital's everyday font. A DOCX only names the font — it must be
+# installed on the PC that opens the report (Word substitutes otherwise).
+REPORT_FONT = 'Frutiger LT Arabic 55 Roman'
+
+# Frutiger sets much larger than the previous Traditional Arabic at the same
+# point size, so every text size in this report is scaled down by this factor.
+REPORT_TEXT_SCALE = 0.88
+_MIN_TEXT_PT = 6.5
+
+
+def _scaled_pt(size: float) -> float:
+    """Scale a text size for REPORT_FONT, rounded to the nearest half point."""
+    return max(_MIN_TEXT_PT, round(size * REPORT_TEXT_SCALE * 2) / 2)
+
+
+def _set_report_font(rFonts) -> None:
+    """Point every script slot (Latin, complex-script Arabic, East Asian) at REPORT_FONT."""
+    for attr in ('w:ascii', 'w:hAnsi', 'w:cs', 'w:eastAsia'):
+        rFonts.set(qn(attr), REPORT_FONT)
+
+
 def _ar_run(para, text: str, size: int = 10, bold: bool = False,
             italic: bool = False, color: str = None):
     """
-    Local wrapper around the shared _ar_run helper that additionally sets
-    the w:cs (complex-script) font. The shared helper only sets w:eastAsia,
-    which leaves RTL Arabic glyph rendering to the theme's default complex-
-    script font — can show as missing-glyph boxes in some renderers. Not
-    touching the shared helper itself since other reports depend on it.
+    Local wrapper around the shared _ar_run helper that swaps its hardcoded
+    Traditional Arabic for REPORT_FONT on every script slot (including w:cs —
+    the shared helper leaves complex-script Arabic to the theme font, which
+    can show as missing-glyph boxes) and scales the size for REPORT_FONT.
+    Not touching the shared helper itself since other reports depend on it.
     """
-    run = _ar_run_base(para, text, size=size, bold=bold, italic=italic, color=color)
-    run._element.rPr.rFonts.set(qn('w:cs'), 'Traditional Arabic')
+    run = _ar_run_base(para, text, size=_scaled_pt(size), bold=bold, italic=italic, color=color)
+    _set_report_font(run._element.rPr.rFonts)
     return run
 
 
@@ -228,9 +249,10 @@ STYLE_COMPLAINT_DATA      = 'نص بيانات الشكوى'  # قسم الصا�
 # update together, on every page.
 STYLE_HEADER_FOOTER_INFO = 'نص معلومات الترويسة والتذييل'
 
-# Bumped up from the previous hardcoded run sizes (11 / 10 / 10) per the
-# "make it bigger" request — these are now just the starting point; the
-# whole reason they're styles is so the user can go further from here.
+# Base sizes as tuned for the old Traditional Arabic font; _register_narrative_
+# styles scales them via _scaled_pt for REPORT_FONT. These are just the
+# starting point — the whole reason they're styles is so the user can go
+# further from here.
 _NARRATIVE_STYLE_SIZES = {
     STYLE_COMPLAINT_NARRATIVE: 13,
     STYLE_IMMEDIATE_ACTION: 12,
@@ -248,13 +270,12 @@ def _register_narrative_styles(doc: Document) -> None:
     for style_name, size in _NARRATIVE_STYLE_SIZES.items():
         style = doc.styles.add_style(style_name, WD_STYLE_TYPE.PARAGRAPH)
         style.base_style = doc.styles['Normal']
-        style.font.name = 'Traditional Arabic'
-        style.font.size = Pt(size)
-        # Complex-script (Arabic) font override, same w:cs trick _ar_run
-        # applies per-run — python-docx's font.name only sets w:ascii/w:hAnsi.
+        style.font.name = REPORT_FONT
+        style.font.size = Pt(_scaled_pt(size))
+        # Complex-script (Arabic) font override, same trick _ar_run applies
+        # per-run — python-docx's font.name only sets w:ascii/w:hAnsi.
         rPr = style.element.find(qn('w:rPr'))
-        rFonts = rPr.find(qn('w:rFonts'))
-        rFonts.set(qn('w:cs'), 'Traditional Arabic')
+        _set_report_font(rPr.find(qn('w:rFonts')))
         if style_name == STYLE_COMPLAINT_DATA:
             # Matches the bold=True the direct-formatting version of these
             # 3 fields always used (_labeled_cell's value_bold default).
@@ -673,26 +694,33 @@ def _case_number(complaint: Dict) -> str:
 # column only needs enough width for one line's worth of vertical text.
 # The other 10 columns (all but الرقم) were scaled down by 0.942 to make
 # room for it within the same 270mm ceiling.
-# Sum of widths = 14 + 14 + 239.9 = 267.9mm (<= 270mm target ceiling).
+# Round 6: rotated date turned out hard to read in practice, so it's back to
+# horizontal — case number stays rotated (client wants that one vertical
+# specifically; the date rotation was our own call, not a client ask). Needs
+# real horizontal room for "YYYY-MM-DD" now (14mm -> 24mm), so the other 10
+# columns were scaled down by 0.9583 (229.9mm block, was 239.9mm) to hold
+# the ceiling.
+# Sum of widths = 14 + 24 + 229.9 = 267.9mm (<= 270mm target ceiling).
 _CLASS_COLS = [
     ('الرقم', 14, _case_number),
-    ('تاريخ تلقي الملاحظة', 14, lambda c: _fmt_date(c.get('received_date'))),
-    ('Problem Domain', 26.9, lambda c: c.get('domain_name') or '—'),
-    ('Problem Category', 20.7, lambda c: c.get('category_name') or '—'),
-    ('Sub-Category', 23.8, lambda c: c.get('subcategory_name') or '—'),
-    ('Classification (Arb.)', 35.8, lambda c: c.get('classification_name') or '—'),
-    ('Classification (Eng.)', 41.4, lambda c: c.get('classification_name_en') or '—'),
-    ('Severity', 16.8, lambda c: c.get('severity_name') or '—'),
-    ('Stage', 22.8, lambda c: c.get('stage_name') or '—'),
-    ('Harm', 18.6, lambda c: c.get('harm_level') or '—'),
-    ('Status', 14.5, lambda c: c.get('status_name') or '—'),
-    ('Complaint Field Type', 18.6, lambda c: c.get('clinical_risk_type_name') or 'Ordinary'),
+    ('تاريخ تلقي الملاحظة', 24, lambda c: _fmt_date(c.get('received_date'))),
+    ('Problem Domain', 25.8, lambda c: c.get('domain_name') or '—'),
+    ('Problem Category', 19.8, lambda c: c.get('category_name') or '—'),
+    ('Sub-Category', 22.8, lambda c: c.get('subcategory_name') or '—'),
+    ('Classification (Arb.)', 34.3, lambda c: c.get('classification_name') or '—'),
+    ('Classification (Eng.)', 39.7, lambda c: c.get('classification_name_en') or '—'),
+    ('Severity', 16.1, lambda c: c.get('severity_name') or '—'),
+    ('Stage', 21.9, lambda c: c.get('stage_name') or '—'),
+    ('Harm', 17.8, lambda c: c.get('harm_level') or '—'),
+    ('Status', 13.9, lambda c: c.get('status_name') or '—'),
+    ('Complaint Field Type', 17.8, lambda c: c.get('clinical_risk_type_name') or 'Ordinary'),
 ]
 
-# Rotated columns: case number and, as of Round 5, the received date next to
-# it. Was {0, 1, 2, 3} (3 dates + case number) before the date columns were
-# removed in Round 4; now {0, 1} again with just the one date column back.
-_ROTATED_CLASS_COLS = {0, 1}
+# Rotated columns: case number only, as of Round 6. Was {0, 1, 2, 3} (3
+# dates + case number) before Round 4 removed the date columns, then {0, 1}
+# in Round 5 when the received date came back rotated; now {0} again since
+# the date column went back to horizontal.
+_ROTATED_CLASS_COLS = {0}
 
 
 def _classification_table(doc: Document, complaint: Dict):
@@ -974,7 +1002,7 @@ def _approval_grid(doc: Document):
             # silently falls back to Normal's 10pt for line-height purposes.
             # See _set_para_mark_size's docstring.
             bp = _cell_para0(row.cells[ci], 'center')
-            _set_para_mark_size(bp, 10)
+            _set_para_mark_size(bp, _scaled_pt(10))
             _set_row_col_width(row, ci, _APPROVAL_COL_WIDTHS[ci])
         _set_row_cant_split(row)
     return tbl
@@ -1045,9 +1073,6 @@ def _render_complaint_page(doc: Document, complaint: Dict, index: int, total: in
 
     _action_block(doc, complaint)
     _gap(doc, 0.15)
-
-    pg_para = _new_para(doc, align='center', space_before=2, space_after=0)
-    _ar_run(pg_para, f'شكوى {index} من {total}', size=7, color=GREY_TEXT)
 
     # No page break here — the caller inserts one only BETWEEN complaints.
     # Adding one unconditionally after every complaint (including the last)
@@ -1438,8 +1463,9 @@ def generate_monthly_stylish_docx(
     period_str = f"{period.get('start_date', '—')}  —  {period.get('end_date', '—')}"
 
     doc = Document()
-    doc.styles['Normal'].font.name = 'Traditional Arabic'
-    doc.styles['Normal'].font.size = Pt(10)
+    doc.styles['Normal'].font.name = REPORT_FONT
+    doc.styles['Normal'].font.size = Pt(_scaled_pt(10))
+    _set_report_font(doc.styles['Normal'].element.get_or_add_rPr().get_or_add_rFonts())
     _register_narrative_styles(doc)
 
     # A whole-hospital/unfiltered export isn't routed to one physical unit
