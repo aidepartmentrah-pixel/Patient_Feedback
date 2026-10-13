@@ -633,12 +633,12 @@ def _build_charts(incidents, include_issuing_dept, classification_chart_type="ba
     severity_data = _histogram_with_names(incidents, "SeverityID", severity_map)
     harm_data = _histogram_with_names(incidents, "HarmLevelID", harm_map)
     category_data = _histogram_with_names(incidents, "CategoryID", category_map)
-    subcategory_data = _top_n_with_other(incidents, "SubCategoryID", subcategory_map, n=8)
+    subcategory_data = _top_n(incidents, "SubCategoryID", subcategory_map)
 
-    # Build department chart (top 8 by volume, remainder grouped as "Other")
+    # Build department chart (top 6 by volume)
     department_data = None
     if include_issuing_dept:
-        department_data = _top_n_with_other(incidents, "IssuingOrgUnitID", dept_map, n=8)
+        department_data = _top_n(incidents, "IssuingOrgUnitID", dept_map)
 
     charts = {
         "classification": {
@@ -747,22 +747,17 @@ def _histogram_with_names(items, key, id_name_map):
     return result
 
 
-def _top_n_with_other(items, key, id_name_map, n=8):
+def _top_n(items, key, id_name_map, n=6):
     """
-    Return the top-N entries by count, grouping the remainder into a single
-    'أخرى (Other)' entry.  If there are n or fewer unique values the 'Other'
-    bucket is omitted entirely.
+    Return the top-N entries by count (names instead of IDs). The long tail is
+    dropped rather than grouped into an "Other" bucket: with many departments /
+    subcategories that bucket outweighed every real entry and hid the ranking.
     """
     counter = Counter(i[key] for i in items if i.get(key))
-    top = counter.most_common(n)
-    result = [
+    return [
         {"name": id_name_map.get(id_val, f"Unknown ({id_val})"), "count": count}
-        for id_val, count in top
+        for id_val, count in counter.most_common(n)
     ]
-    other_count = sum(count for _, count in counter.most_common()[n:])
-    if other_count > 0:
-        result.append({"name": "أخرى (Other)", "count": other_count})
-    return result
 
 
 def _unit_payload(u):
