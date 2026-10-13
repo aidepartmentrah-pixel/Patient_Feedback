@@ -1276,6 +1276,9 @@ def get_season_metadata(season_id: int) -> Optional[Dict[str, Any]]:
             conn.close()
 
 
+MAX_SEASON_YEARS_BACK = 10
+
+
 def ensure_seasons_exist(cursor) -> None:
     """
     Create any missing quarterly rows in dbo.Season (caller commits).
@@ -1300,6 +1303,9 @@ def ensure_seasons_exist(cursor) -> None:
     cursor.execute("SELECT MIN(YEAR(FeedbackRecievedDate)) FROM dbo.APP_IncidentCase")
     earliest_case_year = cursor.fetchone()[0]
     first_year = min(current_year, earliest_case_year) if earliest_case_year else current_year
+    # Guard: one mistyped old date (e.g. 1905) must not make a read endpoint create hundreds of
+    # season rows. Never reach back more than MAX_YEARS_BACK years.
+    first_year = max(first_year, current_year - MAX_SEASON_YEARS_BACK)
 
     cursor.execute("SELECT ISNULL(MAX(UniqueID), 0) FROM dbo.Season")
     next_id = cursor.fetchone()[0] + 1
