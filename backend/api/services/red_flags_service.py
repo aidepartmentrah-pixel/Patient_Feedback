@@ -12,32 +12,17 @@ import pyodbc
 from dateutil.relativedelta import relativedelta
 
 from core.database import get_connection
+from .scope_sql import target_scope_condition, target_unit_filter, TARGET_UNIT_NAMES_SQL
 
 
 # ==================== SCOPE FILTER HELPER ====================
 
 def _build_scope_condition(allowed_unit_ids: Optional[Set[int]], table_alias: str = "c") -> tuple[str, list]:
     """
-    Build SQL WHERE condition for organizational scope filtering.
-    
-    Args:
-        allowed_unit_ids: Set of org unit IDs the user can access
-        table_alias: SQL table alias (default: "c" for APP_IncidentCase)
-    
-    Returns:
-        Tuple of (SQL condition string, parameter list)
-        Returns ("1=0", []) if no allowed units (blocks all access)
+    SQL condition restricting cases to those TARGETED at the user's allowed org units (not the unit
+    that issued them) - see scope_sql.target_scope_condition. No allowed units = no access.
     """
-    if not allowed_unit_ids:
-        # No allowed units = no access
-        return "1=0", []
-    
-    # Build IN clause for allowed units
-    placeholders = ",".join("?" * len(allowed_unit_ids))
-    condition = f"{table_alias}.IssuingOrgUnitID IN ({placeholders})"
-    params = list(allowed_unit_ids)
-    
-    return condition, params
+    return target_scope_condition(allowed_unit_ids, table_alias)
 
 
 # ==================== MAIN ENDPOINTS ====================
@@ -55,10 +40,13 @@ def get_red_flags_list(
     sort_order: str = "desc",
     limit: int = 100,
     offset: int = 0,
-    allowed_unit_ids: Optional[Set[int]] = None
+    allowed_unit_ids: Optional[Set[int]] = None,
+    unit_ids: Optional[Set[int]] = None
 ) -> Dict[str, Any]:
     """
     Fetch list of red flag incidents with optional filtering.
+
+    unit_ids (when given) narrows the list to cases targeted at that unit and everything beneath it.
     
     Red flags are critical incidents with ClinicalRiskTypeID = 2 (REDFLAG).
     Results are scoped to user's allowed organizational units.
@@ -75,7 +63,13 @@ def get_red_flags_list(
     scope_condition, scope_params = _build_scope_condition(allowed_unit_ids)
     where_conditions.append(scope_condition)
     params.extend(scope_params)
-    
+
+    # Unit filter by id (the unit plus everything beneath it)
+    if unit_ids is not None:
+        unit_condition, unit_params = target_unit_filter(unit_ids)
+        where_conditions.append(unit_condition)
+        params.extend(unit_params)
+
     # Free-text search
     if search:
         search_condition = """(
@@ -147,7 +141,7 @@ def get_red_flags_list(
     sort_column_map = {
         "date": "c.FeedbackRecievedDate",
         "severity": "severity.SeverityName",
-        "department": "org_unit.Name",
+        "department": f"ISNULL({TARGET_UNIT_NAMES_SQL}, org_unit.Name)",
         "status": "status.Name",
         "created_at": "c.CreatedAt",
         "patient_name": "c.PatientName"
@@ -177,8 +171,8 @@ def get_red_flags_list(
             
             -- Department Information
             org_unit.Name as issuing_department,
-            org_unit.Name as department,
-            NULL as target_department,
+            ISNULL({TARGET_UNIT_NAMES_SQL}, org_unit.Name) as department,
+            {TARGET_UNIT_NAMES_SQL} as target_department,
             building.BuildingName as building,
             domain.DomainName as domain,
             
@@ -649,7 +643,8 @@ def get_red_flags_trends(
                     org_unit.Name as department,
                     COUNT(*) as count
                 FROM dbo.APP_IncidentCase c
-                LEFT JOIN AdminsrationUnit org_unit ON c.IssuingOrgUnitID = org_unit.UniqueID
+                LEFT JOIN dbo.APP_IncidentCaseTargetDepartment grp_td ON grp_td.IncidentRequestCaseID = c.IncidentRequestCaseID
+                LEFT JOIN AdminsrationUnit org_unit ON org_unit.UniqueID = COALESCE(grp_td.DepartmentID, c.IssuingOrgUnitID)
                 WHERE c.ClinicalRiskTypeID = 2
                 AND {scope_condition}
                 AND c.FeedbackRecievedDate >= ?
@@ -902,48 +897,58 @@ def get_red_flags_department_breakdown(
     
     conn = get_connection()
     cursor = conn.cursor()
-    
+
     try:
-        # SECURITY: Build scope condition
+        # SECURITY: only cases targeted at the user's units
         scope_condition, scope_params = _build_scope_condition(allowed_unit_ids)
-        
-        # Build date filter
-        date_filter = f"c.ClinicalRiskTypeID = 2 AND {scope_condition}"
-        params = list(scope_params)
-        
+
+        base_filter = "c.ClinicalRiskTypeID = 2"
+        date_params = []
         if from_date:
-            date_filter += " AND c.FeedbackRecievedDate >= ?"
-            params.append(from_date)
+            base_filter += " AND c.FeedbackRecievedDate >= ?"
+            date_params.append(from_date)
         if to_date:
-            date_filter += " AND c.FeedbackRecievedDate <= ?"
-            params.append(to_date)
-        
-        # Get total count
-        total_query = f"""
-        SELECT COUNT(*) as total
-        FROM dbo.APP_IncidentCase c
-        WHERE {date_filter}
-        """
-        
-        cursor.execute(total_query, params)
+            base_filter += " AND c.FeedbackRecievedDate <= ?"
+            date_params.append(to_date)
+
+        # Total = distinct red flags in scope. A case targeted at two units is counted under each
+        # of them below, so the per-unit percentages are shares of this total and can overlap.
+        cursor.execute(
+            f"SELECT COUNT(*) FROM dbo.APP_IncidentCase c WHERE {base_filter} AND {scope_condition}",
+            date_params + list(scope_params),
+        )
         total = cursor.fetchone()[0]
-        
-        # Get department breakdown
+
+        allowed = sorted({int(i) for i in (allowed_unit_ids or [])})
+        if not allowed:
+            return {"breakdown": [], "total": total}
+        placeholders = ",".join(str(i) for i in allowed)  # ints, inlined (see scope_sql)
+
         query = f"""
-        SELECT TOP {limit}
-            org_unit.Name as department,
-            org_unit.UniqueID as department_id,
-            COUNT(*) as count
-        FROM dbo.APP_IncidentCase c
-        LEFT JOIN AdminsrationUnit org_unit ON c.IssuingOrgUnitID = org_unit.UniqueID
-        WHERE {date_filter}
-        GROUP BY org_unit.Name, org_unit.UniqueID
+        SELECT TOP {int(limit)}
+            u.Name as department,
+            u.UniqueID as department_id,
+            COUNT(DISTINCT pairs.case_id) as count
+        FROM (
+            SELECT c.IncidentRequestCaseID AS case_id, td.DepartmentID AS unit_id
+            FROM dbo.APP_IncidentCase c
+            JOIN dbo.APP_IncidentCaseTargetDepartment td ON td.IncidentRequestCaseID = c.IncidentRequestCaseID
+            WHERE {base_filter}
+            UNION
+            SELECT c.IncidentRequestCaseID, c.IssuingOrgUnitID
+            FROM dbo.APP_IncidentCase c
+            WHERE {base_filter}
+              AND NOT EXISTS (SELECT 1 FROM dbo.APP_IncidentCaseTargetDepartment x WHERE x.IncidentRequestCaseID = c.IncidentRequestCaseID)
+        ) pairs
+        JOIN dbo.AdminsrationUnit u ON u.UniqueID = pairs.unit_id
+        WHERE pairs.unit_id IN ({placeholders})
+        GROUP BY u.Name, u.UniqueID
         ORDER BY count DESC
         """
-        
-        cursor.execute(query, params)
+
+        cursor.execute(query, date_params + date_params)
         rows = cursor.fetchall()
-        
+
         breakdown = []
         for row in rows:
             percentage = (row[2] / total * 100) if total > 0 else 0
@@ -953,12 +958,12 @@ def get_red_flags_department_breakdown(
                 "count": row[2],
                 "percentage": round(percentage, 1)
             })
-        
+
         return {
             "breakdown": breakdown,
             "total": total
         }
-        
+
     finally:
         cursor.close()
         conn.close()

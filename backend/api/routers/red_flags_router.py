@@ -20,6 +20,7 @@ from ..services.red_flags_service import (
 )
 from ..dependencies.user_context import get_current_user
 from ..schemas.auth_models import CurrentUser
+from ..services import org_tree_service
 
 
 router = APIRouter(prefix="/api/red-flags", tags=["Red Flags"])
@@ -34,7 +35,8 @@ async def get_red_flags(
     status: Optional[str] = Query(None, description="Filter by status: OPEN, UNDER_REVIEW, FINISHED, all"),
     from_date: Optional[str] = Query(None, description="Filter from date (YYYY-MM-DD)"),
     to_date: Optional[str] = Query(None, description="Filter to date (YYYY-MM-DD)"),
-    department: Optional[str] = Query(None, description="Filter by department"),
+    department: Optional[str] = Query(None, description="Filter by department (name)"),
+    unit_id: Optional[int] = Query(None, description="Filter by target unit id (the unit and everything beneath it)"),
     category: Optional[str] = Query(None, description="Filter by red flag category"),
     severity: Optional[str] = Query(None, description="Filter by severity: HIGH, CRITICAL"),
     is_never_event: Optional[bool] = Query(None, description="Filter red flags that are also Never Events"),
@@ -90,7 +92,8 @@ async def get_red_flags(
             sort_order=sort_order,
             limit=limit,
             offset=offset,
-            allowed_unit_ids=allowed_unit_ids
+            allowed_unit_ids=allowed_unit_ids,
+            unit_ids=(org_tree_service.get_descendants(unit_id) & allowed_unit_ids) if unit_id is not None else None
         )
         
         return result

@@ -4,8 +4,12 @@ API endpoints for Never Events page.
 Never events are zero-tolerance incidents requiring immediate reporting and investigation.
 """
 
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
 from typing import Optional
+
+from ..dependencies.user_context import get_current_user
+from ..schemas.auth_models import CurrentUser
+from ..services import org_tree_service
 
 from ..services.never_events_service import (
     get_never_events_list,
@@ -20,10 +24,25 @@ from ..services.never_events_service import (
 router = APIRouter(prefix="/api/never-events", tags=["Never Events"])
 
 
+def _allowed(current_user: CurrentUser):
+    """Org units this user may see (their own unit and everything beneath it; all units for hospital-wide roles)."""
+    return getattr(current_user, "allowed_unit_ids", None) or set()
+
+
+def _unit_ids(current_user: CurrentUser, unit_id: Optional[int]):
+    """The requested unit plus its descendants, limited to what the user may see. None = no unit filter."""
+    if unit_id is None:
+        return None
+    return org_tree_service.get_descendants(unit_id) & _allowed(current_user)
+
+
+
 # ==================== ENDPOINTS ====================
 
 @router.get("")
 async def get_never_events(
+    current_user: CurrentUser = Depends(get_current_user),
+    unit_id: Optional[int] = Query(None, description="Filter by target unit id (the unit and everything beneath it)"),
     search: Optional[str] = Query(None, description="Search by record ID, patient name, or event type"),
     status: Optional[str] = Query(None, description="Filter by status: OPEN, UNDER_INVESTIGATION, RESOLVED, CLOSED, all"),
     from_date: Optional[str] = Query(None, description="Filter from date (YYYY-MM-DD)"),
@@ -76,7 +95,9 @@ async def get_never_events(
             sort_by=sort_by,
             sort_order=sort_order,
             limit=limit,
-            offset=offset
+            offset=offset,
+            allowed_unit_ids=_allowed(current_user),
+            unit_ids=_unit_ids(current_user, unit_id)
         )
         
         return result
@@ -94,6 +115,7 @@ async def get_never_events(
 
 @router.get("/statistics")
 async def get_statistics(
+    current_user: CurrentUser = Depends(get_current_user),
     from_date: Optional[str] = Query(None, description="Statistics from date (YYYY-MM-DD)"),
     to_date: Optional[str] = Query(None, description="Statistics to date (YYYY-MM-DD)")
 ):
@@ -136,7 +158,8 @@ async def get_statistics(
     try:
         result = get_never_events_statistics(
             from_date=from_date,
-            to_date=to_date
+            to_date=to_date,
+            allowed_unit_ids=_allowed(current_user)
         )
         
         return result
@@ -154,6 +177,7 @@ async def get_statistics(
 
 @router.get("/trends")
 async def get_trends(
+    current_user: CurrentUser = Depends(get_current_user),
     from_date: Optional[str] = Query(None, description="Trend from date (default: last 12 months)"),
     to_date: Optional[str] = Query(None, description="Trend to date (default: today)"),
     granularity: str = Query("monthly", description="monthly, quarterly, or weekly"),
@@ -191,7 +215,8 @@ async def get_trends(
             from_date=from_date,
             to_date=to_date,
             granularity=granularity,
-            group_by=group_by
+            group_by=group_by,
+            allowed_unit_ids=_allowed(current_user)
         )
         
         return result
@@ -211,6 +236,7 @@ async def get_trends(
 
 @router.get("/category-breakdown")
 async def get_category_breakdown(
+    current_user: CurrentUser = Depends(get_current_user),
     from_date: Optional[str] = Query(None, description="Filter from date (YYYY-MM-DD)"),
     to_date: Optional[str] = Query(None, description="Filter to date (YYYY-MM-DD)")
 ):
@@ -248,7 +274,8 @@ async def get_category_breakdown(
     try:
         result = get_never_events_category_breakdown(
             from_date=from_date,
-            to_date=to_date
+            to_date=to_date,
+            allowed_unit_ids=_allowed(current_user)
         )
         
         return result
@@ -266,6 +293,7 @@ async def get_category_breakdown(
 
 @router.get("/timeline-comparison")
 async def get_timeline_comparison(
+    current_user: CurrentUser = Depends(get_current_user),
     period: str = Query("month", description="Time period: month, quarter, or year")
 ):
     """
@@ -297,7 +325,7 @@ async def get_timeline_comparison(
     """
     
     try:
-        result = get_never_events_timeline_comparison(period=period)
+        result = get_never_events_timeline_comparison(period=period, allowed_unit_ids=_allowed(current_user))
         
         return result
         
@@ -313,7 +341,7 @@ async def get_timeline_comparison(
 
 
 @router.get("/{never_event_id}")
-async def get_single_never_event(never_event_id: int):
+async def get_single_never_event(never_event_id: int, current_user: CurrentUser = Depends(get_current_user)):
     """
     Fetch comprehensive details for a specific never event (for modal view).
     
@@ -342,7 +370,7 @@ async def get_single_never_event(never_event_id: int):
     """
     
     try:
-        result = get_never_event_details(never_event_id)
+        result = get_never_event_details(never_event_id, allowed_unit_ids=_allowed(current_user))
         
         if result is None:
             raise HTTPException(

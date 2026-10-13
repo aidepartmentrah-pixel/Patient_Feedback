@@ -4,12 +4,13 @@ Handles data retrieval and filtering for Never Events page.
 Never events are zero-tolerance incidents requiring immediate reporting and investigation.
 """
 
-from typing import Dict, List, Optional, Any, Literal
+from typing import Dict, List, Optional, Any, Literal, Set
 from datetime import datetime, date
 import pyodbc
 from dateutil.relativedelta import relativedelta
 
 from core.database import get_connection
+from .scope_sql import target_scope_condition, target_unit_filter, TARGET_UNIT_NAMES_SQL
 
 
 # Constants
@@ -28,10 +29,15 @@ def get_never_events_list(
     sort_by: str = "date",
     sort_order: str = "desc",
     limit: int = 100,
-    offset: int = 0
+    offset: int = 0,
+    allowed_unit_ids: Optional[Set[int]] = None,
+    unit_ids: Optional[Set[int]] = None
 ) -> Dict[str, Any]:
     """
     Fetch list of never events with optional filtering and search.
+
+    allowed_unit_ids scopes the result to cases TARGETED at the user's units; unit_ids (when given)
+    narrows it further to one unit and everything beneath it.
     
     Never events are queried from APP_IncidentCase where ClinicalRiskTypeID = 3.
     
@@ -52,6 +58,17 @@ def get_never_events_list(
     # Build WHERE clause
     where_conditions = [f"c.ClinicalRiskTypeID = {NEVER_EVENT}"]
     params = []
+
+    # SECURITY: only cases targeted at the user's own units
+    scope_condition, scope_params = target_scope_condition(allowed_unit_ids)
+    where_conditions.append(scope_condition)
+    params.extend(scope_params)
+
+    # Unit filter by id (the unit plus everything beneath it)
+    if unit_ids is not None:
+        unit_condition, unit_params = target_unit_filter(unit_ids)
+        where_conditions.append(unit_condition)
+        params.extend(unit_params)
     
     # Free-text search
     if search:
@@ -113,7 +130,7 @@ def get_never_events_list(
         "date": "c.FeedbackRecievedDate",
         "incident_date": "c.FeedbackRecievedDate",
         "severity": "severity.SeverityName",
-        "department": "org_unit.Name",
+        "department": f"ISNULL({TARGET_UNIT_NAMES_SQL}, org_unit.Name)",
         "status": "status.Name",
         "created_at": "c.CreatedAt",
         "patient_name": "c.PatientName",
@@ -149,9 +166,9 @@ def get_never_events_list(
             c.FeedbackRecievedDate as date,
             
             -- Department Information
-            org_unit.Name as department,
+            ISNULL({TARGET_UNIT_NAMES_SQL}, org_unit.Name) as department,
             org_unit.Name as issuing_department,
-            NULL as target_department,
+            {TARGET_UNIT_NAMES_SQL} as target_department,
             NULL as section,
             NULL as sub_section,
             building.BuildingName as building,
@@ -293,7 +310,8 @@ def get_never_events_list(
 
 def get_never_events_statistics(
     from_date: Optional[str] = None,
-    to_date: Optional[str] = None
+    to_date: Optional[str] = None,
+    allowed_unit_ids: Optional[Set[int]] = None
 ) -> Dict[str, Any]:
     """
     Fetch summary statistics for Never Events KPI cards.
@@ -302,8 +320,9 @@ def get_never_events_statistics(
     """
     
     # Build date filter
-    date_conditions = [f"c.ClinicalRiskTypeID = {NEVER_EVENT}"]
-    params = []
+    scope_condition, scope_params = target_scope_condition(allowed_unit_ids)
+    date_conditions = [f"c.ClinicalRiskTypeID = {NEVER_EVENT}", scope_condition]
+    params = list(scope_params)
     
     if from_date:
         date_conditions.append("c.FeedbackRecievedDate >= ?")
@@ -518,7 +537,8 @@ def get_never_events_trends(
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
     granularity: str = "monthly",
-    group_by: str = "none"
+    group_by: str = "none",
+    allowed_unit_ids: Optional[Set[int]] = None
 ) -> Dict[str, Any]:
     """
     Fetch time-series trend data for Never Events.
@@ -532,6 +552,8 @@ def get_never_events_trends(
     Returns:
         Time-series data for trend chart visualization.
     """
+    scope_condition, scope_params = target_scope_condition(allowed_unit_ids)
+
     
     # Default date range: last 12 months
     if not to_date:
@@ -571,12 +593,13 @@ def get_never_events_trends(
                 FROM dbo.APP_IncidentCase c
                 LEFT JOIN APP_LOOKUP_SEVERITY severity ON c.SeverityID = severity.SeverityID
                 WHERE c.ClinicalRiskTypeID = {NEVER_EVENT}
+                AND {scope_condition}
                 AND c.FeedbackRecievedDate >= ?
                 AND c.FeedbackRecievedDate <= ?
                 GROUP BY {date_group}
                 ORDER BY {date_order}
             """
-            cursor.execute(query, [from_date, to_date])
+            cursor.execute(query, [*scope_params, from_date, to_date])
             rows = cursor.fetchall()
             
             for row in rows:
@@ -613,12 +636,13 @@ def get_never_events_trends(
                 FROM dbo.APP_IncidentCase c
                 LEFT JOIN APP_LOOKUP_DOMAIN domain ON c.DomainID = domain.DomainID
                 WHERE c.ClinicalRiskTypeID = {NEVER_EVENT}
+                AND {scope_condition}
                 AND c.FeedbackRecievedDate >= ?
                 AND c.FeedbackRecievedDate <= ?
                 GROUP BY {date_group}, domain.DomainName
                 ORDER BY {date_order}, domain.DomainName
             """
-            cursor.execute(query, [from_date, to_date])
+            cursor.execute(query, [*scope_params, from_date, to_date])
             rows = cursor.fetchall()
             
             for row in rows:
@@ -652,12 +676,13 @@ def get_never_events_trends(
                 FROM dbo.APP_IncidentCase c
                 LEFT JOIN APP_LOOKUP_SEVERITY severity ON c.SeverityID = severity.SeverityID
                 WHERE c.ClinicalRiskTypeID = {NEVER_EVENT}
+                AND {scope_condition}
                 AND c.FeedbackRecievedDate >= ?
                 AND c.FeedbackRecievedDate <= ?
                 GROUP BY {date_group}, severity.SeverityName
                 ORDER BY {date_order}, severity.SeverityName
             """
-            cursor.execute(query, [from_date, to_date])
+            cursor.execute(query, [*scope_params, from_date, to_date])
             rows = cursor.fetchall()
             
             for row in rows:
@@ -689,14 +714,16 @@ def get_never_events_trends(
                     org_unit.Name as department,
                     COUNT(*) as count
                 FROM dbo.APP_IncidentCase c
-                LEFT JOIN AdminsrationUnit org_unit ON c.IssuingOrgUnitID = org_unit.UniqueID
+                LEFT JOIN dbo.APP_IncidentCaseTargetDepartment grp_td ON grp_td.IncidentRequestCaseID = c.IncidentRequestCaseID
+                LEFT JOIN AdminsrationUnit org_unit ON org_unit.UniqueID = COALESCE(grp_td.DepartmentID, c.IssuingOrgUnitID)
                 WHERE c.ClinicalRiskTypeID = {NEVER_EVENT}
+                AND {scope_condition}
                 AND c.FeedbackRecievedDate >= ?
                 AND c.FeedbackRecievedDate <= ?
                 GROUP BY {date_group}, org_unit.Name
                 ORDER BY {date_order}, org_unit.Name
             """
-            cursor.execute(query, [from_date, to_date])
+            cursor.execute(query, [*scope_params, from_date, to_date])
             rows = cursor.fetchall()
             
             for row in rows:
@@ -731,7 +758,7 @@ def get_never_events_trends(
         conn.close()
 
 
-def get_never_event_details(never_event_id: int) -> Optional[Dict[str, Any]]:
+def get_never_event_details(never_event_id: int, allowed_unit_ids: Optional[Set[int]] = None) -> Optional[Dict[str, Any]]:
     """
     Fetch comprehensive details for a specific never event.
     
@@ -742,6 +769,8 @@ def get_never_event_details(never_event_id: int) -> Optional[Dict[str, Any]]:
         Dictionary with full never event details or None if not found
     """
     
+    scope_condition, scope_params = target_scope_condition(allowed_unit_ids)
+
     query = f"""
         SELECT 
             c.IncidentRequestCaseID as id,
@@ -776,13 +805,14 @@ def get_never_event_details(never_event_id: int) -> Optional[Dict[str, Any]]:
         
         WHERE c.IncidentRequestCaseID = ?
         AND c.ClinicalRiskTypeID = {NEVER_EVENT}
+        AND {scope_condition}
     """
     
     conn = get_connection()
     cursor = conn.cursor()
     
     try:
-        cursor.execute(query, (never_event_id,))
+        cursor.execute(query, (never_event_id, *scope_params))
         row = cursor.fetchone()
         
         if not row:
@@ -831,7 +861,8 @@ def get_never_event_details(never_event_id: int) -> Optional[Dict[str, Any]]:
 
 def get_never_events_category_breakdown(
     from_date: Optional[str] = None,
-    to_date: Optional[str] = None
+    to_date: Optional[str] = None,
+    allowed_unit_ids: Optional[Set[int]] = None
 ) -> Dict[str, Any]:
     """
     Fetch category breakdown for never events analytics cards.
@@ -849,8 +880,9 @@ def get_never_events_category_breakdown(
     
     try:
         # Build date filter
-        date_filter = f"c.ClinicalRiskTypeID = {NEVER_EVENT}"
-        params = []
+        scope_condition, scope_params = target_scope_condition(allowed_unit_ids)
+        date_filter = f"c.ClinicalRiskTypeID = {NEVER_EVENT} AND {scope_condition}"
+        params = list(scope_params)
         
         if from_date:
             date_filter += " AND c.FeedbackRecievedDate >= ?"
@@ -906,7 +938,8 @@ def get_never_events_category_breakdown(
 
 
 def get_never_events_timeline_comparison(
-    period: str = "month"
+    period: str = "month",
+    allowed_unit_ids: Optional[Set[int]] = None
 ) -> Dict[str, Any]:
     """
     Fetch timeline comparison for never events (current vs previous period).
@@ -918,6 +951,8 @@ def get_never_events_timeline_comparison(
         Dictionary with current vs previous period comparison
     """
     
+    scope_condition, scope_params = target_scope_condition(allowed_unit_ids)
+
     conn = get_connection()
     cursor = conn.cursor()
     
@@ -971,25 +1006,27 @@ def get_never_events_timeline_comparison(
         # Get current period count
         current_query = f"""
         SELECT COUNT(*) as count
-        FROM dbo.APP_IncidentCase
-        WHERE ClinicalRiskTypeID = {NEVER_EVENT}
-            AND FeedbackRecievedDate >= ?
-            AND FeedbackRecievedDate <= ?
+        FROM dbo.APP_IncidentCase c
+        WHERE c.ClinicalRiskTypeID = {NEVER_EVENT}
+            AND {scope_condition}
+            AND c.FeedbackRecievedDate >= ?
+            AND c.FeedbackRecievedDate <= ?
         """
         
-        cursor.execute(current_query, [current_start.strftime('%Y-%m-%d'), current_end.strftime('%Y-%m-%d')])
+        cursor.execute(current_query, [*scope_params, current_start.strftime('%Y-%m-%d'), current_end.strftime('%Y-%m-%d')])
         current_count = cursor.fetchone()[0]
         
         # Get previous period count
         prev_query = f"""
         SELECT COUNT(*) as count
-        FROM dbo.APP_IncidentCase
-        WHERE ClinicalRiskTypeID = {NEVER_EVENT}
-            AND FeedbackRecievedDate >= ?
-            AND FeedbackRecievedDate <= ?
+        FROM dbo.APP_IncidentCase c
+        WHERE c.ClinicalRiskTypeID = {NEVER_EVENT}
+            AND {scope_condition}
+            AND c.FeedbackRecievedDate >= ?
+            AND c.FeedbackRecievedDate <= ?
         """
         
-        cursor.execute(prev_query, [prev_start.strftime('%Y-%m-%d'), prev_end.strftime('%Y-%m-%d')])
+        cursor.execute(prev_query, [*scope_params, prev_start.strftime('%Y-%m-%d'), prev_end.strftime('%Y-%m-%d')])
         prev_count = cursor.fetchone()[0]
         
         # Calculate change
