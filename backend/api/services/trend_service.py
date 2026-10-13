@@ -117,8 +117,11 @@ def get_trends_analysis(
     # RBAC Safety: Intersect with allowed scope
     scope_unit_ids = list(requested_unit_ids & current_user.allowed_unit_ids)
     
-    # Fetch incidents using database-level filtering
-    incidents = incident_case.list_incident_cases_filtered(
+    # Fetch incidents using database-level filtering. Scoped by TARGET unit and dated by
+    # FeedbackRecievedDate (when the feedback was received), not by the issuing unit and the
+    # CreatedAt/import timestamp the older list_incident_cases_filtered() used - which made an
+    # imported batch land in a single month and attributed cases to the wrong unit.
+    incidents = incident_case.list_incident_cases_filtered_by_target(
         unit_ids=scope_unit_ids,
         start_date=start_date_normalized,
         end_date=end_date_normalized
@@ -959,6 +962,13 @@ def _generate_months(start_date, end_date, include_zero_months):
 # HELPER FUNCTIONS FOR UNIFIED TRENDS ANALYSIS
 # =========================================================
 
+def _received_date(incident):
+    """The date a case counts under in a monthly trend: when the feedback was received.
+    Falls back to CreatedAt only for rows with no received date (same rule as the query)."""
+    d = incident.get("FeedbackRecievedDate") or incident["CreatedAt"]
+    return d.date() if isinstance(d, datetime) else d
+
+
 def _build_domain_trends(incidents, start_date, end_date, include_zero_months):
     """Build domain trends for scoped incidents"""
     domain_names = {1: "Clinical", 2: "Management", 3: "Relational"}
@@ -970,7 +980,7 @@ def _build_domain_trends(incidents, start_date, end_date, include_zero_months):
     domain_monthly = defaultdict(lambda: defaultdict(int))
     for incident in incidents:
         if incident.get("DomainID"):
-            incident_month = incident["CreatedAt"].date()
+            incident_month = _received_date(incident)
             incident_month = date(incident_month.year, incident_month.month, 1)
             domain_id = incident["DomainID"]
             domain_monthly[domain_id][incident_month] += 1
@@ -1043,7 +1053,7 @@ def _build_category_trends(incidents, start_date, end_date, include_zero_months)
     category_monthly = defaultdict(lambda: defaultdict(int))
     for incident in incidents:
         if incident.get("CategoryID"):
-            incident_month = incident["CreatedAt"].date()
+            incident_month = _received_date(incident)
             incident_month = date(incident_month.year, incident_month.month, 1)
             category_id = incident["CategoryID"]
             category_monthly[category_id][incident_month] += 1
@@ -1103,7 +1113,7 @@ def _build_classification_trends(incidents, start_date, end_date, include_zero_m
     classification_monthly = defaultdict(lambda: defaultdict(int))
     for incident in incidents:
         if incident.get("ClassificationID"):
-            incident_month = incident["CreatedAt"].date()
+            incident_month = _received_date(incident)
             incident_month = date(incident_month.year, incident_month.month, 1)
             classification_id = incident["ClassificationID"]
             classification_monthly[classification_id][incident_month] += 1
