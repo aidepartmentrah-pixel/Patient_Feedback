@@ -994,11 +994,14 @@ def get_full_seasonal_report(
                 cs.HighCount,
                 cs.PreventiveYesCount,
                 cs.PreventiveNoCount,
-                d.DomainName,
-                c.CategoryName,
-                sc.SubCategoryName,
-                cl.Classification_AR as ClassificationName,
-                cl.Classification_EN as ClassificationNameEN
+                -- A name can be NULL in real data (a classification with no English name, or a stat row whose
+                -- classification no longer exists in the taxonomy). The Word formatter writes these straight into
+                -- table cells, where None crashes the whole report, so every name always has a value here.
+                COALESCE(d.DomainName, N'Unknown Domain') AS DomainName,
+                COALESCE(c.CategoryName, N'Unknown Category') AS CategoryName,
+                COALESCE(sc.SubCategoryName, N'Unknown Sub-Category') AS SubCategoryName,
+                COALESCE(NULLIF(cl.Classification_AR, N''), NULLIF(cl.Classification_EN, N''), N'N/A') as ClassificationName,
+                COALESCE(NULLIF(cl.Classification_EN, N''), NULLIF(cl.Classification_AR, N''), N'N/A') as ClassificationNameEN
             FROM dbo.APP_SeasonalOrgUnitReport_ClassificationStats cs
             LEFT JOIN dbo.APP_LOOKUP_CLASSIFICATION cl ON cs.ClassificationID = cl.ClassificationID
             LEFT JOIN dbo.APP_LOOKUP_SUBCATEGORY sc ON cl.SubCategoryID = sc.SubCategoryID

@@ -894,9 +894,17 @@ def _build_hierarchy(classification_stats: List[Dict[str, Any]]) -> Dict[str, An
     })
     
     for stat in classification_stats:
-        domain_name = stat.get('domain_name', 'Unknown Domain')
-        category_name = stat.get('category_name', 'Unknown Category')
-        subcategory_name = stat.get('subcategory_name', 'Unknown Sub-Category')
+        # dict.get(key, default) only applies the default when the key is MISSING. A name that is present
+        # but NULL in the database arrives as None and crashes python-docx (cell.text = None), so normalise
+        # every name here, once, for all the tables built from this hierarchy.
+        stat = dict(stat)
+        ar, en = stat.get('classification_name'), stat.get('classification_name_en')
+        stat['classification_name'] = ar or en or 'N/A'
+        stat['classification_name_en'] = en or ar or 'N/A'
+        domain_name = stat.get('domain_name') or 'Unknown Domain'
+        category_name = stat.get('category_name') or 'Unknown Category'
+        subcategory_name = stat.get('subcategory_name') or 'Unknown Sub-Category'
+        stat['total_count'] = stat.get('total_count') or 0
         
         # Add to hierarchy
         hierarchy[domain_name]['total'] += stat.get('total_count', 0)
